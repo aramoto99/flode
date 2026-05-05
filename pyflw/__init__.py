@@ -1,4 +1,4 @@
-__version__ = "0.2.0.dev0"
+__version__ = "0.2.0.dev0"  # Phase 2 完了時に "0.2.0" に上げる (ADR-0013 §V-A)
 
 from .core.block import Block
 from .core.decorator import block

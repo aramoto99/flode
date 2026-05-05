@@ -1,0 +1,11 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+recursive-include pyflw/server/static *
+
+# sdist から frontend source / build artifacts を除外 (release CI が build した
+# artifacts は package_data 経由で wheel に同梱、source 配布物には不要)
+prune pyflw/web/frontend/node_modules
+prune pyflw/web/frontend/dist
+prune pyflw/web/frontend/.vite
+exclude pyflw/web/frontend/tsconfig.tsbuildinfo

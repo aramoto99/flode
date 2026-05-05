@@ -53,9 +53,12 @@ def create_app(
         finally:
             manager.shutdown()
 
+    # ``pyflw.__version__`` を SoT として使う (ADR-0013 §V-A、code-reviewer SHOULD)
+    from .. import __version__ as _pyflw_version
+
     app = FastAPI(
         title="pyflw server",
-        version="0.2.0.dev0",
+        version=_pyflw_version,
         lifespan=lifespan,
     )
     app.state.settings = settings

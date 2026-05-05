@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # GitHub Releases にアップロードするため
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: pyflw/web/frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: pyflw/web/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage frontend into pyflw/server/static
+        run: |
+          mkdir -p pyflw/server/static
+          cp -r pyflw/web/frontend/dist/* pyflw/server/static/
+
+      - name: Verify version sync (pyflw.__version__ vs pyproject)
+        run: |
+          python -c "
+          import sys, tomllib
+          sys.path.insert(0, '.')
+          import pyflw
+          with open('pyproject.toml', 'rb') as f:
+              project_version = tomllib.load(f)['project']['version']
+          if pyflw.__version__ != project_version:
+              raise SystemExit(
+                  f'Version mismatch: pyflw.__version__={pyflw.__version__!r}, '
+                  f'pyproject={project_version!r}'
+              )
+          print(f'Version sync OK: {project_version}')
+          "
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Upload to GitHub Releases
+        # ``generate_release_notes: true`` は GitHub の自動 release notes を使う
+        # (前回タグ以降の PR/commit を集約)。``body_path`` を併用すると競合する
+        # ため指定していない: ユーザーは併せて手動で CHANGELOG.md の該当セクションを
+        # release 説明に貼り付ける運用 (Phase 3 で抽出スクリプトを追加予定、
+        # ADR-0013 §(8))。
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

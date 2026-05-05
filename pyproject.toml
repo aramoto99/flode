@@ -1,17 +1,28 @@
 [build-system]
-requires = ["setuptools>=68"]
+# PEP 639 (license expression) 完全対応のため >=71 を要求 (ADR-0013 §(1))
+requires = ["setuptools>=71"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyflw"
-version = "0.0.1"
+version = "0.2.0.dev0"
 description = "Block-diagram dynamic system simulator (Simulink-inspired)"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "aramoto99" }]
+readme = "README.md"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "matplotlib>=3.7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/aramoto99/pyflw"
+Issues = "https://github.com/aramoto99/pyflw/issues"
+
+[project.scripts]
+pyflw-server = "pyflw.server.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -27,6 +38,8 @@ dev = [
     "uvicorn[standard]>=0.27",
     "websockets>=12",
     "httpx>=0.27",
+    "build>=1.2",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 gui = [
     "fastapi>=0.110",
@@ -36,6 +49,10 @@ gui = [
 
 [tool.setuptools.packages.find]
 include = ["pyflw*"]
+exclude = ["pyflw.web*"]
+
+[tool.setuptools.package-data]
+"pyflw.server" = ["static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
