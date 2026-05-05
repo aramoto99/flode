@@ -1,8 +1,8 @@
 """``@block`` デコレータ DSL (ADR-0003).
 
-関数から ``Block`` サブクラスを動的生成する。Phase 1 初期実装は関数版
-(Option A) のみ。class 版 (Option C) は Phase 1 後半 / Phase 2 で実装予定の
-ため、本モジュールでは ``NotImplementedError`` で停止する (ADR-0003 §(9))。
+関数または class から ``Block`` サブクラスを動的生成する。
+``isinstance(target, type)`` で関数版 (Option A) と class 版 (Option C) に分岐
+し、両者を並存サポートする (ADR-0003 §「Decision」)。
 
 主要な設計判断:
 
@@ -49,15 +49,18 @@ def block(
     sample_time: float | None = None,
     direct_feedthrough: bool | None = None,
 ) -> Any:
-    """関数 (Phase 1) または class (将来) から ``Block`` サブクラスを生成する。
+    """関数または class から ``Block`` サブクラスを生成する。
 
     引数なし (``@block``) と引数あり (``@block(states=1)``) の両形式に対応。
+    関数版 (Option A) は戻り値タプル ``(y, x_change)`` で出力と状態変化を一度に
+    返す簡潔な記法。class 版 (Option C) は ``output`` / ``derivative`` / ``update``
+    をメソッドとして分けて書け、パラメータは class field として宣言する
+    (詳細は ADR-0003 §「Considered Options」)。
 
     Args:
-        func_or_cls: デコレート対象 (位置専用)。関数を渡す通常用途と、引数なし形式
-            (``@block``) で関数を渡す内部経路で兼用する。
-        name: 生成 Block サブクラスの ``__name__``。省略時は関数名を PascalCase
-            化したもの (``unit_delay`` → ``UnitDelay``)。
+        func_or_cls: デコレート対象 (位置専用)。関数または class。
+        name: 生成 Block サブクラスの ``__name__``。省略時は関数 / class 名を
+            PascalCase 化 (``unit_delay`` → ``UnitDelay``)。
         inputs: 入力ポート数の明示。省略時は ``u`` 引数の型注釈から推論。
         outputs: 出力ポート数の明示。省略時は戻り値の型注釈から推論。
         states: 状態次元数 (連続/離散共通)。0 で combinational。
@@ -72,16 +75,20 @@ def block(
 
     Raises:
         BlockSpecError: シグネチャ違反 (``*args`` / ``**kwargs``、引数順、推論
-            失敗で ``inputs``/``outputs`` 未指定など)。
-        NotImplementedError: class を渡した場合 (Phase 1 では未対応)。
+            失敗で ``inputs``/``outputs`` 未指定、class 版で ``output``/``derivative``
+            等の必須メソッド欠落など)。
     """
 
     def _decorate(target: Any) -> type[Block]:
         if isinstance(target, type):
-            raise NotImplementedError(
-                "class form of @block is deferred to Phase 1 後半 / Phase 2 "
-                "(ADR-0003 §(9)). Use direct Block inheritance for class-based "
-                "blocks in Phase 1 (e.g. `class MyBlock(Block): ...`)."
+            return _build_class_from_class(
+                target,
+                class_name=name,
+                inputs_override=inputs,
+                outputs_override=outputs,
+                n_states=states,
+                sample_time=sample_time,
+                direct_feedthrough_override=direct_feedthrough,
             )
         if not callable(target):
             raise BlockSpecError(f"@block expects a function or class, got {type(target).__name__}")
@@ -555,3 +562,369 @@ def _coerce_state_change(value: Any, n_states: int, cls_name: str, *, role: str)
             f"{cls_name}: {role} shape {arr.shape} does not match expected ({n_states},)"
         )
     return arr
+
+
+# ---------------------------------------------------------------
+# class 版 @block (Option C、ADR-0003 §(9) Phase 1 後半)
+# ---------------------------------------------------------------
+
+
+def _build_class_from_class(
+    user_cls: type,
+    *,
+    class_name: str | None,
+    inputs_override: int | None,
+    outputs_override: int | None,
+    n_states: int,
+    sample_time: float | None,
+    direct_feedthrough_override: bool | None,
+) -> type[Block]:
+    """User class から ``Block`` サブクラスを生成する (Option C)。
+
+    User class の規約:
+
+    * 必須メソッド ``output(self, t, [x,] [u])``。シグネチャの規約は関数版と同じ
+      (``t`` の位置、``x`` の有無は ``states>0``、``u`` の型注釈で n_inputs 推論)
+    * ``states > 0`` のときは ``derivative`` (連続) または ``update`` (離散) の
+      どちらかを実装する必要がある
+    * パラメータは class 変数 (``__annotations__`` 経由で型注釈付き) として宣言。
+      default 値があるかどうかで required / optional が決まる (関数版の `*` 以降と同じ)
+    """
+    if not isinstance(n_states, int) or n_states < 0:
+        raise BlockSpecError(f"@block: states must be a non-negative int, got {n_states!r}")
+
+    user_output = getattr(user_cls, "output", None)
+    if user_output is None or not callable(user_output):
+        raise BlockSpecError(f"@block class {user_cls.__name__!r} must define an `output` method")
+
+    has_state = n_states > 0
+    user_derivative = getattr(user_cls, "derivative", None) if has_state else None
+    user_update = getattr(user_cls, "update", None) if has_state else None
+    is_discrete_static = sample_time is not None and sample_time > 0.0
+    is_inherited = sample_time == -1.0
+
+    if has_state:
+        # 静的に確定する離散/連続/継承で、必要メソッドの最低条件を確認
+        if is_discrete_static and not callable(user_update):
+            raise BlockSpecError(
+                f"@block class {user_cls.__name__!r}: states>0 with sample_time>0 "
+                f"(discrete) requires an `update` method"
+            )
+        if not is_discrete_static and not is_inherited and not callable(user_derivative):
+            raise BlockSpecError(
+                f"@block class {user_cls.__name__!r}: states>0 (continuous) requires "
+                f"a `derivative` method"
+            )
+        if is_inherited and not (callable(user_derivative) and callable(user_update)):
+            raise BlockSpecError(
+                f"@block class {user_cls.__name__!r}: states>0 with sample_time=-1.0 "
+                f"(inherited) requires both `derivative` and `update` methods"
+            )
+
+    # output メソッドの型ヒントを 1 回だけ取得して 2 用途で共有
+    try:
+        output_hints = get_type_hints(user_output)
+    except (NameError, AttributeError, TypeError) as e:
+        raise BlockSpecError(
+            f"@block class {user_cls.__name__!r}: failed to resolve `output` type hints: {e}"
+        ) from e
+
+    # output メソッドのシグネチャを解析 (self を除外)
+    n_inputs, u_arg_kind, has_u_in_method = _analyze_class_output_signature(
+        user_output, output_hints, user_cls.__name__, has_state, inputs_override
+    )
+
+    return_hint = output_hints.get("return")
+    return_annotated = return_hint is not None
+    n_outputs, y_arg_kind = _resolve_output_count(
+        return_hint, outputs_override, user_cls.__name__, return_annotated
+    )
+
+    if direct_feedthrough_override is not None:
+        df = bool(direct_feedthrough_override)
+    elif n_states == 0:
+        df = True
+    else:
+        df = False
+
+    # パラメータ field を抽出 (class __annotations__ + class.__dict__ の default)
+    params_spec = _extract_class_params(user_cls)
+
+    cls_name = class_name if class_name is not None else _to_pascal_case(user_cls.__name__)
+
+    return _make_block_class_from_class(
+        user_cls=user_cls,
+        cls_name=cls_name,
+        n_inputs=n_inputs,
+        n_outputs=n_outputs,
+        n_states=n_states,
+        direct_feedthrough=df,
+        sample_time=sample_time,
+        params_spec=params_spec,
+        u_arg_kind=u_arg_kind,
+        y_arg_kind=y_arg_kind,
+        has_state=has_state,
+        has_u_in_method=has_u_in_method,
+        is_inherited=is_inherited,
+        static_is_discrete=is_discrete_static,
+        user_output=user_output,
+        user_derivative=user_derivative,
+        user_update=user_update,
+    )
+
+
+def _analyze_class_output_signature(
+    user_output: Any,
+    type_hints: dict[str, Any],
+    cls_name: str,
+    has_state: bool,
+    inputs_override: int | None,
+) -> tuple[int, str, bool]:
+    """class 版の ``output`` メソッドのシグネチャを関数版と同じ規約で解析する。
+
+    self を除外したあとの positional 引数を ``(t, [x,] [u])`` として読む。
+    呼び出し元で ``get_type_hints(user_output)`` を取得済みのものを ``type_hints``
+    として渡す (重複呼び出しを避けるため)。
+    """
+    sig = inspect.signature(user_output)
+    params = list(sig.parameters.values())
+    if not params or params[0].name != "self":
+        raise BlockSpecError(
+            f"@block class {cls_name!r}: `output` must be an instance method (first arg = self)"
+        )
+    params = params[1:]  # skip self
+
+    positional: list[inspect.Parameter] = []
+    for p in params:
+        if p.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise BlockSpecError(f"@block class {cls_name!r}: `output` cannot have *args")
+        if p.kind == inspect.Parameter.VAR_KEYWORD:
+            raise BlockSpecError(f"@block class {cls_name!r}: `output` cannot have **kwargs")
+        if p.kind == inspect.Parameter.KEYWORD_ONLY:
+            raise BlockSpecError(
+                f"@block class {cls_name!r}: `output` should not declare keyword-only "
+                f"args; class fields are the parameter source"
+            )
+        positional.append(p)
+
+    if has_state:
+        if not 2 <= len(positional) <= 3:
+            raise BlockSpecError(
+                f"@block(states>0) class {cls_name!r}: `output` must be "
+                f"(self, t, x) or (self, t, x, u), got {[p.name for p in positional]}"
+            )
+        u_param = positional[2] if len(positional) == 3 else None
+    else:
+        if not 1 <= len(positional) <= 2:
+            raise BlockSpecError(
+                f"@block class {cls_name!r}: `output` must be (self, t) or "
+                f"(self, t, u), got {[p.name for p in positional]}"
+            )
+        u_param = positional[1] if len(positional) == 2 else None
+
+    if inputs_override is not None:
+        if (
+            not isinstance(inputs_override, int)
+            or isinstance(inputs_override, bool)
+            or inputs_override < 0
+        ):
+            raise BlockSpecError(
+                f"@block: inputs must be a non-negative int, got {inputs_override!r}"
+            )
+        if u_param is None and inputs_override > 0:
+            raise BlockSpecError(
+                f"@block class {cls_name!r}: no `u` parameter on `output` but "
+                f"inputs={inputs_override} was specified"
+            )
+        return (
+            inputs_override,
+            ("ndarray" if inputs_override > 0 else "none"),
+            (u_param is not None),
+        )
+    if u_param is None:
+        return 0, "none", False
+    hint = type_hints.get(u_param.name)
+    n_inputs, kind = _infer_count_from_hint(
+        hint, role="inputs", func_name=cls_name, arg_name=u_param.name
+    )
+    return n_inputs, kind, True
+
+
+def _extract_class_params(user_cls: type) -> list[tuple[str, Any, Any, bool]]:
+    """User class の ``__annotations__`` からパラメータ field を抽出する。
+
+    型注釈付き class 変数のうち、class 本体に default 値があれば optional、
+    なければ required 扱い (関数版の ``*`` 以降の引数と同じ)。親クラス
+    (``Block`` 等) の annotations は対象外で、自身の ``__annotations__`` のみ拾う。
+
+    Args:
+        user_cls: ``@block`` でデコレートされた User class。
+
+    Returns:
+        ``(pname, default, ptype, required)`` の宣言順リスト
+        (Python 3.7+ で ``__annotations__`` の挿入順は保証される)。
+
+    Raises:
+        BlockSpecError: 型注釈の解決に失敗した場合 (forward reference の
+            未解決名前空間など)。
+    """
+    own_annotations = user_cls.__dict__.get("__annotations__", {})
+    result: list[tuple[str, Any, Any, bool]] = []
+    try:
+        resolved_hints = get_type_hints(user_cls)
+    except (NameError, AttributeError, TypeError) as e:
+        raise BlockSpecError(
+            f"@block class {user_cls.__name__!r}: failed to resolve class type hints: {e}"
+        ) from e
+    for pname in own_annotations:
+        ptype = resolved_hints.get(pname, own_annotations[pname])
+        if pname in user_cls.__dict__:
+            default = user_cls.__dict__[pname]
+            required = False
+        else:
+            default = None
+            required = True
+        result.append((pname, default, ptype, required))
+    return result
+
+
+def _make_block_class_from_class(
+    *,
+    user_cls: type,
+    cls_name: str,
+    n_inputs: int,
+    n_outputs: int,
+    n_states: int,
+    direct_feedthrough: bool,
+    sample_time: float | None,
+    params_spec: list[tuple[str, Any, Any, bool]],
+    u_arg_kind: str,
+    y_arg_kind: str,
+    has_state: bool,
+    has_u_in_method: bool,
+    is_inherited: bool,
+    static_is_discrete: bool,
+    user_output: Any,
+    user_derivative: Any,
+    user_update: Any,
+) -> type[Block]:
+    def _effective_is_discrete(instance: Block) -> bool:
+        if is_inherited:
+            resolved = instance._resolved_sample_time
+            return resolved is not None and resolved > 0.0
+        return static_is_discrete
+
+    def _pack_method_args(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> list[Any]:
+        call_args: list[Any] = [self, float(t)]
+        if has_state:
+            call_args.append(x)
+        if has_u_in_method:
+            call_args.append(_pack_u_for_func(u, u_arg_kind, n_inputs))
+        return call_args
+
+    def __init__(self: Block, **kwargs: Any) -> None:
+        block_id = kwargs.pop("id", None)
+        block_name = kwargs.pop("name", None)
+        bound: dict[str, Any] = {}
+        for pname, default, ptype, required in params_spec:
+            if pname in kwargs:
+                value = kwargs.pop(pname)
+            elif required:
+                raise BlockSpecError(f"{cls_name}: missing required parameter {pname!r}")
+            else:
+                value = default
+            if ptype is not None:
+                _validate_param_type(cls_name, pname, value, ptype)
+            bound[pname] = value
+        if kwargs:
+            raise BlockSpecError(
+                f"{cls_name}: unexpected parameters {sorted(kwargs)}; "
+                f"declared: {[s[0] for s in params_spec]}"
+            )
+
+        Block.__init__(
+            self,
+            id=block_id,
+            name=block_name,
+            n_inputs=n_inputs,
+            n_outputs=n_outputs,
+            n_states=n_states,
+            direct_feedthrough=direct_feedthrough,
+            sample_time=sample_time,
+        )
+
+        self._params = dict(bound)
+        # User class フィールドを self.<pname> に展開 (user メソッドが self.k 等で参照する)
+        for pname, value in bound.items():
+            setattr(self, pname, value)
+
+        if has_state and _RESERVED_X0 in bound:
+            self.x0 = _coerce_x0(cls_name, bound[_RESERVED_X0], n_states)
+
+    def output(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        args = _pack_method_args(self, t, x, u)
+        y_raw = user_output(*args)
+        return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
+
+    def derivative(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        if not has_state:
+            return np.zeros(0)
+        if _effective_is_discrete(self):
+            return np.zeros(n_states)
+        # has_state=True かつ連続モードなら、_build_class_from_class のバリデーション
+        # で user_derivative の存在は保証済み (L607-622)。意図を assert で明示する。
+        assert user_derivative is not None, (
+            f"{cls_name}: BUG - derivative missing in continuous mode"
+        )
+        args = _pack_method_args(self, t, x, u)
+        x_change = user_derivative(*args)
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
+
+    def update(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        if not has_state:
+            return x
+        if not _effective_is_discrete(self):
+            return x
+        # has_state=True かつ離散モードなら、_build_class_from_class のバリデーション
+        # で user_update の存在は保証済み (L607-622)。意図を assert で明示する。
+        assert user_update is not None, f"{cls_name}: BUG - update missing in discrete mode"
+        args = _pack_method_args(self, t, x, u)
+        x_change = user_update(*args)
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_next")
+
+    namespace: dict[str, Any] = {
+        "__init__": __init__,
+        "__module__": getattr(user_cls, "__module__", None) or "pyflw.decorator",
+        "__qualname__": cls_name,
+        "__doc__": user_cls.__doc__,
+        "output": output,
+        "derivative": derivative,
+        "update": update,
+        "_pyflw_user_cls": user_cls,
+        "_pyflw_params_spec": tuple(params_spec),
+    }
+    # user class が `record` / `reset` 等の追加メソッドを持っていれば素直に継承する
+    # (Sink 系で record を持つケースを想定)。
+    # Block 基底のメソッドを無音で上書きしないようガードする (`__init__` などの dunder は
+    # ``__`` プレフィックスで除外、それ以外で Block にあるものは warning)。
+    block_reserved = {n for n, v in vars(Block).items() if not n.startswith("__") and callable(v)}
+    skip_names = {"output", "derivative", "update"} | {p[0] for p in params_spec}
+    for attr_name, attr_value in user_cls.__dict__.items():
+        if attr_name.startswith("__"):
+            continue
+        if attr_name in skip_names:
+            continue
+        if attr_name in block_reserved:
+            _logger.warning(
+                "@block class %r: attribute %r shadows a Block base method; "
+                "skipping copy to keep base behavior intact.",
+                cls_name,
+                attr_name,
+            )
+            continue
+        # 通常のインスタンスメソッド (function オブジェクト) のみコピー対象。
+        # staticmethod / classmethod / property は意図せず誤動作するので除外
+        # (必要になった時点で個別対応する)。
+        if inspect.isfunction(attr_value):
+            namespace[attr_name] = attr_value
+    return type(cls_name, (Block,), namespace)

@@ -1,8 +1,8 @@
-"""ADR-0003 ``@block`` デコレータ DSL のテスト (Phase 1 初期実装スコープ)。
+"""ADR-0003 ``@block`` デコレータ DSL のテスト。
 
-ADR-0003 §(9) で「関数版 (Option A) のフルサポート」と明示されている範囲を
-網羅する。class 版 (Option C) は Phase 1 後半 / Phase 2 で実装予定のため、
-本テストでは ``NotImplementedError`` が出ることだけを確認する。
+関数版 (Option A) と class 版 (Option C) の両方を網羅する。両形式は
+``isinstance(target, type)`` で内部分岐し、生成される ``Block`` サブクラスの
+振る舞いは Simulator から見て同等であることを検証する。
 """
 
 from __future__ import annotations
@@ -333,12 +333,208 @@ def test_variadic_tuple_annotation_rejected():
 # ---------------------------------------------------------------
 
 
-def test_class_form_raises_not_implemented():
-    with pytest.raises(NotImplementedError):
+# ---------------------------------------------------------------
+# class 版 @block (Option C、ADR-0003 §(9) Phase 1 後半で追加)
+# ---------------------------------------------------------------
+
+
+class TestClassFormCombinational:
+    def test_scalar_in_scalar_out(self):
+        @block
+        class Gain:
+            k: float = 1.0
+
+            def output(self, t: float, u: float) -> float:
+                return self.k * u
+
+        assert Gain.__name__ == "Gain"
+        instance = Gain(k=3.0)
+        assert instance.n_inputs == 1
+        assert instance.n_outputs == 1
+        assert instance.n_states == 0
+        assert instance.direct_feedthrough is True
+        np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([2.0])), [6.0])
+
+    def test_source_no_u(self):
+        @block
+        class MyConst:
+            value: float = 0.0
+
+            def output(self, t: float) -> float:
+                return self.value
+
+        instance = MyConst(value=2.5)
+        assert instance.n_inputs == 0
+        np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.zeros(0)), [2.5])
+
+    def test_mimo_tuple(self):
+        @block
+        class Splitter:
+            def output(self, t: float, u: tuple[float, float]) -> tuple[float, float]:
+                a, b = u
+                return a + b, a - b
+
+        instance = Splitter()
+        assert instance.n_inputs == 2
+        assert instance.n_outputs == 2
+        np.testing.assert_allclose(
+            instance.output(0.0, np.zeros(0), np.array([3.0, 1.0])),
+            [4.0, 2.0],
+        )
+
+
+class TestClassFormStateful:
+    def test_continuous_integrator(self):
+        @block(states=1, direct_feedthrough=False)
+        class MyIntegrator:
+            x0: float = 0.0
+
+            def output(self, t: float, x: np.ndarray, u: float) -> float:
+                return x[0]
+
+            def derivative(self, t: float, x: np.ndarray, u: float) -> np.ndarray:
+                return np.array([u])
+
+        instance = MyIntegrator(x0=1.5)
+        assert instance.n_states == 1
+        assert instance.direct_feedthrough is False
+        np.testing.assert_allclose(instance.x0, [1.5])
+        np.testing.assert_allclose(instance.output(0.0, np.array([2.0]), np.array([3.0])), [2.0])
+        np.testing.assert_allclose(
+            instance.derivative(0.0, np.array([2.0]), np.array([3.0])), [3.0]
+        )
+
+    def test_discrete_unitdelay(self):
+        @block(states=1, sample_time=0.01, direct_feedthrough=False)
+        class MyDelay:
+            x0: float = 0.0
+
+            def output(self, t: float, x: np.ndarray, u: float) -> float:
+                return x[0]
+
+            def update(self, t: float, x: np.ndarray, u: float) -> np.ndarray:
+                return np.array([u])
+
+        instance = MyDelay(x0=1.0)
+        assert instance.sample_time == 0.01
+        np.testing.assert_allclose(instance.update(0.0, np.array([5.0]), np.array([7.0])), [7.0])
+        # 離散ブロックでは derivative は no-op
+        np.testing.assert_allclose(
+            instance.derivative(0.0, np.array([5.0]), np.array([7.0])), np.zeros(1)
+        )
+
+
+class TestClassFormErrors:
+    def test_class_without_output_raises(self):
+        with pytest.raises(BlockSpecError, match="output"):
+
+            @block
+            class NoOutput:
+                pass
+
+    def test_class_stateful_without_derivative_or_update_raises(self):
+        with pytest.raises(BlockSpecError, match="derivative|update"):
+
+            @block(states=1)
+            class NoDerivative:
+                def output(self, t: float, x: np.ndarray, u: float) -> float:
+                    return x[0]
+
+    def test_param_field_without_default_is_required(self):
+        @block
+        class Gain:
+            k: float
+
+            def output(self, t: float, u: float) -> float:
+                return self.k * u
+
+        with pytest.raises(BlockSpecError, match="missing required"):
+            Gain()
+        instance = Gain(k=2.0)
+        np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([3.0])), [6.0])
+
+
+class TestClassFormSimulatorIntegration:
+    def test_runs_in_simulator(self):
+        @block
+        class MyConst:
+            value: float = 1.0
+
+            def output(self, t: float) -> float:
+                return self.value
 
         @block
-        class Foo:
-            pass
+        class MyGain:
+            k: float = 1.0
+
+            def output(self, t: float, u: float) -> float:
+                return self.k * u
+
+        @block(states=1, direct_feedthrough=False)
+        class MyIntegrator:
+            x0: float = 0.0
+
+            def output(self, t: float, x: np.ndarray, u: float) -> float:
+                return x[0]
+
+            def derivative(self, t: float, x: np.ndarray, u: float) -> np.ndarray:
+                return np.array([u])
+
+        sim = Simulator(t_end=1.0, dt=0.01, rtol=1e-8, atol=1e-10)
+        src = sim.add(MyConst(value=1.0, id="src"))
+        g = sim.add(MyGain(k=2.0, id="g"))
+        integ = sim.add(MyIntegrator(x0=0.0, id="integ"))
+        scope = sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect(src, g)
+        sim.connect(g, integ)
+        sim.connect(integ, scope)
+        sim.run()
+        # x_dot = 2、x(1) = 2
+        assert scope.values[-1, 0] == pytest.approx(2.0, rel=1e-3)
+
+
+class TestClassFormNaming:
+    def test_explicit_name_overrides(self):
+        @block(name="CustomGain")
+        class Whatever:
+            def output(self, t: float, u: float) -> float:
+                return u
+
+        assert Whatever.__name__ == "CustomGain"
+
+
+class TestClassFormBlockBaseGuards:
+    def test_user_method_does_not_override_block_base(self, caplog):
+        """User class が Block 基底のメソッドと同名のメソッドを定義しても
+        基底のメソッドを上書きしない (code-reviewer MUST 修正)。"""
+
+        with caplog.at_level(logging.WARNING, logger="pyflw.decorator"):
+
+            @block
+            class CustomBlock:
+                def output(self, t: float, u: float) -> float:
+                    return u
+
+                def __repr__(self) -> str:  # noqa: D401
+                    return "user repr"
+
+        # __repr__ は dunder なので除外され、Block 基底の repr が使われる
+        instance = CustomBlock(id="b1")
+        assert "<CustomBlock 'b1'>" == repr(instance)
+
+    def test_extra_method_is_copied(self):
+        """Sink 系の ``record`` のような追加メソッドは継承される。"""
+
+        @block(inputs=1, outputs=1)
+        class WithRecorder:
+            def output(self, t: float, u) -> float:
+                return float(u[0])
+
+            def custom_helper(self) -> str:
+                return "ok"
+
+        instance = WithRecorder()
+        assert instance.custom_helper() == "ok"
 
 
 # ---------------------------------------------------------------
