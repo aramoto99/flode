@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 from collections import defaultdict, deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,9 @@ from .persistence import (
     resolve_block_class,
     serialize_connections,
 )
+
+# ADR-0011 §(4): on_step_callback の型エイリアス
+StepCallback = Callable[[float, float], bool]
 
 _logger = logging.getLogger("pyflw.scheduler")
 
@@ -62,6 +66,7 @@ class Simulator:
         rtol: float = 1e-6,
         atol: float = 1e-9,
         dt_base: float | None = None,
+        on_step_callback: StepCallback | None = None,
     ) -> None:
         self.t_end = float(t_end)
         self.dt = float(dt)
@@ -72,6 +77,13 @@ class Simulator:
         self.blocks: list[Block] = []
         self._blocks_by_id: dict[str, Block] = {}
         self._type_counters: dict[str, int] = {}
+        # ADR-0011 §(4): 各 ``record`` 後に呼ばれる progress hook。GUI バックエンドが
+        # シミュレーション進捗を WebSocket で配信するため。``None`` で no-op。
+        # 引数は ``(t, t_end)`` の 2 floats、戻り値は ``True`` でシミュレーション
+        # 続行、``False`` で graceful 停止。
+        self.on_step_callback: StepCallback | None = on_step_callback
+        # 停止要求フラグ (run() 中に外部から `request_stop()` で True にすると graceful 停止)
+        self._stop_requested: bool = False
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -389,10 +401,23 @@ class Simulator:
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], ins[b]), dtype=float)
             return xdot
 
+        # 停止フラグはこの run() 呼び出しの間だけ有効。前回の値が残っているのを
+        # ここでクリアする。
+        self._stop_requested = False
+
         for k in range(n_steps + 1):
             t = k * dt_base
             outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             self._record(t, inputs)
+
+            # ADR-0011 §(4): 各ステップ後の進捗 hook。``False`` 戻り値または
+            # ``request_stop()`` で graceful 停止する。
+            if self.on_step_callback is not None:
+                cont = self.on_step_callback(t, self.t_end)
+                if cont is False:
+                    return
+            if self._stop_requested:
+                return
 
             if k == n_steps:
                 break
@@ -431,6 +456,24 @@ class Simulator:
         for b in self.blocks:
             if hasattr(b, "record"):
                 b.record(t, inputs[b])
+
+    def request_stop(self) -> None:
+        """別スレッドからの graceful 停止要求 (ADR-0011 §(4))。
+
+        ``run()`` ループ中の各ステップ末尾でフラグがチェックされ、True であれば
+        その時点までの結果を保ったまま戻る。``Scope`` 等の record も停止時点までの
+        値を保持する。
+        """
+        self._stop_requested = True
+
+    @property
+    def is_stopped(self) -> bool:
+        """直前の ``run()`` が ``request_stop()`` で打ち切られたかを示すフラグ。
+
+        サーバ側 (ADR-0011) が `_stop_requested` プライベート属性に直接触れずに
+        終了状態を判定するために使う公開 API。
+        """
+        return self._stop_requested
 
     def save(self, path: str | Path, *, indent: int = 2) -> None:
         """モデル定義 (ブロック・結線・Simulator 設定) を JSON ファイルに保存する。

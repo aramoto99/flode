@@ -54,3 +54,7 @@ class ModelSerializationError(PyflwError):
 
     ブロックパラメータが JSON-serializable でない場合などに発生する。
     """
+
+
+class SimulationStillRunningError(PyflwError):
+    """シミュレーションがまだ実行中で、結果が取得できない (ADR-0011)。"""
