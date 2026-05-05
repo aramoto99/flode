@@ -144,3 +144,25 @@ class Block:
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self._id!r}>"
+
+    def to_dict(self) -> dict[str, Any]:
+        """ブロックを JSON-serializable な辞書に変換する (ADR-0008 §(5))。
+
+        各サブクラスは ``__init__`` で ``self._params`` にユーザー API キーワード
+        引数を記録する責務を持つ。``@block`` デコレータ生成 class は
+        ``ADR-0003 §(5)`` で既に ``_params`` を保持する。
+
+        Returns:
+            ``{"id": ..., "type": "module.ClassName", "params": {...}}``。
+
+        Raises:
+            ModelSerializationError: class が ``__main__`` モジュールで定義されている
+                場合、または ``_params`` に JSON-serializable でない値が含まれる場合。
+        """
+        from .persistence import block_type_path, to_json_dict
+
+        return {
+            "id": self._id,
+            "type": block_type_path(self.__class__),
+            "params": to_json_dict(self._params),
+        }

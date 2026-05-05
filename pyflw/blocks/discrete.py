@@ -51,6 +51,7 @@ class UnitDelay(Block):
             sample_time=sample_time,
         )
         self.x0 = np.array([float(x0)])
+        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
@@ -91,6 +92,11 @@ class DiscreteIntegrator(Block):
         )
         self.gain = float(gain)
         self.x0 = np.array([float(x0)])
+        self._params = {
+            "sample_time": float(sample_time),
+            "gain": self.gain,
+            "x0": float(x0),
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
@@ -145,6 +151,7 @@ class ZeroOrderHold(Block):
             sample_time=sample_time,
         )
         self.x0 = np.array([float(x0)])
+        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
@@ -233,6 +240,14 @@ class DiscreteStateSpace(Block):
                     f"DiscreteStateSpace: x0 must have shape ({n},), got {x0_arr.shape}"
                 )
             self.x0 = x0_arr
+        self._params = {
+            "A": A_arr,
+            "B": B_arr,
+            "C": C_arr,
+            "D": D_arr,
+            "x0": self.x0,
+            "sample_time": float(sample_time),
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
@@ -315,6 +330,12 @@ class DiscreteTransferFunction(Block):
                     f"DiscreteTransferFunction: x0 must have shape ({n},), got {x0_arr.shape}"
                 )
             self.x0 = x0_arr
+        self._params = {
+            "numerator": num,
+            "denominator": den,
+            "x0": self.x0,
+            "sample_time": float(sample_time),
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()

@@ -32,3 +32,25 @@ class AlgebraicLoopError(PyflwError):
 
 class SolverError(PyflwError):
     """``scipy.solve_ivp`` の積分失敗 (発散、最大ステップ数超過など)。"""
+
+
+class ModelLoadError(PyflwError):
+    """``Simulator.load`` 失敗の基底 (ADR-0008)。
+
+    JSON パースエラー、schema 違反、ブロック type 解決失敗などを表す。
+    """
+
+
+class SchemaVersionError(ModelLoadError):
+    """``schema_version`` がサポート対象外、または migration が定義されていない。"""
+
+
+class UnknownBlockTypeError(ModelLoadError):
+    """``type`` 文字列に対応する ``Block`` サブクラスが解決できない。"""
+
+
+class ModelSerializationError(PyflwError):
+    """``Simulator.save`` 失敗の基底 (ADR-0008)。
+
+    ブロックパラメータが JSON-serializable でない場合などに発生する。
+    """

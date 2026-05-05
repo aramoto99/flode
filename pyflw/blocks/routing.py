@@ -49,6 +49,7 @@ class Switch(Block):
         super().__init__(id=id, name=name, n_inputs=3, n_outputs=1)
         self.threshold = float(threshold)
         self.criterion = criterion
+        self._params = {"threshold": self.threshold, "criterion": criterion}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         control = float(u[1])

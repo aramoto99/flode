@@ -35,6 +35,7 @@ class RelationalOperator(Block):
             )
         super().__init__(id=id, name=name, n_inputs=2, n_outputs=1)
         self.operator = operator
+        self._params = {"operator": operator}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         a, b = float(u[0]), float(u[1])
@@ -90,6 +91,7 @@ class LogicalOperator(Block):
             )
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
         self.operator = operator
+        self._params = {"operator": operator, "n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         op = self.operator

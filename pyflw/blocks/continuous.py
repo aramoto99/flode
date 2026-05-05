@@ -34,6 +34,7 @@ class Integrator(Block):
             direct_feedthrough=False,
         )
         self.x0 = np.array([float(x0)])
+        self._params = {"x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
@@ -115,6 +116,13 @@ class StateSpace(Block):
             if x0_arr.shape != (n,):
                 raise BlockSpecError(f"StateSpace: x0 must have shape ({n},), got {x0_arr.shape}")
             self.x0 = x0_arr
+        self._params = {
+            "A": A_arr,
+            "B": B_arr,
+            "C": C_arr,
+            "D": D_arr,
+            "x0": self.x0,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
@@ -193,6 +201,11 @@ class TransferFunction(Block):
                     f"TransferFunction: x0 must have shape ({n},), got {x0_arr.shape}"
                 )
             self.x0 = x0_arr
+        self._params = {
+            "numerator": num,
+            "denominator": den,
+            "x0": self.x0,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         # C: (1,n)、x: (n,)、D: (1,1)、u: (1,)
@@ -239,6 +252,7 @@ class Derivative(Block):
         )
         self.N = float(N)
         self.x0 = np.array([float(x0)])
+        self._params = {"N": self.N, "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.N * (u[0] - x[0])])

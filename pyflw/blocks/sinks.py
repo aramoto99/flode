@@ -34,6 +34,10 @@ class Scope(Block):
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
         self.times: list[float] = []
         self._values: list[np.ndarray] = []
+        self._params = {
+            "n_inputs": int(n_inputs),
+            "labels": self.labels,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.zeros(0)
@@ -92,6 +96,7 @@ class Terminator(Block):
         if n_inputs < 1:
             raise BlockSpecError(f"Terminator: n_inputs must be >= 1, got {n_inputs}")
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
+        self._params = {"n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.zeros(0)

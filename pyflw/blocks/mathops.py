@@ -22,6 +22,7 @@ class Gain(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self.k = float(k)
+        self._params = {"k": self.k}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.k * u[0]])
@@ -45,6 +46,7 @@ class Sum(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
+        self._params = {"signs": signs}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([float(np.dot(self.signs, u))])
@@ -65,6 +67,7 @@ class Product(Block):
         name: str | None = None,
     ):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
+        self._params = {"n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([float(np.prod(u))])
@@ -91,6 +94,7 @@ class Saturation(Block):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self.lower = float(lower)
         self.upper = float(upper)
+        self._params = {"lower": self.lower, "upper": self.upper}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([float(np.clip(u[0], self.lower, self.upper))])
@@ -106,6 +110,7 @@ class Abs(Block):
         name: str | None = None,
     ):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self._params = {}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([abs(float(u[0]))])
@@ -121,6 +126,7 @@ class Sign(Block):
         name: str | None = None,
     ):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self._params = {}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         v = float(u[0])
@@ -153,6 +159,7 @@ class MinMax(Block):
             raise BlockSpecError(f"MinMax: n_inputs must be >= 1, got {n_inputs}")
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
         self.operator = operator
+        self._params = {"operator": operator, "n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         v = float(np.min(u)) if self.operator == "min" else float(np.max(u))
@@ -188,6 +195,7 @@ class Divide(Block):
                 raise BlockSpecError(f"Divide: signs must contain only '*' or '/', got {signs!r}")
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = signs
+        self._params = {"signs": signs}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         # 先頭が "/" のときは "1 / u[0]" (= 逆数) を起点として後続の乗除を続ける。

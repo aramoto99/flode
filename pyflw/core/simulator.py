@@ -2,12 +2,17 @@
 
 ADR-0002 (離散時間 + マルチレート) で `run()` を連続/離散ハイブリッド対応に拡張。
 ADR-0004 (ブロック ID 規則) で自動採番 / `connect` の `Block | str` 対応 / `rename` を追加。
+ADR-0008 (JSON 永続化) で `save` / `load` を追加。
 """
 
 from __future__ import annotations
 
+import datetime
+import json
 import logging
 from collections import defaultdict, deque
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -15,12 +20,19 @@ from scipy.integrate import solve_ivp
 from ..exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
+    ModelLoadError,
     SchedulingError,
     SolverError,
     UnknownBlockIdError,
 )
 from .block import Block
 from .identifiers import validate_block_id
+from .persistence import (
+    CURRENT_SCHEMA_VERSION,
+    migrate_to_current,
+    resolve_block_class,
+    serialize_connections,
+)
 
 _logger = logging.getLogger("pyflw.scheduler")
 
@@ -414,3 +426,130 @@ class Simulator:
         for b in self.blocks:
             if hasattr(b, "record"):
                 b.record(t, inputs[b])
+
+    def save(self, path: str | Path, *, indent: int = 2) -> None:
+        """モデル定義 (ブロック・結線・Simulator 設定) を JSON ファイルに保存する。
+
+        ADR-0008 で確定した ``schema_version = "0.1"`` 形式で出力する。
+        ``run()`` 後の状態 (Scope バッファ、積分結果) は保存対象外。
+
+        Args:
+            path: 保存先パス (``.flw.json`` 拡張子を推奨)。
+            indent: ``json.dumps`` のインデント (default ``2``)。``0`` 以下を渡すと
+                ``json.dumps`` を ``indent=None`` で呼び、改行・インデントなしの
+                compact 出力 (機械可読向け) になる。
+
+        Raises:
+            ModelSerializationError: ブロックパラメータが JSON-serializable でない、
+                または ``__main__`` モジュールで定義された class を含む場合。
+        """
+        from .. import __version__ as _pyflw_version
+
+        payload: dict[str, Any] = {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "metadata": {
+                "created_at": datetime.datetime.now(datetime.timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "tool": f"pyflw {_pyflw_version}",
+            },
+            "simulator": {
+                "t_end": float(self.t_end),
+                "dt": float(self.dt),
+                "solver": str(self.solver),
+                "rtol": float(self.rtol),
+                "atol": float(self.atol),
+                "dt_base": (None if self.dt_base_hint is None else float(self.dt_base_hint)),
+            },
+            "blocks": [b.to_dict() for b in self.blocks],
+            "connections": serialize_connections(self.blocks),
+        }
+        text = json.dumps(payload, indent=indent if indent > 0 else None)
+        Path(path).write_text(text + ("\n" if indent > 0 else ""), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path) -> Simulator:
+        """JSON ファイルからモデルを再構築する (ADR-0008)。
+
+        Args:
+            path: 読み込みパス。
+
+        Returns:
+            復元された ``Simulator`` インスタンス (``run()`` 前の状態)。
+
+        Raises:
+            ModelLoadError: JSON パース失敗、必須キー欠落、構造不正など。
+            SchemaVersionError: サポート外の ``schema_version``。
+            UnknownBlockTypeError: ブロック ``type`` 解決失敗。
+        """
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except OSError as e:
+            raise ModelLoadError(f"Cannot read model file {path!r}: {e}") from e
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ModelLoadError(f"Invalid JSON in {path!r}: {e}") from e
+        if not isinstance(data, dict):
+            raise ModelLoadError(f"Top-level JSON must be an object, got {type(data).__name__}")
+        data = migrate_to_current(data)
+
+        for key in ("simulator", "blocks", "connections"):
+            if key not in data:
+                raise ModelLoadError(f"Missing required key {key!r} in JSON model")
+        sim_cfg = data["simulator"]
+        for key in ("t_end", "dt", "solver", "rtol", "atol", "dt_base"):
+            if key not in sim_cfg:
+                raise ModelLoadError(f"Missing simulator setting {key!r}")
+
+        try:
+            sim = cls(
+                t_end=sim_cfg["t_end"],
+                dt=sim_cfg["dt"],
+                solver=sim_cfg["solver"],
+                rtol=sim_cfg["rtol"],
+                atol=sim_cfg["atol"],
+                dt_base=sim_cfg["dt_base"],
+            )
+        except (ValueError, TypeError) as e:
+            raise ModelLoadError(f"Invalid simulator configuration: {e}") from e
+
+        for b_data in data["blocks"]:
+            if not isinstance(b_data, dict):
+                raise ModelLoadError(
+                    f"Each block entry must be an object, got {type(b_data).__name__}"
+                )
+            for key in ("id", "type", "params"):
+                if key not in b_data:
+                    raise ModelLoadError(f"Block entry missing required key {key!r}: {b_data!r}")
+            block_cls = resolve_block_class(b_data["type"])
+            try:
+                block = block_cls(id=b_data["id"], **b_data["params"])
+            except (TypeError, ValueError) as e:
+                raise ModelLoadError(
+                    f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"
+                ) from e
+            sim.add(block)
+
+        for c_data in data["connections"]:
+            if not isinstance(c_data, dict):
+                raise ModelLoadError(
+                    f"Each connection entry must be an object, got {type(c_data).__name__}"
+                )
+            for key in ("src", "dst", "src_idx", "dst_idx"):
+                if key not in c_data:
+                    raise ModelLoadError(
+                        f"Connection entry missing required key {key!r}: {c_data!r}"
+                    )
+            try:
+                sim.connect(
+                    c_data["src"],
+                    c_data["dst"],
+                    src_idx=int(c_data["src_idx"]),
+                    dst_idx=int(c_data["dst_idx"]),
+                )
+            except (IndexError, ValueError, UnknownBlockIdError) as e:
+                raise ModelLoadError(f"Invalid connection {c_data!r}: {e}") from e
+
+        return sim

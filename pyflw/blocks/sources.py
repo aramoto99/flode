@@ -22,6 +22,7 @@ class Constant(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
         self.value = float(value)
+        self._params = {"value": self.value}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.value])
@@ -49,6 +50,11 @@ class Step(Block):
         self.step_time = float(step_time)
         self.initial_value = float(initial_value)
         self.final_value = float(final_value)
+        self._params = {
+            "step_time": self.step_time,
+            "initial_value": self.initial_value,
+            "final_value": self.final_value,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.final_value if t >= self.step_time else self.initial_value])
@@ -76,6 +82,11 @@ class Sine(Block):
         self.amplitude = float(amplitude)
         self.frequency = float(frequency)
         self.phase = float(phase)
+        self._params = {
+            "amplitude": self.amplitude,
+            "frequency": self.frequency,
+            "phase": self.phase,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase)])
@@ -103,6 +114,11 @@ class Ramp(Block):
         self.slope = float(slope)
         self.start_time = float(start_time)
         self.initial_output = float(initial_output)
+        self._params = {
+            "slope": self.slope,
+            "start_time": self.start_time,
+            "initial_output": self.initial_output,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         if t < self.start_time:
@@ -120,6 +136,7 @@ class Clock(Block):
         name: str | None = None,
     ):
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
+        self._params = {}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([t])
@@ -159,6 +176,12 @@ class PulseGenerator(Block):
         self.period = float(period)
         self.pulse_width = float(pulse_width)
         self.phase_delay = float(phase_delay)
+        self._params = {
+            "amplitude": self.amplitude,
+            "period": self.period,
+            "pulse_width": self.pulse_width,
+            "phase_delay": self.phase_delay,
+        }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         phi = (t - self.phase_delay) % self.period
