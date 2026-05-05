@@ -1,5 +1,11 @@
-from .continuous import Integrator
-from .discrete import DiscreteIntegrator, UnitDelay, ZeroOrderHold
+from .continuous import Derivative, Integrator, StateSpace, TransferFunction
+from .discrete import (
+    DiscreteIntegrator,
+    DiscreteStateSpace,
+    DiscreteTransferFunction,
+    UnitDelay,
+    ZeroOrderHold,
+)
 from .logic import LogicalOperator, RelationalOperator
 from .mathops import Abs, Divide, Gain, MinMax, Product, Saturation, Sign, Sum
 from .routing import Switch
@@ -10,7 +16,10 @@ __all__ = [
     "Abs",
     "Clock",
     "Constant",
+    "Derivative",
     "DiscreteIntegrator",
+    "DiscreteStateSpace",
+    "DiscreteTransferFunction",
     "Divide",
     "Gain",
     "Integrator",
@@ -24,10 +33,12 @@ __all__ = [
     "Scope",
     "Sign",
     "Sine",
+    "StateSpace",
     "Step",
     "Sum",
     "Switch",
     "Terminator",
+    "TransferFunction",
     "UnitDelay",
     "ZeroOrderHold",
 ]
