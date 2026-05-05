@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Playwright E2E smoke tests for the Web GUI (`pyflw/web/frontend/tests/e2e/`).
+  Covers root render, model list, model selection, and Run button +
+  WebSocket completion. Run locally with
+  `npm --prefix pyflw/web/frontend run e2e`.
+- CI: `.github/workflows/ci-frontend.yml` gains an `e2e` job that installs
+  pyflw with `[gui]` extras, caches Playwright browsers, and runs the
+  smoke suite on every frontend PR.
+
+### Changed
+- CI workflows are split: `ci.yml` (Python lint/type/test/docs) and
+  `ci-frontend.yml` (Vite/Vitest/Playwright). Each uses `paths` filters
+  so that pure-Python PRs no longer pay the npm install/build cost and
+  vice versa.
+
 ## [0.3.0] - 2026-05-06
 
 ### Changed (BREAKING)

@@ -43,3 +43,11 @@ pyflw/web/frontend/.vite/
 pyflw/web/frontend/tsconfig.tsbuildinfo
 # StaticFiles 配信先: ローカル build 時のみ生成、release 時は別管理 (ADR-0012 §(8))
 pyflw/server/static/
+
+# Playwright (E2E テスト出力)。`playwright.config.ts` の `cwd` 解決方法によっては
+# repo root にも書き込まれるので両方無視する。
+test-results/
+playwright-report/
+pyflw/web/frontend/test-results/
+pyflw/web/frontend/playwright-report/
+pyflw/web/frontend/playwright/.cache/
