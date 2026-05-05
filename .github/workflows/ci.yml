@@ -83,3 +83,33 @@ jobs:
 
       - name: Sphinx build (warnings as errors)
         run: sphinx-build -W -b html docs docs/_build
+
+  frontend:
+    name: Frontend (Vite + Vitest)
+    runs-on: ubuntu-latest
+    # TODO(Phase3): pyflw/web/frontend/** の変更時のみ実行する paths filter を
+    # 追加する。Phase 2 ではシンプルさ優先で全 push にトリガー。
+    defaults:
+      run:
+        working-directory: pyflw/web/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: pyflw/web/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build

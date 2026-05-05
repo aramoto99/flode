@@ -35,3 +35,11 @@ spring_mass_damper.png
 # Sphinx build output (regenerate via `sphinx-build -b html docs docs/_build`)
 docs/_build/
 docs/_autosummary/
+
+# Frontend (ADR-0012)
+node_modules/
+pyflw/web/frontend/dist/
+pyflw/web/frontend/.vite/
+pyflw/web/frontend/tsconfig.tsbuildinfo
+# StaticFiles 配信先: ローカル build 時のみ生成、release 時は別管理 (ADR-0012 §(8))
+pyflw/server/static/

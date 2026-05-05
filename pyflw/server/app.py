@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .errors import register_error_handlers
 from .routes import models_router, simulations_router
@@ -71,4 +72,13 @@ def create_app(
     app.include_router(models_router, prefix="/api/v1")
     app.include_router(simulations_router, prefix="/api/v1")
     register_error_handlers(app)
+
+    # ADR-0012 §(6): frontend ビルド成果物を ``pyflw/server/static/`` から配信。
+    # ディレクトリが存在しない (= ``npm run build`` 未実行 / dev mode) 場合は
+    # マウントしない。``html=True`` で SPA ルーティングを ``index.html`` に
+    # フォールバックする。API ルートは先に登録済みなので static は最後にする。
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir() and any(static_dir.iterdir()):
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+
     return app

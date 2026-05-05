@@ -84,14 +84,14 @@ async def create_model(request: Request) -> dict[str, str]:
             with open(path, "x", encoding="utf-8") as fh:
                 fh.write(json.dumps(payload, indent=2))
             break
-        except FileExistsError:
+        except FileExistsError as e:
             n += 1
             final_name = f"{candidate}_{n}"
             if n > 1000:
                 raise HTTPException(
                     status_code=500,
                     detail="Could not allocate a unique model_id",
-                )
+                ) from e
     return {"model_id": final_name}
 
 
