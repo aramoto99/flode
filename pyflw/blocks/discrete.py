@@ -1,18 +1,23 @@
 """離散時間ブロック。
 
-Phase 1 で実装するブロック:
+実装ブロック:
 
-* ``UnitDelay`` — 1 サンプル遅延 (ADR-0002 §(3))
+* ``UnitDelay`` — 1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014)
 * ``DiscreteIntegrator`` — 前進 Euler 積分 ``x[k+1] = x[k] + T*gain*u[k]``
-* ``ZeroOrderHold`` — 連続入力を離散周期でサンプリング保持
+* ``ZeroOrderHold`` — state-based 離散ホールド (ADR-0014 適用後は ``UnitDelay`` と
+  完全に同一の semantics。Phase 3 で deprecate 予定)
+* ``ZeroOrderHoldDirect`` — Simulink ZOH 互換 ``y(t_k) = u(t_k)`` (ADR-0010 §(4) /
+  ADR-0014 §(3))
 * ``DiscreteStateSpace`` — 離散 LTI ``x[k+1] = A_d x[k] + B_d u[k]`` (ADR-0006)
 * ``DiscreteTransferFunction`` — 離散 LTI ``H(z) = num(z)/den(z)`` (ADR-0006)
 
-``Memory`` は ``UnitDelay`` と意味論が同一のため Phase 1 では別実装しない。
-``FirstOrderHold`` / 高次離散ブロックは Phase 2 以降。
+``Memory`` は ``UnitDelay`` と意味論が同一のため別実装しない。
+``FirstOrderHold`` / 高次離散ブロックは Phase 3 以降。
 """
 
 from __future__ import annotations
+
+import logging
 
 import numpy as np
 import scipy.signal
@@ -21,11 +26,16 @@ from ..core.block import Block
 from ..exceptions import BlockSpecError
 from ._lti_utils import _DF_TOLERANCE
 
+_zohd_logger = logging.getLogger("pyflw.blocks.discrete")
+
 
 class UnitDelay(Block):
-    """1 サンプル遅延 ``y[k] = x[k] = u[k-1]``。
+    """1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014)。
 
-    出力は現状態 (= 前ステップの入力)、状態更新は現入力をそのまま保持。
+    Simulator は現サンプル時刻 ``t_k`` の入力で ``update(t_k, x, u(t_k))`` を呼び、
+    ``x_next = u(t_k)`` を保存する (ADR-0014 §(1))。次サンプル時刻 ``t_{k+1}`` で
+    ``output(t_{k+1}, x, u) = x = u(t_k)`` が返る → 真の 1 サンプル遅延。
+
     ``direct_feedthrough=False`` なので閉ループ内で代数ループを切る用途にも使える。
 
     Args:
@@ -117,20 +127,20 @@ class DiscreteIntegrator(Block):
 
 
 class ZeroOrderHold(Block):
-    """連続入力をサンプル点で取り込み、次サンプルまで状態として保持する。
+    """state-based 離散ホールド。**ADR-0014 適用後は ``UnitDelay`` と完全同一**。
 
-    実装は state-based: ``y[k] = x[k]``、``x[k+1] = u(t_k)``。
-    ``direct_feedthrough=False`` のため閉ループ内の代数ループ切断にも使える。
+    実装は ``y[k] = x[k]``、``update`` で ``x[k+1] = u[k]``。これは Simulink の
+    Zero Order Hold (``direct_feedthrough=True``、サンプル時刻で u(t_k) を即座に
+    反映、初回 t=0 でも ``y(0) = u(0)``) と異なり、1 サンプル遅延する
+    (= UnitDelay と同一の semantics)。
+
+    Simulink ZOH 互換の即時反映挙動が必要な場合は ``ZeroOrderHoldDirect`` を
+    使用すること。本 class は Phase 3 で ``DeprecationWarning`` 発出、
+    Phase 4 で削除予定 (ADR-0014 §(4))。
 
     Args:
         sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
         x0: 初回サンプル前 (``t=0`` 時点) の出力値。
-
-    Note:
-        Simulink の Zero Order Hold (``direct_feedthrough=True``、サンプル点で
-        即座に出力反映) とは挙動が異なり、本実装は ``UnitDelay`` と等価
-        (1 サンプル分遅延する)。真の ZOH (``direct_feedthrough=True`` 版) は
-        Phase 2 で追加予定。命名変更も Phase 2 の破壊的変更候補。
     """
 
     def __init__(
@@ -154,6 +164,80 @@ class ZeroOrderHold(Block):
         self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        return np.array([x[0]])
+
+    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        return np.array([u[0]])
+
+
+# ADR-0014 §(3): サンプル時刻判定の許容誤差。整数比カウンタで決まる
+# `_resolved_sample_time` の倍数からのずれを許容する閾値。Simulator の
+# `_SAMPLE_TIME_RATIO_TOL = 1e-9` と整合。
+_ZOH_SAMPLE_TOL = 1e-9
+
+
+class ZeroOrderHoldDirect(Block):
+    """Simulink ZOH 互換 ``y(t_k) = u(t_k)`` の即時反映ホールド (ADR-0014 §(3))。
+
+    サンプル時刻 ``t_k`` で現入力 ``u(t_k)`` を出力に即時反映し、次サンプル時刻まで
+    保持する。連続→ZOHDirect→連続のフローでも、中間時刻 ``t ∈ (t_k, t_{k+1})``
+    では前回サンプル値を保持する (= 階段関数として下流の連続ブロックに渡る)。
+
+    実装 (ADR-0014 §(3)):
+      * ``direct_feedthrough=True``、``n_states=1``
+      * ``output(t, x, u)``: ``t`` が ``_resolved_sample_time`` の整数倍 (tol 1e-9)
+        ならば現入力 ``u`` を返し、それ以外 (中間時刻) は前回保存値 ``x`` を返す
+      * ``update(t, x, u)``: サンプル時刻でのみ呼ばれ、``x_next = u`` で保存
+
+    UnitDelay との違い: ZOHDirect は遅延が無い (``y(t_0) = u(t_0)``)。UnitDelay は
+    1 サンプル遅延する (``y(t_0) = x0``、``y(t_{k+1}) = u(t_k)``)。
+
+    Args:
+        sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
+        x0: 初回サンプル前のフォールバック値。t=0 がサンプル時刻なら直ちに
+            ``u(0)`` で上書きされるため、通常はテスト結果に影響しない。
+    """
+
+    def __init__(
+        self,
+        *,
+        sample_time: float,
+        x0: float = 0.0,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        super().__init__(
+            id=id,
+            name=name,
+            n_inputs=1,
+            n_outputs=1,
+            n_states=1,
+            direct_feedthrough=True,
+            sample_time=sample_time,
+        )
+        self.x0 = np.array([float(x0)])
+        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
+
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        ts = self._resolved_sample_time
+        if ts is None or ts <= 0.0:
+            # サンプル時間未解決時は素朴 fallback (継承未解決などの境界条件)。
+            # silent failure を避けるため警告ログを残す (Simulator 経由なら通常は発生しない)。
+            _zohd_logger.warning(
+                "ZeroOrderHoldDirect %r: _resolved_sample_time not set, "
+                "falling back to direct passthrough (output=u). "
+                "This is expected only outside Simulator.run().",
+                self.id,
+            )
+            return np.array([u[0]])
+        n = round(t / ts)
+        # 許容誤差は `ts` と `|t|` の双方を下限に持たせる:
+        # - `ts` を下限にすることで、短い sample_time × 大きな t で誤判定を防ぐ
+        # - `|t|` を上限の一部に持たせることで、t が大きい時の浮動小数累積誤差に対応
+        if abs(t - n * ts) <= _ZOH_SAMPLE_TOL * max(ts, abs(t)):
+            # サンプル時刻ぴったり: 現入力を即時反映
+            return np.array([u[0]])
+        # 中間時刻: 前回サンプル値を保持
         return np.array([x[0]])
 
     def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:

@@ -5,6 +5,7 @@ from .discrete import (
     DiscreteTransferFunction,
     UnitDelay,
     ZeroOrderHold,
+    ZeroOrderHoldDirect,
 )
 from .logic import LogicalOperator, RelationalOperator
 from .mathops import Abs, Divide, Gain, MinMax, Product, Saturation, Sign, Sum
@@ -41,4 +42,5 @@ __all__ = [
     "TransferFunction",
     "UnitDelay",
     "ZeroOrderHold",
+    "ZeroOrderHoldDirect",
 ]

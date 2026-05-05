@@ -1,4 +1,4 @@
-__version__ = "0.2.0"  # ADR-0013 §V-A — Phase 2 完了 (2026-05-06)
+__version__ = "0.3.0"  # ADR-0014 — Simulator update timing fix (BREAKING, 2026-05-06)
 
 from .core.block import Block
 from .core.decorator import block

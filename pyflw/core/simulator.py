@@ -366,12 +366,18 @@ class Simulator:
     def run(self) -> None:
         """シミュレーションを実行する。
 
-        ハイブリッド (連続+離散) ループ:
-            1. 出力計算 2 パス (時刻 t)
-            2. 連続部分を ``solve_ivp`` で 1 ステップ積分 ``[t, t+dt_base]``
-            3. 新時刻で出力再計算
-            4. 該当する離散ブロックの ``update`` (double buffering で一斉書き換え)
-            5. ``record`` (Scope 等)
+        ハイブリッド (連続+離散) ループ (ADR-0014 §(1)):
+
+        - [A]  出力計算 2 パス (現時刻 ``t_k``、現状態 ``x_cont`` / ``discrete_state``)
+        - [E]  ``record(t_k, inputs)`` (Scope 等)
+        - [A'] 該当する離散ブロックの ``update(t_k, x, inputs[b])``
+          (= 現サンプル時刻 ``t_k`` と現サンプル時刻の入力 ``u(t_k)`` で呼ぶ。
+          double buffering で一斉書き換え)
+        - [B]  連続部分を ``solve_ivp`` で 1 ステップ進める ``[t_k, t_{k+1}]``
+
+        ADR-0014 適用前 (= ADR-0002/0005 §(4) 旧版) では ``update`` を ``t_new`` の
+        入力で呼んでいたが、それでは UnitDelay の semantics (``y[k+1] = u[k]``) が
+        満たされなかった。本実装は標準離散時間 LTI semantics に整合する。
         """
         order = self._execution_order()
         self._resolve_sample_times(order)
@@ -407,7 +413,9 @@ class Simulator:
 
         for k in range(n_steps + 1):
             t = k * dt_base
+            # [A] 出力計算 2 パス (現時刻 t_k)
             outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
+            # [E] record (Scope 等)
             self._record(t, inputs)
 
             # ADR-0011 §(4): 各ステップ後の進捗 hook。``False`` 戻り値または
@@ -422,6 +430,22 @@ class Simulator:
             if k == n_steps:
                 break
 
+            # [A'] 離散ブロックの状態更新 (ADR-0014 §(1))。
+            # update は **現サンプル時刻 t_k で現サンプル時刻の入力 inputs[b] (= u(t_k))**
+            # を使って呼ぶ。double buffering でループ末尾まで他ブロックは前ステップ状態を見る。
+            if discrete_state:
+                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
+                for b in order:
+                    if b not in discrete_state:
+                        continue
+                    if (k + 1) % b._step_ratio == 0:
+                        x_b = discrete_state[b]
+                        u_b = inputs.get(b, np.zeros(b.n_inputs))
+                        next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
+                discrete_state = next_discrete
+
+            # [B] 連続部分の積分 [t_k, t_{k+1}]。f_continuous のクロージャは更新後の
+            # discrete_state を参照する (= 離散→連続の ZOH 的なフロー)。
             if n_total > 0:
                 t_next = (k + 1) * dt_base
                 sol = solve_ivp(
@@ -437,20 +461,6 @@ class Simulator:
                 if not sol.success:
                     raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
                 x_cont = sol.y[:, -1]
-
-            t_new = (k + 1) * dt_base
-            _, inputs_new = self._step(t_new, x_cont, discrete_state, order, layout)
-
-            if discrete_state:
-                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
-                for b in order:
-                    if b not in discrete_state:
-                        continue
-                    if (k + 1) % b._step_ratio == 0:
-                        x_b = discrete_state[b]
-                        u_b = inputs_new.get(b, np.zeros(b.n_inputs))
-                        next_discrete[b] = np.array(b.update(t_new, x_b, u_b), dtype=float)
-                discrete_state = next_discrete
 
     def _record(self, t: float, inputs: dict[Block, np.ndarray]) -> None:
         for b in self.blocks:

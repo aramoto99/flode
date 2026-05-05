@@ -132,11 +132,12 @@ class TestZeroOrderHold:
     def test_holds_input_between_samples(self):
         """連続 Sine を ZOH でサンプリング。
 
-        実装は状態ベース (``output = x``、``update`` 時に ``x_next = u``) のため、
-        ADR-0002 §(4) のループ順序 ``output → update`` から、
-        ``values[k]`` (k>=1) は ``sin(2π * times[k])`` と一致する
-        (``update`` がループ末尾で次サンプル ``t_new`` の入力を取り込んでから
-        次ループ冒頭の ``output`` が返すため)。``values[0]`` は ``x0``。
+        ADR-0014 適用後、本実装は ``UnitDelay`` と完全同一の semantics
+        (1 サンプル遅延)。``values[k]`` for k>=1 は ``sin(2π * times[k-1])``
+        (= 1 サンプル遅延した過去のサンプル値)。``values[0]`` は ``x0``。
+
+        Note: 真の Simulink ZOH 互換挙動 (``y(t_k) = u(t_k)``) を必要とする場合は
+        ``ZeroOrderHoldDirect`` を使うこと (ADR-0014 §(3))。
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         src = sim.add(Sine(amplitude=1.0, frequency=1.0, id="sine"))
@@ -150,9 +151,9 @@ class TestZeroOrderHold:
         times = np.array(scope.times)
         # k=0: x0=0
         assert values[0] == pytest.approx(0.0)
-        # k>=1: その時刻のサンプリング値が保持される
-        assert values[1] == pytest.approx(np.sin(2 * np.pi * times[1]), abs=1e-9)
-        assert values[2] == pytest.approx(np.sin(2 * np.pi * times[2]), abs=1e-9)
+        # k>=1: 1 サンプル遅延 (= 前サンプル時刻 times[k-1] での入力値)
+        assert values[1] == pytest.approx(np.sin(2 * np.pi * times[0]), abs=1e-9)
+        assert values[2] == pytest.approx(np.sin(2 * np.pi * times[1]), abs=1e-9)
 
 
 class TestDiscreteIntegratorErrors:

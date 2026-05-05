@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-06
+
+### Changed (BREAKING)
+- **Simulator loop semantics fix (ADR-0014)**: `update(t, x, u)` is now invoked
+  with the current sample time `t_k` and the input sampled at `t_k`
+  (`u(t_k)`), not the next sample time `t_new = (k+1)*dt_base`. This brings
+  numerical results of all discrete blocks in line with standard discrete-time
+  LTI semantics (`x[k+1] = f(x[k], u[k])`) and Simulink convention. As a
+  consequence, **numerical results of `UnitDelay`, `ZeroOrderHold`,
+  `DiscreteIntegrator`, `DiscreteStateSpace`, `DiscreteTransferFunction`
+  change** when `sample_time = dt_base` (single-rate). Specifically:
+  - `UnitDelay` now produces a genuine 1-sample delay `y[k+1] = u[k]` (was
+    effectively 0-sample delay before).
+  - `ZeroOrderHold` becomes behaviorally identical to `UnitDelay`
+    (1-sample-delayed sample-and-hold). For Simulink-compatible immediate
+    reflection (`y(t_k) = u(t_k)`), use the new `ZeroOrderHoldDirect` block.
+  - `DiscreteIntegrator` now matches the standard forward Euler
+    `x[k+1] = x[k] + T*g*u[k]` (the previous version had a 1-step index shift).
+  - `DiscreteStateSpace` / `DiscreteTransferFunction` now match the standard
+    discrete-time LTI form `x[k+1] = A x[k] + B u[k]`.
+- Models created with v0.2.0 will produce different numerical outputs at
+  sample boundaries when discrete blocks are involved. Continuous-only models
+  (e.g. `examples/spring_mass_damper.py`) are unaffected.
+- ADR-0005 §(4) is partially superseded by ADR-0014 §(1). ADR-0002 §(4) is
+  updated to reflect the new loop. ADR-0010 §(5)(6) erratum: the prior claim
+  that `ZeroOrderHold` was equivalent to `UnitDelay` was incorrect; with
+  ADR-0014 it now becomes equivalent. The Phase 3 deferral of
+  `ZeroOrderHoldDirect` is withdrawn.
+
+### Added
+- `pyflw.blocks.ZeroOrderHoldDirect`: true Simulink Zero-Order Hold
+  (`direct_feedthrough=True`, `y(t_k) = u(t_k)` immediate reflection,
+  hold between sample times). See ADR-0014 §(3).
+- `tests/test_simulink_semantics.py`: regression tests pinning the
+  Simulink-compatible semantics of all discrete blocks (`UnitDelay`,
+  `ZeroOrderHold`, `ZeroOrderHoldDirect`, `DiscreteIntegrator`,
+  `DiscreteStateSpace`, `DiscreteTransferFunction`).
+- `.claude/docs/adr/0014-simulator-update-timing-fix.md` (Accepted, 2026-05-06).
+
+### Deprecation notice
+- `pyflw.blocks.ZeroOrderHold` is now behaviorally identical to `UnitDelay`
+  and is scheduled for `DeprecationWarning` in Phase 3 and removal in Phase 4.
+  Migrate to `UnitDelay` (for delayed sample-and-hold) or `ZeroOrderHoldDirect`
+  (for immediate-reflection ZOH).
+
+### Known limitations
+- For multi-rate discrete blocks (`sample_time > dt_base`), the new loop
+  samples `u` at `t = (n*step_ratio - 1) * dt_base` instead of the
+  conceptual sample boundary `t = n*sample_time`, leading to a one-`dt_base`
+  off-by-one shift compared to Simulink. A complete fix requires a 2-state
+  refactor of `UnitDelay` / `ZeroOrderHold` and is deferred to a future ADR.
+  For now, prefer `sample_time = dt_base` (single-rate) for full Simulink
+  compatibility.
+
 ## [0.2.0] - 2026-05-06
 
 ### Added
@@ -73,6 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphinx documentation initial release: quickstart, blocks reference,
   decorator guide, API reference.
 
-[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aramoto99/pyflw/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aramoto99/pyflw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aramoto99/pyflw/releases/tag/v0.1.0
