@@ -84,9 +84,7 @@ def block(
                 "blocks in Phase 1 (e.g. `class MyBlock(Block): ...`)."
             )
         if not callable(target):
-            raise BlockSpecError(
-                f"@block expects a function or class, got {type(target).__name__}"
-            )
+            raise BlockSpecError(f"@block expects a function or class, got {type(target).__name__}")
         return _build_class_from_function(
             target,
             class_name=name,
@@ -113,9 +111,7 @@ def _build_class_from_function(
     direct_feedthrough_override: bool | None,
 ) -> type[Block]:
     if not isinstance(n_states, int) or n_states < 0:
-        raise BlockSpecError(
-            f"@block: states must be a non-negative int, got {n_states!r}"
-        )
+        raise BlockSpecError(f"@block: states must be a non-negative int, got {n_states!r}")
 
     sig = inspect.signature(func)
     try:
@@ -129,13 +125,9 @@ def _build_class_from_function(
     kw_only_params: list[inspect.Parameter] = []
     for p in sig.parameters.values():
         if p.kind == inspect.Parameter.VAR_POSITIONAL:
-            raise BlockSpecError(
-                f"@block: function {func.__name__!r} cannot have *args"
-            )
+            raise BlockSpecError(f"@block: function {func.__name__!r} cannot have *args")
         if p.kind == inspect.Parameter.VAR_KEYWORD:
-            raise BlockSpecError(
-                f"@block: function {func.__name__!r} cannot have **kwargs"
-            )
+            raise BlockSpecError(f"@block: function {func.__name__!r} cannot have **kwargs")
         if p.kind == inspect.Parameter.KEYWORD_ONLY:
             kw_only_params.append(p)
         else:
@@ -178,9 +170,7 @@ def _build_class_from_function(
             _X_PARAM_RECOMMENDED,
         )
 
-    n_inputs, u_arg_kind = _resolve_input_count(
-        u_param, type_hints, inputs_override, func.__name__
-    )
+    n_inputs, u_arg_kind = _resolve_input_count(u_param, type_hints, inputs_override, func.__name__)
 
     return_hint = type_hints.get("return")
     if has_state:
@@ -206,9 +196,7 @@ def _build_class_from_function(
         default = None if required else p.default
         params_spec.append((p.name, default, ptype, required))
 
-    cls_name = class_name if class_name is not None else _to_pascal_case(
-        func.__name__
-    )
+    cls_name = class_name if class_name is not None else _to_pascal_case(func.__name__)
 
     return _make_block_class(
         func=func,
@@ -242,26 +230,17 @@ def _resolve_input_count(
     func_name: str,
 ) -> tuple[int, str]:
     if override is not None:
-        if (
-            not isinstance(override, int)
-            or isinstance(override, bool)
-            or override < 0
-        ):
-            raise BlockSpecError(
-                f"@block: inputs must be a non-negative int, got {override!r}"
-            )
+        if not isinstance(override, int) or isinstance(override, bool) or override < 0:
+            raise BlockSpecError(f"@block: inputs must be a non-negative int, got {override!r}")
         if u_param is None and override > 0:
             raise BlockSpecError(
-                f"@block: {func_name!r} has no `u` parameter but inputs={override} "
-                f"was specified"
+                f"@block: {func_name!r} has no `u` parameter but inputs={override} was specified"
             )
         return override, ("ndarray" if override > 0 else "none")
     if u_param is None:
         return 0, "none"
     hint = type_hints.get(u_param.name)
-    return _infer_count_from_hint(
-        hint, role="inputs", func_name=func_name, arg_name=u_param.name
-    )
+    return _infer_count_from_hint(hint, role="inputs", func_name=func_name, arg_name=u_param.name)
 
 
 def _resolve_output_count(
@@ -271,11 +250,7 @@ def _resolve_output_count(
     return_annotated: bool,
 ) -> tuple[int, str]:
     if override is not None:
-        if (
-            not isinstance(override, int)
-            or isinstance(override, bool)
-            or override < 1
-        ):
+        if not isinstance(override, int) or isinstance(override, bool) or override < 1:
             raise BlockSpecError(
                 f"@block: outputs must be a positive int, got {override!r}. "
                 f"Note: sink-style blocks (n_outputs=0) are not supported by "
@@ -409,9 +384,7 @@ def _make_block_class(
             if pname in kwargs:
                 value = kwargs.pop(pname)
             elif required:
-                raise BlockSpecError(
-                    f"{cls_name}: missing required parameter {pname!r}"
-                )
+                raise BlockSpecError(f"{cls_name}: missing required parameter {pname!r}")
             else:
                 value = default
             if ptype is not None:
@@ -439,59 +412,48 @@ def _make_block_class(
         if has_state and _RESERVED_X0 in bound:
             self.x0 = _coerce_x0(cls_name, bound[_RESERVED_X0], n_states)
 
-    def _call_func(
-        self: Block, t: float, x: np.ndarray, u: np.ndarray
-    ) -> Any:
+    def _call_inner(t: float, x: np.ndarray, u: np.ndarray, params: dict[str, Any]) -> Any:
         call_args: list[Any] = [float(t)]
         if has_state:
             call_args.append(x)
         if has_u_in_func:
             call_args.append(_pack_u_for_func(u, u_arg_kind, n_inputs))
-        return func(*call_args, **self._params)
+        return func(*call_args, **params)
 
-    def output(
-        self: Block, t: float, x: np.ndarray, u: np.ndarray
-    ) -> np.ndarray:
-        result = self._call_func(t, x, u)
+    def output(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        result = _call_inner(t, x, u, self._params)
         if has_state:
             y_raw, _ = _split_state_result(result, cls_name)
         else:
             y_raw = result
         return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
 
-    def derivative(
-        self: Block, t: float, x: np.ndarray, u: np.ndarray
-    ) -> np.ndarray:
+    def derivative(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         if not has_state:
             return np.zeros(0)
         # Simulator は連続ブロック (resolved_sample_time is None) のみ derivative
         # を呼ぶが、継承解決前/直接呼び出しに備えて自衛: 離散モードなら no-op。
         if _effective_is_discrete(self):
             return np.zeros(n_states)
-        result = self._call_func(t, x, u)
+        result = _call_inner(t, x, u, self._params)
         _, x_change = _split_state_result(result, cls_name)
         return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
 
-    def update(
-        self: Block, t: float, x: np.ndarray, u: np.ndarray
-    ) -> np.ndarray:
+    def update(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         if not has_state:
             return x
         if not _effective_is_discrete(self):
             # 連続モードでは update は no-op (Block 基底デフォルトと同じ)
             return x
-        result = self._call_func(t, x, u)
+        result = _call_inner(t, x, u, self._params)
         _, x_change = _split_state_result(result, cls_name)
-        return _coerce_state_change(
-            x_change, n_states, cls_name, role="x_next"
-        )
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_next")
 
     namespace: dict[str, Any] = {
         "__init__": __init__,
         "__module__": getattr(func, "__module__", None) or "pyflw.decorator",
         "__qualname__": cls_name,
         "__doc__": func.__doc__,
-        "_call_func": _call_func,
         "output": output,
         "derivative": derivative,
         "update": update,
@@ -501,9 +463,7 @@ def _make_block_class(
     return type(cls_name, (Block,), namespace)
 
 
-def _validate_param_type(
-    cls_name: str, pname: str, value: Any, ptype: Any
-) -> None:
+def _validate_param_type(cls_name: str, pname: str, value: Any, ptype: Any) -> None:
     """パラメータ値の型検証。``numbers.Real`` で float/int を広く受ける (ADR-0003 Risk 5)。
 
     bool は ``numbers.Real`` のサブクラスだが、float 注釈では拒否する
@@ -512,29 +472,25 @@ def _validate_param_type(
     if ptype is float:
         if not isinstance(value, numbers.Real) or isinstance(value, bool):
             raise BlockSpecError(
-                f"{cls_name}: parameter {pname!r} must be a real number, "
-                f"got {type(value).__name__}"
+                f"{cls_name}: parameter {pname!r} must be a real number, got {type(value).__name__}"
             )
         return
     if ptype is int:
         if not isinstance(value, numbers.Integral) or isinstance(value, bool):
             raise BlockSpecError(
-                f"{cls_name}: parameter {pname!r} must be an int, "
-                f"got {type(value).__name__}"
+                f"{cls_name}: parameter {pname!r} must be an int, got {type(value).__name__}"
             )
         return
     if ptype is bool:
         if not isinstance(value, bool):
             raise BlockSpecError(
-                f"{cls_name}: parameter {pname!r} must be bool, "
-                f"got {type(value).__name__}"
+                f"{cls_name}: parameter {pname!r} must be bool, got {type(value).__name__}"
             )
         return
     if ptype is str:
         if not isinstance(value, str):
             raise BlockSpecError(
-                f"{cls_name}: parameter {pname!r} must be str, "
-                f"got {type(value).__name__}"
+                f"{cls_name}: parameter {pname!r} must be str, got {type(value).__name__}"
             )
         return
     # その他の型 (np.ndarray, list, ユーザー定義 class 等) は素朴に isinstance
@@ -543,31 +499,22 @@ def _validate_param_type(
     try:
         if not isinstance(value, ptype):
             raise BlockSpecError(
-                f"{cls_name}: parameter {pname!r} must be {ptype}, "
-                f"got {type(value).__name__}"
+                f"{cls_name}: parameter {pname!r} must be {ptype}, got {type(value).__name__}"
             )
     except TypeError:
         return
 
 
 def _coerce_x0(cls_name: str, x0_value: Any, n_states: int) -> np.ndarray:
-    if (
-        n_states == 1
-        and isinstance(x0_value, numbers.Real)
-        and not isinstance(x0_value, bool)
-    ):
+    if n_states == 1 and isinstance(x0_value, numbers.Real) and not isinstance(x0_value, bool):
         return np.array([float(x0_value)])
     arr = np.atleast_1d(np.asarray(x0_value, dtype=float))
     if arr.shape != (n_states,):
-        raise BlockSpecError(
-            f"{cls_name}: x0 has shape {arr.shape}, expected ({n_states},)"
-        )
+        raise BlockSpecError(f"{cls_name}: x0 has shape {arr.shape}, expected ({n_states},)")
     return arr
 
 
-def _pack_u_for_func(
-    u: np.ndarray, kind: str, n_inputs: int
-) -> Any:
+def _pack_u_for_func(u: np.ndarray, kind: str, n_inputs: int) -> Any:
     if kind == "scalar":
         return float(u[0])
     if kind == "tuple":
@@ -584,14 +531,11 @@ def _split_state_result(result: Any, cls_name: str) -> tuple[Any, Any]:
     return result[0], result[1]
 
 
-def _pack_y(
-    y_raw: Any, kind: str, n_outputs: int, cls_name: str
-) -> np.ndarray:
+def _pack_y(y_raw: Any, kind: str, n_outputs: int, cls_name: str) -> np.ndarray:
     if kind == "tuple":
         if not isinstance(y_raw, tuple):
             raise BlockSpecError(
-                f"{cls_name}: function declared tuple output, returned "
-                f"{type(y_raw).__name__}"
+                f"{cls_name}: function declared tuple output, returned {type(y_raw).__name__}"
             )
         arr = np.array(y_raw, dtype=float)
     else:
@@ -599,19 +543,15 @@ def _pack_y(
         arr = np.atleast_1d(np.asarray(y_raw, dtype=float))
     if arr.shape != (n_outputs,):
         raise BlockSpecError(
-            f"{cls_name}: output shape {arr.shape} does not match expected "
-            f"({n_outputs},)"
+            f"{cls_name}: output shape {arr.shape} does not match expected ({n_outputs},)"
         )
     return arr
 
 
-def _coerce_state_change(
-    value: Any, n_states: int, cls_name: str, *, role: str
-) -> np.ndarray:
+def _coerce_state_change(value: Any, n_states: int, cls_name: str, *, role: str) -> np.ndarray:
     arr = np.atleast_1d(np.asarray(value, dtype=float))
     if arr.shape != (n_states,):
         raise BlockSpecError(
-            f"{cls_name}: {role} shape {arr.shape} does not match expected "
-            f"({n_states},)"
+            f"{cls_name}: {role} shape {arr.shape} does not match expected ({n_states},)"
         )
     return arr

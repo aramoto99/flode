@@ -16,7 +16,7 @@ class Constant(Block):
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
         self.value = float(value)
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.value])
 
 
@@ -35,7 +35,7 @@ class Step(Block):
         self.initial_value = float(initial_value)
         self.final_value = float(final_value)
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.final_value if t >= self.step_time else self.initial_value])
 
 
@@ -54,7 +54,5 @@ class Sine(Block):
         self.frequency = float(frequency)
         self.phase = float(phase)
 
-    def output(self, t, x, u):
-        return np.array(
-            [self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase)]
-        )
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        return np.array([self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase)])

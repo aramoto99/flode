@@ -49,9 +49,13 @@ def test_spring_mass_damper_matches_analytical():
         return [xd, (1.0 - c * xd - k * x) / m]
 
     sol = solve_ivp(
-        f, (0.0, t_end), [0.0, 0.0],
+        f,
+        (0.0, t_end),
+        [0.0, 0.0],
         t_eval=np.array(scope.times),
-        method="RK45", rtol=1e-8, atol=1e-10,
+        method="RK45",
+        rtol=1e-8,
+        atol=1e-10,
     )
     expected_x = sol.y[0]
     expected_xd = sol.y[1]

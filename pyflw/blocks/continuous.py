@@ -23,8 +23,8 @@ class Integrator(Block):
         )
         self.x0 = np.array([float(x0)])
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
 
-    def derivative(self, t, x, u):
+    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([u[0]])

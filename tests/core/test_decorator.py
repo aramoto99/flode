@@ -15,7 +15,6 @@ import pytest
 from pyflw import BlockSpecError, Simulator, block
 from pyflw.blocks import Scope
 
-
 # ---------------------------------------------------------------
 # 状態なし combinational
 # ---------------------------------------------------------------
@@ -46,9 +45,7 @@ def test_combinational_no_args_decorator_form():
         return 2.0 * u
 
     instance = double()
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.array([5.0])), [10.0]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([5.0])), [10.0])
 
 
 def test_combinational_default_param_value():
@@ -57,9 +54,7 @@ def test_combinational_default_param_value():
         return k * u
 
     instance = gain()
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.array([1.0])), [4.0]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([1.0])), [4.0])
 
 
 # ---------------------------------------------------------------
@@ -69,9 +64,7 @@ def test_combinational_default_param_value():
 
 def test_mimo_tuple_annotation_2_in_2_out():
     @block
-    def splitter(
-        t: float, u: tuple[float, float]
-    ) -> tuple[float, float]:
+    def splitter(t: float, u: tuple[float, float]) -> tuple[float, float]:
         a, b = u
         return a + b, a - b
 
@@ -91,9 +84,7 @@ def test_mimo_tuple_3_inputs():
     instance = sum3()
     assert instance.n_inputs == 3
     assert instance.n_outputs == 1
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.array([1.0, 2.0, 3.0])), [6.0]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([1.0, 2.0, 3.0])), [6.0])
 
 
 # ---------------------------------------------------------------
@@ -109,9 +100,7 @@ def test_source_no_u_argument():
     instance = constant(value=2.5)
     assert instance.n_inputs == 0
     assert instance.n_outputs == 1
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.zeros(0)), [2.5]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.zeros(0)), [2.5])
 
 
 def test_source_uses_t():
@@ -120,9 +109,7 @@ def test_source_uses_t():
         return slope * t
 
     instance = ramp(slope=2.0)
-    np.testing.assert_allclose(
-        instance.output(3.0, np.zeros(0), np.zeros(0)), [6.0]
-    )
+    np.testing.assert_allclose(instance.output(3.0, np.zeros(0), np.zeros(0)), [6.0])
 
 
 # ---------------------------------------------------------------
@@ -148,9 +135,7 @@ def test_continuous_state_integrator_like():
     xd = instance.derivative(0.0, np.array([2.0]), np.array([3.0]))
     np.testing.assert_allclose(xd, [3.0])
     # 連続なので update は no-op (x をそのまま返す)
-    np.testing.assert_allclose(
-        instance.update(0.0, np.array([2.0]), np.array([3.0])), [2.0]
-    )
+    np.testing.assert_allclose(instance.update(0.0, np.array([2.0]), np.array([3.0])), [2.0])
 
 
 def test_continuous_state_explicit_direct_feedthrough_true():
@@ -173,9 +158,7 @@ def test_continuous_state_explicit_direct_feedthrough_true():
 
 def test_discrete_state_unit_delay_like():
     @block(states=1, sample_time=0.01)
-    def my_delay(
-        t: float, x: np.ndarray, u: float, *, x0: float = 0.0
-    ) -> tuple[float, np.ndarray]:
+    def my_delay(t: float, x: np.ndarray, u: float, *, x0: float = 0.0) -> tuple[float, np.ndarray]:
         return x[0], np.array([u])
 
     instance = my_delay(x0=1.0)
@@ -201,12 +184,8 @@ def test_multiple_instances_have_independent_params():
 
     g1 = gain(k=2.0)
     g2 = gain(k=3.0)
-    np.testing.assert_allclose(
-        g1.output(0.0, np.zeros(0), np.array([1.0])), [2.0]
-    )
-    np.testing.assert_allclose(
-        g2.output(0.0, np.zeros(0), np.array([1.0])), [3.0]
-    )
+    np.testing.assert_allclose(g1.output(0.0, np.zeros(0), np.array([1.0])), [2.0])
+    np.testing.assert_allclose(g2.output(0.0, np.zeros(0), np.array([1.0])), [3.0])
     assert g1._params == {"k": 2.0}
     assert g2._params == {"k": 3.0}
 
@@ -242,9 +221,7 @@ def test_param_type_validation_float_accepts_int():
         return k * u
 
     instance = gain(k=2)  # int
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.array([3.0])), [6.0]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([3.0])), [6.0])
 
 
 def test_param_type_validation_rejects_str_for_float():
@@ -305,9 +282,7 @@ def test_inputs_override_with_unannotated_u():
 
     instance = sum3()
     assert instance.n_inputs == 3
-    np.testing.assert_allclose(
-        instance.output(0.0, np.zeros(0), np.array([1.0, 2.0, 3.0])), [6.0]
-    )
+    np.testing.assert_allclose(instance.output(0.0, np.zeros(0), np.array([1.0, 2.0, 3.0])), [6.0])
 
 
 def test_outputs_inference_warns_when_no_return_annotation(caplog):
@@ -501,9 +476,7 @@ def test_states_greater_than_one_with_vector_x0():
     """``states>1`` でベクトル ``x0`` を受けられる (調和振動子)。"""
 
     @block(states=2, direct_feedthrough=False)
-    def harmonic(
-        t: float, x: np.ndarray, u: float, *, x0: np.ndarray
-    ) -> tuple[float, np.ndarray]:
+    def harmonic(t: float, x: np.ndarray, u: float, *, x0: np.ndarray) -> tuple[float, np.ndarray]:
         # x[0] = position, x[1] = velocity
         # x_dot = (velocity, -position) → simple harmonic oscillator
         return x[0], np.array([x[1], -x[0]])
@@ -520,9 +493,7 @@ def test_states_greater_than_one_with_vector_x0():
 
 def test_states_x0_shape_mismatch_raises():
     @block(states=2, direct_feedthrough=False)
-    def two_state(
-        t: float, x: np.ndarray, u: float, *, x0: np.ndarray
-    ) -> tuple[float, np.ndarray]:
+    def two_state(t: float, x: np.ndarray, u: float, *, x0: np.ndarray) -> tuple[float, np.ndarray]:
         return x[0], np.zeros(2)
 
     with pytest.raises(BlockSpecError, match="x0 has shape"):
@@ -560,9 +531,7 @@ def test_states_return_tuple_second_element_must_be_ndarray():
     with pytest.raises(BlockSpecError, match="np.ndarray"):
 
         @block(states=1)
-        def bad(
-            t: float, x: np.ndarray, u: float
-        ) -> tuple[float, float]:
+        def bad(t: float, x: np.ndarray, u: float) -> tuple[float, float]:
             return x[0], 0.0  # type: ignore[return-value]
 
 

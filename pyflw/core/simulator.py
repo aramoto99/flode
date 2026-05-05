@@ -56,9 +56,7 @@ class Simulator:
         self.solver = solver
         self.rtol = rtol
         self.atol = atol
-        self.dt_base_hint: float | None = (
-            None if dt_base is None else float(dt_base)
-        )
+        self.dt_base_hint: float | None = None if dt_base is None else float(dt_base)
         self.blocks: list[Block] = []
         self._blocks_by_id: dict[str, Block] = {}
         self._type_counters: dict[str, int] = {}
@@ -101,9 +99,7 @@ class Simulator:
         try:
             return self._blocks_by_id[block_id]
         except KeyError as e:
-            raise UnknownBlockIdError(
-                f"No block registered with id {block_id!r}"
-            ) from e
+            raise UnknownBlockIdError(f"No block registered with id {block_id!r}") from e
 
     def rename(self, old_id: str, new_id: str) -> None:
         """登録済みブロックの ID をリネームする。
@@ -127,9 +123,7 @@ class Simulator:
             return x
         if isinstance(x, str):
             return self.get_block(x)
-        raise TypeError(
-            f"Expected Block or str (block id), got {type(x).__name__}"
-        )
+        raise TypeError(f"Expected Block or str (block id), got {type(x).__name__}")
 
     def connect(
         self,
@@ -176,9 +170,7 @@ class Simulator:
                     ready.append(child)
         if len(order) != len(self.blocks):
             remaining = [b.id for b in self.blocks if b not in order]
-            raise AlgebraicLoopError(
-                f"Algebraic loop detected involving: {remaining}"
-            )
+            raise AlgebraicLoopError(f"Algebraic loop detected involving: {remaining}")
         return order
 
     def _resolve_sample_times(self, order: list[Block]) -> None:
@@ -205,9 +197,7 @@ class Simulator:
                 continue
             if st == -1.0:
                 upstream: list[float | None] = [
-                    src[0]._resolved_sample_time
-                    for src in b.input_sources
-                    if src is not None
+                    src[0]._resolved_sample_time for src in b.input_sources if src is not None
                 ]
                 if not upstream:
                     raise BlockSpecError(
@@ -220,8 +210,7 @@ class Simulator:
                     distinct = sorted(set(discrete))
                     if len(distinct) > 1:
                         _logger.warning(
-                            "Block %r has multiple upstream sample_times %s; "
-                            "inheriting min=%g",
+                            "Block %r has multiple upstream sample_times %s; inheriting min=%g",
                             b.id,
                             distinct,
                             distinct[0],
@@ -237,9 +226,7 @@ class Simulator:
                         )
                     b._resolved_sample_time = float(distinct[0])
                 continue
-            raise BlockSpecError(
-                f"Block {b.id!r}: invalid sample_time={st}"
-            )
+            raise BlockSpecError(f"Block {b.id!r}: invalid sample_time={st}")
 
     def _compute_dt_base(self) -> float:
         """基本ステップ ``dt_base`` と各ブロックの ``_step_ratio`` を決定する。"""
@@ -257,7 +244,7 @@ class Simulator:
             ratios = [t / dt_base_discrete for t in discrete_periods]
             non_integer = [
                 (t, r)
-                for t, r in zip(discrete_periods, ratios)
+                for t, r in zip(discrete_periods, ratios, strict=True)
                 if abs(r - round(r)) > _SAMPLE_TIME_RATIO_TOL
             ]
             if non_integer:
@@ -271,9 +258,7 @@ class Simulator:
             dt_base = min(dt_base_discrete, self.dt)
 
         if dt_base <= 0.0:
-            raise SchedulingError(
-                f"Computed dt_base={dt_base} is non-positive"
-            )
+            raise SchedulingError(f"Computed dt_base={dt_base} is non-positive")
 
         for b in self.blocks:
             t = b._resolved_sample_time
@@ -377,24 +362,19 @@ class Simulator:
         n_steps = int(round(self.t_end / dt_base))
         if n_steps < 1:
             raise SchedulingError(
-                f"t_end={self.t_end}, dt_base={dt_base}: "
-                f"computed n_steps={n_steps} < 1"
+                f"t_end={self.t_end}, dt_base={dt_base}: computed n_steps={n_steps} < 1"
             )
 
         def f_continuous(t: float, x: np.ndarray) -> np.ndarray:
             _, ins = self._step(t, x, discrete_state, order, layout)
             xdot = np.zeros(n_total)
             for b, sl in layout:
-                xdot[sl] = np.asarray(
-                    b.derivative(t, x[sl], ins[b]), dtype=float
-                )
+                xdot[sl] = np.asarray(b.derivative(t, x[sl], ins[b]), dtype=float)
             return xdot
 
         for k in range(n_steps + 1):
             t = k * dt_base
-            outputs, inputs = self._step(
-                t, x_cont, discrete_state, order, layout
-            )
+            outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             self._record(t, inputs)
 
             if k == n_steps:
@@ -413,15 +393,11 @@ class Simulator:
                     max_step=dt_base,
                 )
                 if not sol.success:
-                    raise SolverError(
-                        f"Solver failed at t=[{t}, {t_next}]: {sol.message}"
-                    )
+                    raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
                 x_cont = sol.y[:, -1]
 
             t_new = (k + 1) * dt_base
-            _, inputs_new = self._step(
-                t_new, x_cont, discrete_state, order, layout
-            )
+            _, inputs_new = self._step(t_new, x_cont, discrete_state, order, layout)
 
             if discrete_state:
                 next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
@@ -431,9 +407,7 @@ class Simulator:
                     if (k + 1) % b._step_ratio == 0:
                         x_b = discrete_state[b]
                         u_b = inputs_new.get(b, np.zeros(b.n_inputs))
-                        next_discrete[b] = np.array(
-                            b.update(t_new, x_b, u_b), dtype=float
-                        )
+                        next_discrete[b] = np.array(b.update(t_new, x_b, u_b), dtype=float)
                 discrete_state = next_discrete
 
     def _record(self, t: float, inputs: dict[Block, np.ndarray]) -> None:

@@ -24,7 +24,6 @@ from pyflw.blocks import Constant, Gain, Scope, Sine, UnitDelay
 from pyflw.core.block import Block
 from pyflw.exceptions import AlgebraicLoopError, SchedulingError
 
-
 # ---------------------------------------------------------------------------
 # 1. エラーパス
 # ---------------------------------------------------------------------------
@@ -103,7 +102,7 @@ class TestResolveTypeError:
         """_resolve にリストを渡すと TypeError。"""
         sim = Simulator()
         src = sim.add(Constant(value=1.0, id="src"))
-        g = sim.add(Gain(k=1.0, id="g"))
+        sim.add(Gain(k=1.0, id="g"))
         with pytest.raises(TypeError, match="Expected Block or str"):
             sim.connect(src, ["g"])  # type: ignore[arg-type]
 
@@ -124,6 +123,7 @@ class TestAlgebraicLoopDetection:
     def test_algebraic_loop_error_is_pyflw_error(self):
         """AlgebraicLoopError は PyflwError を継承する。"""
         from pyflw.exceptions import PyflwError
+
         assert issubclass(AlgebraicLoopError, PyflwError)
 
     def test_algebraic_loop_error_message_contains_block_ids(self):
@@ -377,6 +377,7 @@ class TestBlockDefaultImplementations:
 
     def test_block_output_raises_not_implemented(self):
         """Block.output を override しないと NotImplementedError。"""
+
         class RawBlock(Block):
             pass
 
@@ -386,6 +387,7 @@ class TestBlockDefaultImplementations:
 
     def test_block_derivative_default_returns_zeros(self):
         """Block.derivative の default 実装は np.zeros(n_states) を返す。"""
+
         class MinimalBlock(Block):
             def output(self, t, x, u):
                 return np.zeros(0)
@@ -396,6 +398,7 @@ class TestBlockDefaultImplementations:
 
     def test_block_update_default_returns_x_unchanged(self):
         """Block.update の default 実装は x をそのまま返す ndarray。"""
+
         class MinimalBlock(Block):
             def output(self, t, x, u):
                 return np.zeros(0)
@@ -407,6 +410,7 @@ class TestBlockDefaultImplementations:
 
     def test_block_update_default_returns_ndarray(self):
         """Block.update の戻り値は ndarray (型確認)。"""
+
         class MinimalBlock(Block):
             def output(self, t, x, u):
                 return np.zeros(0)
@@ -418,6 +422,7 @@ class TestBlockDefaultImplementations:
 
     def test_block_derivative_returns_ndarray(self):
         """Block.derivative の default 戻り値は ndarray。"""
+
         class MinimalBlock(Block):
             def output(self, t, x, u):
                 return np.zeros(0)
@@ -530,9 +535,9 @@ class TestInheritedSampleTimeWarnings:
         discrete_src = sim.add(UnitDelay(sample_time=0.05, x0=0.0, id="delay"))
 
         # Gain を 2 入力に改造して両方から入力を受ける
-        from pyflw.blocks import mathops
         # Sum で 2 入力を受けて継承
         from pyflw.blocks.mathops import Sum
+
         summer = sim.add(Sum(signs="++", id="summer"))
         summer.sample_time = -1.0
 
@@ -551,8 +556,9 @@ class TestInheritedSampleTimeWarnings:
             sim.run()
 
         # 連続 + 離散の混在 warning が出ていること
-        assert any("continuous" in r.message.lower() or "mix" in r.message.lower()
-                   for r in caplog.records)
+        assert any(
+            "continuous" in r.message.lower() or "mix" in r.message.lower() for r in caplog.records
+        )
 
     def test_inherit_from_different_discrete_periods_warns_and_takes_min(self, caplog):
         """異なる離散値の上流から継承すると warning + min を採用。"""
@@ -561,6 +567,7 @@ class TestInheritedSampleTimeWarnings:
         fast = sim.add(UnitDelay(sample_time=0.02, x0=0.0, id="fast"))
 
         from pyflw.blocks.mathops import Sum
+
         summer = sim.add(Sum(signs="++", id="summer"))
         summer.sample_time = -1.0
 
@@ -601,7 +608,8 @@ class TestInheritedSampleTimeWarnings:
 
         # 単一離散上流の場合は warning なし
         scheduler_warns = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.name == "pyflw.scheduler" and "multiple" in r.message.lower()
         ]
         assert len(scheduler_warns) == 0
@@ -616,32 +624,38 @@ class TestInheritedSampleTimeWarnings:
 class TestBlockIdEdgeCases:
     """ID の細かい同値分割テスト。"""
 
-    @pytest.mark.parametrize("valid_id", [
-        "_",
-        "A",
-        "z",
-        "a1",
-        "_1",
-        "__",
-        "CamelCase",
-        "snake_case_123",
-        "a" * 64,
-    ])
+    @pytest.mark.parametrize(
+        "valid_id",
+        [
+            "_",
+            "A",
+            "z",
+            "a1",
+            "_1",
+            "__",
+            "CamelCase",
+            "snake_case_123",
+            "a" * 64,
+        ],
+    )
     def test_valid_ids_are_accepted(self, valid_id):
         """有効な ID は BlockSpecError を起こさない。"""
         g = Gain(id=valid_id)
         assert g.id == valid_id
 
-    @pytest.mark.parametrize("invalid_id", [
-        "",
-        "1start",
-        "has space",
-        "has-hyphen",
-        "has.dot",
-        "has/slash",
-        "日本語",
-        "a" * 65,
-    ])
+    @pytest.mark.parametrize(
+        "invalid_id",
+        [
+            "",
+            "1start",
+            "has space",
+            "has-hyphen",
+            "has.dot",
+            "has/slash",
+            "日本語",
+            "a" * 65,
+        ],
+    )
     def test_invalid_ids_are_rejected(self, invalid_id):
         """無効な ID は BlockSpecError。"""
         with pytest.raises(BlockSpecError):
@@ -719,10 +733,12 @@ class TestExceptionHierarchy:
 
     def test_block_spec_error_is_pyflw_error(self):
         from pyflw.exceptions import PyflwError
+
         assert issubclass(BlockSpecError, PyflwError)
 
     def test_unknown_block_id_error_is_pyflw_error(self):
         from pyflw.exceptions import PyflwError
+
         assert issubclass(UnknownBlockIdError, PyflwError)
 
     def test_unknown_block_id_error_is_key_error(self):
@@ -731,8 +747,10 @@ class TestExceptionHierarchy:
 
     def test_scheduling_error_is_pyflw_error(self):
         from pyflw.exceptions import PyflwError
+
         assert issubclass(SchedulingError, PyflwError)
 
     def test_algebraic_loop_error_is_pyflw_error(self):
         from pyflw.exceptions import PyflwError
+
         assert issubclass(AlgebraicLoopError, PyflwError)

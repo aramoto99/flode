@@ -31,15 +31,11 @@ def validate_block_id(block_id: str) -> None:
         (将来的に Phase 3 codegen で error に昇格する想定)。
     """
     if not isinstance(block_id, str):
-        raise BlockSpecError(
-            f"Block id must be a string, got {type(block_id).__name__}"
-        )
+        raise BlockSpecError(f"Block id must be a string, got {type(block_id).__name__}")
     if not block_id:
         raise BlockSpecError("Block id must not be empty")
     if len(block_id) > _MAX_LEN:
-        raise BlockSpecError(
-            f"Block id {block_id!r} exceeds max length {_MAX_LEN}"
-        )
+        raise BlockSpecError(f"Block id {block_id!r} exceeds max length {_MAX_LEN}")
     if not _ID_PATTERN.match(block_id):
         raise BlockSpecError(
             f"Block id {block_id!r} contains invalid characters. "

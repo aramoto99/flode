@@ -2,9 +2,13 @@
 
 ADR-0002 (離散時間サポート) で `sample_time` 属性と `update` メソッドを追加。
 ADR-0004 (ブロック ID 規則) で `id` 属性を正式名として導入し、`name` を後方互換 alias 化。
+ADR-0003 (`@block` DSL) で `_params` 辞書をオプション属性として宣言 (デコレータ生成 class
+が書き込む。Phase 2 JSON save/load で参照予定)。
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import numpy as np
 
@@ -40,9 +44,7 @@ class Block:
         sample_time: float | None = None,
     ) -> None:
         if id is not None and name is not None:
-            raise BlockSpecError(
-                "id and name cannot both be set; use id (name is a Phase 0 alias)"
-            )
+            raise BlockSpecError("id and name cannot both be set; use id (name is a Phase 0 alias)")
         resolved_id = id if id is not None else name
         if resolved_id is not None:
             validate_block_id(resolved_id)
@@ -71,6 +73,10 @@ class Block:
 
         self._resolved_sample_time: float | None = None
         self._step_ratio: int = 1
+        # ``@block`` デコレータ生成 class がパラメータを格納する場所 (ADR-0003 §(5))。
+        # 直接 ``Block`` 継承で書かれたブロックでは空のまま。Phase 2 JSON save/load
+        # で参照予定。
+        self._params: dict[str, Any] = {}
 
     @property
     def id(self) -> str | None:

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 
 from ..core.block import Block
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
 
 
 class Scope(Block):
@@ -19,14 +24,14 @@ class Scope(Block):
         self.times: list[float] = []
         self._values: list[np.ndarray] = []
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.zeros(0)
 
-    def reset(self):
+    def reset(self) -> None:
         self.times = []
         self._values = []
 
-    def record(self, t, u):
+    def record(self, t: float, u: np.ndarray) -> None:
         self.times.append(float(t))
         self._values.append(np.asarray(u, dtype=float).copy())
 
@@ -36,12 +41,13 @@ class Scope(Block):
             return np.empty((0, self.n_inputs))
         return np.array(self._values)
 
-    def plot(self, ax=None, show: bool = False):
+    def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
         import matplotlib.pyplot as plt
 
         created = ax is None
         if created:
             _, ax = plt.subplots()
+        assert ax is not None
         t = np.array(self.times)
         v = self.values
         for i in range(v.shape[1]):

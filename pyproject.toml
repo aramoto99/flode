@@ -18,6 +18,8 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-mock>=3.0",
+    "ruff>=0.5",
+    "mypy>=1.8",
 ]
 
 [tool.setuptools.packages.find]
@@ -27,3 +29,38 @@ include = ["pyflw*"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["examples"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line-too-long (formatter handles)
+    "B008",  # function call in default argument (numpy/dataclass パターン許容)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]  # assert False in tests is fine
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# numpy/scipy は型 stub が部分的なので、strict のうち厳しすぎる項目を緩める
+disallow_untyped_calls = false
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+module = ["scipy.*", "matplotlib.*"]
+ignore_missing_imports = true

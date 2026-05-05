@@ -16,7 +16,7 @@ class Gain(Block):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self.k = float(k)
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([self.k * u[0]])
 
 
@@ -31,7 +31,7 @@ class Sum(Block):
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([float(np.dot(self.signs, u))])
 
 
@@ -45,5 +45,5 @@ class Product(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
 
-    def output(self, t, x, u):
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([float(np.prod(u))])
