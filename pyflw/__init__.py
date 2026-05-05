@@ -1,4 +1,5 @@
 from .core.block import Block
+from .core.decorator import block
 from .core.simulator import Simulator
 from .exceptions import (
     AlgebraicLoopError,
@@ -18,4 +19,5 @@ __all__ = [
     "Simulator",
     "SolverError",
     "UnknownBlockIdError",
+    "block",
 ]
