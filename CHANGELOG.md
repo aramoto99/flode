@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (Phase 2 in progress, will be released as 0.2.0)
+## [0.2.0] - 2026-05-06
+
+### Added
 - JSON model persistence: `Simulator.save(path)` / `Simulator.load(path)` with
   schema_version 0.2 (ADR-0008, ADR-0009).
 - Atomic Subsystem with internal mini-scheduler, including
@@ -24,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pyflw.SimulationStillRunningError` and `pyflw.core.identifiers.validate_model_id`.
 - `Simulator.on_step_callback` and `Simulator.request_stop()` /
   `Simulator.is_stopped` for cooperative cancellation from the server runtime.
+- Release workflow (`.github/workflows/release.yml`) that builds the frontend,
+  stages it under `pyflw/server/static/`, and publishes wheel+sdist to GitHub
+  Releases on `v*` tag push.
+- LICENSE (MIT, declared in `pyproject.toml` per PEP 639).
+- `tests/test_version_consistency.py` enforcing `pyflw.__version__` ==
+  `pyproject.toml [project].version`.
 
 ### Changed
 - Block class registry uses an allowlist (default `pyflw.*`); third-party
@@ -34,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deferred to Phase 3.
 - ADR-0006 / 0007 / 0009 cross-reference cleanup; SPEC-0001 §未決事項 entries
   resolved by ADR-0005 / 0009 / 0010 / 0012.
+- `pyproject.toml` build requirement raised to `setuptools>=71` for full PEP 639
+  license expression support.
 
 ### Deferred to Phase 3
 - True `ZeroOrderHoldDirect` (`direct_feedthrough=True`) — needs the ADR-0005
@@ -63,5 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphinx documentation initial release: quickstart, blocks reference,
   decorator guide, API reference.
 
-[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/aramoto99/pyflw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aramoto99/pyflw/releases/tag/v0.1.0
