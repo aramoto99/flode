@@ -163,6 +163,11 @@ class Simulator:
         dst_block.input_sources[dst_idx] = (src_block, src_idx)
 
     def _execution_order(self) -> list[Block]:
+        # Subsystem 等、内部構造を持つブロックは direct_feedthrough / n_states /
+        # x0 を ``_build()`` で確定する (Block 基底の default は no-op)。
+        # 実行順序解析の前に全ブロックに対し呼ぶ。
+        for b in self.blocks:
+            b._build()
         deps: dict[Block, set[Block]] = {b: set() for b in self.blocks}
         rev: dict[Block, set[Block]] = defaultdict(set)
         for b in self.blocks:
@@ -525,7 +530,13 @@ class Simulator:
                     raise ModelLoadError(f"Block entry missing required key {key!r}: {b_data!r}")
             block_cls = resolve_block_class(b_data["type"])
             try:
-                block = block_cls(id=b_data["id"], **b_data["params"])
+                # Subsystem は ``_from_dict`` factory 経由で復元する (内部 blocks
+                # の dict を resolve_block_class で展開するため)。それ以外の通常
+                # ブロックは ``__init__`` で直接構築。
+                if hasattr(block_cls, "_from_dict") and callable(block_cls._from_dict):
+                    block = block_cls._from_dict(id=b_data["id"], **b_data["params"])
+                else:
+                    block = block_cls(id=b_data["id"], **b_data["params"])
             except (TypeError, ValueError) as e:
                 raise ModelLoadError(
                     f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"

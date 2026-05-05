@@ -15,18 +15,22 @@ from .exceptions import (
     UnknownBlockIdError,
     UnknownBlockTypeError,
 )
+from .subsystems import Inport, Outport, Subsystem
 
 __all__ = [
     "AlgebraicLoopError",
     "Block",
     "BlockSpecError",
+    "Inport",
     "ModelLoadError",
     "ModelSerializationError",
+    "Outport",
     "PyflwError",
     "SchedulingError",
     "SchemaVersionError",
     "Simulator",
     "SolverError",
+    "Subsystem",
     "UnknownBlockIdError",
     "UnknownBlockTypeError",
     "block",

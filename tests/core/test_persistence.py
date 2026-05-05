@@ -54,7 +54,8 @@ from pyflw.core.persistence import (
 def _allow_test_module_blocks():
     """テスト内で生成した ``@block`` 由来の class をロード可能にする allowlist。
 
-    また migration registry をテスト前後でクリアして、テスト間の汚染を防ぐ。
+    また migration registry をテスト前後でスナップショット → 復元することで、
+    テスト間の汚染を防ぐ (組み込み migration は復元される)。
     """
     register_block_module("tests.")
     saved = dict(_persistence._MIGRATIONS)
@@ -64,6 +65,7 @@ def _allow_test_module_blocks():
         reset_block_module_allowlist()
         _persistence._MIGRATIONS.clear()
         _persistence._MIGRATIONS.update(saved)
+        _persistence._register_builtin_migrations()
 
 
 # ---------------------------------------------------------------

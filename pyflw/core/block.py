@@ -145,6 +145,16 @@ class Block:
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self._id!r}>"
 
+    def _build(self) -> None:
+        """構造解析 (実行順、direct_feedthrough、状態 layout 等) を確定する hook。
+
+        ``Simulator._execution_order`` がトポロジカル解析を始める前に呼ばれる。
+        Default 実装は no-op。``Subsystem`` のように内部構造を持つブロックが
+        override し、``self.direct_feedthrough`` / ``self.n_states`` / ``self.x0``
+        等の値を **解析前に**確定する責務を持つ。
+        """
+        return
+
     def to_dict(self) -> dict[str, Any]:
         """ブロックを JSON-serializable な辞書に変換する (ADR-0008 §(5))。
 

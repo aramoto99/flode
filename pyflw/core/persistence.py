@@ -27,11 +27,11 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.1"
-# 直接ロード可能 (migration 経由不要) なバージョン一覧。CURRENT を上げた将来は
-# 「同 MAJOR の旧 MINOR をそのまま読める」ことを表現するため、CURRENT を含めて
-# tuple に並べる。現時点では CURRENT 以外の要素は無いが、ADR-0009 で "0.2" に
-# 上げる際に "0.1" を残す予定。
+CURRENT_SCHEMA_VERSION = "0.2"
+# 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
+# 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
+# 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
+# 処理を介さずに受け入れる挙動が選べる。
 SUPPORTED_SCHEMA_VERSIONS = (CURRENT_SCHEMA_VERSION,)
 
 
@@ -189,6 +189,22 @@ def serialize_connections(blocks: list[Block]) -> list[dict[str, Any]]:
 
 # Migration registry: (from_version, to_version) -> 変換関数
 _MIGRATIONS: dict[tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]] = {}
+
+
+def _builtin_migrate_0_1_to_0_2(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0009 §(8): 0.1 → 0.2。0.1 ファイルは Subsystem を含まないため、
+    ``schema_version`` 文字列の更新のみで OK。"""
+    out = dict(data)
+    out["schema_version"] = "0.2"
+    return out
+
+
+# Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
+def _register_builtin_migrations() -> None:
+    _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
+
+
+_register_builtin_migrations()
 
 
 def register_migration(
