@@ -5,12 +5,23 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from ..core.block import Block
+from ..exceptions import BlockSpecError
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
 class Scope(Block):
+    """シミュレーション中の信号値を時系列で記録し、``plot()`` で可視化する。
+
+    各時刻 ``t`` の入力 ``u`` を ``record(t, u)`` で蓄積する。``values`` プロパティ
+    で形状 ``(n_samples, n_inputs)`` の ndarray を取得できる。
+
+    Args:
+        n_inputs: 記録する信号数 (= 入力ポート数)。
+        labels: 各信号のラベル (省略時は ``in0``, ``in1`` ...)。``plot`` で凡例に使う。
+    """
+
     def __init__(
         self,
         n_inputs: int = 1,
@@ -59,3 +70,28 @@ class Scope(Block):
         if show:
             plt.show()
         return ax
+
+
+class Terminator(Block):
+    """入力を消費するだけで何もしない終端ブロック。
+
+    Simulink の Terminator 相当。使われない出力ポートを終端させて未接続警告を
+    避ける用途で使う。
+
+    Args:
+        n_inputs: 入力ポート数 (>= 1)。
+    """
+
+    def __init__(
+        self,
+        n_inputs: int = 1,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if n_inputs < 1:
+            raise BlockSpecError(f"Terminator: n_inputs must be >= 1, got {n_inputs}")
+        super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
+
+    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        return np.zeros(0)
