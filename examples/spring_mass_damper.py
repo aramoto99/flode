@@ -58,9 +58,7 @@ def main() -> None:
     sim.run()
     scope.plot(show=False)
     plt.savefig("spring_mass_damper.png", dpi=120)
-    _logger.info(
-        "Final x=%.4f, x_dot=%.4f", scope.values[-1, 0], scope.values[-1, 1]
-    )
+    _logger.info("Final x=%.4f, x_dot=%.4f", scope.values[-1, 0], scope.values[-1, 1])
     _logger.info("Saved spring_mass_damper.png")
 
 

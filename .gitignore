@@ -31,3 +31,7 @@ Thumbs.db
 
 # Generated artifacts (regenerate via examples/*.py)
 spring_mass_damper.png
+
+# Sphinx build output (regenerate via `sphinx-build -b html docs docs/_build`)
+docs/_build/
+docs/_autosummary/
