@@ -58,7 +58,7 @@ class TestGetModel:
         response = client.get("/api/v1/models/demo")
         assert response.status_code == 200
         data = response.json()
-        assert data["schema_version"] == "0.4"
+        assert data["schema_version"] == "0.5"
         assert any(b["id"] == "g" for b in data["blocks"])
 
     def test_404_when_missing(self, client):
@@ -114,6 +114,40 @@ class TestUpdateModel:
         """PUT は upsert ではなく厳密 update (code-reviewer SHOULD 修正)。"""
         response = client.put("/api/v1/models/never-existed", json={"x": 1})
         assert response.status_code == 404
+
+    def test_layout_round_trips_through_put_get(self, client, model_dir):
+        """ADR-0020: ``layout`` フィールドが PUT → GET で round-trip する。
+
+        サーバは raw JSON passthrough なので追加実装ゼロで通る (ADR-0020 §Decision (4))。
+        本テストは regression 防止用。
+        """
+        _seed_model(model_dir, "demo")
+        payload_with_layout = {
+            "schema_version": "0.5",
+            "simulator": {
+                "t_end": 0.05,
+                "dt": 0.01,
+                "solver": "RK45",
+                "rtol": 1e-6,
+                "atol": 1e-9,
+                "dt_base": None,
+            },
+            "blocks": [
+                {
+                    "id": "src",
+                    "type": "pyflw.blocks.sources.Constant",
+                    "params": {"value": 1.0},
+                }
+            ],
+            "connections": [],
+            "layout": {"src": {"x": 100.0, "y": 60.0}},
+        }
+        put_resp = client.put("/api/v1/models/demo", json=payload_with_layout)
+        assert put_resp.status_code == 200
+        get_resp = client.get("/api/v1/models/demo")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["layout"] == {"src": {"x": 100.0, "y": 60.0}}
 
 
 class TestModelIdValidation:

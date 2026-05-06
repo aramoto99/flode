@@ -1,4 +1,4 @@
-__version__ = "0.6.1"  # ADR-0018 Phase 3 #4 (Mux/Demux + SM-B run path, 2026-05-06)
+__version__ = "0.6.2"  # ADR-0020 layout persistence (schema 0.5, 2026-05-06)
 
 from .core.block import Block
 from .core.decorator import block

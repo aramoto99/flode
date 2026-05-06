@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-06
+
+ADR-0020 (JSON schema layout persistence) Accepted. Schema bump
+0.4 → 0.5. Foundation for ADR-0019 drag-and-drop GUI. Pure SM-A
+models saved without `layout=` differ from v0.6.1 only in
+`schema_version` (`"0.5"`) and `metadata.tool` (`"pyflw 0.6.2"`);
+all other bytes are unchanged.
+
+### Added
+- Top-level `layout` field in `.flw.json`: optional `{block_id:
+  {x: float, y: float}}` recording GUI node positions. Subsystem
+  internal layout lives in `params.layout` (recursive). Both are
+  optional; missing entries fall back to React Flow grid auto-layout.
+- `Simulator.save(path, *, layout=None)` accepts an optional layout
+  dict. When `None` or empty, the `layout` key is omitted from the
+  output JSON (CLI / pytest models stay byte-identical).
+- `Simulator.last_loaded_layout` attribute (read-only) holds the
+  layout extracted from the most recent `Simulator.load()` call.
+  `None` for layout-less files. Runtime behaviour unchanged.
+- `Subsystem.__init__(layout=...)` and the corresponding
+  `Subsystem.layout` attribute carry inner-block positions through
+  save/load round-trips.
+- `pyflw.core.persistence.normalize_layout(value)` validates and
+  normalizes any `LayoutDict`-shaped input (None, ints, etc.) into
+  the canonical `dict[str, dict[str, float]]` form.
+- Frontend `nodesToLayout(nodes)` helper builds a `LayoutDict` from
+  React Flow nodes for save-time persistence.
+- `tests/core/test_layout_persistence.py` (26 tests) covers schema
+  bump, migration chain (0.1→0.5), no-op save, round-trip, partial
+  layouts, stale-id pruning with warning, Subsystem inner layout,
+  and `normalize_layout` validation.
+- Frontend `nodesToLayout` and grid-fallback Vitest cases.
+
+### Changed
+- `CURRENT_SCHEMA_VERSION` bumped from `"0.4"` to `"0.5"`.
+- `_builtin_migrate_0_4_to_0_5` registered as a no-op `schema_version`
+  bump (`layout` is optional). Existing 0.1〜0.4 files load unchanged.
+- `diagramConverter.modelToDiagram(model)` consults `model.layout`
+  before falling back to grid auto-layout. Backward compatible:
+  models without `layout` look identical to v0.6.1.
+
+### Migration
+- Files saved by v0.6.1 (schema 0.4) load unchanged via the new no-op
+  migration; their `layout` is `None`.
+- New files saved without `layout=...` argument are byte-identical to
+  v0.6.1 except for `schema_version: "0.5"`.
+- Server (FastAPI) is raw passthrough, so `layout` round-trips through
+  `PUT /api/v1/models/{id}` without server-side changes.
+
+### Verified
+- 668 tests pass (existing 641 + 26 layout + 1 server round-trip).
+- Frontend Vitest: 18 tests pass (10 existing + 8 new layout cases).
+- `ruff check pyflw tests` and `mypy pyflw` clean.
+- `npx tsc --noEmit` clean for frontend.
+- `examples/spring_mass_damper.py` numerical output unchanged.
+
 ## [0.6.1] - 2026-05-06
 
 Phase 3 #4 (Mux / Demux + SM-B run path integration). ADR-0018 Accepted.

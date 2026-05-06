@@ -30,7 +30,9 @@ from .block import Block
 from .identifiers import validate_block_id
 from .persistence import (
     CURRENT_SCHEMA_VERSION,
+    LayoutDict,
     migrate_to_current,
+    normalize_layout,
     resolve_block_class,
     serialize_connections,
 )
@@ -84,6 +86,10 @@ class Simulator:
         self.on_step_callback: StepCallback | None = on_step_callback
         # 停止要求フラグ (run() 中に外部から `request_stop()` で True にすると graceful 停止)
         self._stop_requested: bool = False
+        # ADR-0020 §Decision (3): 直近 ``Simulator.load()`` で読んだファイルの
+        # top-level ``layout`` を保持する。GUI が ``last_loaded_layout`` を取り出して
+        # React Flow に渡すために使う。CLI / pytest からは無視できる (動作不変)。
+        self.last_loaded_layout: LayoutDict | None = None
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -839,23 +845,36 @@ class Simulator:
         """
         return self._stop_requested
 
-    def save(self, path: str | Path, *, indent: int = 2) -> None:
+    def save(
+        self,
+        path: str | Path,
+        *,
+        indent: int = 2,
+        layout: LayoutDict | None = None,
+    ) -> None:
         """モデル定義 (ブロック・結線・Simulator 設定) を JSON ファイルに保存する。
 
-        ADR-0008 で確定した ``schema_version = "0.1"`` 形式で出力する。
-        ``run()`` 後の状態 (Scope バッファ、積分結果) は保存対象外。
+        ADR-0008 で確定した canonical 形式で出力する。``run()`` 後の状態 (Scope
+        バッファ、積分結果) は保存対象外。
 
         Args:
             path: 保存先パス (``.flw.json`` 拡張子を推奨)。
             indent: ``json.dumps`` のインデント (default ``2``)。``0`` 以下を渡すと
                 ``json.dumps`` を ``indent=None`` で呼び、改行・インデントなしの
                 compact 出力 (機械可読向け) になる。
+            layout: 各 block の GUI 上の位置 (ADR-0020)。``{"<block_id>":
+                {"x": float, "y": float}, ...}`` 形式。``None`` または空 dict のとき
+                top-level ``layout`` キーを書き出さない (= byte-identical for
+                CLI/pytest ユースケース)。
 
         Raises:
             ModelSerializationError: ブロックパラメータが JSON-serializable でない、
                 または ``__main__`` モジュールで定義された class を含む場合。
+            ModelLoadError: ``layout`` が ``LayoutDict`` 形式に正規化できない場合。
         """
         from .. import __version__ as _pyflw_version
+
+        normalized_layout = normalize_layout(layout)
 
         payload: dict[str, Any] = {
             "schema_version": CURRENT_SCHEMA_VERSION,
@@ -877,6 +896,24 @@ class Simulator:
             "blocks": [b.to_dict() for b in self.blocks],
             "connections": serialize_connections(self.blocks),
         }
+        # ADR-0020 §Decision (1): キー順序 = blocks → connections → layout の末尾。
+        if normalized_layout is not None:
+            block_ids = {b.id for b in self.blocks}
+            for stale_id in [k for k in normalized_layout if k not in block_ids]:
+                _logger.warning(
+                    "Simulator.save: layout entry %r refers to unknown block id; "
+                    "dropping (block was likely deleted)",
+                    stale_id,
+                )
+                del normalized_layout[stale_id]
+            if normalized_layout:
+                # blocks 順に揃えて canonical な diff を出す (ADR-0020 §Decision (1))
+                ordered: LayoutDict = {
+                    b.id: normalized_layout[b.id]
+                    for b in self.blocks
+                    if b.id in normalized_layout
+                }
+                payload["layout"] = ordered
         text = json.dumps(payload, indent=indent if indent > 0 else None)
         Path(path).write_text(text + ("\n" if indent > 0 else ""), encoding="utf-8")
 
@@ -984,5 +1021,21 @@ class Simulator:
                 )
             except (IndexError, ValueError, UnknownBlockIdError) as e:
                 raise ModelLoadError(f"Invalid connection {c_data!r}: {e}") from e
+
+        # ADR-0020 §Decision (3): top-level layout を読み取り、stale id を破棄して
+        # ``last_loaded_layout`` に保持する。layout 欠落 (旧バージョン or layout-less
+        # ファイル) では ``None`` のまま (GUI 側で grid auto-layout fallback)。
+        raw_layout = data.get("layout")
+        normalized = normalize_layout(raw_layout)
+        if normalized is not None:
+            block_ids = {b.id for b in sim.blocks}
+            for stale in [k for k in normalized if k not in block_ids]:
+                _logger.warning(
+                    "Simulator.load: layout entry %r refers to unknown block id; "
+                    "dropping (stale layout)",
+                    stale,
+                )
+                del normalized[stale]
+            sim.last_loaded_layout = normalized if normalized else None
 
         return sim

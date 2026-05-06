@@ -15,14 +15,18 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict, deque
 from typing import Any
 
 import numpy as np
 
 from ..core.block import Block
+from ..core.persistence import LayoutDict, normalize_layout
 from ..exceptions import AlgebraicLoopError, BlockSpecError
 from .ports import Inport, Outport
+
+_logger = logging.getLogger("pyflw.subsystem")
 
 
 class Subsystem(Block):
@@ -52,6 +56,7 @@ class Subsystem(Block):
         name: str | None = None,
         port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
+        layout: LayoutDict | None = None,
     ) -> None:
         if not isinstance(n_inputs, int) or n_inputs < 0:
             raise BlockSpecError(
@@ -102,6 +107,11 @@ class Subsystem(Block):
             self._params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
         if any(s != scalar_shape for s in self.port_shapes_out):
             self._params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+
+        # ADR-0020 §Decision (1): Subsystem 内部 GUI レイアウト (再帰)。``None`` /
+        # 空 dict のとき ``params.layout`` を JSON に出さず、SM-A モデルの byte-identical
+        # を維持する。形式正規化は ``normalize_layout`` に委譲。
+        self.layout: LayoutDict | None = normalize_layout(layout)
 
         if blocks is not None:
             for b in blocks:
@@ -491,6 +501,11 @@ class Subsystem(Block):
         ADR-0018 §(5): SM-B Subsystem は ``port_shapes_in`` / ``port_shapes_out``
         が non-default の時のみ ``params`` に追加される (純 SM-A モデルの JSON は
         byte-identical を維持するため)。
+
+        ADR-0020 §Decision (1)(5): 内部 GUI レイアウトを ``params.layout`` に
+        再帰的に保存する。``self.layout is None`` または空のときは出力しない (=
+        layout を持たない既存 Subsystem の JSON は完全互換)。stale id (= 削除済み
+        block を参照) は drop。
         """
         from ..core.persistence import block_type_path
 
@@ -509,6 +524,23 @@ class Subsystem(Block):
             params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
         if any(s != scalar_shape for s in self.port_shapes_out):
             params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+        if self.layout:
+            inner_ids = {b.id for b in self._inner_blocks}
+            ordered_layout: LayoutDict = {
+                b.id: self.layout[b.id]
+                for b in self._inner_blocks
+                if b.id in self.layout
+            }
+            stale = [k for k in self.layout if k not in inner_ids]
+            for s in stale:
+                _logger.warning(
+                    "Subsystem %r.to_dict: layout entry %r refers to unknown inner "
+                    "block id; dropping",
+                    self.id,
+                    s,
+                )
+            if ordered_layout:
+                params["layout"] = ordered_layout
         return {
             "id": self._id,
             "type": block_type_path(self.__class__),
@@ -526,6 +558,7 @@ class Subsystem(Block):
         id: str | None = None,
         port_shapes_in: list[list[int]] | None = None,
         port_shapes_out: list[list[int]] | None = None,
+        layout: LayoutDict | None = None,
     ) -> Subsystem:
         """JSON load 時の factory (ADR-0009 §(7) / code-reviewer MUST #3 修正)。
 
@@ -558,6 +591,7 @@ class Subsystem(Block):
             id=id,
             port_shapes_in=ps_in,
             port_shapes_out=ps_out,
+            layout=layout,
         )
         for b in blocks:
             if isinstance(b, dict):

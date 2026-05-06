@@ -227,13 +227,14 @@ class TestSmBRunEnabled:
 
 
 class TestSchema04Migration:
-    def test_save_uses_schema_0_4(self, tmp_path) -> None:
+    def test_save_uses_schema_0_5(self, tmp_path) -> None:
+        # ADR-0020: schema bump 0.4 → 0.5 (layout 永続化)
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(Constant(value=1.0, id="src"))
         path = tmp_path / "sm_a.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "0.4"
+        assert data["schema_version"] == "0.5"
 
     def test_load_legacy_0_3_via_migration(self, tmp_path) -> None:
         """0.3 で保存されたファイルが migration 経由で読める (port_shapes 未設定でも SM-A 互換)。"""

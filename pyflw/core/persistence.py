@@ -27,12 +27,16 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.4"
+CURRENT_SCHEMA_VERSION = "0.5"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
 # 処理を介さずに受け入れる挙動が選べる。
 SUPPORTED_SCHEMA_VERSIONS = (CURRENT_SCHEMA_VERSION,)
+
+# ADR-0020 §(1): layout entry の型。block_id → {"x": float, "y": float}。
+# `LayoutDict` = レイアウト全体 (top-level または Subsystem 内部の `params.layout`)。
+LayoutDict = dict[str, dict[str, float]]
 
 
 # allowlist: ロード時にここで列挙した module prefix のいずれかに属する class のみ
@@ -168,6 +172,54 @@ def resolve_block_class(type_path: str) -> type:
     return cls
 
 
+def normalize_layout(layout: object) -> LayoutDict | None:
+    """ADR-0020 §(1)(8): 任意の layout 入力を canonical な ``LayoutDict`` に変換する。
+
+    各 entry は ``{"x": float, "y": float}`` であり、x / y 以外のキーは破棄、値は
+    ``int | float`` を ``float`` に強制変換する。stale な id (= 削除済み block を
+    参照) の整合性 check は呼び出し側の責務 (本関数は形式のみ整える)。
+
+    Args:
+        layout: 正規化対象の任意の値。``None`` または空 dict のとき ``None`` を返す。
+
+    Returns:
+        正規化済みの ``LayoutDict``、または ``None`` (layout 無し)。
+
+    Raises:
+        ModelLoadError: ``layout`` が ``dict[str, dict]`` の形式でない、x/y が欠落、
+            または x/y が数値変換不可能な場合。
+    """
+    if layout is None:
+        return None
+    if not isinstance(layout, dict):
+        raise ModelLoadError(
+            f"layout must be a dict[str, dict], got {type(layout).__name__}"
+        )
+    if not layout:
+        return None
+    out: LayoutDict = {}
+    for key, value in layout.items():
+        if not isinstance(key, str):
+            raise ModelLoadError(f"layout key must be a str (block id), got {key!r}")
+        if not isinstance(value, dict):
+            raise ModelLoadError(
+                f"layout[{key!r}] must be a dict with x / y, got {type(value).__name__}"
+            )
+        if "x" not in value or "y" not in value:
+            raise ModelLoadError(
+                f"layout[{key!r}] must contain both 'x' and 'y', got {value!r}"
+            )
+        try:
+            x = float(value["x"])
+            y = float(value["y"])
+        except (TypeError, ValueError) as e:
+            raise ModelLoadError(
+                f"layout[{key!r}] has non-numeric x/y: {value!r}"
+            ) from e
+        out[key] = {"x": x, "y": y}
+    return out
+
+
 def serialize_connections(blocks: list[Block]) -> list[dict[str, Any]]:
     """全ブロックの ``input_sources`` から JSON 用の結線リストを構築する。"""
     out: list[dict[str, Any]] = []
@@ -228,11 +280,25 @@ def _builtin_migrate_0_3_to_0_4(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_4_to_0_5(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0020 §(6): 0.4 → 0.5。
+
+    レイアウト永続化フィールド ``layout`` を top-level に optional 追加。0.4 ファイル
+    には ``layout`` キーが存在しないが、本 migration は ``schema_version`` 文字列の
+    更新のみで成立する (load 側で ``layout`` 欠落 = 全 block auto-layout fallback と
+    解釈)。Subsystem 内部 ``params.layout`` も同じく optional のため再帰的処理は不要。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.5"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
     _MIGRATIONS[("0.2", "0.3")] = _builtin_migrate_0_2_to_0_3
     _MIGRATIONS[("0.3", "0.4")] = _builtin_migrate_0_3_to_0_4
+    _MIGRATIONS[("0.4", "0.5")] = _builtin_migrate_0_4_to_0_5
 
 
 _register_builtin_migrations()

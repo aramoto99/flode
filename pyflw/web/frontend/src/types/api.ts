@@ -22,12 +22,23 @@ export interface SimulatorConfig {
   dt_base: number | null;
 }
 
+// ADR-0020: 各 block の GUI 上の位置 (CSS px、React Flow 互換)。
+export interface LayoutEntry {
+  x: number;
+  y: number;
+}
+
+export type LayoutDict = Record<string, LayoutEntry>;
+
 export interface FlwModel {
   schema_version: string;
   metadata?: { name?: string; created_at?: string; tool?: string; comment?: string };
   simulator: SimulatorConfig;
   blocks: BlockEntry[];
   connections: ConnectionEntry[];
+  // ADR-0020: optional な layout セクション (block_id → position)。欠落時は GUI 側の
+  // grid auto-layout fallback で位置を算出する。
+  layout?: LayoutDict;
 }
 
 export interface ModelList {

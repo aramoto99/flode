@@ -505,13 +505,14 @@ class TestUnconnectedPortShapeCheckSkipped:
 
 
 class TestEmptyModelSchema04RoundTrip:
-    def test_empty_simulator_save_produces_schema_0_4(self, tmp_path: Path) -> None:
-        """ブロックなし Simulator を保存すると schema_version=0.4 のファイルになる。"""
+    def test_empty_simulator_save_produces_schema_0_5(self, tmp_path: Path) -> None:
+        """ブロックなし Simulator を保存すると schema_version=0.5 のファイルになる
+        (ADR-0020 で 0.4 → 0.5 bump)。"""
         sim = Simulator(t_end=1.0, dt=0.01)
         path = tmp_path / "empty.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "0.4"
+        assert data["schema_version"] == "0.5"
 
     def test_empty_simulator_save_has_empty_blocks_and_connections(self, tmp_path: Path) -> None:
         """ブロックなし Simulator の保存データは blocks/connections が空リスト。"""
