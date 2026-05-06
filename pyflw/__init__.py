@@ -1,4 +1,4 @@
-__version__ = "0.5.0"  # ADR-0016 Phase 3 #1+#2 (MimoTransferFunction + ZOH deprecate, 2026-05-06)
+__version__ = "0.6.0"  # ADR-0017 Phase 3 #3 (SM-B vector ports, BREAKING, 2026-05-06)
 
 from .core.block import Block
 from .core.decorator import block

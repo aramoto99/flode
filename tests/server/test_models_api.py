@@ -58,7 +58,7 @@ class TestGetModel:
         response = client.get("/api/v1/models/demo")
         assert response.status_code == 200
         data = response.json()
-        assert data["schema_version"] == "0.3"
+        assert data["schema_version"] == "0.4"
         assert any(b["id"] == "g" for b in data["blocks"])
 
     def test_404_when_missing(self, client):
@@ -74,7 +74,7 @@ class TestGetModel:
 class TestCreateModel:
     def test_creates_with_metadata_name(self, client, model_dir):
         payload = {
-            "schema_version": "0.3",
+            "schema_version": "0.4",
             "metadata": {"name": "fresh"},
             "simulator": {
                 "t_end": 0.05,

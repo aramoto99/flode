@@ -180,6 +180,8 @@ class Simulator:
         # 実行順序解析の前に全ブロックに対し呼ぶ。
         for b in self.blocks:
             b._build()
+        # ADR-0017 §(4): build 時 port shape 整合性 check (_execution_order の前)
+        self._check_port_shapes()
         deps: dict[Block, set[Block]] = {b: set() for b in self.blocks}
         rev: dict[Block, set[Block]] = defaultdict(set)
         for b in self.blocks:
@@ -201,6 +203,47 @@ class Simulator:
             remaining = [b.id for b in self.blocks if b not in order]
             raise AlgebraicLoopError(f"Algebraic loop detected involving: {remaining}")
         return order
+
+    def _check_port_shapes(self) -> None:
+        """ADR-0017 §(4): 接続元出力 port_shape と接続先入力 port_shape が一致するかチェック。
+
+        SM-A モード (全ポート shape ``()``) では既存挙動と等価 (全 ``()`` 同士の一致は
+        常に成立)。SM-B モード (一部に非 ``()`` shape があれば) は厳密な shape 一致を
+        要求 (broadcasting なし、ADR-0017 §(6) Phase 4+ 送り)。
+
+        Raises:
+            BlockSpecError: 接続元出力と接続先入力の port_shape が不一致。
+                エラーメッセージで Mux/Demux 経由を誘導する。
+        """
+        for dst in self.blocks:
+            for dst_idx, src in enumerate(dst.input_sources):
+                if src is None:
+                    continue
+                src_block, src_idx = src
+                src_shape = src_block.port_shapes_out[src_idx]
+                dst_shape = dst.port_shapes_in[dst_idx]
+                if src_shape != dst_shape:
+                    raise BlockSpecError(
+                        f"Port shape mismatch: {src_block.id!r}.out[{src_idx}] has "
+                        f"shape {src_shape} but {dst.id!r}.in[{dst_idx}] expects "
+                        f"shape {dst_shape}. Use a Mux/Demux block (Phase 3+) to "
+                        f"adapt scalar/vector ports."
+                    )
+
+    def _is_sm_a_mode(self) -> bool:
+        """ADR-0017 §(8) U2: 全ブロックが SM-A 互換 (全 port_shape == ()) か判定。
+
+        ホットパス分岐用。``run()`` 冒頭で 1 回判定し、SM-A モードなら既存の
+        高速 ``_step`` パスを使う (4xx 件のテストへの影響ゼロを保証)。
+        """
+        for b in self.blocks:
+            for shape in b.port_shapes_in:
+                if shape != ():
+                    return False
+            for shape in b.port_shapes_out:
+                if shape != ():
+                    return False
+        return True
 
     def _resolve_sample_times(self, order: list[Block]) -> None:
         """継承サンプル時間 (``sample_time = -1.0``) をトポロジカル順に解決する。
@@ -323,7 +366,10 @@ class Simulator:
         order: list[Block],
         layout: list[tuple[Block, slice]],
     ) -> tuple[dict[Block, np.ndarray], dict[Block, np.ndarray]]:
-        """1 時刻での出力計算 (Phase 0 と同じ 2 パス、状態は連続/離散に分離)。
+        """1 時刻での SM-A scalar-port 用出力計算 (既存 hot path、ADR-0017 §(4))。
+
+        全ブロック port_shape == () の場合に呼ばれる。各 ``inputs[b]`` / ``outputs[b]`` は
+        1D ndarray (shape ``(n_inputs,)`` / ``(n_outputs,)``)。
 
         戻り値の ``inputs`` 辞書は **全ブロック** (direct_feedthrough の真偽によらず)
         について ``inputs[b]`` を持つ。direct_feedthrough=True はパス 1 で、
@@ -363,6 +409,65 @@ class Simulator:
                 inputs[b] = u
         return outputs, inputs
 
+    def _step_vector(
+        self,
+        t: float,
+        x_cont: np.ndarray,
+        discrete_state: dict[Block, np.ndarray],
+        order: list[Block],
+        layout: list[tuple[Block, slice]],
+    ) -> tuple[dict[Block, tuple[np.ndarray, ...]], dict[Block, tuple[np.ndarray, ...]]]:
+        """ADR-0017 §(4) SM-B vector-port 用出力計算。
+
+        各ブロックの ``output_v`` を呼び、tuple of ndarrays でポート間の信号を
+        伝搬する。``port_shapes_in/out`` で宣言された shape を尊重する。
+
+        戻り値の ``outputs`` / ``inputs`` 辞書は ``tuple[ndarray, ...]`` 形式。
+        SM-A 互換ブロックは ``Block.output_v`` の default 実装が ``output`` を wrap
+        するため、混在モデルでも動作する。
+        """
+        cont_state = {b: x_cont[sl] for b, sl in layout}
+        outputs: dict[Block, tuple[np.ndarray, ...]] = {}
+        inputs: dict[Block, tuple[np.ndarray, ...]] = {}
+
+        def state_for(b: Block) -> np.ndarray:
+            if b in cont_state:
+                return cont_state[b]
+            if b in discrete_state:
+                return discrete_state[b]
+            return np.zeros(0)
+
+        def _zero_inputs(b: Block) -> tuple[np.ndarray, ...]:
+            return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
+
+        def _gather_inputs(b: Block) -> tuple[np.ndarray, ...]:
+            u_list: list[np.ndarray] = []
+            for i, src in enumerate(b.input_sources):
+                if src is None:
+                    u_list.append(np.zeros(b.port_shapes_in[i], dtype=float))
+                else:
+                    sb, si = src
+                    u_list.append(outputs[sb][si])
+            return tuple(u_list)
+
+        for b in order:
+            if b.direct_feedthrough:
+                u = _gather_inputs(b)
+                inputs[b] = u
+            else:
+                u = _zero_inputs(b)
+            xb = state_for(b)
+            y = b.output_v(t, xb, u)
+            # output_v の戻り値が想定通りの長さ・shape か簡易 check (debug 用)
+            outputs[b] = tuple(np.asarray(yi, dtype=float) for yi in y)
+        for b in order:
+            if not b.direct_feedthrough:
+                inputs[b] = _gather_inputs(b)
+                # TODO(Phase 3 #4): direct_feedthrough=False の離散ブロック更新で、
+                # ``discrete_state`` が ``_step_vector`` 専用 dict 表現と整合するように
+                # ``run()`` の SM-B 用ループ統合時に再設計する (Mux/Demux 完成と同時)。
+        return outputs, inputs
+
     def run(self) -> None:
         """シミュレーションを実行する。
 
@@ -388,6 +493,20 @@ class Simulator:
         一致する (single-rate / multi-rate 両方)。
         """
         order = self._execution_order()
+        # ADR-0017 §(8) U2: SM-A / SM-B モード判定。``_execution_order()`` で
+        # 全ブロックの ``_build()`` (Subsystem の n_states 確定など) と shape check
+        # が完了したあと判定する。SM-A モード (全ポート shape == ()) なら既存の
+        # 高速 _step パスを使い、SM-B モード (任意 vector port あり) では現状
+        # 未実装のため明示エラー。Phase 3 #4 (Mux/Demux 実装) で SM-B run path を
+        # 完成させる予定。
+        if not self._is_sm_a_mode():
+            raise BlockSpecError(
+                "SM-B vector ports detected, but the SM-B simulation runtime is not "
+                "yet wired up. Phase 3 #4 (Mux/Demux + SM-B run path) is the next "
+                "milestone after ADR-0017. For now, only SM-A scalar ports are supported "
+                "at run() time. The Block API and build-time shape checks are already "
+                "in place, so SM-B-aware blocks can be defined and validated."
+            )
         self._resolve_sample_times(order)
         dt_base = self._compute_dt_base()
         layout, n_total = self._state_layout()
@@ -593,14 +712,29 @@ class Simulator:
                 if key not in b_data:
                     raise ModelLoadError(f"Block entry missing required key {key!r}: {b_data!r}")
             block_cls = resolve_block_class(b_data["type"])
+            # ADR-0017 §(5): SM-B port_shapes は optional フィールドとして JSON に
+            # 入る。`__init__` の kwargs として渡すため取り出す (default は None)。
+            extra_kwargs: dict[str, Any] = {}
+            if "port_shapes_in" in b_data:
+                extra_kwargs["port_shapes_in"] = [
+                    tuple(s) for s in b_data["port_shapes_in"]
+                ]
+            if "port_shapes_out" in b_data:
+                extra_kwargs["port_shapes_out"] = [
+                    tuple(s) for s in b_data["port_shapes_out"]
+                ]
             try:
                 # Subsystem は ``_from_dict`` factory 経由で復元する (内部 blocks
                 # の dict を resolve_block_class で展開するため)。それ以外の通常
                 # ブロックは ``__init__`` で直接構築。
                 if hasattr(block_cls, "_from_dict") and callable(block_cls._from_dict):
-                    block = block_cls._from_dict(id=b_data["id"], **b_data["params"])
+                    block = block_cls._from_dict(
+                        id=b_data["id"], **b_data["params"], **extra_kwargs
+                    )
                 else:
-                    block = block_cls(id=b_data["id"], **b_data["params"])
+                    block = block_cls(
+                        id=b_data["id"], **b_data["params"], **extra_kwargs
+                    )
             except (TypeError, ValueError) as e:
                 raise ModelLoadError(
                     f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"

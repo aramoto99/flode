@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-06
+
+Phase 3 #3 (signal model SM-B). ADR-0017 Accepted.
+
+### Changed (BREAKING)
+- `Block.__init__` accepts two new optional keyword arguments,
+  `port_shapes_in` and `port_shapes_out`. They default to `None` (= all
+  ports are SM-A scalars represented as rank-0 shape `()`), so all 33
+  bundled blocks are unaffected.
+- `Simulator` runs a build-time port-shape consistency check inside
+  `_execution_order()`. When a `connect()` joins ports whose declared
+  shapes disagree, a `BlockSpecError` is raised with a hint to use
+  Mux/Demux (Phase 3 #4) for scalar/vector adaptation.
+- JSON schema bumped 0.3 -> 0.4. The `port_shapes_in` / `port_shapes_out`
+  fields are reserved as **optional**; for SM-A models the on-disk JSON
+  is unchanged. Migration is handled automatically via the existing
+  `migrate_to_current` chain (`schema_version` string update only).
+
+### Added
+- `Block.output_v(t, x, u)` SM-B vector-port API. The default
+  implementation wraps `Block.output(...)` so SM-A blocks remain
+  unchanged. SM-B-aware blocks (e.g. forthcoming Mux / Demux) override
+  `output_v`.
+- `Simulator._step_vector(...)` scaffolding that walks the topological
+  order using tuple-of-ndarray inputs/outputs. Wired up at run-time in
+  Phase 3 #4 once the first vector-aware blocks ship.
+- `Simulator._is_sm_a_mode()` helper used by `run()` to fast-path
+  scalar-only models. SM-B-only models currently raise a clear
+  `BlockSpecError` ("SM-B vector ports detected, but the SM-B simulation
+  runtime is not yet wired up"); this is intentional Phase 3 #3
+  scaffolding and will be lifted by Phase 3 #4.
+- `Subsystem.__init__` accepts `port_shapes_in` / `port_shapes_out` so
+  composite blocks can declare vector boundaries; internal `Inport` /
+  `Outport` reconciliation is part of Phase 3 #4.
+- `tests/core/test_port_shapes.py`: 21 new tests covering port-shape
+  normalization, SM-A compatibility, build-time mismatch errors,
+  `output_v` wrapper behaviour, the SM-B run-time placeholder, and
+  schema 0.3 -> 0.4 migration (including chained 0.2 -> 0.3 -> 0.4).
+- `tests/core/test_port_shapes_edge_cases.py`: 96 additional edge-case
+  tests covering boundary conditions, all 33 bundled blocks, Subsystem
+  round-trip, rank-0 conversion fidelity, and SM-A/SM-B mode detection.
+
+### Deferred to Phase 3 #4
+- SM-B run-time integration (`run()` dispatch, scope record / Integrator
+  derivative bridging through the vector pipeline).
+- Concrete `Mux` / `Demux` blocks.
+- Subsystem internal `Inport` / `Outport` port-shape reconciliation.
+
 ## [0.5.0] - 2026-05-06
 
 Phase 3 opens. ADR-0016 (Phase 3 architecture overview) is now Accepted; it
@@ -220,7 +268,8 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
 - Sphinx documentation initial release: quickstart, blocks reference,
   decorator guide, API reference.
 
-[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/aramoto99/pyflw/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/aramoto99/pyflw/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aramoto99/pyflw/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aramoto99/pyflw/compare/v0.2.0...v0.3.0

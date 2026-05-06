@@ -35,6 +35,10 @@ class Subsystem(Block):
             空 (``add()`` で追加)。
         connections: 内部結線のリスト ``[(src_id, dst_id, src_idx, dst_idx), ...]``。
             ``None`` の場合は ``connect()`` で追加。
+        port_shapes_in: 各外部入力ポートの shape (ADR-0017 SM-B)。``None`` で全 ``()``
+            (= SM-A scalar)。指定する場合は内部 ``Inport(port_idx=i)`` の port_shape と
+            一致させること。
+        port_shapes_out: 各外部出力ポートの shape (同上、内部 ``Outport`` と一致)。
     """
 
     def __init__(
@@ -46,6 +50,8 @@ class Subsystem(Block):
         *,
         id: str | None = None,
         name: str | None = None,
+        port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
+        port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
     ) -> None:
         if not isinstance(n_inputs, int) or n_inputs < 0:
             raise BlockSpecError(
@@ -64,6 +70,8 @@ class Subsystem(Block):
             n_outputs=n_outputs,
             n_states=0,
             direct_feedthrough=False,
+            port_shapes_in=port_shapes_in,
+            port_shapes_out=port_shapes_out,
         )
 
         self._inner_blocks: list[Block] = []
