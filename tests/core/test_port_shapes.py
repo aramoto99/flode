@@ -203,23 +203,22 @@ class TestOutputVWrapper:
 
 
 # ---------------------------------------------------------------------------
-# SM-B run path (Phase 3 #4 まで暫定エラー)
+# SM-B run path (ADR-0018 で解禁、test_sm_b_run.py で end-to-end 検証)
 # ---------------------------------------------------------------------------
 
 
-class TestSmBRunNotImplemented:
-    def test_sm_b_run_raises_until_phase3_4(self) -> None:
-        """SM-B モードで ``run()`` を呼ぶと現状は ``BlockSpecError``。
+class TestSmBRunEnabled:
+    def test_sm_b_run_completes_without_error(self) -> None:
+        """ADR-0018 §(2) で SM-B run path が解禁された (Phase 3 #4 完了)。
 
-        Phase 3 #4 (Mux/Demux + SM-B run path 統合) で解禁予定。Phase 3 #3 では
-        Block API + build-time shape check までを scaffolding として完成させる。
+        VectorSrc → VectorSink の最小 SM-B モデルが ``run()`` を例外なく完走する。
+        詳細な end-to-end 動作は ``tests/core/test_sm_b_run.py`` でカバー。
         """
-        sim = Simulator(t_end=0.1, dt=0.01)
+        sim = Simulator(t_end=0.05, dt=0.01)
         vsrc = sim.add(_VectorSrc())
         vsink = sim.add(_VectorSink())
         sim.connect(vsrc, vsink)
-        with pytest.raises(BlockSpecError, match="SM-B vector ports detected"):
-            sim.run()
+        sim.run()  # 例外を投げず完走することのみ検証
 
 
 # ---------------------------------------------------------------------------

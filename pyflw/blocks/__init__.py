@@ -15,7 +15,7 @@ from .discrete import (
 )
 from .logic import LogicalOperator, RelationalOperator
 from .mathops import Abs, Divide, Gain, MinMax, Product, Saturation, Sign, Sum
-from .routing import Switch
+from .routing import Demux, Mux, Switch
 from .sinks import Scope, Terminator
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 
@@ -23,6 +23,7 @@ __all__ = [
     "Abs",
     "Clock",
     "Constant",
+    "Demux",
     "Derivative",
     "DiscreteIntegrator",
     "DiscreteStateSpace",
@@ -33,6 +34,7 @@ __all__ = [
     "LogicalOperator",
     "MimoTransferFunction",
     "MinMax",
+    "Mux",
     "Product",
     "PulseGenerator",
     "Ramp",

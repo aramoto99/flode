@@ -94,6 +94,14 @@ class Subsystem(Block):
             "blocks": [],  # build 後に populate
             "connections": [],
         }
+        # ADR-0018 §(5) MUST: SM-B Subsystem を save→load しても外側 ``port_shapes_*``
+        # が消えて内部 Inport/Outport との整合性 check (``_build``) が壊れないように、
+        # 非 default 時のみ JSON に出力する (= 純 SM-A モデルは byte-identical を維持)。
+        scalar_shape: tuple[int, ...] = ()
+        if any(s != scalar_shape for s in self.port_shapes_in):
+            self._params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
+        if any(s != scalar_shape for s in self.port_shapes_out):
+            self._params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
 
         if blocks is not None:
             for b in blocks:
@@ -216,6 +224,29 @@ class Subsystem(Block):
 
         self._inports_by_idx = {p.port_idx: p for p in inports}
         self._outports_by_idx = {p.port_idx: p for p in outports}
+
+        # ADR-0018 §(5): 内部 Inport/Outport の port_shape と外側 Subsystem の
+        # port_shapes_in/out が一致するかを build 時に check する。
+        for i, inport in self._inports_by_idx.items():
+            inner_shape = inport.port_shape
+            outer_shape = self.port_shapes_in[i]
+            if inner_shape != outer_shape:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: port_shapes_in[{i}]={outer_shape} "
+                    f"does not match inner Inport(port_idx={i}).port_shape={inner_shape}. "
+                    f"Either pass port_shapes_in to Subsystem(...) or set port_shape on "
+                    f"the Inport, so they agree."
+                )
+        for j, outport in self._outports_by_idx.items():
+            inner_shape = outport.port_shape
+            outer_shape = self.port_shapes_out[j]
+            if inner_shape != outer_shape:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: port_shapes_out[{j}]={outer_shape} "
+                    f"does not match inner Outport(port_idx={j}).port_shape={inner_shape}. "
+                    f"Either pass port_shapes_out to Subsystem(...) or set port_shape on "
+                    f"the Outport, so they agree."
+                )
 
         # ネスト Subsystem の内部 build を先に発火 (direct_feedthrough 推論や n_states
         # の確定が外側から正しく見えるようにする)。code-reviewer MUST #2 修正。
@@ -455,22 +486,33 @@ class Subsystem(Block):
     # ---------- 永続化サポート ----------
 
     def to_dict(self) -> dict[str, Any]:
-        """``Block.to_dict`` を override して内部 ``blocks``/``connections`` をネスト。"""
+        """``Block.to_dict`` を override して内部 ``blocks``/``connections`` をネスト。
+
+        ADR-0018 §(5): SM-B Subsystem は ``port_shapes_in`` / ``port_shapes_out``
+        が non-default の時のみ ``params`` に追加される (純 SM-A モデルの JSON は
+        byte-identical を維持するため)。
+        """
         from ..core.persistence import block_type_path
 
         # 内部 build を発火させ、内部構造の整合性チェック (BlockSpecError /
         # AlgebraicLoopError) を save 時にも走らせる。不完全な Subsystem は
         # 素直に保存できないので例外がそのまま伝播する設計。
         self._build()
+        params: dict[str, Any] = {
+            "n_inputs": self.n_inputs,
+            "n_outputs": self.n_outputs,
+            "blocks": [b.to_dict() for b in self._inner_blocks],
+            "connections": self._serialize_inner_connections(),
+        }
+        scalar_shape: tuple[int, ...] = ()
+        if any(s != scalar_shape for s in self.port_shapes_in):
+            params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
+        if any(s != scalar_shape for s in self.port_shapes_out):
+            params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
         return {
             "id": self._id,
             "type": block_type_path(self.__class__),
-            "params": {
-                "n_inputs": self.n_inputs,
-                "n_outputs": self.n_outputs,
-                "blocks": [b.to_dict() for b in self._inner_blocks],
-                "connections": self._serialize_inner_connections(),
-            },
+            "params": params,
         }
 
     @classmethod
@@ -482,6 +524,8 @@ class Subsystem(Block):
         blocks: list[Any],
         connections: list[dict[str, Any]],
         id: str | None = None,
+        port_shapes_in: list[list[int]] | None = None,
+        port_shapes_out: list[list[int]] | None = None,
     ) -> Subsystem:
         """JSON load 時の factory (ADR-0009 §(7) / code-reviewer MUST #3 修正)。
 
@@ -489,12 +533,32 @@ class Subsystem(Block):
         ``Block`` インスタンス。``dict`` なら ``resolve_block_class`` で class を解決
         して再構築し、内部に ``add`` する。
 
+        ``port_shapes_in`` / ``port_shapes_out`` (ADR-0018 §(5)): non-default の
+        SM-B Subsystem を save→load する際に外側 port shape を復元する。``None`` の
+        場合は SM-A 互換 (全 ``()``) として扱う。
+
         ``Simulator.load`` 経由でのみ使われる想定 (= 通常の ``__init__`` 経路は
         ``blocks`` に Block インスタンスを渡す)。
         """
         from ..core.persistence import resolve_block_class
 
-        sub = cls(n_inputs=n_inputs, n_outputs=n_outputs, id=id)
+        ps_in: tuple[tuple[int, ...], ...] | None = (
+            tuple(tuple(int(v) for v in s) for s in port_shapes_in)
+            if port_shapes_in is not None
+            else None
+        )
+        ps_out: tuple[tuple[int, ...], ...] | None = (
+            tuple(tuple(int(v) for v in s) for s in port_shapes_out)
+            if port_shapes_out is not None
+            else None
+        )
+        sub = cls(
+            n_inputs=n_inputs,
+            n_outputs=n_outputs,
+            id=id,
+            port_shapes_in=ps_in,
+            port_shapes_out=ps_out,
+        )
         for b in blocks:
             if isinstance(b, dict):
                 block_cls = resolve_block_class(b["type"])

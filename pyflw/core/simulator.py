@@ -230,6 +230,89 @@ class Simulator:
                         f"adapt scalar/vector ports."
                     )
 
+    def _check_scope_inputs_are_scalar(self) -> None:
+        """ADR-0018 §(3) S-A: ``Scope`` ブロックは SM-A scalar 入力のみ受け付ける。
+
+        SM-B モードで Scope に vector 信号を直接繋ぐと build 時に明示エラーで
+        拒否し、Demux 経由 (port-by-port に分解) を誘導する。Scope クラス名で
+        判定 (= ADR-0018 §(8) U2 で Option a "abstraction leak" を許容)。
+        """
+        # 遅延 import で循環回避 (Scope は ``pyflw.blocks.sinks``、Block は ``core``)
+        from ..blocks.sinks import Scope
+
+        for b in self.blocks:
+            if isinstance(b, Scope):
+                for i, shape in enumerate(b.port_shapes_in):
+                    if shape != ():
+                        raise BlockSpecError(
+                            f"Scope {b.id!r}: input port {i} has shape {shape}, but "
+                            f"Scope only accepts scalar (rank-0) inputs. Use a Demux "
+                            f"block to split the vector signal into scalar ports first."
+                        )
+
+    def _check_subsystem_sm_b_unsupported(self) -> None:
+        """ADR-0018 §(4.3): SM-B port を持つ ``Subsystem`` は Phase 3 では run 不可。
+
+        ``Subsystem.output_v`` は override されておらず、``Block.output_v`` default
+        wrapper は ``output`` を呼んで内部で ``_step_inner`` の SM-A scalar coercion
+        (``float(u_external[port_idx])``) を経由する。従って SM-B 信号 (ndarray) は
+        サイレントに切り捨てられる。`_step_inner_v` は Phase 4 で追加予定 (ADR-0018
+        §(4.3))。
+        """
+        # 遅延 import で循環回避
+        from ..subsystems import Subsystem
+
+        for b in self.blocks:
+            if isinstance(b, Subsystem):
+                has_sm_b = any(s != () for s in b.port_shapes_in) or any(
+                    s != () for s in b.port_shapes_out
+                )
+                if has_sm_b:
+                    raise BlockSpecError(
+                        f"Subsystem {b.id!r}: running a Subsystem with SM-B vector "
+                        f"ports (port_shapes_in={b.port_shapes_in}, "
+                        f"port_shapes_out={b.port_shapes_out}) is not supported in "
+                        f"Phase 3 (ADR-0018 §(4.3)). Save/load round-trip is preserved, "
+                        f"but execution awaits ``_step_inner_v`` in Phase 4."
+                    )
+
+    def _record_v(
+        self,
+        t: float,
+        inputs_v: dict[Block, tuple[np.ndarray, ...]],
+    ) -> None:
+        """SM-B run path 用の record。tuple-of-ndarray inputs を SM-A の 1D ndarray に
+        変換して既存 ``record(t, u_1d)`` に橋渡しする (ADR-0018 §(3))。
+
+        Scope は SM-A only (ビルド時に確認済み) なので、各 input port は rank-0
+        ndarray。これらを 1D ndarray に concat して既存 API に渡す。
+
+        Contract:
+            ``inputs_v`` は ``_step_vector`` の 2nd-pass 戻り値で、``record`` を持つ
+            ブロック (Scope 等) は ``direct_feedthrough=True`` であるかぎり必ず
+            ``inputs_v[b]`` が書き込まれている。``direct_feedthrough=False`` の
+            recordable ブロックは現 Phase では存在しないが、将来追加された場合
+            ``inputs_v.get(b) is None`` になりうる。その時はサイレント skip ではなく
+            ``BlockSpecError`` で気付ける形にしてある (= debug ノイズを残さない)。
+        """
+        for b in self.blocks:
+            if not hasattr(b, "record"):
+                continue
+            u_tuple = inputs_v.get(b)
+            if u_tuple is None:
+                # _step_vector は direct_feedthrough=True の recordable ブロックには
+                # 必ず inputs を書き込む。ここに来たら implementation bug。
+                raise BlockSpecError(
+                    f"Block {b.id!r} has record() but no inputs were gathered in "
+                    f"_step_vector. This indicates an internal bug or an unsupported "
+                    f"direct_feedthrough=False sink block."
+                )
+            # tuple of rank-0 ndarrays → 1D ndarray (length = n_inputs)
+            u_1d = np.array(
+                [float(np.asarray(ui).item()) for ui in u_tuple], dtype=float
+            )
+            b.record(t, u_1d)
+
     def _is_sm_a_mode(self) -> bool:
         """ADR-0017 §(8) U2: 全ブロックが SM-A 互換 (全 port_shape == ()) か判定。
 
@@ -458,14 +541,20 @@ class Simulator:
                 u = _zero_inputs(b)
             xb = state_for(b)
             y = b.output_v(t, xb, u)
-            # output_v の戻り値が想定通りの長さ・shape か簡易 check (debug 用)
+            # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
+            # 異なる長さの tuple を返すと、後続の signal 伝搬で IndexError や shape
+            # mismatch のような不可解な error になり debug が困難。ここで明示的に
+            # 拒否しておく (Block.output_v の default wrapper には長さ check がある
+            # が、override 経路はそれを通らない)。
+            if len(y) != b.n_outputs:
+                raise BlockSpecError(
+                    f"{type(b).__name__} {b.id!r}.output_v returned {len(y)} "
+                    f"output(s), expected {b.n_outputs}"
+                )
             outputs[b] = tuple(np.asarray(yi, dtype=float) for yi in y)
         for b in order:
             if not b.direct_feedthrough:
                 inputs[b] = _gather_inputs(b)
-                # TODO(Phase 3 #4): direct_feedthrough=False の離散ブロック更新で、
-                # ``discrete_state`` が ``_step_vector`` 専用 dict 表現と整合するように
-                # ``run()`` の SM-B 用ループ統合時に再設計する (Mux/Demux 完成と同時)。
         return outputs, inputs
 
     def run(self) -> None:
@@ -491,22 +580,25 @@ class Simulator:
         ``[A]`` の前に置くことで、サンプル境界 ``t = n*sample_time`` で update が
         呼ばれ、UnitDelay の出力が ``y(n*T) = u((n-1)*T)`` (Simulink semantics) と
         一致する (single-rate / multi-rate 両方)。
+
+        実装は SM-A / SM-B モードで完全分離 (ADR-0018 §(2) R-A): モード判定後、
+        ``_run_sm_a_loop`` (既存ホットパス) または ``_run_sm_b_loop`` (vector port
+        対応) に委譲する。各ループのステップラベル ``[A']`` / ``[A]`` / ``[E]`` /
+        ``[B]`` は両 method 内のコメントを参照。
         """
         order = self._execution_order()
-        # ADR-0017 §(8) U2: SM-A / SM-B モード判定。``_execution_order()`` で
-        # 全ブロックの ``_build()`` (Subsystem の n_states 確定など) と shape check
-        # が完了したあと判定する。SM-A モード (全ポート shape == ()) なら既存の
-        # 高速 _step パスを使い、SM-B モード (任意 vector port あり) では現状
-        # 未実装のため明示エラー。Phase 3 #4 (Mux/Demux 実装) で SM-B run path を
-        # 完成させる予定。
-        if not self._is_sm_a_mode():
-            raise BlockSpecError(
-                "SM-B vector ports detected, but the SM-B simulation runtime is not "
-                "yet wired up. Phase 3 #4 (Mux/Demux + SM-B run path) is the next "
-                "milestone after ADR-0017. For now, only SM-A scalar ports are supported "
-                "at run() time. The Block API and build-time shape checks are already "
-                "in place, so SM-B-aware blocks can be defined and validated."
-            )
+        # ADR-0017 §(8) U2 / ADR-0018 §(2): SM-A / SM-B モード判定。``_execution_order()``
+        # で全ブロックの ``_build()`` (Subsystem の n_states 確定など) と port shape
+        # check が完了したあと判定する。SM-A モード (全ポート shape == ()) なら既存の
+        # 高速 _step パス、SM-B モード (任意 vector port あり) は _step_vector パスを使う。
+        sm_a_mode = self._is_sm_a_mode()
+        if not sm_a_mode:
+            # ADR-0018 §(3) S-A: Scope は SM-A only。SM-B 信号を Scope に直接繋ぐと
+            # build 時に明示エラー (Demux 経由を誘導)。
+            self._check_scope_inputs_are_scalar()
+            # ADR-0018 §(4.3): SM-B Subsystem は Phase 4 まで run 不可。silent 破損
+            # を避けるため build 時に明示拒否。
+            self._check_subsystem_sm_b_unsupported()
         self._resolve_sample_times(order)
         dt_base = self._compute_dt_base()
         layout, n_total = self._state_layout()
@@ -527,6 +619,40 @@ class Simulator:
                 f"t_end={self.t_end}, dt_base={dt_base}: computed n_steps={n_steps} < 1"
             )
 
+        # 停止フラグはこの run() 呼び出しの間だけ有効。前回の値が残っているのを
+        # ここでクリアする。
+        self._stop_requested = False
+
+        # ADR-0018 §(2) R-A: SM-A / SM-B run path 完全分離。SM-A モードでは
+        # 既存ホットパスを完全に維持 (= 541 件テストへの影響ゼロ)。
+        # f_continuous は loop method 内で定義する (= ``discrete_state`` の再代入を
+        # closure が正しく拾えるようにする)。
+        if sm_a_mode:
+            self._run_sm_a_loop(
+                n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
+            )
+        else:
+            self._run_sm_b_loop(
+                n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
+            )
+
+    def _run_sm_a_loop(
+        self,
+        n_steps: int,
+        dt_base: float,
+        n_total: int,
+        order: list[Block],
+        layout: list[tuple[Block, slice]],
+        x_cont: np.ndarray,
+        discrete_state: dict[Block, np.ndarray],
+    ) -> None:
+        """SM-A モードのメインループ (ADR-0014/0015 §(1) と完全同一)。
+
+        ``f_continuous`` を本 method 内で定義することで、ループ内の
+        ``discrete_state = next_discrete`` 再代入を closure が正しく追跡する
+        (= ADR-0014 §Risks #3 で確認した nonlocal capture セマンティクス)。
+        """
+
         def f_continuous(t: float, x: np.ndarray) -> np.ndarray:
             _, ins = self._step(t, x, discrete_state, order, layout)
             xdot = np.zeros(n_total)
@@ -534,17 +660,10 @@ class Simulator:
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], ins[b]), dtype=float)
             return xdot
 
-        # 停止フラグはこの run() 呼び出しの間だけ有効。前回の値が残っているのを
-        # ここでクリアする。
-        self._stop_requested = False
-
         for k in range(n_steps + 1):
             t = k * dt_base
 
             # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
-            # 2-pass approach: まず pre-fire の inputs を組み立てるための _step を呼び、
-            # それを使って fire し、その後 [A] で post-fire の outputs/inputs を再計算する。
-            # 発火条件は ``k % step_ratio == 0`` (= サンプル境界の **始まり**)。
             if discrete_state:
                 _, inputs_pre = self._step(t, x_cont, discrete_state, order, layout)
                 next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
@@ -555,15 +674,17 @@ class Simulator:
                         x_b = discrete_state[b]
                         u_b = inputs_pre.get(b, np.zeros(b.n_inputs))
                         next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
-                discrete_state = next_discrete
+                # closure 共有のため in-place update (= 同じ dict 参照を維持)。
+                # f_continuous / f_continuous_vector が discrete_state を closure で
+                # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
+                discrete_state.clear()
+                discrete_state.update(next_discrete)
 
             # [A] 出力計算 2 パス (post-fire の discrete_state を反映)
             outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             # [E] record (Scope 等)
             self._record(t, inputs)
 
-            # ADR-0011 §(4): 各ステップ後の進捗 hook。``False`` 戻り値または
-            # ``request_stop()`` で graceful 停止する。
             if self.on_step_callback is not None:
                 cont = self.on_step_callback(t, self.t_end)
                 if cont is False:
@@ -574,12 +695,115 @@ class Simulator:
             if k == n_steps:
                 break
 
-            # [B] 連続部分の積分 [t_k, t_{k+1}]。f_continuous のクロージャは
-            # post-fire の discrete_state を参照する (= 離散→連続の ZOH 的なフロー)。
+            # [B] 連続部分の積分 [t_k, t_{k+1}]
             if n_total > 0:
                 t_next = (k + 1) * dt_base
                 sol = solve_ivp(
                     f_continuous,
+                    (t, t_next),
+                    x_cont,
+                    t_eval=[t_next],
+                    method=self.solver,
+                    rtol=self.rtol,
+                    atol=self.atol,
+                    max_step=dt_base,
+                )
+                if not sol.success:
+                    raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
+                x_cont = sol.y[:, -1]
+
+    def _run_sm_b_loop(
+        self,
+        n_steps: int,
+        dt_base: float,
+        n_total: int,
+        order: list[Block],
+        layout: list[tuple[Block, slice]],
+        x_cont: np.ndarray,
+        discrete_state: dict[Block, np.ndarray],
+    ) -> None:
+        """SM-B (vector ports) モード用メインループ (ADR-0018 §(2))。
+
+        構造は SM-A と同一だが、各ステップ内で ``_step_vector`` を呼んで
+        ``inputs[b]: tuple[np.ndarray, ...]`` で signal を伝搬する。``record`` は
+        SM-A 入力 (rank-0 scalar) のみを Scope に渡すため、Scope 側に SM-B 信号が
+        来るとビルド時に既に拒否されている (``_check_scope_inputs_are_scalar``)。
+
+        ``f_continuous_vector`` を本 method 内で定義することで closure が正しく
+        ``discrete_state`` 再代入を追跡する (SM-A と同じ理由)。
+        """
+
+        def f_continuous_vector(t: float, x: np.ndarray) -> np.ndarray:
+            # ADR-0018 §(2)(4): SM-B run path。``_step_vector`` から得た
+            # ``inputs[b]`` は tuple of ndarrays。SM-A 連続ブロックは SM-A
+            # ``derivative(t, x, u_1d)`` を期待するため、tuple を 1D ndarray に
+            # concat (= rank-0 element を順に並べる) する wrapper で互換性を保つ。
+            # SM-B-aware 連続ブロック (Phase 4+) は ``derivative_v`` を将来追加。
+            _, ins = self._step_vector(t, x, discrete_state, order, layout)
+            xdot = np.zeros(n_total)
+            for b, sl in layout:
+                u_tuple = ins[b]
+                u_1d = np.array(
+                    [float(np.asarray(ui).item()) for ui in u_tuple],
+                    dtype=float,
+                )
+                xdot[sl] = np.asarray(b.derivative(t, x[sl], u_1d), dtype=float)
+            return xdot
+
+        for k in range(n_steps + 1):
+            t = k * dt_base
+
+            # [A'] 離散ブロック update (SM-B path)
+            if discrete_state:
+                _, inputs_pre_v = self._step_vector(
+                    t, x_cont, discrete_state, order, layout
+                )
+                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
+                for b in order:
+                    if b not in discrete_state:
+                        continue
+                    if k % b._step_ratio == 0:
+                        x_b = discrete_state[b]
+                        u_tuple = inputs_pre_v.get(
+                            b, tuple(np.zeros(s, dtype=float) for s in b.port_shapes_in)
+                        )
+                        # SM-B 離散ブロックは Phase 3 では存在しない。SM-A 互換
+                        # wrapper: tuple of rank-0 → 1D ndarray
+                        u_1d = np.array(
+                            [float(np.asarray(ui).item()) for ui in u_tuple],
+                            dtype=float,
+                        )
+                        next_discrete[b] = np.array(
+                            b.update(t, x_b, u_1d), dtype=float
+                        )
+                # closure 共有のため in-place update (= 同じ dict 参照を維持)。
+                # f_continuous / f_continuous_vector が discrete_state を closure で
+                # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
+                discrete_state.clear()
+                discrete_state.update(next_discrete)
+
+            # [A] 2nd pass (post-fire)
+            _, inputs_v = self._step_vector(t, x_cont, discrete_state, order, layout)
+            # [E] record: SM-B 信号は Scope で拒否済み。SM-A scalar 入力を持つ
+            # ブロック (Scope 含む) は inputs_v[b] が rank-0 ndarray のタプルなので、
+            # SM-A の ``_record`` が期待する 1D ndarray に変換する。
+            self._record_v(t, inputs_v)
+
+            if self.on_step_callback is not None:
+                cont = self.on_step_callback(t, self.t_end)
+                if cont is False:
+                    return
+            if self._stop_requested:
+                return
+
+            if k == n_steps:
+                break
+
+            # [B] 連続積分 (SM-B 版 f_continuous_vector)
+            if n_total > 0:
+                t_next = (k + 1) * dt_base
+                sol = solve_ivp(
+                    f_continuous_vector,
                     (t, t_next),
                     x_cont,
                     t_eval=[t_next],

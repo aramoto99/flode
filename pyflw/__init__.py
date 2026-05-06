@@ -1,4 +1,4 @@
-__version__ = "0.6.0"  # ADR-0017 Phase 3 #3 (SM-B vector ports, BREAKING, 2026-05-06)
+__version__ = "0.6.1"  # ADR-0018 Phase 3 #4 (Mux/Demux + SM-B run path, 2026-05-06)
 
 from .core.block import Block
 from .core.decorator import block

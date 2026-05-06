@@ -153,15 +153,19 @@ class Block:
         # 判定することで、Subsystem 等のフレームワーク内部実装が ``output`` を
         # override していても、leaf サブクラスが ``output_v`` のみを override した
         # ケースを誤検出しない (code-reviewer MUST 修正)。
+        # ADR-0018 §(5): フレームワーク内部 class (``Inport`` / ``Outport`` 等) は
+        # SM-A / SM-B の両 path で動くため両方 override が必要。``_skip_dual_api_check
+        # = True`` を class 属性で立てて check を skip する (= 内部例外)。
         cls = type(self)
-        output_in_leaf = "output" in cls.__dict__
-        output_v_in_leaf = "output_v" in cls.__dict__
-        if output_in_leaf and output_v_in_leaf:
-            raise BlockSpecError(
-                f"{cls.__name__}: must override either `output` (SM-A) or `output_v` (SM-B), "
-                f"not both. SM-A blocks should use `output` only; SM-B-aware blocks (e.g. "
-                f"Mux/Demux with vector ports) should use `output_v`."
-            )
+        if not getattr(cls, "_skip_dual_api_check", False):
+            output_in_leaf = "output" in cls.__dict__
+            output_v_in_leaf = "output_v" in cls.__dict__
+            if output_in_leaf and output_v_in_leaf:
+                raise BlockSpecError(
+                    f"{cls.__name__}: must override either `output` (SM-A) or `output_v` (SM-B), "
+                    f"not both. SM-A blocks should use `output` only; SM-B-aware blocks (e.g. "
+                    f"Mux/Demux with vector ports) should use `output_v`."
+                )
 
         self._resolved_sample_time: float | None = None
         self._step_ratio: int = 1
@@ -317,10 +321,14 @@ class Block:
         }
         # ADR-0017 §(5) / SM-B: port_shapes は default 全 () (= SM-A scalar) のとき
         # 省略、SM-B-aware ブロック (どこか非 () の port shape) のときのみ JSON に
-        # 出力する (code-reviewer SHOULD 修正、Phase 3 #4 Mux/Demux save/load 対応)。
-        scalar_shape: tuple[int, ...] = ()
-        if any(s != scalar_shape for s in self.port_shapes_in):
-            out["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
-        if any(s != scalar_shape for s in self.port_shapes_out):
-            out["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+        # 出力する。ただしブロックの port_shapes が ``__init__`` の他パラメータ
+        # (例: Mux の ``n``、Inport の ``port_shape``) から一意に決まる場合、JSON 側
+        # で port_shapes を持つと重複・矛盾の元になるため、class 属性
+        # ``_serialize_port_shapes = False`` で skip できる (Mux/Demux/Inport/Outport)。
+        if getattr(type(self), "_serialize_port_shapes", True):
+            scalar_shape: tuple[int, ...] = ()
+            if any(s != scalar_shape for s in self.port_shapes_in):
+                out["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
+            if any(s != scalar_shape for s in self.port_shapes_out):
+                out["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
         return out

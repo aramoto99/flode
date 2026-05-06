@@ -400,28 +400,32 @@ class TestIsSmAModeEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# #8: SM-B run() のエラーメッセージ確認
+# #8: SM-B run path enablement (ADR-0018)
 # ---------------------------------------------------------------------------
 
 
-class TestSmBRunErrorMessage:
-    def test_sm_b_run_error_contains_expected_phrase(self) -> None:
-        """SM-B モードの run() エラーが 'SM-B vector ports detected' を含む。"""
-        sim = Simulator(t_end=0.1, dt=0.01)
+class TestSmBRunEnabled:
+    def test_sm_b_run_completes_post_adr0018(self) -> None:
+        """ADR-0018 §(2) で SM-B run path が解禁。VectorSrc→VectorSink が完走する。"""
+        sim = Simulator(t_end=0.05, dt=0.01)
         sim.add(_VectorSrc())
         sim.add(_VectorSink())
         sim.connect(sim.blocks[0], sim.blocks[1])
-        with pytest.raises(BlockSpecError, match="SM-B vector ports detected"):
-            sim.run()
+        sim.run()  # 例外なく完走
 
-    def test_sm_b_run_error_is_block_spec_error(self) -> None:
-        """SM-B モードの run() が BlockSpecError を raise する。"""
-        sim = Simulator(t_end=0.1, dt=0.01)
-        sim.add(_VectorSrc())
-        sink = sim.add(_VectorSink())
-        sim.connect(sim.blocks[0], sink)
-        with pytest.raises(BlockSpecError):
-            sim.run()
+    def test_sm_a_only_model_uses_sm_a_path(self) -> None:
+        """SM-A only モデルは引き続き SM-A hot path を使う (回帰防止)。"""
+        from pyflw.blocks import Constant, Gain, Scope
+
+        sim = Simulator(t_end=0.05, dt=0.01)
+        c = sim.add(Constant(value=2.0))
+        g = sim.add(Gain(k=3.0))
+        sc = sim.add(Scope(n_inputs=1))
+        sim.connect(c, g)
+        sim.connect(g, sc)
+        # _is_sm_a_mode() が True を返すことを確認
+        assert sim._is_sm_a_mode() is True
+        sim.run()
 
 
 # ---------------------------------------------------------------------------

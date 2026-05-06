@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-06
+
+Phase 3 #4 (Mux / Demux + SM-B run path integration). ADR-0018 Accepted.
+
+### Added
+- `pyflw.blocks.Mux(n)`: aggregates `n` scalar inputs into a single
+  rank-1 vector of shape `(n,)`. `direct_feedthrough=True`, no state.
+  `port_shapes_in = ((), ..., ())`, `port_shapes_out = ((n,),)`.
+- `pyflw.blocks.Demux(n)`: splits a rank-1 vector input of shape
+  `(n,)` into `n` scalar outputs. Inverse of `Mux`.
+  `port_shapes_in = ((n,),)`, `port_shapes_out = ((), ..., ())`.
+- `Inport` / `Outport` accept a `port_shape` keyword argument
+  (default `()`) for SM-B subsystem boundaries. The internal
+  `_external_value` is initialized as a float for SM-A or as an
+  `np.ndarray` for SM-B. JSON serialization includes `port_shape` only
+  when non-default.
+- `Subsystem._build` now reconciles outer `port_shapes_in[i]` /
+  `port_shapes_out[j]` with the inner `Inport(port_idx=i).port_shape` /
+  `Outport(port_idx=j).port_shape`. Mismatches raise `BlockSpecError`.
+- `Subsystem.to_dict` / `_from_dict` round-trip the SM-B
+  `port_shapes_in` / `port_shapes_out` (when non-default), so an SM-B
+  Subsystem can be saved and reloaded without losing its outer port
+  declarations. Pure SM-A Subsystems remain byte-identical in JSON.
+- `Simulator._check_subsystem_sm_b_unsupported`: when SM-B mode is
+  active and any `Subsystem` declares a non-scalar port, `run()` raises
+  `BlockSpecError` (Phase 4 will add `_step_inner_v`). This avoids the
+  silent-truncation failure mode where SM-B input ndarrays would be
+  coerced via `float(...)` inside the SM-A `_step_inner` path.
+- `Simulator._step_vector` now validates that an `output_v` override
+  returns exactly `n_outputs` items, catching mis-implemented
+  vector-aware blocks at the source instead of as obscure downstream
+  shape errors.
+- `tests/blocks/test_mux_demux.py` / `test_mux_demux_edge_cases.py`
+  (56 tests), `tests/core/test_sm_b_run.py` /
+  `test_sm_b_run_edge_cases.py` (29 tests), and
+  `tests/subsystems/test_subsystem_sm_b.py` (25 tests including SM-B
+  Subsystem JSON round-trip and Phase-4 rejection regressions) cover
+  the new SM-B paths end-to-end.
+
+### Changed
+- `Simulator.run()` dispatches to `_run_sm_a_loop()` (existing hot path,
+  bit-for-bit compatible with v0.6.0) or to the new `_run_sm_b_loop()`
+  for models that contain any SM-B port. The SM-B loop builds outputs
+  via `_step_vector(...)` and integrates continuous states using a
+  `f_continuous_vector` adapter that bridges SM-A `derivative()` blocks
+  (e.g. `Integrator`) by collapsing the SM-B input tuple to a 1D
+  ndarray. Pure SM-A models never enter the SM-B path.
+- `Block.to_dict()` honours a new `_serialize_port_shapes` class flag.
+  Mux / Demux / Inport / Outport set it to `False` so their
+  `port_shapes_*` are derived from `n` / `port_shape` at load time and
+  are never written to JSON twice.
+- The framework-internal `Inport` / `Outport` blocks set
+  `_skip_dual_api_check = True` so the ADR-0017 §(8) U3 dual-API guard
+  does not flag their intentional `output` + `output_v` co-existence.
+- `Scope` is asserted to be SM-A only at build time when SM-B mode is
+  active (`Simulator._check_scope_inputs_are_scalar`). Connecting a
+  vector signal directly to a `Scope` raises `BlockSpecError` with a
+  hint to insert a `Demux` first.
+
+### Migration
+- Pure SM-A models: no action required, JSON is byte-identical.
+- ADR-0017 schema 0.4: unchanged.
+- The placeholder `BlockSpecError("SM-B vector ports detected, but the
+  SM-B simulation runtime is not yet wired up")` from v0.6.0 is gone;
+  SM-B models now run directly. Tests that asserted that error
+  (`TestSmBRunNotImplemented`, `TestSmBRunErrorMessage`) have been
+  renamed to `TestSmBRunEnabled` and verify successful completion.
+
+### Verified
+- 641 tests pass (existing 541 + 100 new SM-B tests including
+  edge-case suites and code-reviewer regression coverage).
+- `ruff check pyflw tests` and `mypy pyflw` clean.
+- `examples/spring_mass_damper.py` numerical output unchanged
+  (`Final x=0.2505, x_dot=0.0031`).
+
 ## [0.6.0] - 2026-05-06
 
 Phase 3 #3 (signal model SM-B). ADR-0017 Accepted.
