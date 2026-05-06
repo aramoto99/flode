@@ -48,11 +48,12 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_5(self) -> None:
-        assert CURRENT_SCHEMA_VERSION == "0.5"
+    def test_current_is_0_6(self) -> None:
+        # ADR-0021: 0.5 → 0.6 bump (mask params)
+        assert CURRENT_SCHEMA_VERSION == "0.6"
 
-    def test_supported_includes_0_5(self) -> None:
-        assert "0.5" in SUPPORTED_SCHEMA_VERSIONS
+    def test_supported_includes_0_6(self) -> None:
+        assert "0.6" in SUPPORTED_SCHEMA_VERSIONS
 
 
 class TestMigration0_4_to_0_5:

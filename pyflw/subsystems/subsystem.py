@@ -24,6 +24,11 @@ import numpy as np
 from ..core.block import Block
 from ..core.persistence import LayoutDict, normalize_layout
 from ..exceptions import AlgebraicLoopError, BlockSpecError
+from ._mask import (
+    collect_placeholder_names,
+    normalize_mask_params,
+    substitute_placeholders,
+)
 from .ports import Inport, Outport
 
 _logger = logging.getLogger("pyflw.subsystem")
@@ -57,6 +62,8 @@ class Subsystem(Block):
         port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         layout: LayoutDict | None = None,
+        mask_params: list[dict[str, Any]] | None = None,
+        mask_values: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(n_inputs, int) or n_inputs < 0:
             raise BlockSpecError(
@@ -112,6 +119,13 @@ class Subsystem(Block):
         # 空 dict のとき ``params.layout`` を JSON に出さず、SM-A モデルの byte-identical
         # を維持する。形式正規化は ``normalize_layout`` に委譲。
         self.layout: LayoutDict | None = normalize_layout(layout)
+
+        # ADR-0021 §(6)(9): マスクパラメータ宣言 + 現在値。declarative `mask_params`
+        # が None / 空のとき「マスクなし Subsystem」として byte-identical を維持。
+        self.mask_params: list[dict[str, Any]] | None = normalize_mask_params(
+            mask_params
+        )
+        self.mask_values: dict[str, Any] = self._init_mask_values(mask_values)
 
         if blocks is not None:
             for b in blocks:
@@ -197,6 +211,10 @@ class Subsystem(Block):
         最初の ``output`` / ``derivative`` / ``update`` 呼び出しで遅延実行される。
         ``add`` / ``connect`` で内部構造が変更されると ``_exec_order = None`` に戻り、
         次の ``_build`` で再構築される。
+
+        ADR-0021 §(6): マスク placeholder ($Kp 等) の resolve は他の build パスより
+        前に行う。port_shape を変える placeholder は ``BlockSpecError`` で拒否する
+        (= ADR-0017 静的 port_shape 宣言との整合)。
         """
         if self._exec_order is not None:
             return  # 既にビルド済み (構造変更が無いため再実行不要)
@@ -204,6 +222,9 @@ class Subsystem(Block):
         self._state_slices = []
         self._continuous_slices = []
         self._discrete_slices = []
+
+        # ADR-0021 §(6): マスク placeholder の resolve
+        self._resolve_mask_placeholders()
 
         # Inport / Outport の一覧
         inports = [b for b in self._inner_blocks if isinstance(b, Inport)]
@@ -405,6 +426,112 @@ class Subsystem(Block):
                 )
         return out
 
+    # ---------- マスクパラメータ (ADR-0021) ----------
+
+    def _init_mask_values(
+        self, explicit: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """``mask_params`` のデフォルトと明示指定 ``explicit`` を merge する。
+
+        宣言 ``mask_params`` が ``None`` のとき:
+          - ``explicit`` も空 / None なら空 dict を返す
+          - ``explicit`` に値があれば ``BlockSpecError`` (= 宣言なしに値を渡すのは
+            silent ignore よりエラーが安全。ADR-0021 code-reviewer MUST 修正)
+        """
+        if not self.mask_params:
+            if explicit:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: mask_values provided ({sorted(explicit)}) "
+                    f"but mask_params is not declared"
+                )
+            return {}
+        out: dict[str, Any] = {}
+        for spec in self.mask_params:
+            out[spec["name"]] = spec.get("default")
+        if explicit:
+            for name, value in explicit.items():
+                if name not in out:
+                    raise BlockSpecError(
+                        f"Subsystem {self.id!r}: mask_values key {name!r} is not "
+                        f"declared in mask_params (declared: {sorted(out)})"
+                    )
+                out[name] = value
+        return out
+
+    def set_mask_value(self, name: str, value: Any) -> None:
+        """マスク値を更新し、次回 ``_build`` で再 resolve させる (ADR-0021 §(6))。"""
+        if not self.mask_params:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r} has no mask_params declared"
+            )
+        if name not in {p["name"] for p in self.mask_params}:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: unknown mask name {name!r}"
+            )
+        self.mask_values[name] = value
+        self._exec_order = None  # 次 build で resolve を再実行させる
+
+    def _resolve_mask_placeholders(self) -> None:
+        """``_unresolved_params`` を持つ内部 block を ``mask_values`` で再 resolve する。
+
+        ``_from_dict`` 経路 (= JSON load) で初回構築された inner block には、その時の
+        original placeholder params が ``_unresolved_params`` として保存される。
+        ``set_mask_value`` で値が変わった後の ``_build`` で本メソッドが呼ばれ、新値
+        で再度 substitute → 同 type / 同 id で block を再生成する。再生成後は **他の
+        block の ``input_sources`` のうち旧 block を参照するエントリを新 block に
+        差し替える** ことで配線参照の整合性を保つ (= dangling reference 防止)。
+
+        port_shape が変わる placeholder は ADR-0017 静的宣言を破壊するため
+        ``BlockSpecError``。``_unresolved_params`` を持たない block (= 通常 block /
+        placeholder 未使用) は no-op。
+        """
+        if not self.mask_params:
+            return  # マスクなし Subsystem は no-op
+        replacements: dict[Block, Block] = {}
+        for i, b in enumerate(self._inner_blocks):
+            unresolved = getattr(b, "_unresolved_params", None)
+            if unresolved is None:
+                continue  # placeholder を持たない通常 block
+            new_params = substitute_placeholders(unresolved, self.mask_values)
+            if new_params == b._params:
+                continue  # 既に同値で resolve 済 (= 初回 _from_dict 直後)
+            try:
+                new_block = type(b)(**new_params)
+            except (TypeError, ValueError, BlockSpecError) as e:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: cannot rebuild inner block {b.id!r} "
+                    f"after mask resolve (params={new_params!r}): {e}"
+                ) from e
+            if (
+                new_block.port_shapes_in != b.port_shapes_in
+                or new_block.port_shapes_out != b.port_shapes_out
+            ):
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: mask resolve changed port_shape for "
+                    f"inner block {b.id!r} (placeholder cannot change port shape, "
+                    f"ADR-0017 static port_shape declaration). Move structural "
+                    f"variation out to a variant subsystem (Phase 4+)."
+                )
+            new_block.id = b.id
+            new_block._unresolved_params = dict(unresolved)  # type: ignore[attr-defined]
+            new_block.input_sources = list(b.input_sources)
+            assert b.id is not None  # _build 段階では id は確定済み
+            self._inner_blocks_by_id[b.id] = new_block
+            self._inner_blocks[i] = new_block
+            replacements[b] = new_block
+        if not replacements:
+            return
+        # 他の block の input_sources のうち旧 block を参照するエントリを新 block に
+        # 差し替える。これをやらないと _compute_exec_order が依存解決できず
+        # AlgebraicLoopError になる (= dangling reference)。
+        for b in self._inner_blocks:
+            for idx, src in enumerate(b.input_sources):
+                if src is None:
+                    continue
+                src_block, src_idx = src
+                if src_block in replacements:
+                    b.input_sources[idx] = (replacements[src_block], src_idx)
+
     # ---------- Block 契約の実装 (内部ランタイム委譲) ----------
 
     def _step_inner(
@@ -516,14 +643,21 @@ class Subsystem(Block):
         params: dict[str, Any] = {
             "n_inputs": self.n_inputs,
             "n_outputs": self.n_outputs,
-            "blocks": [b.to_dict() for b in self._inner_blocks],
-            "connections": self._serialize_inner_connections(),
         }
         scalar_shape: tuple[int, ...] = ()
         if any(s != scalar_shape for s in self.port_shapes_in):
             params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
         if any(s != scalar_shape for s in self.port_shapes_out):
             params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+        # ADR-0021 §(7): mask_params / mask_values を canonical 順序で出力
+        if self.mask_params:
+            params["mask_params"] = [dict(p) for p in self.mask_params]
+            # mask_values は declared 順で並べる (= diff の安定化)
+            params["mask_values"] = {
+                p["name"]: self.mask_values[p["name"]] for p in self.mask_params
+            }
+        params["blocks"] = [b.to_dict() for b in self._inner_blocks]
+        params["connections"] = self._serialize_inner_connections()
         if self.layout:
             inner_ids = {b.id for b in self._inner_blocks}
             ordered_layout: LayoutDict = {
@@ -559,6 +693,8 @@ class Subsystem(Block):
         port_shapes_in: list[list[int]] | None = None,
         port_shapes_out: list[list[int]] | None = None,
         layout: LayoutDict | None = None,
+        mask_params: list[dict[str, Any]] | None = None,
+        mask_values: dict[str, Any] | None = None,
     ) -> Subsystem:
         """JSON load 時の factory (ADR-0009 §(7) / code-reviewer MUST #3 修正)。
 
@@ -592,11 +728,52 @@ class Subsystem(Block):
             port_shapes_in=ps_in,
             port_shapes_out=ps_out,
             layout=layout,
+            mask_params=mask_params,
+            mask_values=mask_values,
         )
+        # ADR-0021 §(6): mask_values が宣言されている場合、内部 block の params に
+        # 含まれる placeholder ($Kp 等) を resolve してから block を instantiate する。
+        # JSON 上の placeholder 元形は ``_unresolved_params`` として block に保存され、
+        # ``to_dict`` で round-trip される + ``set_mask_value`` 後の再 resolve で参照される。
+        active_mask_values = sub.mask_values if sub.mask_params else None
+        # ADR-0021 code-reviewer MUST 修正: 宣言と参照の整合性チェック
+        # (= 未参照の宣言 / 未宣言の参照を warning ログで明示)
+        if sub.mask_params:
+            declared = {p["name"] for p in sub.mask_params}
+            referenced: set[str] = set()
+            for b in blocks:
+                if isinstance(b, dict) and isinstance(b.get("params"), dict):
+                    referenced |= collect_placeholder_names(b["params"])
+            unused = declared - referenced
+            undefined = referenced - declared
+            if undefined:
+                raise BlockSpecError(
+                    f"Subsystem {id!r}: undefined mask placeholder(s) "
+                    f"{sorted(undefined)} referenced in inner blocks "
+                    f"(declared: {sorted(declared)})"
+                )
+            if unused:
+                _logger.warning(
+                    "Subsystem %r: declared mask_params %s are not referenced by any "
+                    "inner block placeholder",
+                    id,
+                    sorted(unused),
+                )
         for b in blocks:
             if isinstance(b, dict):
                 block_cls = resolve_block_class(b["type"])
-                sub.add(block_cls(id=b["id"], **b["params"]))
+                raw_params: dict[str, Any] = dict(b["params"])
+                if active_mask_values is not None:
+                    resolved_params = substitute_placeholders(
+                        raw_params, active_mask_values
+                    )
+                else:
+                    resolved_params = raw_params
+                instance = block_cls(id=b["id"], **resolved_params)
+                # placeholder が含まれていた場合のみ ``_unresolved_params`` を保存
+                if active_mask_values is not None and resolved_params != raw_params:
+                    instance._unresolved_params = raw_params
+                sub.add(instance)
             else:
                 sub.add(b)
         for c in connections:

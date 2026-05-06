@@ -58,7 +58,7 @@ class TestGetModel:
         response = client.get("/api/v1/models/demo")
         assert response.status_code == 200
         data = response.json()
-        assert data["schema_version"] == "0.5"
+        assert data["schema_version"] == "0.6"
         assert any(b["id"] == "g" for b in data["blocks"])
 
     def test_404_when_missing(self, client):

@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-07
+
+ADR-0021 (Subsystem drilldown UI + mask parameters) Accepted. Phase 3
+GUI completes: double-click any Subsystem to edit its inner diagram,
+breadcrumb back-navigation, and Subsystems can declare `mask_params` to
+expose tunable values that get substituted into inner block parameters
+via `$Name` placeholders. Schema bumps 0.5 → 0.6 with a no-op
+migration; mask-less Subsystems remain byte-identical to v0.7.0.
+
+### Added
+- `Subsystem(mask_params=..., mask_values=...)` declares scalar
+  (`float` / `int` / `bool`) parameters that drive `$Name` placeholders
+  in inner block params. `Subsystem.set_mask_value(name, value)` updates
+  a value and triggers re-resolve at the next `_build`.
+- `pyflw.subsystems._mask` placeholder helpers
+  (`is_placeholder`, `extract_placeholder_name`, `substitute_placeholders`,
+  `collect_placeholder_names`, `normalize_mask_params`).
+- `Block.to_dict` honours a per-instance `_unresolved_params` snapshot,
+  so JSON round-trip preserves the original `$Name` placeholders rather
+  than the resolved concrete values.
+- Block class registry: `is_container` and `mask_capable` fields exposed
+  in `GET /api/v1/blocks` (auto-derived from `issubclass(cls, Subsystem)`).
+  GUI uses `is_container` to gate double-click drill-down.
+- Frontend: `editingPath` stack in the Zustand store with
+  `drilldownInto` / `drillUp` / `setEditingPath` actions; `Breadcrumb`
+  component (Top › sub_outer › sub_inner …); `pathResolver.ts` for
+  immutable nested updates; `MaskValuesEditor` in `ParameterPanel`
+  that renders type-aware inputs (number / int / bool) for declared
+  mask parameters and writes through to `editingModel`.
+- `tests/subsystems/test_mask.py` (24 tests): placeholder helpers,
+  `normalize_mask_params`, mask defaults, explicit overrides, JSON
+  round-trip, port-shape change rejection, schema 0.5 → 0.6 migration.
+- `pyflw/web/frontend/tests/pathResolver.test.ts` (11 tests): nested
+  resolve / immutable apply / findBlockAtPath edge cases.
+
+### Changed
+- `CURRENT_SCHEMA_VERSION` bumped from `"0.5"` to `"0.6"`.
+  `_builtin_migrate_0_5_to_0_6` is a no-op `schema_version` rewrite
+  (existing 0.1 → 0.6 chain continues to work).
+- `Subsystem.to_dict` writes `mask_params` / `mask_values` into the
+  `params` block (canonical order: `n_inputs`, `n_outputs`,
+  `port_shapes_*`, `mask_params`, `mask_values`, `blocks`,
+  `connections`, `layout`). Non-mask Subsystems omit both keys.
+- `Subsystem._from_dict` substitutes placeholders against `mask_values`
+  before instantiating each inner block, so `Gain(k="$Kp")` is never
+  passed through to a constructor that would have called
+  `float("$Kp")`. Affected blocks gain an `_unresolved_params` snapshot.
+- `Subsystem._resolve_mask_placeholders` is invoked at the start of
+  `_build`. It re-creates inner blocks against current `mask_values`,
+  rewires downstream `input_sources` to the new instances (preventing
+  dangling references that previously surfaced as `AlgebraicLoopError`),
+  and rejects placeholder substitutions that would change `port_shapes_*`
+  (per ADR-0017 static port-shape declaration).
+- `DiagramCanvas` walks `editingPath` via `resolveBlocksAtPath` and now
+  honours `onNodeDoubleClick` for `is_container` blocks.
+- `appStore` edit helpers (`addBlockToEditing`, `removeBlock…`,
+  `updateBlockPosition`, `addConnectionToEditing`, etc.) operate at the
+  current `editingPath` rather than the root, so drill-down editing
+  modifies the correct nested scope.
+- `ParameterPanel` switches to the editing-model + path-aware
+  `findBlockAtPath` and dispatches to `MaskValuesEditor` whenever the
+  selected block declares mask parameters. Regular numeric edits commit
+  on `onBlur` and rely on the existing 500 ms auto-save.
+
+### Migration
+- v0.7.0 (schema 0.5) files load unchanged via the new no-op migration;
+  their Subsystems keep `mask_params is None` (mask-less).
+- New mask-using JSON files round-trip placeholders verbatim. CLI /
+  pytest with mask Subsystems must construct them via
+  `Subsystem._from_dict` (or `Simulator.load`) — programmatic
+  `Gain(k="$Kp")` is intentionally rejected by the existing constructor
+  validations and is not part of the Phase 3 scope.
+
+### Verified
+- 712 pytest pass (existing 688 + 24 new mask tests). ruff and mypy
+  strict clean. `examples/spring_mass_damper.py` numerical output
+  unchanged.
+- 50 Vitest pass (existing 39 + 11 pathResolver tests). `npx tsc
+  --noEmit` clean. `npm run build` produces a 126 kB gzipped bundle.
+
+### Phase 4 (deferred per ADR-0021 §11)
+- Mask expressions (`$Kp + 0.1 * $Ki`) and a guarded evaluator.
+- Variant subsystems where placeholders may change `port_shapes`.
+- GUI editor for declaring mask parameters (currently declarative only).
+- `array` / `matrix` / `function` mask param types.
+- Cascading masks across nested Subsystems.
+- Path-scoped viewport persistence (zoom / pan) and sharing of
+  external `.flw.mask.json` libraries.
+
 ## [0.7.0] - 2026-05-06
 
 ADR-0019 (GUI drag-and-drop + block palette + Block class registry REST)

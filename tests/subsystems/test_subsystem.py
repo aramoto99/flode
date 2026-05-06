@@ -372,8 +372,8 @@ class TestSubsystemPersistence:
         path = tmp_path / "v.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        # save は CURRENT_SCHEMA_VERSION を使う (ADR-0020 で 0.5 に bump)
-        assert data["schema_version"] == "0.5"
+        # save は CURRENT_SCHEMA_VERSION を使う (ADR-0021 で 0.6 に bump)
+        assert data["schema_version"] == "0.6"
 
     def test_loads_old_schema_0_1_via_migration(self, tmp_path):
         """``schema_version="0.1"`` の旧ファイルが migration 経由で読める。"""

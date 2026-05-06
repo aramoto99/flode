@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.5"
+CURRENT_SCHEMA_VERSION = "0.6"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -293,12 +293,25 @@ def _builtin_migrate_0_4_to_0_5(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_5_to_0_6(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0021 §(8): 0.5 → 0.6。
+
+    Subsystem entry に optional な ``mask_params`` / ``mask_values`` を追加。0.5
+    ファイルにはマスク関連キーが無く、本 migration は ``schema_version`` 文字列更新
+    のみ (load 側で mask_params 欠落 = マスクなし Subsystem として解釈)。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.6"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
     _MIGRATIONS[("0.2", "0.3")] = _builtin_migrate_0_2_to_0_3
     _MIGRATIONS[("0.3", "0.4")] = _builtin_migrate_0_3_to_0_4
     _MIGRATIONS[("0.4", "0.5")] = _builtin_migrate_0_4_to_0_5
+    _MIGRATIONS[("0.5", "0.6")] = _builtin_migrate_0_5_to_0_6
 
 
 _register_builtin_migrations()

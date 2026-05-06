@@ -314,10 +314,18 @@ class Block:
         """
         from .persistence import block_type_path, to_json_dict
 
+        # ADR-0021 §(6): マスク Subsystem 内部の block は ``_unresolved_params``
+        # (= placeholder ``"$Kp"`` を含む元の params) を持つ場合がある。round-trip 保証
+        # のため to_dict ではこちらを優先する (= 解決済み具象値ではなく placeholder を JSON
+        # に残す)。マスク外の通常 block では ``_unresolved_params`` 属性は付かない。
+        # ``is not None`` で判定する (= ``{}`` でも空を意図して保存する将来の拡張に
+        # 備える、code-reviewer MUST 修正)。
+        unresolved = getattr(self, "_unresolved_params", None)
+        params_for_json = unresolved if unresolved is not None else self._params
         out: dict[str, Any] = {
             "id": self._id,
             "type": block_type_path(self.__class__),
-            "params": to_json_dict(self._params),
+            "params": to_json_dict(params_for_json),
         }
         # ADR-0017 §(5) / SM-B: port_shapes は default 全 () (= SM-A scalar) のとき
         # 省略、SM-B-aware ブロック (どこか非 () の port shape) のときのみ JSON に

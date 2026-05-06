@@ -2,11 +2,13 @@
 
 import { create } from "zustand";
 
+import { applyAtPath } from "../lib/pathResolver";
 import type {
   BlockEntry,
   ConnectionEntry,
   FlwModel,
   LayoutDict,
+  MaskValuesDict,
   SimulationStatus,
   StreamMessage,
 } from "../types/api";
@@ -35,6 +37,12 @@ interface AppState {
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
   setDirty: (dirty: boolean) => void;
+
+  // ADR-0021 §(1): Subsystem ドリルダウン path
+  editingPath: string[];
+  setEditingPath: (path: string[]) => void;
+  drilldownInto: (subsystemId: string) => void;
+  drillUp: (depth?: number) => void;
 
   // シミュレーション関連
   simulationId: string | null;
@@ -70,6 +78,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // モデル切り替えで編集状態をクリア (新モデルは ModelLoader で再 fetch)
       editingModel: null,
       dirty: false,
+      editingPath: [],
     }),
 
   selectedNodeId: null,
@@ -85,6 +94,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dirty: false,
   setDirty: (dirty) => set({ dirty }),
+
+  editingPath: [],
+  setEditingPath: (path) => set({ editingPath: path, selectedNodeId: null }),
+  drilldownInto: (subsystemId) =>
+    set((state) => ({
+      editingPath: [...state.editingPath, subsystemId],
+      selectedNodeId: null,
+    })),
+  drillUp: (depth) =>
+    set((state) => ({
+      editingPath:
+        depth === undefined
+          ? state.editingPath.slice(0, -1)
+          : state.editingPath.slice(0, depth),
+      selectedNodeId: null,
+    })),
 
   simulationId: null,
   status: "idle",
@@ -145,54 +170,82 @@ export const useAppStore = create<AppState>((set, get) => ({
 }));
 
 // ---------------------------------------------------------------------------
-// ADR-0019 §(5) helper functions: editingModel の編集 API (DiagramCanvas 等から呼ぶ)
+// ADR-0019 §(5) / ADR-0021 §(2) helper functions:
+// editingModel の編集 API (現在 path 配下を更新する)
 // ---------------------------------------------------------------------------
+
+function currentPath(): readonly string[] {
+  return useAppStore.getState().editingPath;
+}
 
 export function addBlockToEditing(
   block: BlockEntry,
   position: { x: number; y: number },
 ): void {
-  useAppStore.getState().applyEditingModel((m) => ({
-    ...m,
-    blocks: [...m.blocks, block],
-    layout: { ...(m.layout ?? {}), [block.id]: position },
-  }));
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: [...view.blocks, block],
+      connections: view.connections,
+      layout: { ...view.layout, [block.id]: position },
+    })),
+  );
 }
 
 export function removeBlockFromEditing(blockId: string): void {
-  useAppStore.getState().applyEditingModel((m) => {
-    const blocks = m.blocks.filter((b) => b.id !== blockId);
-    const connections = m.connections.filter(
-      (c) => c.src !== blockId && c.dst !== blockId,
-    );
-    const layout = { ...(m.layout ?? {}) };
-    delete layout[blockId];
-    return { ...m, blocks, connections, layout };
-  });
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const blocks = view.blocks.filter((b) => b.id !== blockId);
+      const connections = view.connections.filter(
+        (c) => c.src !== blockId && c.dst !== blockId,
+      );
+      const layout = { ...view.layout };
+      delete layout[blockId];
+      return { blocks, connections, layout };
+    }),
+  );
 }
 
 export function updateBlockPosition(
   blockId: string,
   position: { x: number; y: number },
 ): void {
-  useAppStore.getState().applyEditingModel((m) => ({
-    ...m,
-    layout: { ...(m.layout ?? {}), [blockId]: position },
-  }));
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: view.blocks,
+      connections: view.connections,
+      layout: { ...view.layout, [blockId]: position },
+    })),
+  );
 }
 
 export function updateBlocksLayout(layout: LayoutDict): void {
-  useAppStore.getState().applyEditingModel((m) => ({ ...m, layout }));
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: view.blocks,
+      connections: view.connections,
+      layout,
+    })),
+  );
 }
 
 export function addConnectionToEditing(conn: ConnectionEntry): void {
-  useAppStore.getState().applyEditingModel((m) => {
-    // ADR-0019 §4.3: 同一 (dst, dst_idx) への上書き接続 (古い edge を削除)
-    const filtered = m.connections.filter(
-      (c) => !(c.dst === conn.dst && c.dst_idx === conn.dst_idx),
-    );
-    return { ...m, connections: [...filtered, conn] };
-  });
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const filtered = view.connections.filter(
+        (c) => !(c.dst === conn.dst && c.dst_idx === conn.dst_idx),
+      );
+      return {
+        blocks: view.blocks,
+        connections: [...filtered, conn],
+        layout: view.layout,
+      };
+    }),
+  );
 }
 
 export function removeConnectionFromEditing(
@@ -201,23 +254,57 @@ export function removeConnectionFromEditing(
   dst: string,
   dst_idx: number,
 ): void {
-  useAppStore.getState().applyEditingModel((m) => ({
-    ...m,
-    connections: m.connections.filter(
-      (c) =>
-        !(c.src === src && c.src_idx === src_idx && c.dst === dst && c.dst_idx === dst_idx),
-    ),
-  }));
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: view.blocks,
+      connections: view.connections.filter(
+        (c) =>
+          !(
+            c.src === src &&
+            c.src_idx === src_idx &&
+            c.dst === dst &&
+            c.dst_idx === dst_idx
+          ),
+      ),
+      layout: view.layout,
+    })),
+  );
 }
 
 export function updateBlockParams(
   blockId: string,
   params: Record<string, unknown>,
 ): void {
-  useAppStore.getState().applyEditingModel((m) => ({
-    ...m,
-    blocks: m.blocks.map((b) =>
-      b.id === blockId ? { ...b, params } : b,
-    ),
-  }));
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: view.blocks.map((b) =>
+        b.id === blockId ? { ...b, params } : b,
+      ),
+      connections: view.connections,
+      layout: view.layout,
+    })),
+  );
+}
+
+// ADR-0021 §(9): Subsystem の mask_values 更新 (= ParameterPanel mask edit からの呼び出し)
+export function updateSubsystemMaskValues(
+  subsystemId: string,
+  maskValues: MaskValuesDict,
+): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => ({
+      blocks: view.blocks.map((b) => {
+        if (b.id !== subsystemId) return b;
+        return {
+          ...b,
+          params: { ...b.params, mask_values: maskValues },
+        };
+      }),
+      connections: view.connections,
+      layout: view.layout,
+    })),
+  );
 }

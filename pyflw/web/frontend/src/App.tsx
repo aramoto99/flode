@@ -2,6 +2,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useState } from "react";
 
 import { BlockPalette } from "./components/BlockPalette";
+import { Breadcrumb } from "./components/Breadcrumb";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { ModelList } from "./components/ModelList";
 import { ParameterPanel } from "./components/ParameterPanel";
@@ -74,6 +75,7 @@ export default function App(): JSX.Element {
         <main className="row-start-2 flex flex-col">
           {selectedModelId ? (
             <>
+              <Breadcrumb />
               <div className="flex-1 border-b border-gray-200">
                 <DiagramCanvas modelId={selectedModelId} />
               </div>

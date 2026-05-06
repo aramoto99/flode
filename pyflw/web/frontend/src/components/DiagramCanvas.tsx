@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getModel, listBlockMetadata } from "../api/client";
 import { modelToDiagram, type BlockNode } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
+import { resolveBlocksAtPath } from "../lib/pathResolver";
 import {
   indexRegistry,
   validatePortShapeConnection,
@@ -32,6 +33,7 @@ import {
   updateBlockPosition,
   useAppStore,
 } from "../store/appStore";
+import type { FlwModel } from "../types/api";
 
 interface DiagramCanvasProps {
   modelId: string;
@@ -58,6 +60,8 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const selectNode = useAppStore((s) => s.selectNode);
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const editingPath = useAppStore((s) => s.editingPath);
+  const drilldownInto = useAppStore((s) => s.drilldownInto);
 
   const [toast, setToast] = useState<string | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -95,7 +99,24 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   if (!model) {
     return <div className="p-4 text-sm text-gray-500">No model</div>;
   }
-  const { nodes: baseNodes, edges } = modelToDiagram(model);
+  // ADR-0021 §(2): editingPath を辿って現スコープの blocks/connections/layout を取得
+  let pathView;
+  try {
+    pathView = resolveBlocksAtPath(model, editingPath);
+  } catch (e) {
+    return (
+      <div className="p-4 text-sm text-red-600">
+        Path resolution failed: {(e as Error).message}
+      </div>
+    );
+  }
+  const scopeModel: FlwModel = {
+    ...model,
+    blocks: pathView.blocks,
+    connections: pathView.connections,
+    layout: pathView.layout,
+  };
+  const { nodes: baseNodes, edges } = modelToDiagram(scopeModel);
   const decoratedNodes = baseNodes.map((n) => ({
     ...n,
     selected: n.id === selectedNodeId,
@@ -134,8 +155,8 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
 
   const onConnect: OnConnect = (connection: Connection): void => {
     if (!editingModel) return;
-    const srcBlock = editingModel.blocks.find((b) => b.id === connection.source);
-    const dstBlock = editingModel.blocks.find((b) => b.id === connection.target);
+    const srcBlock = pathView.blocks.find((b) => b.id === connection.source);
+    const dstBlock = pathView.blocks.find((b) => b.id === connection.target);
     if (!srcBlock || !dstBlock) {
       showToast("Connection refused: source or target block not found.");
       return;
@@ -184,12 +205,25 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       x: event.clientX,
       y: event.clientY,
     });
-    const existingIds = new Set(editingModel.blocks.map((b) => b.id));
+    // ADR-0021 §(4): 現在 path の scope 内の id だけと衝突しないようにする
+    const existingIds = new Set(pathView.blocks.map((b) => b.id));
     const newId = generateUniqueId(typePath, existingIds);
     addBlockToEditing(
       { id: newId, type: typePath, params: defaultParams },
       position,
     );
+  };
+
+  // ADR-0021 §(4): is_container=true なノード (= Subsystem サブクラス) を
+  // ダブルクリックでドリルダウンする。registry の `is_container` を参照。
+  const onNodeDoubleClick = (
+    _event: React.MouseEvent,
+    node: BlockNode,
+  ): void => {
+    const meta = registryMap.get(node.data.blockType);
+    if (meta?.is_container) {
+      drilldownInto(node.id);
+    }
   };
 
   return (
@@ -203,6 +237,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={(_event, node: BlockNode) => selectNode(node.id)}
+        onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={() => selectNode(null)}
         onDragOver={onDragOver}
         onDrop={onDrop}

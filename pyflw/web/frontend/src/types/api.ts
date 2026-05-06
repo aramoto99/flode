@@ -85,7 +85,20 @@ export interface BlockMetadata {
   port_shapes_in_default: number[][];
   port_shapes_out_default: number[][];
   tags: string[];
+  // ADR-0021 §(5): drilldown / mask 可否のヒント
+  is_container: boolean;
+  mask_capable: boolean;
 }
+
+// ADR-0021 §(5)(7): Subsystem mask param 宣言と現在値
+export interface MaskParamSpec {
+  name: string;
+  type: "float" | "int" | "bool";
+  default: unknown;
+  description: string;
+}
+
+export type MaskValuesDict = Record<string, number | boolean>;
 
 export interface BlockRegistryResponse {
   blocks: BlockMetadata[];

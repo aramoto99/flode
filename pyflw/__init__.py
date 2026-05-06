@@ -1,4 +1,4 @@
-__version__ = "0.7.0"  # ADR-0019 GUI palette + drag-drop + Block registry (2026-05-06)
+__version__ = "0.7.1"  # ADR-0021 Subsystem drilldown + mask params (schema 0.6, 2026-05-07)
 
 from .core.block import Block
 from .core.decorator import block

@@ -50,7 +50,7 @@ class ParamSpec:
 
 @dataclass
 class BlockMetadata:
-    """1 つの Block class の registry エントリ (ADR-0019 §1.2)。"""
+    """1 つの Block class の registry エントリ (ADR-0019 §1.2、ADR-0021 §(5))。"""
 
     type_path: str
     display_name: str
@@ -65,6 +65,9 @@ class BlockMetadata:
     port_shapes_in_default: list[list[int]]
     port_shapes_out_default: list[list[int]]
     tags: list[str] = field(default_factory=list)
+    # ADR-0021 §(5): GUI ドリルダウン / マスクパラメータ可否のヒント
+    is_container: bool = False
+    mask_capable: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -390,12 +393,22 @@ def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str, str]:
 
 def build_metadata(cls: type) -> BlockMetadata:
     """1 つの Block サブクラスから ``BlockMetadata`` を構築する。"""
+    # 遅延 import で循環回避 (subsystem.py は core.block / core.persistence に依存)
+    from ..subsystems import Subsystem
+
     type_path = block_type_path(cls)
     category, display_name, icon, color = _resolve_metadata_fallback(cls)
     docstring = inspect.getdoc(cls) or ""
     docstring_summary = docstring.split("\n\n", 1)[0].split("\n")[0] if docstring else ""
 
     blk = _instantiate_for_introspection(cls)
+
+    # ADR-0021 §(5): Subsystem サブクラスは drill-down + mask の対象。
+    is_container = issubclass(cls, Subsystem)
+
+    tags = _derive_tags(blk)
+    if is_container and "container" not in tags:
+        tags.append("container")
 
     return BlockMetadata(
         type_path=type_path,
@@ -414,7 +427,9 @@ def build_metadata(cls: type) -> BlockMetadata:
         port_shapes_out_default=(
             [list(s) for s in blk.port_shapes_out] if blk else []
         ),
-        tags=_derive_tags(blk),
+        tags=tags,
+        is_container=is_container,
+        mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
     )
 
 
@@ -502,6 +517,8 @@ def metadata_to_dict(meta: BlockMetadata, *, include_full_docstring: bool = Fals
         "port_shapes_in_default": meta.port_shapes_in_default,
         "port_shapes_out_default": meta.port_shapes_out_default,
         "tags": meta.tags,
+        "is_container": meta.is_container,
+        "mask_capable": meta.mask_capable,
     }
     if include_full_docstring:
         out["docstring_full"] = meta.docstring_full

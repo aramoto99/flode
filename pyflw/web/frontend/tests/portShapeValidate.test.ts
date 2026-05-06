@@ -23,6 +23,8 @@ const META_GAIN: BlockMetadata = {
   port_shapes_in_default: [[]],
   port_shapes_out_default: [[]],
   tags: ["sm_a"],
+  is_container: false,
+  mask_capable: false,
 };
 
 const META_MUX: BlockMetadata = {
@@ -38,6 +40,8 @@ const META_MUX: BlockMetadata = {
   port_shapes_in_default: [[], []],
   port_shapes_out_default: [[2]],
   tags: ["sm_b"],
+  is_container: false,
+  mask_capable: false,
 };
 
 const META_DEMUX: BlockMetadata = {
@@ -53,6 +57,8 @@ const META_DEMUX: BlockMetadata = {
   port_shapes_in_default: [[2]],
   port_shapes_out_default: [[], []],
   tags: ["sm_b"],
+  is_container: false,
+  mask_capable: false,
 };
 
 describe("shapeEquals", () => {
