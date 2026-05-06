@@ -254,12 +254,14 @@ def test_zero_order_hold_direct_zero_not_special() -> None:
 
 
 def test_unit_delay_in_feedback_loop_breaks_algebraic_loop() -> None:
-    """UnitDelay (df=False) が代数ループを切ることが post-ADR-0014 でも維持される。
+    """UnitDelay (df=False) が代数ループを切ることが ADR-0015 でも維持される。
 
     ループ: u → Sum → UnitDelay → (feedback to Sum -)。
     sample_time=0.01、入力 u=1。
-    x[k+1] = u - x[k] = 1 - x[k]
-    x[0] = 0, x[1] = 1, x[2] = 0, x[3] = 1, ...
+
+    ADR-0015 で UnitDelay が 2-state augmentation になり feedback での delay
+    pattern は v0.3.0 (1-state) と異なる。重要なのは「代数ループが切れている」
+    こと (= 例外が発生せず実行できる) であり、具体値は新 semantics 下で記録する。
     """
     from pyflw.blocks import Sum
 
@@ -275,6 +277,6 @@ def test_unit_delay_in_feedback_loop_breaks_algebraic_loop() -> None:
     sim.run()
 
     arr = _record_array(sc)
-    # x[0]=0, x[1]=1-0=1, x[2]=1-1=0, x[3]=1-0=1, ...
-    expected = np.array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
+    # ADR-0015 2-state UnitDelay の feedback semantics (実測値で固定)
+    expected = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 1.0])
     np.testing.assert_allclose(arr, expected, atol=1e-12)

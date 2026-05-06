@@ -366,14 +366,14 @@ class TestSubsystemPersistence:
             atol=1e-12,
         )
 
-    def test_schema_version_is_0_2_when_subsystem_present(self, tmp_path):
+    def test_schema_version_is_current_when_subsystem_present(self, tmp_path):
         sim = Simulator(t_end=0.01, dt=0.01)
         sim.add(_build_gain_subsystem(k=1.0))
         path = tmp_path / "v.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        # save は CURRENT_SCHEMA_VERSION を使う (= 0.2 in this phase)
-        assert data["schema_version"] == "0.2"
+        # save は CURRENT_SCHEMA_VERSION を使う (ADR-0015 で 0.3 に bump)
+        assert data["schema_version"] == "0.3"
 
     def test_loads_old_schema_0_1_via_migration(self, tmp_path):
         """``schema_version="0.1"`` の旧ファイルが migration 経由で読める。"""

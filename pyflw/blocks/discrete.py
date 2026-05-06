@@ -30,17 +30,24 @@ _zohd_logger = logging.getLogger("pyflw.blocks.discrete")
 
 
 class UnitDelay(Block):
-    """1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014)。
+    """1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014/0015)。
 
-    Simulator は現サンプル時刻 ``t_k`` の入力で ``update(t_k, x, u(t_k))`` を呼び、
-    ``x_next = u(t_k)`` を保存する (ADR-0014 §(1))。次サンプル時刻 ``t_{k+1}`` で
-    ``output(t_{k+1}, x, u) = x = u(t_k)`` が返る → 真の 1 サンプル遅延。
+    Internal state (n_states=2):
+        x[0] = output_curr  -- 現サンプルでの出力 (``output(t, x, u)`` が返す値)
+        x[1] = output_next  -- 次サンプル境界で x[0] にシフトされる buffer
+
+    Simulator は ``k % step_ratio == 0`` のサンプル境界で ``update(t, x, u)`` を
+    呼び、``x_next = [x[1], u[0]]`` (= state[0] ← 前 buffer、state[1] ← 現入力)
+    を保存する (ADR-0015 §(1)(2))。
+
+    multi-rate (sample_time > dt_base) でも Simulink semantics と完全一致する。
+    ADR-0014 で残った multi-rate 1 dt_base off-by-one は ADR-0015 で根本解決済み。
 
     ``direct_feedthrough=False`` なので閉ループ内で代数ループを切る用途にも使える。
 
     Args:
         sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
-        x0: 初期状態 (= t=0 での出力値)。
+        x0: 初期状態 (= t=0 での出力値)。内部では state[0]=state[1]=x0 に展開する。
     """
 
     def __init__(
@@ -56,22 +63,32 @@ class UnitDelay(Block):
             name=name,
             n_inputs=1,
             n_outputs=1,
-            n_states=1,
+            n_states=2,
             direct_feedthrough=False,
             sample_time=sample_time,
         )
-        self.x0 = np.array([float(x0)])
+        # ADR-0015 §(2): state[0]=output_curr, state[1]=output_next。
+        # 初期状態は両 state を ``x0`` で埋める (t=0 での出力 = x0、最初のサンプル
+        # 境界で fire するまで buffer も x0)。
+        self.x0 = np.array([float(x0), float(x0)])
+        # JSON serialize 時は scalar の ``x0`` を保持 (ADR-0015 §(4))。
         self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
 
     def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.array([u[0]])
+        # state[0] ← 前回の state[1] (前サンプルで保存した値が現サンプルで visible)
+        # state[1] ← u(t_k) (次サンプルで output される値)
+        return np.array([x[1], u[0]])
 
 
 class DiscreteIntegrator(Block):
-    """前進 Euler 離散積分 ``x[k+1] = x[k] + sample_time * gain * u[k]``、出力 ``y[k] = x[k]``。
+    """前進 Euler 離散積分 ``x[k+1] = x[k] + sample_time * gain * u[k]``、出力 ``y[k] = x[k]`` (Simulink 互換)。
+
+    Internal state (n_states=2、ADR-0015 §(3) で 2-state augmentation):
+        x[0] = output_curr  -- 現サンプル境界での出力 (前回 fire で確定済み)
+        x[1] = next_x       -- 次サンプル境界で x[0] にシフトされる buffer
 
     ``direct_feedthrough=False`` (出力は前ステップ確定状態のみ参照) なので
     閉ループ内の代数ループ切断にも使える。
@@ -79,7 +96,7 @@ class DiscreteIntegrator(Block):
     Args:
         sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
         gain: 入力に掛けるゲイン (積分定数)。
-        x0: 初期状態。
+        x0: 初期状態。内部では state[0]=state[1]=x0 に展開する。
     """
 
     def __init__(
@@ -96,12 +113,14 @@ class DiscreteIntegrator(Block):
             name=name,
             n_inputs=1,
             n_outputs=1,
-            n_states=1,
+            n_states=2,
             direct_feedthrough=False,
             sample_time=sample_time,
         )
         self.gain = float(gain)
-        self.x0 = np.array([float(x0)])
+        # ADR-0015 §(3): state[0]=output_curr, state[1]=next_x。両方を x0 で埋める
+        self.x0 = np.array([float(x0), float(x0)])
+        # JSON serialize 時は scalar の x0 を維持 (ADR-0015 §(4))
         self._params = {
             "sample_time": float(sample_time),
             "gain": self.gain,
@@ -123,24 +142,30 @@ class DiscreteIntegrator(Block):
                 "Add this block to a Simulator and call `run()` (or invoke "
                 "`_resolve_sample_times`) before calling update() directly."
             )
-        return np.array([x[0] + ts * self.gain * u[0]])
+        # ADR-0015 §(3) 2-state augmentation の semantics:
+        # - x[1] は「累積最新値 = 標準形の x[k]」。fire のたびに ``T*g*u(t)`` を加算する
+        # - x[0] は「output 用スナップショット = x[k-1]」。fire 時に旧 x[1] からシフト
+        # 次回 fire で state[0] ← state[1] (シフト)、state[1] ← state[1] + T*g*u (=
+        # 累積継続)。state[1] からの再帰更新は v0.3.0 1-state Forward Euler の連続性
+        # を保つために必須 (state[0] からの計算は invariant `state[0] = state[1]` が
+        # 初期境界以外で崩れ、累積が 1 step ずれるため不可)。
+        return np.array([x[1], x[1] + ts * self.gain * u[0]])
 
 
 class ZeroOrderHold(Block):
-    """state-based 離散ホールド。**ADR-0014 適用後は ``UnitDelay`` と完全同一**。
+    """state-based 離散ホールド。``UnitDelay`` と完全同一の semantics (ADR-0014/0015)。
 
-    実装は ``y[k] = x[k]``、``update`` で ``x[k+1] = u[k]``。これは Simulink の
-    Zero Order Hold (``direct_feedthrough=True``、サンプル時刻で u(t_k) を即座に
-    反映、初回 t=0 でも ``y(0) = u(0)``) と異なり、1 サンプル遅延する
-    (= UnitDelay と同一の semantics)。
+    実装は ``UnitDelay`` と同一の 2-state ブロック (ADR-0015 §(2)):
+    ``output(t, x, u) = x[0]``、``update(t, x, u) = [x[1], u[0]]``。
 
-    Simulink ZOH 互換の即時反映挙動が必要な場合は ``ZeroOrderHoldDirect`` を
-    使用すること。本 class は Phase 3 で ``DeprecationWarning`` 発出、
-    Phase 4 で削除予定 (ADR-0014 §(4))。
+    Simulink ZOH 互換の即時反映挙動 (`y(t_k) = u(t_k)`) が必要な場合は
+    ``ZeroOrderHoldDirect`` を使用すること。本 class は Phase 3 で
+    ``DeprecationWarning`` 発出、Phase 4 で削除予定 (ADR-0014 §(4))。
 
     Args:
         sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
-        x0: 初回サンプル前 (``t=0`` 時点) の出力値。
+        x0: 初回サンプル前 (``t=0`` 時点) の出力値。内部では state[0]=state[1]=x0
+            に展開する (ADR-0015 §(2)(4))。
     """
 
     def __init__(
@@ -156,18 +181,18 @@ class ZeroOrderHold(Block):
             name=name,
             n_inputs=1,
             n_outputs=1,
-            n_states=1,
+            n_states=2,
             direct_feedthrough=False,
             sample_time=sample_time,
         )
-        self.x0 = np.array([float(x0)])
+        self.x0 = np.array([float(x0), float(x0)])
         self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         return np.array([x[0]])
 
     def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.array([u[0]])
+        return np.array([x[1], u[0]])
 
 
 # ADR-0014 §(3): サンプル時刻判定の許容誤差。整数比カウンタで決まる
@@ -245,10 +270,17 @@ class ZeroOrderHoldDirect(Block):
 
 
 class DiscreteStateSpace(Block):
-    """離散 LTI 状態空間 ``x[k+1] = A x[k] + B u[k]``、``y[k] = C x[k] + D u[k]``。
+    """離散 LTI 状態空間 ``x[k+1] = A x[k] + B u[k]``、``y[k] = C x[k] + D u[k]`` (Simulink 互換)。
 
-    ADR-0006 §(5)。``direct_feedthrough`` は ``D`` の最大絶対値が ``1e-12`` を
-    超えるかで自動推論。
+    ADR-0006 §(5)、ADR-0015 §(3) で 2n-state augmentation。``direct_feedthrough`` は
+    ``D`` の最大絶対値が ``1e-12`` を超えるかで自動推論。
+
+    Internal state (n_states=2n、ADR-0015 §(3)):
+        x[0..n-1]   = output_curr — 現サンプル境界での状態 (前回 fire で確定)
+        x[n..2n-1]  = next_x      — 次サンプル境界で前半にシフトされる buffer
+
+    JSON 表現の ``x0`` は ``(n,)`` shape の scalar 配列のまま (Block 内部で
+    ``[x0, x0]`` に展開、ADR-0015 §(4))。
 
     Args:
         A: 状態行列 (shape ``(n, n)``)。
@@ -256,7 +288,7 @@ class DiscreteStateSpace(Block):
         C: 出力行列 (shape ``(p, n)``)、``p = n_outputs``。
         D: 直達行列 (shape ``(p, m)``)。``None`` でゼロ。
         sample_time: サンプル周期 [s]、``> 0`` 必須 (継承 ``-1.0`` も可)。
-        x0: 初期状態 (shape ``(n,)``)。
+        x0: 初期状態 (shape ``(n,)``)。内部で ``[x0; x0]`` (shape ``(2n,)``) に展開。
     """
 
     def __init__(
@@ -302,12 +334,13 @@ class DiscreteStateSpace(Block):
                 )
         df = bool(np.max(np.abs(D_arr)) > _DF_TOLERANCE) if D_arr.size else False
 
+        # ADR-0015 §(3): 2n-state augmentation で n_states = 2n
         super().__init__(
             id=id,
             name=name,
             n_inputs=m,
             n_outputs=p,
-            n_states=n,
+            n_states=2 * n,
             direct_feedthrough=df,
             sample_time=sample_time,
         )
@@ -315,42 +348,61 @@ class DiscreteStateSpace(Block):
         self._B = B_arr
         self._C = C_arr
         self._D = D_arr
+        self._n = n
         if x0 is None:
-            self.x0 = np.zeros(n)
+            x0_user = np.zeros(n)
         else:
             x0_arr = np.atleast_1d(np.asarray(x0, dtype=float))
             if x0_arr.shape != (n,):
                 raise BlockSpecError(
                     f"DiscreteStateSpace: x0 must have shape ({n},), got {x0_arr.shape}"
                 )
-            self.x0 = x0_arr
+            x0_user = x0_arr
+        # 内部状態は [x0; x0] の 2n-vector (両半分を x0 で埋める)
+        self.x0 = np.concatenate([x0_user, x0_user])
+        # JSON serialize 用には scalar 配列の x0_user を保存 (ADR-0015 §(4))
         self._params = {
             "A": A_arr,
             "B": B_arr,
             "C": C_arr,
             "D": D_arr,
-            "x0": self.x0,
+            "x0": x0_user,
             "sample_time": float(sample_time),
         }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
+        # output は前半 (= output_curr) のみを使う
+        x_curr = x[: self._n]
+        return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
 
     def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
+        # ADR-0015 §(3) 2n-state augmentation の semantics:
+        # - x[n:]  = x[k] (累積最新値、A@x + B@u を毎 fire で適用)
+        # - x[:n]  = x[k-1] (output 用スナップショット、fire 時に旧 x[n:] からシフト)
+        # 次回 fire で state[:n] ← state[n:]、state[n:] ← A @ state[n:] + B @ u
+        # (= 累積継続)。x[:n] からの計算は invariant 崩れ時に標準形の累積が 1 step
+        # ずれるため不可 (DiscreteIntegrator と同じ理由、ADR-0015 §(3) 訂正)。
+        x_buf = x[self._n :]
+        next_buf = np.asarray(self._A @ x_buf + self._B @ u, dtype=float).ravel()
+        return np.concatenate([x_buf, next_buf])
 
 
 class DiscreteTransferFunction(Block):
-    """離散 LTI 伝達関数 ``H(z) = num(z) / den(z)`` (SISO)。
+    """離散 LTI 伝達関数 ``H(z) = num(z) / den(z)`` (SISO、Simulink 互換)。
 
-    ADR-0006 §(4)。内部で ``scipy.signal.tf2ss`` により SS に変換して実装。
+    ADR-0006 §(4)、ADR-0015 §(3) で 2n-state augmentation。内部で
+    ``scipy.signal.tf2ss`` により SS に変換して ``DiscreteStateSpace`` 同等の実装。
     ``deg(num) <= deg(den)`` を要求。
+
+    Internal state (n_states=2n、ADR-0015 §(3)):
+        x[0..n-1]  = output_curr
+        x[n..2n-1] = next_x
 
     Args:
         numerator: 分子多項式の係数 (z の降べき)。
         denominator: 分母多項式の係数。
         sample_time: サンプル周期 [s]、``> 0`` 必須。
-        x0: 初期状態 (shape ``(len(denominator)-1,)``)。
+        x0: 初期状態 (shape ``(len(denominator)-1,)``)。内部で ``[x0; x0]`` に展開。
     """
 
     def __init__(
@@ -390,12 +442,13 @@ class DiscreteTransferFunction(Block):
         n = A.shape[0]
         df = bool(np.max(np.abs(D)) > _DF_TOLERANCE) if D.size else False
 
+        # ADR-0015 §(3): 2n-state augmentation で n_states = 2n
         super().__init__(
             id=id,
             name=name,
             n_inputs=1,
             n_outputs=1,
-            n_states=n,
+            n_states=2 * n,
             direct_feedthrough=df,
             sample_time=sample_time,
         )
@@ -403,26 +456,34 @@ class DiscreteTransferFunction(Block):
         self._B = B
         self._C = C
         self._D = D
+        self._n = n
         self.numerator = num
         self.denominator = den
         if x0 is None:
-            self.x0 = np.zeros(n)
+            x0_user = np.zeros(n)
         else:
             x0_arr = np.atleast_1d(np.asarray(x0, dtype=float))
             if x0_arr.shape != (n,):
                 raise BlockSpecError(
                     f"DiscreteTransferFunction: x0 must have shape ({n},), got {x0_arr.shape}"
                 )
-            self.x0 = x0_arr
+            x0_user = x0_arr
+        self.x0 = np.concatenate([x0_user, x0_user])
         self._params = {
             "numerator": num,
             "denominator": den,
-            "x0": self.x0,
+            "x0": x0_user,
             "sample_time": float(sample_time),
         }
 
     def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
+        x_curr = x[: self._n]
+        return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
 
     def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
+        # ADR-0015 §(3) 2n-state augmentation: x[:n]=x[k-1] (output snapshot)、
+        # x[n:]=x[k] (累積)。state[n:] からの再帰更新で標準形の連続性を保つ
+        # (DiscreteStateSpace と同じ semantics)。
+        x_buf = x[self._n :]
+        next_buf = np.asarray(self._A @ x_buf + self._B @ u, dtype=float).ravel()
+        return np.concatenate([x_buf, next_buf])

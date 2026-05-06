@@ -650,13 +650,18 @@ def test_discrete_transfer_function_2nd_order_standard_form() -> None:
 
 
 def test_discrete_transfer_function_2nd_order_n_states() -> None:
-    """2 次 DTF が n_states=2 のブロックとして構築される。"""
+    """2 次 DTF が n_states=4 のブロックとして構築される。
+
+    ADR-0015 §(3) で 2n-state augmentation を導入: 内部 SS 表現の n=2 に対し
+    augmented state は 2n=4。``output_curr`` (2 要素) + ``next_x`` (2 要素)。
+    """
     dtf = DiscreteTransferFunction(
         numerator=[1.0],
         denominator=[1.0, -0.5, 0.0],
         sample_time=0.01,
     )
-    assert dtf.n_states == 2
+    # ADR-0015: n_states = 2 * (deg(den)) = 2 * 2 = 4
+    assert dtf.n_states == 4
 
 
 # ---------------------------------------------------------------------------
@@ -664,16 +669,18 @@ def test_discrete_transfer_function_2nd_order_n_states() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_multirate_unit_delay_off_by_one_known_limitation() -> None:
-    """multi-rate (sample_time > dt_base) での UnitDelay が dt_base 分のずれを持つ。
+def test_multirate_unit_delay_simulink_semantics() -> None:
+    """multi-rate (sample_time > dt_base) での UnitDelay が真の Simulink semantics に従う。
 
-    ADR-0014 §Risks #1 の既知制限: sample_time=0.1, dt_base=0.01 で
-    発火条件 (k+1) % step_ratio == 0 により、update が t=0.09 (= t_{k+1} - dt_base)
-    で呼ばれる。真の Simulink semantics では t=0 で発火し u(0)=0 が使われるが、
-    pyflw では t=0.09 の u(0.09)=0.09 が使われる (1 dt_base 分の off)。
+    ADR-0015 で根本治療済み: ADR-0014 で known limitation として残っていた
+    「multi-rate で 1 dt_base off-by-one」が、2-state augmentation + fire timing
+    変更で解消された。
 
-    このテストは「現在の挙動が確かに off している」ことを文書化目的で固定する。
-    修正後はこのテストの期待値が変わる。
+    sample_time=0.1, dt_base=0.01, x0=0, Clock 入力 u(t)=t で:
+    - y(t in [0, 0.1)) = x0 = 0
+    - y(t in [0.1, 0.2)) = u(0) = 0
+    - y(t in [0.2, 0.3)) = u(0.1) = 0.1
+    - y(t in [0.3, 0.4)) = u(0.2) = 0.2
     """
     dt_base = 0.01
     sample_time = 0.1
@@ -691,36 +698,38 @@ def test_multirate_unit_delay_off_by_one_known_limitation() -> None:
     times = np.array(sc.times)
 
     # サンプル時刻 (step_ratio=10) のインデックスを抽出
-    sample_indices = [i for i, t in enumerate(times) if abs(round(t / sample_time) * sample_time - t) < 1e-9]
+    sample_indices = [
+        i
+        for i, t in enumerate(times)
+        if abs(round(t / sample_time) * sample_time - t) < 1e-9
+    ]
 
-    # 現在の pyflw 挙動: y(t=0.1) = u(0.09) = 0.09
-    #   (u が t_k = 0.09 で採取されるため、真の Simulink y(t=0.1)=u(0)=0 より 0.09 ずれる)
-    # x0=0 なので y(t=0) = 0 は合っている
     y_at_sample_times = arr[sample_indices]
     sample_times_actual = times[sample_indices]
 
+    # y(0) = x0 = 0
     assert sample_times_actual[0] == pytest.approx(0.0)
-    assert y_at_sample_times[0] == pytest.approx(0.0)  # y(0) = x0 = 0 は正しい
+    assert y_at_sample_times[0] == pytest.approx(0.0)
 
-    # t=0.1 での値が 0.09 (off-by-one の証拠)
+    # y(0.1) = u(0) = 0 (1 サンプル遅延、Simulink semantics)
     assert sample_times_actual[1] == pytest.approx(0.1)
-    assert y_at_sample_times[1] == pytest.approx(0.09, abs=1e-10), (
-        "Known limitation: multi-rate UnitDelay uses u(t_k - dt_base) instead of u(t_k).\n"
-        f"Expected 0.09 (pyflw off-by-one), got {y_at_sample_times[1]}.\n"
-        "True Simulink semantics would give 0.0. See ADR-0014 Risks #1."
-    )
+    assert y_at_sample_times[1] == pytest.approx(0.0, abs=1e-10)
+
+    # y(0.2) = u(0.1) = 0.1
+    assert sample_times_actual[2] == pytest.approx(0.2)
+    assert y_at_sample_times[2] == pytest.approx(0.1, abs=1e-10)
+
+    # y(0.3) = u(0.2) = 0.2
+    assert sample_times_actual[3] == pytest.approx(0.3)
+    assert y_at_sample_times[3] == pytest.approx(0.2, abs=1e-10)
 
 
-def test_multirate_unit_delay_off_by_one_systematic() -> None:
-    """multi-rate off-by-one が全サンプル時刻で dt_base 分のずれになることの確認。
+def test_multirate_unit_delay_simulink_systematic() -> None:
+    """multi-rate UnitDelay が全サンプル時刻で Simulink y(t_n) = u(t_{n-1}) に従う。
 
-    y_pyflw(t_{k+1}) = u(t_{k+1} - dt_base)
-    y_simulink(t_{k+1}) = u(t_k)  (= u(t_{k+1} - sample_time))
-
-    Clock 入力 u(t)=t として、ずれ = u(t_{k+1} - dt_base) - u(t_k)
-                              = (t_{k+1} - dt_base) - t_k
-                              = sample_time - dt_base
-    = 0.1 - 0.01 = 0.09 が全サンプル時刻で発生する (t=0 除く)。
+    ADR-0015 適用後:
+    - y(t in [n*T, (n+1)*T)) = u((n-1)*T) for n >= 1
+    - y(t in [0, T)) = x0
     """
     dt_base = 0.01
     sample_time = 0.1
@@ -736,17 +745,18 @@ def test_multirate_unit_delay_off_by_one_systematic() -> None:
 
     arr = _flat(sc)
     times = np.array(sc.times)
-    sample_indices = [i for i, t in enumerate(times) if abs(round(t / sample_time) * sample_time - t) < 1e-9]
-
-    # t=0 (k=0) を除いた各サンプル時刻での出力
-    # pyflw: y(t_1) = u(t_1 - dt_base) = u(sample_time - dt_base) = sample_time - dt_base
+    sample_indices = [
+        i
+        for i, t in enumerate(times)
+        if abs(round(t / sample_time) * sample_time - t) < 1e-9
+    ]
     y_at_sample = arr[sample_indices]
     t_at_sample = times[sample_indices]
 
-    # k>=1 の各サンプル時刻: y(t_{k+1}) = t_{k+1} - dt_base
+    # 各サンプル時刻 t_n (n >= 1) で y(t_n) = u(t_{n-1}) = t_n - sample_time
     for i in range(1, len(sample_indices)):
-        t_k1 = t_at_sample[i]
-        expected_pyflw = t_k1 - dt_base  # u(t_{k+1} - dt_base)
-        assert y_at_sample[i] == pytest.approx(expected_pyflw, abs=1e-10), (
-            f"t={t_k1:.2f}: y_pyflw={y_at_sample[i]}, expected={expected_pyflw}"
+        t_n = t_at_sample[i]
+        expected_simulink = t_n - sample_time  # u(t_{n-1}) = t_n - sample_time
+        assert y_at_sample[i] == pytest.approx(expected_simulink, abs=1e-10), (
+            f"t={t_n:.2f}: y_pyflw={y_at_sample[i]}, expected_simulink={expected_simulink}"
         )

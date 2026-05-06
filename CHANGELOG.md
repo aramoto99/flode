@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-06
+
+### Changed (BREAKING)
+- **Multi-rate Simulink semantics fix (ADR-0015)**: All discrete blocks now match
+  Simulink's `y(t in [n*T, (n+1)*T)) = u((n-1)*T)` semantics in the multi-rate
+  case (`sample_time > dt_base`). The `1 dt_base` off-by-one limitation noted in
+  v0.3.0's "Known limitations" is resolved.
+  - Implementation: `Simulator.run()` fires updates at sample boundary START
+    (`k % step_ratio == 0`) before `[A]` output, using a 2-pass approach.
+  - All discrete blocks adopt **2-state augmentation**:
+    - `UnitDelay` / `ZeroOrderHold`: `n_states` 1 → 2 (state[0]=output_curr,
+      state[1]=output_next).
+    - `DiscreteIntegrator`: `n_states` 1 → 2.
+    - `DiscreteStateSpace` / `DiscreteTransferFunction`: `n_states` n → 2n.
+  - `ZeroOrderHoldDirect` is unchanged (df=True direct reflection still works).
+- **JSON schema bumped 0.2 → 0.3**: external `x0` representation in JSON is
+  preserved (still scalar / shape-(n,)); internal expansion to 2-state is
+  handled by Block `__init__`. Migration is automatic via the existing
+  `migrate_to_current` chain.
+- Single-rate (`sample_time = dt_base`) numerical results are unchanged for
+  open-loop usage. Single-rate **feedback** loops through `UnitDelay` /
+  `ZeroOrderHold` may produce different output sequences (period extends from
+  2 to 4) due to the 2-state register semantics — this is consistent with
+  Simulink's 2-state internal model and was implicit in v0.3.0's 1-state
+  approximation.
+
 ### Added
+- `tests/test_multirate_simulink.py`: 10 regression tests pinning the
+  Simulink-compatible multi-rate semantics for all five discrete block types.
 - Playwright E2E smoke tests for the Web GUI (`pyflw/web/frontend/tests/e2e/`).
   Covers root render, model list, model selection, and Run button +
   WebSocket completion. Run locally with
@@ -30,13 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ci-frontend.yml` (Vite/Vitest/Playwright). Each uses `paths` filters
   so that pure-Python PRs no longer pay the npm install/build cost and
   vice versa.
-- App layout extended to a 3-column grid (Models | Diagram | Parameters)
-  to host the new ParameterPanel.
+- Web frontend layout extended to a 3-column grid (Models | Diagram |
+  Parameters) to host the new ParameterPanel.
 
 ### Fixed
 - `vitest.config.ts` now excludes `tests/e2e/**` so Vitest no longer
   mis-collects Playwright specs (which uses `@playwright/test`'s own
   `test.describe`).
+
+### Documentation
+- `.claude/docs/adr/0015-multirate-unitdelay-2-state-refactor.md` (Accepted).
+- ADR-0014 marked as partially superseded by ADR-0015 (multi-rate parts only;
+  single-rate Decision and `(t_k, u(t_k))` semantics retained).
 
 ## [0.3.0] - 2026-05-06
 
@@ -158,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphinx documentation initial release: quickstart, blocks reference,
   decorator guide, API reference.
 
-[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/aramoto99/pyflw/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aramoto99/pyflw/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aramoto99/pyflw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aramoto99/pyflw/releases/tag/v0.1.0

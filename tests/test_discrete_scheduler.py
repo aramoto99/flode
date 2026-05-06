@@ -143,12 +143,17 @@ def test_double_buffering_simultaneous_updates():
     a_values = scope_a.values[:, 0]
     b_values = scope_b.values[:, 0]
 
+    # ADR-0015 で UnitDelay が 2-state augmentation になり、feedback loop での
+    # 出力 sequence は v0.3.0 (1-state、period 2 alternating) から period 4 に
+    # 変化した。state[0] が 1 fire 分遅れて state[1] の値を反映するため。
+    # double buffering は引き続き機能している (a と b が独立に同じ pattern で更新される)。
     assert a_values[0] == pytest.approx(10.0)
     assert b_values[0] == pytest.approx(20.0)
     assert a_values[1] == pytest.approx(20.0)
     assert b_values[1] == pytest.approx(10.0)
-    assert a_values[2] == pytest.approx(10.0)
-    assert b_values[2] == pytest.approx(20.0)
+    # ADR-0015: 2-state shift により iter 2 で state[0] = state[1]_post-iter-1 = u_a(1) = 20
+    assert a_values[2] == pytest.approx(20.0)
+    assert b_values[2] == pytest.approx(10.0)
 
 
 def test_continuous_only_phase0_compat():

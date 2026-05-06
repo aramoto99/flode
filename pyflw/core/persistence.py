@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.2"
+CURRENT_SCHEMA_VERSION = "0.3"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -199,9 +199,26 @@ def _builtin_migrate_0_1_to_0_2(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_2_to_0_3(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0015 §(4): 0.2 → 0.3。
+
+    全離散ブロック (``UnitDelay``, ``ZeroOrderHold``, ``DiscreteIntegrator``,
+    ``DiscreteStateSpace``, ``DiscreteTransferFunction``) の内部 ``n_states`` が
+    augmentation で 2 倍化したが、JSON 表現では ``x0`` を **scalar (UnitDelay/ZOH/
+    DiscreteIntegrator) または shape-(n,) (DiscreteStateSpace/DiscreteTransferFunction)
+    のまま維持** する設計 (Block 内部の ``__init__`` で ``[x0, x0]`` / ``concat([x0, x0])``
+    に展開する) なので、JSON 側の変換は ``schema_version`` 文字列の更新のみで完結する。
+    Subsystem 内部の離散ブロックも同じ Block class を使うため再帰的処理は不要。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.3"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
+    _MIGRATIONS[("0.2", "0.3")] = _builtin_migrate_0_2_to_0_3
 
 
 _register_builtin_migrations()

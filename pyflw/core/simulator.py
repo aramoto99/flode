@@ -366,18 +366,26 @@ class Simulator:
     def run(self) -> None:
         """シミュレーションを実行する。
 
-        ハイブリッド (連続+離散) ループ (ADR-0014 §(1)):
+        ハイブリッド (連続+離散) ループ (ADR-0015 §(1)、ADR-0014 §(1) を multi-rate
+        互換のため再更新):
 
-        - [A]  出力計算 2 パス (現時刻 ``t_k``、現状態 ``x_cont`` / ``discrete_state``)
+        - [A'] 離散ブロック update (発火条件 ``k % step_ratio == 0``、output 計算の
+          **前**、2-pass approach):
+
+          1. pre-fire の ``discrete_state`` で 1 回目の ``_step`` を呼び ``inputs`` を
+             組み立てる (output は前状態を見る)
+          2. fire 条件を満たすブロックに ``update(t_k, x_b, inputs[b])`` を呼んで
+             ``next_discrete`` に書き込む (double buffering で同時刻発火を整合)
+          3. ``discrete_state = next_discrete`` で一斉差し替え
+        - [A]  post-fire の ``discrete_state`` で 2 回目の ``_step`` を呼び
+          ``outputs`` / ``inputs`` を再計算 (Scope record と f_continuous が使う)
         - [E]  ``record(t_k, inputs)`` (Scope 等)
-        - [A'] 該当する離散ブロックの ``update(t_k, x, inputs[b])``
-          (= 現サンプル時刻 ``t_k`` と現サンプル時刻の入力 ``u(t_k)`` で呼ぶ。
-          double buffering で一斉書き換え)
         - [B]  連続部分を ``solve_ivp`` で 1 ステップ進める ``[t_k, t_{k+1}]``
 
-        ADR-0014 適用前 (= ADR-0002/0005 §(4) 旧版) では ``update`` を ``t_new`` の
-        入力で呼んでいたが、それでは UnitDelay の semantics (``y[k+1] = u[k]``) が
-        満たされなかった。本実装は標準離散時間 LTI semantics に整合する。
+        ADR-0015 で ADR-0014 の multi-rate off-by-one を根本解決した。fire を
+        ``[A]`` の前に置くことで、サンプル境界 ``t = n*sample_time`` で update が
+        呼ばれ、UnitDelay の出力が ``y(n*T) = u((n-1)*T)`` (Simulink semantics) と
+        一致する (single-rate / multi-rate 両方)。
         """
         order = self._execution_order()
         self._resolve_sample_times(order)
@@ -413,7 +421,24 @@ class Simulator:
 
         for k in range(n_steps + 1):
             t = k * dt_base
-            # [A] 出力計算 2 パス (現時刻 t_k)
+
+            # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
+            # 2-pass approach: まず pre-fire の inputs を組み立てるための _step を呼び、
+            # それを使って fire し、その後 [A] で post-fire の outputs/inputs を再計算する。
+            # 発火条件は ``k % step_ratio == 0`` (= サンプル境界の **始まり**)。
+            if discrete_state:
+                _, inputs_pre = self._step(t, x_cont, discrete_state, order, layout)
+                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
+                for b in order:
+                    if b not in discrete_state:
+                        continue
+                    if k % b._step_ratio == 0:
+                        x_b = discrete_state[b]
+                        u_b = inputs_pre.get(b, np.zeros(b.n_inputs))
+                        next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
+                discrete_state = next_discrete
+
+            # [A] 出力計算 2 パス (post-fire の discrete_state を反映)
             outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             # [E] record (Scope 等)
             self._record(t, inputs)
@@ -430,22 +455,8 @@ class Simulator:
             if k == n_steps:
                 break
 
-            # [A'] 離散ブロックの状態更新 (ADR-0014 §(1))。
-            # update は **現サンプル時刻 t_k で現サンプル時刻の入力 inputs[b] (= u(t_k))**
-            # を使って呼ぶ。double buffering でループ末尾まで他ブロックは前ステップ状態を見る。
-            if discrete_state:
-                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
-                for b in order:
-                    if b not in discrete_state:
-                        continue
-                    if (k + 1) % b._step_ratio == 0:
-                        x_b = discrete_state[b]
-                        u_b = inputs.get(b, np.zeros(b.n_inputs))
-                        next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
-                discrete_state = next_discrete
-
-            # [B] 連続部分の積分 [t_k, t_{k+1}]。f_continuous のクロージャは更新後の
-            # discrete_state を参照する (= 離散→連続の ZOH 的なフロー)。
+            # [B] 連続部分の積分 [t_k, t_{k+1}]。f_continuous のクロージャは
+            # post-fire の discrete_state を参照する (= 離散→連続の ZOH 的なフロー)。
             if n_total > 0:
                 t_next = (k + 1) * dt_base
                 sol = solve_ivp(

@@ -1,4 +1,4 @@
-__version__ = "0.3.0"  # ADR-0014 — Simulator update timing fix (BREAKING, 2026-05-06)
+__version__ = "0.4.0"  # ADR-0015 — Multi-rate 2-state augmentation (BREAKING, 2026-05-06)
 
 from .core.block import Block
 from .core.decorator import block
