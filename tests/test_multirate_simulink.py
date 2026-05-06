@@ -100,11 +100,16 @@ def test_multirate_unit_delay_constant_input() -> None:
 
 
 def test_multirate_zero_order_hold_equals_unit_delay() -> None:
-    """ZeroOrderHold は UnitDelay と完全同一の挙動を multi-rate でも維持する。"""
+    """ZeroOrderHold は UnitDelay と完全同一の挙動を multi-rate でも維持する。
+
+    ZeroOrderHold は ADR-0016 Phase 3 で DeprecationWarning 発出 (移行先は
+    UnitDelay または ZeroOrderHoldDirect)。
+    """
     sim = Simulator(t_end=0.5, dt=0.01)
     clk = sim.add(Clock())
     ud = sim.add(UnitDelay(sample_time=0.1, x0=99.0, id="ud"))
-    zoh = sim.add(ZeroOrderHold(sample_time=0.1, x0=99.0, id="zoh"))
+    with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
+        zoh = sim.add(ZeroOrderHold(sample_time=0.1, x0=99.0, id="zoh"))
     ud_sc = sim.add(Scope(n_inputs=1, id="ud_sc"))
     zoh_sc = sim.add(Scope(n_inputs=1, id="zoh_sc"))
     sim.connect(clk, ud)

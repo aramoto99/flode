@@ -55,13 +55,14 @@ def test_unit_delay_produces_one_sample_delay() -> None:
 def test_zero_order_hold_equals_unit_delay_post_adr0014() -> None:
     """ADR-0014 §(2)(4): 既存 ZeroOrderHold は UnitDelay と完全同一の semantics。
 
-    本 ADR 適用後、ZeroOrderHold (state-based) は UnitDelay と区別がつかない
-    (Phase 3 で deprecate 予定)。
+    ZeroOrderHold は ADR-0016 Phase 3 (v0.5.0) で DeprecationWarning 発出。
+    本テストでは warning が出ることも検証する。
     """
     sim = Simulator(t_end=0.05, dt=0.01)
     clk = sim.add(Clock())
     ud = sim.add(UnitDelay(sample_time=0.01, x0=99.0, id="ud"))
-    zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=99.0, id="zoh"))
+    with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
+        zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=99.0, id="zoh"))
     ud_sc = sim.add(Scope(n_inputs=1, id="ud_sc"))
     zoh_sc = sim.add(Scope(n_inputs=1, id="zoh_sc"))
     sim.connect(clk, ud)

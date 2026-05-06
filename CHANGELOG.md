@@ -7,15 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-06
+
+Phase 3 opens. ADR-0016 (Phase 3 architecture overview) is now Accepted; it
+sets the priorities, versioning plan (v0.5.0 -> v0.9.0), and the items
+deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
+
 ### Added
 - `pyflw.blocks.MimoTransferFunction`: continuous-time MIMO LTI transfer
   function with shared denominator (ADR-0010 §(2), ADR-0016 Phase 3 #1).
-  Implementation builds the controllable canonical form *in-house* via
+  Implementation builds the controllable canonical form manually via
   `pyflw.blocks._lti_utils.build_companion_form_siso` to side-step the
   `scipy.signal.tf2ss` zero-numerator bug; the realization is the parallel
   composition of one SISO companion-form block per `(i, j)` entry, joined
-  through a block-diagonal `A`. Phase 3 supports the **shared-denominator**
-  form only; per-entry independent denominators are deferred to Phase 4+.
+  through a block-diagonal `A` (state size `p*q*n`). Phase 3 supports the
+  **shared-denominator** form only; per-entry independent denominators are
+  deferred to Phase 4+.
+
+### Deprecated
+- `pyflw.blocks.ZeroOrderHold` now emits a `DeprecationWarning` on
+  construction (ADR-0014 §(4), ADR-0016 Phase 3 #2). It is functionally
+  identical to `UnitDelay` since v0.3.0 (ADR-0014) and is scheduled for
+  removal in Phase 4. Migrate to:
+  - `UnitDelay` for 1-sample delayed sample-and-hold, or
+  - `ZeroOrderHoldDirect` for Simulink-compatible immediate reflection
+    (`y(t_k) = u(t_k)`).
+
+### Documentation
+- `.claude/docs/adr/0016-phase3-architecture-overview.md` (Accepted).
 
 ## [0.4.0] - 2026-05-06
 
@@ -201,7 +220,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sphinx documentation initial release: quickstart, blocks reference,
   decorator guide, API reference.
 
-[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/aramoto99/pyflw/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/aramoto99/pyflw/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aramoto99/pyflw/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aramoto99/pyflw/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aramoto99/pyflw/compare/v0.1.0...v0.2.0

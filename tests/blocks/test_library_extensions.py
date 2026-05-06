@@ -128,6 +128,39 @@ class TestDiscreteIntegrator:
         assert scope.values[2, 0] == pytest.approx(0.12, rel=1e-9)
 
 
+class TestZeroOrderHoldDeprecation:
+    """ADR-0016 Phase 3: ZeroOrderHold の DeprecationWarning 発出を検証。
+
+    Phase 4 で削除予定 (ADR-0014 §(4))。移行先は ``UnitDelay`` または
+    ``ZeroOrderHoldDirect``。
+    """
+
+    def test_init_emits_deprecation_warning(self):
+        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
+            ZeroOrderHold(sample_time=0.01, x0=0.0)
+
+    def test_warning_mentions_migration_path(self):
+        with pytest.warns(DeprecationWarning) as record:
+            ZeroOrderHold(sample_time=0.01)
+        assert len(record) == 1
+        msg = str(record[0].message)
+        assert "UnitDelay" in msg
+        assert "ZeroOrderHoldDirect" in msg
+
+    def test_load_from_json_also_warns(self, tmp_path):
+        """JSON load 経由でインスタンス化されるときも warning が出る。"""
+        from pyflw import Simulator
+
+        path = tmp_path / "zoh.flw.json"
+        with pytest.warns(DeprecationWarning):
+            sim = Simulator(t_end=0.05, dt=0.01)
+            sim.add(ZeroOrderHold(sample_time=0.01, x0=0.0, id="zoh"))
+        sim.save(path)
+
+        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
+            Simulator.load(path)
+
+
 class TestZeroOrderHold:
     def test_holds_input_between_samples(self):
         """連続 Sine を ZOH でサンプリング。
@@ -141,7 +174,9 @@ class TestZeroOrderHold:
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         src = sim.add(Sine(amplitude=1.0, frequency=1.0, id="sine"))
-        zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=0.0, id="zoh"))
+        # ZeroOrderHold は ADR-0016 Phase 3 で DeprecationWarning 発出
+        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
+            zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=0.0, id="zoh"))
         scope = sim.add(Scope(n_inputs=1, id="scope"))
         sim.connect(src, zoh)
         sim.connect(zoh, scope)

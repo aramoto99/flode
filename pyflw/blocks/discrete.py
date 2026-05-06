@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 
 import numpy as np
 import scipy.signal
@@ -158,9 +159,11 @@ class ZeroOrderHold(Block):
     実装は ``UnitDelay`` と同一の 2-state ブロック (ADR-0015 §(2)):
     ``output(t, x, u) = x[0]``、``update(t, x, u) = [x[1], u[0]]``。
 
-    Simulink ZOH 互換の即時反映挙動 (`y(t_k) = u(t_k)`) が必要な場合は
-    ``ZeroOrderHoldDirect`` を使用すること。本 class は Phase 3 で
-    ``DeprecationWarning`` 発出、Phase 4 で削除予定 (ADR-0014 §(4))。
+    .. deprecated:: 0.5
+        Phase 3 で ``DeprecationWarning`` 発出、Phase 4 で削除予定
+        (ADR-0014 §(4)、ADR-0016)。``UnitDelay`` (1 サンプル遅延) または
+        ``ZeroOrderHoldDirect`` (Simulink ZOH 互換、`y(t_k) = u(t_k)` 即時反映) に
+        移行してください。
 
     Args:
         sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
@@ -176,6 +179,15 @@ class ZeroOrderHold(Block):
         id: str | None = None,
         name: str | None = None,
     ) -> None:
+        # ADR-0014 §(4) / ADR-0016: Phase 3 で DeprecationWarning を発出する。
+        # Phase 4 で削除予定。`stacklevel=2` で呼び出し元の行番号が出るようにする。
+        warnings.warn(
+            "ZeroOrderHold is deprecated since pyflw 0.5 and will be removed in a "
+            "future release. Migrate to UnitDelay (for 1-sample delayed sample-and-hold) "
+            "or ZeroOrderHoldDirect (for Simulink-compatible immediate reflection).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(
             id=id,
             name=name,
