@@ -1,0 +1,241 @@
+"""ADR-0019 §(1)(9): Block class registry REST エンドポイントのテスト。
+
+`GET /api/v1/blocks`         — 全 33+ ブロック metadata 列挙
+`GET /api/v1/blocks/{type}`  — 個別の完全 docstring + metadata
+`POST /api/v1/blocks/resolve-port-shapes` — params 指定で port shape 再計算
+"""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from pyflw.server import create_app
+
+
+@pytest.fixture
+def model_dir(tmp_path):
+    return tmp_path / "models"
+
+
+@pytest.fixture
+def client(model_dir):
+    app = create_app(model_dir)
+    with TestClient(app) as c:
+        yield c
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/blocks
+# ---------------------------------------------------------------------------
+
+
+class TestListBlocks:
+    def test_returns_all_builtin_blocks(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        assert resp.status_code == 200
+        data = resp.json()
+        # ADR-0019 §1.2: ``schema_version: "blocks.v1"``
+        assert data["schema_version"] == "blocks.v1"
+        # built-in は 30+ (sources/math/cont/disc/logic/routing/sinks) +
+        # subsystems 3 = 33 以上
+        assert len(data["blocks"]) >= 33
+
+    def test_each_entry_has_required_fields(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        for entry in resp.json()["blocks"]:
+            for key in (
+                "type_path",
+                "display_name",
+                "category",
+                "icon",
+                "color",
+                "docstring_summary",
+                "params_spec",
+                "default_n_inputs",
+                "default_n_outputs",
+                "port_shapes_in_default",
+                "port_shapes_out_default",
+                "tags",
+            ):
+                assert key in entry, f"missing {key} in {entry['type_path']}"
+            # full docstring は list レスポンスに含めない (ADR-0019 §1.3)
+            assert "docstring_full" not in entry
+
+    def test_gain_entry_specifics(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        gain = next(
+            b for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.mathops.Gain"
+        )
+        assert gain["category"] == "mathops"
+        assert gain["display_name"] == "Gain"
+        assert gain["default_n_inputs"] == 1
+        assert gain["default_n_outputs"] == 1
+        assert gain["port_shapes_in_default"] == [[]]
+        assert gain["tags"] == ["sm_a"]
+
+    def test_mux_is_sm_b_tagged(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        mux = next(
+            b for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.routing.Mux"
+        )
+        assert "sm_b" in mux["tags"]
+        assert mux["category"] == "routing"
+
+    def test_constant_is_source_tagged(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        c = next(
+            b for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.sources.Constant"
+        )
+        assert "source" in c["tags"]
+        assert c["category"] == "sources"
+        assert c["default_n_inputs"] == 0
+        assert c["default_n_outputs"] == 1
+
+    def test_scope_is_sink_tagged(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        sc = next(
+            b for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.sinks.Scope"
+        )
+        assert "sink" in sc["tags"]
+        assert sc["category"] == "sinks"
+
+    def test_response_is_canonical_sorted(self, client: TestClient) -> None:
+        """type_path 昇順で返ることを確認 (起動↔テストの安定性)。"""
+        resp = client.get("/api/v1/blocks")
+        type_paths = [b["type_path"] for b in resp.json()["blocks"]]
+        assert type_paths == sorted(type_paths)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/blocks/{type_path}
+# ---------------------------------------------------------------------------
+
+
+class TestGetBlockMetadata:
+    def test_returns_full_docstring(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks/pyflw.blocks.mathops.Gain")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type_path"] == "pyflw.blocks.mathops.Gain"
+        # full docstring が返る
+        assert "docstring_full" in data
+        assert isinstance(data["docstring_full"], str)
+
+    def test_404_for_unknown_type_path(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks/no.such.Block")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/blocks/resolve-port-shapes
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePortShapes:
+    def test_mux_n_3_returns_three_inputs(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/resolve-port-shapes",
+            json={"type_path": "pyflw.blocks.routing.Mux", "params": {"n": 3}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["n_inputs"] == 3
+        assert data["n_outputs"] == 1
+        assert data["port_shapes_in"] == [[], [], []]
+        assert data["port_shapes_out"] == [[3]]
+
+    def test_demux_n_5_returns_five_outputs(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/resolve-port-shapes",
+            json={"type_path": "pyflw.blocks.routing.Demux", "params": {"n": 5}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["n_inputs"] == 1
+        assert data["n_outputs"] == 5
+        assert data["port_shapes_in"] == [[5]]
+
+    def test_sum_signs_alters_n_inputs(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/resolve-port-shapes",
+            json={
+                "type_path": "pyflw.blocks.mathops.Sum",
+                "params": {"signs": "+++"},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["n_inputs"] == 3
+        assert data["n_outputs"] == 1
+
+    def test_400_on_invalid_params(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/resolve-port-shapes",
+            json={"type_path": "pyflw.blocks.routing.Mux", "params": {"n": 0}},
+        )
+        # n=0 で BlockSpecError → 400
+        assert resp.status_code == 400
+
+    def test_404_on_unknown_type(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/resolve-port-shapes",
+            json={"type_path": "no.such.Block", "params": {}},
+        )
+        assert resp.status_code == 404
+
+    def test_400_on_missing_type_path(self, client: TestClient) -> None:
+        resp = client.post("/api/v1/blocks/resolve-port-shapes", json={"params": {}})
+        assert resp.status_code == 400
+
+    def test_400_on_non_object_body(self, client: TestClient) -> None:
+        resp = client.post("/api/v1/blocks/resolve-port-shapes", json=[1, 2, 3])
+        assert resp.status_code == 400
+
+    def test_get_method_returns_405(self, client: TestClient) -> None:
+        """GET の場合は 405 + 適切なメッセージ (path conflict 防止)。"""
+        resp = client.get("/api/v1/blocks/resolve-port-shapes")
+        assert resp.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Registry build (smoke - no startup error)
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryBuild:
+    def test_build_succeeds_at_startup(self, client: TestClient) -> None:
+        """Lifespan で build_block_registry が走り、`app.state.block_registry` が
+        セットされていることを GET 1 回で確認 (= 失敗していたら 500 になる)。"""
+        resp = client.get("/api/v1/blocks")
+        assert resp.status_code == 200
+
+    def test_all_categories_present(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/blocks")
+        cats = {b["category"] for b in resp.json()["blocks"]}
+        # ADR-0019 §(2) で定義した 9 カテゴリのうち少なくとも 8 (uncategorized は
+        # 拡張ブロック専用で built-in には来ない想定)
+        expected = {
+            "sources",
+            "mathops",
+            "continuous",
+            "discrete",
+            "logic",
+            "routing",
+            "sinks",
+            "subsystems",
+        }
+        assert expected.issubset(cats)
+
+    def test_no_blocks_have_unknown_tag(self, client: TestClient) -> None:
+        """built-in 33+ クラスはすべて default factory で実体化できる
+        (`_BUILTIN_DEFAULT_ARGS` 完備、ADR-0019 §Risks #2)。"""
+        resp = client.get("/api/v1/blocks")
+        for b in resp.json()["blocks"]:
+            assert "unknown" not in b["tags"], (
+                f"{b['type_path']} has 'unknown' tag — _BUILTIN_DEFAULT_ARGS missing?"
+            )

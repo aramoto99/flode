@@ -62,6 +62,43 @@ export interface SimulationState {
   error: string | null;
 }
 
+// ADR-0019 §(1): Block class registry REST schema (palette UI / shape validation)
+export interface BlockParamSpec {
+  name: string;
+  type: string;
+  has_default: boolean;
+  default: unknown;
+  description: string;
+}
+
+export interface BlockMetadata {
+  type_path: string;
+  display_name: string;
+  category: string;
+  icon: string;
+  color: string;
+  docstring_summary: string;
+  docstring_full?: string;
+  params_spec: BlockParamSpec[];
+  default_n_inputs: number;
+  default_n_outputs: number;
+  port_shapes_in_default: number[][];
+  port_shapes_out_default: number[][];
+  tags: string[];
+}
+
+export interface BlockRegistryResponse {
+  blocks: BlockMetadata[];
+  schema_version: string;
+}
+
+export interface ResolvedPortShapes {
+  n_inputs: number;
+  n_outputs: number;
+  port_shapes_in: number[][];
+  port_shapes_out: number[][];
+}
+
 // WebSocket メッセージ (ADR-0011 §(2))
 // 終端メッセージ (completed / stopped / failed) には ``duration_sec`` も含まれるが、
 // Phase 2 では UI に表示しないため store に保存していない (Phase 3 で表示予定)。

@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-06
+
+ADR-0019 (GUI drag-and-drop + block palette + Block class registry REST)
+Accepted. Phase 3 GUI core. The web app moves from read-only diagrams to
+fully editable models: drag blocks from the palette, wire them up, and
+the changes auto-save (500 ms debounce) through the existing PUT
+/api/v1/models passthrough. Server runtime is unchanged.
+
+### Added
+- `GET /api/v1/blocks` — full Block class registry (35+ built-in blocks
+  plus any prefix added via `register_block_module`). Each entry has
+  `type_path`, `display_name`, `category`, `icon`, `color`,
+  `docstring_summary`, `params_spec` (from `inspect.signature`),
+  `default_n_inputs/outputs`, `port_shapes_in/out_default`, and `tags`
+  (`sm_a` / `sm_b` / `stateful` / `source` / `sink`). Response includes
+  `schema_version: "blocks.v1"` for independent versioning.
+- `GET /api/v1/blocks/{type_path}` — single entry with the full
+  docstring.
+- `POST /api/v1/blocks/resolve-port-shapes` — given `{type_path,
+  params}` returns the resolved `n_inputs / n_outputs / port_shapes_*`
+  for parametric blocks (Mux/Demux/Sum/MimoTransferFunction etc.).
+  HTTP 400 on `BlockSpecError`, 404 on unknown `type_path`.
+- `pyflw.server.registry` — startup walker built on `pkgutil.walk_packages`
+  + `inspect`. Centralized metadata table for the 33 built-in blocks plus
+  class-attribute fallback (`_block_category`, `_block_display_name`,
+  `_block_icon`, `_block_color`, `_default_factory_args`) for third-party
+  extensions. `DeprecationWarning` (e.g. ZeroOrderHold) is suppressed
+  during default factory probing.
+- Frontend: `BlockPalette` component (search + collapsible categories +
+  SM-B badge), drag-and-drop wiring in `DiagramCanvas` (palette → canvas,
+  node move, edge create/delete with port-shape validation, Backspace /
+  Delete to remove), `useAutoSave` hook (debounce 500 ms + Ctrl+S +
+  beforeunload guard), `Create New Model` form in `ModelList`, dirty
+  indicator (`*`) in the header, sidebar tabs (Models / Palette).
+- Frontend lib helpers: `portShapeValidate.ts` (strict shape equality +
+  registry indexing), `idGenerator.ts` (`{TypeName}_{counter}` ID with
+  collision avoidance, default param fallback by type label).
+- `tests/server/test_blocks_registry.py` (20 tests) covers
+  `/api/v1/blocks` (canonical sort, 33+ entries, category coverage,
+  no `unknown` tag), `GET /{type_path}` (404, full docstring),
+  `resolve-port-shapes` (Mux/Demux/Sum dynamic shapes, HTTP 400/404).
+- Frontend Vitest suites: `portShapeValidate.test.ts` (12 tests),
+  `idGenerator.test.ts` (8 tests).
+
+### Changed
+- `Simulator` runtime is **unchanged**. The new endpoints live in the
+  server layer; CLI / pytest behaviour is bit-for-bit compatible with
+  v0.6.2.
+- `App.tsx` wraps the layout in `<ReactFlowProvider>` so the palette and
+  canvas can share the same React Flow instance for `screenToFlowPosition`.
+- `DiagramCanvas` no longer hardcodes `nodesDraggable={false}`; it now
+  edits `editingModel` in the Zustand store and relies on `useAutoSave`
+  to persist changes.
+- Header version label updated to `v0.7.0-dev0` and now shows the
+  current model id with a `*` suffix when there are unsaved changes.
+
+### Verified
+- 688 pytest pass (existing 668 + 20 new registry tests). ruff and
+  mypy strict clean. `examples/spring_mass_damper.py` numerical output
+  unchanged.
+- 38 Vitest pass (existing 18 + 12 portShapeValidate + 8 idGenerator).
+  `npx tsc --noEmit` clean. `npm run build` produces a 124 kB gzipped
+  bundle (within the ADR-0012 §Risks #6 budget).
+
+### Phase 4 (deferred)
+- Undo / redo, multi-select, copy-paste, keyboard shortcuts beyond
+  Ctrl+S (ADR-0019 §(10) OP-A).
+- Orthogonal edge routing.
+- Subsystem drill-down + mask parameters → ADR-0021.
+- Hot-reload of `register_block_module` extensions (admin endpoint).
+- Playwright E2E coverage beyond smoke (ADR-0019 §9.3).
+
 ## [0.6.2] - 2026-05-06
 
 ADR-0020 (JSON schema layout persistence) Accepted. Schema bump

@@ -1,7 +1,10 @@
-// REST API クライアント (ADR-0011 §(1))。
+// REST API クライアント (ADR-0011 §(1)、ADR-0019 §(1))。
 import type {
+  BlockMetadata,
+  BlockRegistryResponse,
   FlwModel,
   ModelList,
+  ResolvedPortShapes,
   SimulationState,
 } from "../types/api";
 
@@ -65,4 +68,42 @@ export async function getSimulationState(
   return _fetch<SimulationState>(
     `/simulations/${encodeURIComponent(simId)}`,
   );
+}
+
+// ADR-0019 §(1): Block class registry endpoints
+export async function listBlockMetadata(): Promise<BlockRegistryResponse> {
+  return _fetch<BlockRegistryResponse>("/blocks");
+}
+
+// Phase 4 (ADR-0021 マスクパラメータ UI / ParameterPanel 拡張) で利用予定。
+// Phase 3 では palette 表示には list endpoint で十分。
+export async function getBlockMetadata(typePath: string): Promise<BlockMetadata> {
+  return _fetch<BlockMetadata>(`/blocks/${encodeURIComponent(typePath)}`);
+}
+
+export async function resolvePortShapes(
+  typePath: string,
+  params: Record<string, unknown>,
+): Promise<ResolvedPortShapes> {
+  return _fetch<ResolvedPortShapes>("/blocks/resolve-port-shapes", {
+    method: "POST",
+    body: JSON.stringify({ type_path: typePath, params }),
+  });
+}
+
+// ADR-0019 §(7): Create new model
+export async function createModel(
+  payload: FlwModel,
+): Promise<{ model_id: string }> {
+  return _fetch("/models", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+// Phase 4 (削除 UI / multi-select 削除) で利用予定。endpoint 自体は ADR-0011 で定義済み。
+export async function deleteModel(modelId: string): Promise<void> {
+  await _fetch(`/models/${encodeURIComponent(modelId)}`, {
+    method: "DELETE",
+  });
 }

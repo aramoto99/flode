@@ -1,9 +1,15 @@
-// アプリ状態 store (ADR-0012 §(5))。Zustand でモデル選択・シミュレーション
-// 状態・Scope ストリームを管理する。
+// アプリ状態 store (ADR-0012 §(5)、ADR-0019 §(5) で編集状態 + auto-save 拡張)。
 
 import { create } from "zustand";
 
-import type { SimulationStatus, StreamMessage } from "../types/api";
+import type {
+  BlockEntry,
+  ConnectionEntry,
+  FlwModel,
+  LayoutDict,
+  SimulationStatus,
+  StreamMessage,
+} from "../types/api";
 
 export interface ScopeBuffer {
   times: number[];
@@ -17,6 +23,18 @@ interface AppState {
   // ノード選択 (パラメータ編集用、ADR-0012 §(3) ParameterPanel)
   selectedNodeId: string | null;
   selectNode: (nodeId: string | null) => void;
+
+  // ADR-0019 §(5): 編集中モデル (=PUT する前の最新) を保持。
+  // null のときは「読み取りモード」(従来の Phase 2 と同じ TanStack Query キャッシュ)。
+  editingModel: FlwModel | null;
+  setEditingModel: (model: FlwModel | null) => void;
+  applyEditingModel: (
+    fn: (current: FlwModel) => FlwModel,
+  ) => void;
+
+  // ADR-0019 §(5): dirty flag と debounce 用 timer
+  dirty: boolean;
+  setDirty: (dirty: boolean) => void;
 
   // シミュレーション関連
   simulationId: string | null;
@@ -40,20 +58,33 @@ interface AppState {
   handleStreamMessage: (msg: StreamMessage) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   selectedModelId: null,
   selectModel: (modelId) =>
     set({
       selectedModelId: modelId,
-      // モデル切替時にノード選択もクリア (前モデルの id が漏れないように)
       selectedNodeId: null,
       simulationId: null,
       status: "idle",
       scopes: {},
+      // モデル切り替えで編集状態をクリア (新モデルは ModelLoader で再 fetch)
+      editingModel: null,
+      dirty: false,
     }),
 
   selectedNodeId: null,
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+
+  editingModel: null,
+  setEditingModel: (model) => set({ editingModel: model }),
+  applyEditingModel: (fn) => {
+    const current = get().editingModel;
+    if (!current) return;
+    set({ editingModel: fn(current), dirty: true });
+  },
+
+  dirty: false,
+  setDirty: (dirty) => set({ dirty }),
 
   simulationId: null,
   status: "idle",
@@ -66,8 +97,6 @@ export const useAppStore = create<AppState>((set) => ({
     set({ simulationId: null, status: "idle", progress: null }),
 
   scopes: {},
-  // ``set((state) => ...)`` 関数形式でアトミックに前状態 → 新状態を組み立てる
-  // (二重 ``get()`` 呼び出しによるスナップショットずれを回避: code-reviewer MUST)
   appendScopeBatch: (scope_id, times, values) =>
     set((state) => {
       const current = state.scopes[scope_id] ?? { times: [], values: [] };
@@ -114,3 +143,81 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 }));
+
+// ---------------------------------------------------------------------------
+// ADR-0019 §(5) helper functions: editingModel の編集 API (DiagramCanvas 等から呼ぶ)
+// ---------------------------------------------------------------------------
+
+export function addBlockToEditing(
+  block: BlockEntry,
+  position: { x: number; y: number },
+): void {
+  useAppStore.getState().applyEditingModel((m) => ({
+    ...m,
+    blocks: [...m.blocks, block],
+    layout: { ...(m.layout ?? {}), [block.id]: position },
+  }));
+}
+
+export function removeBlockFromEditing(blockId: string): void {
+  useAppStore.getState().applyEditingModel((m) => {
+    const blocks = m.blocks.filter((b) => b.id !== blockId);
+    const connections = m.connections.filter(
+      (c) => c.src !== blockId && c.dst !== blockId,
+    );
+    const layout = { ...(m.layout ?? {}) };
+    delete layout[blockId];
+    return { ...m, blocks, connections, layout };
+  });
+}
+
+export function updateBlockPosition(
+  blockId: string,
+  position: { x: number; y: number },
+): void {
+  useAppStore.getState().applyEditingModel((m) => ({
+    ...m,
+    layout: { ...(m.layout ?? {}), [blockId]: position },
+  }));
+}
+
+export function updateBlocksLayout(layout: LayoutDict): void {
+  useAppStore.getState().applyEditingModel((m) => ({ ...m, layout }));
+}
+
+export function addConnectionToEditing(conn: ConnectionEntry): void {
+  useAppStore.getState().applyEditingModel((m) => {
+    // ADR-0019 §4.3: 同一 (dst, dst_idx) への上書き接続 (古い edge を削除)
+    const filtered = m.connections.filter(
+      (c) => !(c.dst === conn.dst && c.dst_idx === conn.dst_idx),
+    );
+    return { ...m, connections: [...filtered, conn] };
+  });
+}
+
+export function removeConnectionFromEditing(
+  src: string,
+  src_idx: number,
+  dst: string,
+  dst_idx: number,
+): void {
+  useAppStore.getState().applyEditingModel((m) => ({
+    ...m,
+    connections: m.connections.filter(
+      (c) =>
+        !(c.src === src && c.src_idx === src_idx && c.dst === dst && c.dst_idx === dst_idx),
+    ),
+  }));
+}
+
+export function updateBlockParams(
+  blockId: string,
+  params: Record<string, unknown>,
+): void {
+  useAppStore.getState().applyEditingModel((m) => ({
+    ...m,
+    blocks: m.blocks.map((b) =>
+      b.id === blockId ? { ...b, params } : b,
+    ),
+  }));
+}
