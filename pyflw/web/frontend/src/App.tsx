@@ -1,5 +1,6 @@
 import { ModelList } from "./components/ModelList";
 import { DiagramCanvas } from "./components/DiagramCanvas";
+import { ParameterPanel } from "./components/ParameterPanel";
 import { SimulationControls } from "./components/SimulationControls";
 import { ScopeView } from "./components/ScopeView";
 import { useAppStore } from "./store/appStore";
@@ -9,10 +10,10 @@ export default function App(): JSX.Element {
   const scopes = useAppStore((s) => s.scopes);
 
   return (
-    <div className="grid h-full grid-cols-[260px_1fr] grid-rows-[auto_1fr] bg-gray-50 text-gray-900">
-      <header className="col-span-2 flex items-center border-b border-gray-200 bg-white px-4 py-2">
+    <div className="grid h-full grid-cols-[260px_1fr_280px] grid-rows-[auto_1fr] bg-gray-50 text-gray-900">
+      <header className="col-span-3 flex items-center border-b border-gray-200 bg-white px-4 py-2">
         <h1 className="text-lg font-semibold">pyflw</h1>
-        <span className="ml-3 text-xs text-gray-500">v0.2.0-dev0</span>
+        <span className="ml-3 text-xs text-gray-500">v0.3.0-dev0</span>
       </header>
       <aside className="row-start-2 border-r border-gray-200 bg-white">
         <div className="border-b border-gray-200 p-3">
@@ -45,6 +46,15 @@ export default function App(): JSX.Element {
           </div>
         )}
       </main>
+      <aside className="row-start-2 overflow-y-auto">
+        {selectedModelId ? (
+          <ParameterPanel modelId={selectedModelId} />
+        ) : (
+          <div className="border-l border-gray-200 bg-white p-3 text-xs text-gray-500">
+            (parameter panel)
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

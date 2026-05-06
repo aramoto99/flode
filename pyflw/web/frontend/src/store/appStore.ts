@@ -14,6 +14,10 @@ interface AppState {
   selectedModelId: string | null;
   selectModel: (modelId: string | null) => void;
 
+  // ノード選択 (パラメータ編集用、ADR-0012 §(3) ParameterPanel)
+  selectedNodeId: string | null;
+  selectNode: (nodeId: string | null) => void;
+
   // シミュレーション関連
   simulationId: string | null;
   status: SimulationStatus | "idle";
@@ -39,7 +43,17 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   selectedModelId: null,
   selectModel: (modelId) =>
-    set({ selectedModelId: modelId, simulationId: null, status: "idle", scopes: {} }),
+    set({
+      selectedModelId: modelId,
+      // モデル切替時にノード選択もクリア (前モデルの id が漏れないように)
+      selectedNodeId: null,
+      simulationId: null,
+      status: "idle",
+      scopes: {},
+    }),
+
+  selectedNodeId: null,
+  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
   simulationId: null,
   status: "idle",

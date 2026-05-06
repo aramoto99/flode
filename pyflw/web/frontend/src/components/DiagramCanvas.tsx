@@ -12,6 +12,7 @@ import "@xyflow/react/dist/style.css";
 
 import { getModel } from "../api/client";
 import { modelToDiagram } from "../lib/diagramConverter";
+import { useAppStore } from "../store/appStore";
 
 interface DiagramCanvasProps {
   modelId: string;
@@ -22,6 +23,9 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     queryKey: ["model", modelId],
     queryFn: () => getModel(modelId),
   });
+
+  const selectedNodeId = useAppStore((s) => s.selectedNodeId);
+  const selectNode = useAppStore((s) => s.selectNode);
 
   if (isLoading) {
     return <div className="p-4 text-sm text-gray-500">Loading model...</div>;
@@ -37,9 +41,21 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     return <div className="p-4 text-sm text-gray-500">No model</div>;
   }
   const { nodes, edges } = modelToDiagram(data);
+  // 選択状態を React Flow node の selected フィールドに反映 (UI ハイライト用)
+  const decoratedNodes = nodes.map((n) => ({
+    ...n,
+    selected: n.id === selectedNodeId,
+  }));
   return (
     <div className="h-full w-full">
-      <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false}>
+      <ReactFlow
+        nodes={decoratedNodes}
+        edges={edges}
+        fitView
+        nodesDraggable={false}
+        onNodeClick={(_event, node) => selectNode(node.id)}
+        onPaneClick={() => selectNode(null)}
+      >
         <Background />
         <MiniMap pannable zoomable />
         <Controls />

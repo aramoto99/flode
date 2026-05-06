@@ -15,12 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: `.github/workflows/ci-frontend.yml` gains an `e2e` job that installs
   pyflw with `[gui]` extras, caches Playwright browsers, and runs the
   smoke suite on every frontend PR.
+- `ParameterPanel` component for inline editing of numeric block parameters
+  (ADR-0012 §(3); §(10) "Phase 3 deferred" for this item is withdrawn).
+  Click a node in the diagram to populate the right-hand panel; numeric
+  fields become editable and the Save button persists via
+  `PUT /api/v1/models/{id}`. Non-numeric params (lists, objects, strings)
+  are surfaced as a read-only collapsible JSON view.
+- `pyflw/web/frontend/tests/paramEdit.test.ts` (10 unit tests) and
+  `tests/e2e/parameter-panel.spec.ts` (2 E2E tests) covering the new
+  ParameterPanel behavior.
 
 ### Changed
 - CI workflows are split: `ci.yml` (Python lint/type/test/docs) and
   `ci-frontend.yml` (Vite/Vitest/Playwright). Each uses `paths` filters
   so that pure-Python PRs no longer pay the npm install/build cost and
   vice versa.
+- App layout extended to a 3-column grid (Models | Diagram | Parameters)
+  to host the new ParameterPanel.
+
+### Fixed
+- `vitest.config.ts` now excludes `tests/e2e/**` so Vitest no longer
+  mis-collects Playwright specs (which uses `@playwright/test`'s own
+  `test.describe`).
 
 ## [0.3.0] - 2026-05-06
 
