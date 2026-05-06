@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `pyflw.blocks.MimoTransferFunction`: continuous-time MIMO LTI transfer
+  function with shared denominator (ADR-0010 §(2), ADR-0016 Phase 3 #1).
+  Implementation builds the controllable canonical form *in-house* via
+  `pyflw.blocks._lti_utils.build_companion_form_siso` to side-step the
+  `scipy.signal.tf2ss` zero-numerator bug; the realization is the parallel
+  composition of one SISO companion-form block per `(i, j)` entry, joined
+  through a block-diagonal `A`. Phase 3 supports the **shared-denominator**
+  form only; per-entry independent denominators are deferred to Phase 4+.
+
 ## [0.4.0] - 2026-05-06
 
 ### Changed (BREAKING)

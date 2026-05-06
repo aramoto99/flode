@@ -1,4 +1,10 @@
-from .continuous import Derivative, Integrator, StateSpace, TransferFunction
+from .continuous import (
+    Derivative,
+    Integrator,
+    MimoTransferFunction,
+    StateSpace,
+    TransferFunction,
+)
 from .discrete import (
     DiscreteIntegrator,
     DiscreteStateSpace,
@@ -25,6 +31,7 @@ __all__ = [
     "Gain",
     "Integrator",
     "LogicalOperator",
+    "MimoTransferFunction",
     "MinMax",
     "Product",
     "PulseGenerator",
