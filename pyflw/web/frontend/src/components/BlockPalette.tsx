@@ -1,11 +1,13 @@
-// ADR-0019 §(3): ブロックパレット UI。
-// カテゴリ折りたたみ + 検索 + drag-start で `application/pyflw-block-type` を data
-// transfer に積む。
+// ADR-0019 §(3) + UI 刷新: ブロックパレット。
+// 各エントリに block 種別固有の SVG glyph プレビューを表示する Simulink Library
+// Browser 風の見た目。検索 + カテゴリ折りたたみ。drag-start で
+// `application/pyflw-block-type` を data transfer に積む。
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { listBlockMetadata } from "../api/client";
+import { BlockGlyph } from "../lib/blockGlyphs";
 import { buildDefaultParams } from "../lib/idGenerator";
 import type { BlockMetadata } from "../types/api";
 
@@ -37,7 +39,7 @@ export function BlockPalette(): JSX.Element {
   const { data, isLoading, error } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
-    staleTime: 60 * 60 * 1000, // 1h
+    staleTime: 60 * 60 * 1000,
   });
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -66,7 +68,7 @@ export function BlockPalette(): JSX.Element {
   }, [data, search]);
 
   const handleDragStart = (
-    event: React.DragEvent<HTMLLIElement>,
+    event: React.DragEvent<HTMLDivElement>,
     block: BlockMetadata,
   ): void => {
     event.dataTransfer.setData("application/pyflw-block-type", block.type_path);
@@ -78,13 +80,11 @@ export function BlockPalette(): JSX.Element {
   };
 
   if (isLoading) {
-    return (
-      <div className="p-3 text-xs text-gray-500">Loading palette...</div>
-    );
+    return <div className="p-3 text-xs text-slate-500">Loading palette...</div>;
   }
   if (error) {
     return (
-      <div className="p-3 text-xs text-red-600">
+      <div className="p-3 text-xs text-rose-600">
         Failed to load palette: {(error as Error).message}
       </div>
     );
@@ -97,68 +97,73 @@ export function BlockPalette(): JSX.Element {
   const isFiltering = search.trim().length > 0;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 p-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-slate-200 p-2.5">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search blocks..."
-          className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+          placeholder="Search blocks…"
+          className="w-full rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
           aria-label="Search blocks"
         />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
         {visibleCategories.length === 0 ? (
-          <div className="p-3 text-xs text-gray-500">No blocks match.</div>
+          <div className="p-3 text-xs text-slate-500">No blocks match.</div>
         ) : (
           visibleCategories.map((cat) => {
             const isCollapsed = collapsed[cat] && !isFiltering;
             const blocks = blocksByCategory[cat] ?? [];
             return (
-              <div key={cat} className="border-b border-gray-100">
+              <div key={cat} className="mb-1">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-1 bg-gray-50 px-2 py-1 text-left text-xs font-medium hover:bg-gray-100"
+                  className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
                   onClick={() =>
                     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }))
                   }
                   aria-expanded={!isCollapsed}
                 >
-                  <span className="w-3 text-gray-500">
-                    {isCollapsed ? "▶" : "▼"}
+                  <span className="w-3 text-slate-400">
+                    {isCollapsed ? "▸" : "▾"}
                   </span>
                   <span>{CATEGORY_LABEL[cat] ?? cat}</span>
-                  <span className="ml-auto text-[10px] text-gray-400">
+                  <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[9px] text-slate-500">
                     {blocks.length}
                   </span>
                 </button>
                 {!isCollapsed && (
-                  <ul>
+                  <div className="grid grid-cols-2 gap-1 px-1 pt-1">
                     {blocks.map((b) => (
-                      <li
+                      <div
                         key={b.type_path}
                         draggable
                         onDragStart={(e) => handleDragStart(e, b)}
-                        className="flex cursor-grab items-center gap-2 px-3 py-1 text-xs hover:bg-blue-50 active:cursor-grabbing"
-                        title={b.docstring_summary || b.type_path}
+                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
+                        title={
+                          b.docstring_summary
+                            ? `${b.display_name} — ${b.docstring_summary}`
+                            : b.display_name
+                        }
                       >
-                        <span
-                          className="inline-block h-2 w-2 rounded-full"
-                          style={{ backgroundColor: b.color }}
-                          aria-hidden
-                        />
-                        <span className="flex-1 truncate">
+                        <div
+                          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 transition-colors group-hover:border-blue-400"
+                          style={{ color: b.color }}
+                        >
+                          <BlockGlyph typePath={b.type_path} />
+                        </div>
+                        <div className="w-full truncate text-[10px] font-medium text-slate-700">
                           {b.display_name}
-                        </span>
+                        </div>
                         {b.tags.includes("sm_b") && (
-                          <span className="rounded bg-cyan-100 px-1 text-[9px] uppercase text-cyan-700">
+                          <span className="rounded bg-cyan-100 px-1 text-[8px] uppercase tracking-wide text-cyan-700">
                             SM-B
                           </span>
                         )}
-                      </li>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
               </div>
             );

@@ -4,11 +4,25 @@
 import type { BlockEntry, FlwModel } from "../types/api";
 
 /**
- * パラメータ値が inline 編集可能 (number) かを判定する。
- * Phase 2 改善ではスカラー数値のみ inline 編集対応、それ以外は read-only 表示。
+ * パラメータ値が inline 編集可能 (number) かを判定する (legacy, 数値のみ)。
+ * 文字列 / bool 含むより広い判定は ``isPrimitiveParam`` を使う。
  */
 export function isEditableParam(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+/** ParameterPanel が直接編集可能な primitive 型 (number / string / bool)。 */
+export type PrimitiveParam = number | string | boolean;
+
+/**
+ * パラメータ値が primitive (number / string / bool) かを判定する。
+ * これら以外 (ndarray / list / dict / null) は read-only JSON 表示。
+ */
+export function isPrimitiveParam(value: unknown): value is PrimitiveParam {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return true;
+  if (typeof value === "boolean") return true;
+  return false;
 }
 
 /**

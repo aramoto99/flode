@@ -1,113 +1,160 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { useState } from "react";
+import { useMemo } from "react";
 
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
 import { DiagramCanvas } from "./components/DiagramCanvas";
-import { ModelList } from "./components/ModelList";
+import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopeView } from "./components/ScopeView";
 import { SimulationControls } from "./components/SimulationControls";
+import { StatusBar } from "./components/StatusBar";
+import { TabStrip } from "./components/TabStrip";
+import { Toolbar } from "./components/Toolbar";
+import { XYGraphView } from "./components/XYGraphView";
+import { resolveBlocksAtPath } from "./lib/pathResolver";
 import { useAutoSave } from "./lib/useAutoSave";
 import { useAppStore } from "./store/appStore";
 
-type SidebarTab = "models" | "palette";
-
 export default function App(): JSX.Element {
   const selectedModelId = useAppStore((s) => s.selectedModelId);
-  const dirty = useAppStore((s) => s.dirty);
   const scopes = useAppStore((s) => s.scopes);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("models");
+  const editingModel = useAppStore((s) => s.editingModel);
+  const editingPath = useAppStore((s) => s.editingPath);
 
   // ADR-0019 §(5): debounce auto-save / Ctrl+S / beforeunload
   useAutoSave();
 
+  // 各 scope_id がどのブロック type かを引くためのマップ (現スコープ内のみ)
+  const blockTypeById = useMemo(() => {
+    if (!editingModel) return new Map<string, string>();
+    try {
+      const view = resolveBlocksAtPath(editingModel, editingPath);
+      const m = new Map<string, string>();
+      for (const b of view.blocks) m.set(b.id, b.type);
+      return m;
+    } catch {
+      return new Map<string, string>();
+    }
+  }, [editingModel, editingPath]);
+
   return (
     <ReactFlowProvider>
-      <div className="grid h-full grid-cols-[260px_1fr_280px] grid-rows-[auto_1fr] bg-gray-50 text-gray-900">
-        <header className="col-span-3 flex items-center border-b border-gray-200 bg-white px-4 py-2">
-          <h1 className="text-lg font-semibold">pyflw</h1>
-          <span className="ml-3 text-xs text-gray-500">v{__APP_VERSION__}</span>
-          {selectedModelId && (
-            <span className="ml-4 text-xs text-gray-700">
-              {selectedModelId}
-              {dirty && (
-                <span
-                  className="ml-1 text-amber-600"
-                  title="Unsaved changes"
-                  aria-label="Unsaved changes"
-                >
-                  *
-                </span>
-              )}
+      <div className="grid h-full grid-rows-[auto_auto_auto_auto_1fr_auto] bg-slate-50 font-sans text-[13px] text-slate-900">
+        {/* Title bar (window chrome 風) */}
+        <div className="flex items-center justify-between border-b border-slate-300 bg-slate-700 px-3 py-1 text-[11px] text-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold tracking-tight">pyflw</span>
+            <span className="text-slate-400">—</span>
+            <span className="text-slate-300">
+              {selectedModelId ?? "untitled"}
             </span>
-          )}
-        </header>
-        <aside className="row-start-2 flex flex-col border-r border-gray-200 bg-white">
-          <div className="flex border-b border-gray-200">
-            <button
-              type="button"
-              className={`flex-1 px-2 py-1.5 text-xs font-medium ${
-                sidebarTab === "models"
-                  ? "border-b-2 border-blue-500 text-blue-700"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-              onClick={() => setSidebarTab("models")}
-            >
-              Models
-            </button>
-            <button
-              type="button"
-              className={`flex-1 px-2 py-1.5 text-xs font-medium ${
-                sidebarTab === "palette"
-                  ? "border-b-2 border-blue-500 text-blue-700"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-              onClick={() => setSidebarTab("palette")}
-            >
-              Palette
-            </button>
           </div>
-          <div className="flex-1 overflow-hidden">
-            {sidebarTab === "models" ? <ModelList /> : <BlockPalette />}
-          </div>
-        </aside>
-        <main className="row-start-2 flex flex-col">
-          {selectedModelId ? (
-            <>
-              <Breadcrumb />
-              <div className="flex-1 border-b border-gray-200">
-                <DiagramCanvas modelId={selectedModelId} />
-              </div>
-              <SimulationControls modelId={selectedModelId} />
-              <div className="flex flex-col gap-2 overflow-y-auto p-3">
-                {Object.entries(scopes).length === 0 ? (
-                  <div className="text-xs text-gray-500">
-                    Run a simulation to see scope data.
-                  </div>
-                ) : (
-                  Object.entries(scopes).map(([scopeId, buffer]) => (
-                    <ScopeView key={scopeId} scopeId={scopeId} buffer={buffer} />
-                  ))
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
-              Select a model from the left panel to view its diagram.
+          <span className="text-slate-400">v{__APP_VERSION__}</span>
+        </div>
+
+        {/* Menu bar */}
+        <MenuBar />
+
+        {/* Toolbar */}
+        <Toolbar />
+
+        {/* Tab strip */}
+        <TabStrip />
+
+        {/* Main 3-column area */}
+        <div className="grid min-h-0 grid-cols-[240px_1fr_280px] overflow-hidden">
+          {/* Left: Library / Palette */}
+          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+            <PanelHeader>Library</PanelHeader>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <BlockPalette />
             </div>
-          )}
-        </main>
-        <aside className="row-start-2 overflow-y-auto">
-          {selectedModelId ? (
-            <ParameterPanel modelId={selectedModelId} />
-          ) : (
-            <div className="border-l border-gray-200 bg-white p-3 text-xs text-gray-500">
-              (parameter panel)
-            </div>
-          )}
-        </aside>
+          </aside>
+
+          {/* Center: canvas + sim controls + scopes */}
+          <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
+            {selectedModelId ? (
+              <>
+                <Breadcrumb />
+                <div className="flex-1 border-b border-slate-300 bg-white">
+                  <DiagramCanvas modelId={selectedModelId} />
+                </div>
+                <SimulationControls modelId={selectedModelId} />
+                <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
+                  {Object.entries(scopes).length === 0 ? (
+                    <div className="px-1 text-[11px] text-slate-500">
+                      No scope output. Run a simulation to plot data.
+                    </div>
+                  ) : (
+                    Object.entries(scopes).map(([scopeId, buffer]) => {
+                      const t = blockTypeById.get(scopeId) ?? "";
+                      // Display は block face に live 表示 → bottom panel には出さない
+                      if (t.endsWith(".Display")) return null;
+                      if (t.endsWith(".XYGraph")) {
+                        return (
+                          <XYGraphView
+                            key={scopeId}
+                            scopeId={scopeId}
+                            buffer={buffer}
+                          />
+                        );
+                      }
+                      return (
+                        <ScopeView
+                          key={scopeId}
+                          scopeId={scopeId}
+                          buffer={buffer}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              <EmptyState />
+            )}
+          </main>
+
+          {/* Right: Inspector */}
+          <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-slate-300 bg-white">
+            <PanelHeader>Inspector</PanelHeader>
+            {selectedModelId ? (
+              <ParameterPanel modelId={selectedModelId} />
+            ) : (
+              <div className="p-3 text-[11px] text-slate-400">
+                Open a model to inspect block parameters.
+              </div>
+            )}
+          </aside>
+        </div>
+
+        {/* Status bar */}
+        <StatusBar />
       </div>
     </ReactFlowProvider>
+  );
+}
+
+function PanelHeader({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="flex h-6 items-center border-b border-slate-200 bg-slate-100 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function EmptyState(): JSX.Element {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-slate-50">
+      <div className="max-w-sm rounded border border-slate-200 bg-white px-6 py-5 text-center text-[12px] text-slate-600">
+        <div className="mb-2 font-semibold text-slate-700">No file open</div>
+        <div className="text-slate-500">
+          File → New (Ctrl+N) to create a model
+          <br />
+          File → Open… (Ctrl+O) to open an existing model
+        </div>
+      </div>
+    </div>
   );
 }

@@ -3,13 +3,16 @@
 //
 // editingModel + editingPath が source of truth。useAutoSave がそれを PUT する。
 
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { listBlockMetadata } from "../api/client";
 import { findBlockAtPath } from "../lib/pathResolver";
 import {
-  isEditableParam,
+  isPrimitiveParam,
   parseNumericInput,
 } from "../lib/paramEdit";
+import { indexRegistry } from "../lib/portShapeValidate";
 import {
   updateBlockParams,
   updateSubsystemMaskValues,
@@ -77,96 +80,177 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
 // ---------------------------------------------------------------------------
 
 function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
+  const { data: registryData } = useQuery({
+    queryKey: ["blocks-registry"],
+    queryFn: listBlockMetadata,
+    staleTime: 60 * 60 * 1000,
+  });
+  const registryMap = useMemo(
+    () => indexRegistry(registryData?.blocks ?? []),
+    [registryData],
+  );
+
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const prevBlockIdRef = useRef<string | undefined>(undefined);
 
+  // ブロック切替時に draft を最新値で初期化 (number/string/bool すべてを文字列化して保持)
   useEffect(() => {
     if (block.id === prevBlockIdRef.current) return;
     prevBlockIdRef.current = block.id;
     const next: Record<string, string> = {};
     for (const [k, v] of Object.entries(block.params)) {
-      if (isEditableParam(v)) next[k] = String(v);
+      if (isPrimitiveParam(v)) next[k] = formatForDraft(v);
     }
     setDraft(next);
     setError(null);
   }, [block]);
 
   const allEntries = Object.entries(block.params);
-  const editableEntries = allEntries.filter(([, v]) => isEditableParam(v));
-  const readOnlyEntries = allEntries.filter(([, v]) => !isEditableParam(v));
+  const editableEntries = allEntries.filter(([, v]) => isPrimitiveParam(v));
+  const readOnlyEntries = allEntries.filter(([, v]) => !isPrimitiveParam(v));
   const readOnlyJson = useMemo(
     () => JSON.stringify(Object.fromEntries(readOnlyEntries), null, 2),
     [readOnlyEntries],
   );
   const shortType = block.type.split(".").at(-1) ?? block.type;
 
-  const commit = (k: string, raw: string): void => {
-    const parsed = parseNumericInput(raw);
-    if (parsed === null) {
-      setError(`Invalid number for "${k}"`);
-      return;
+  const commit = (k: string, raw: string, originalType: string): void => {
+    let newValue: unknown;
+    if (originalType === "number") {
+      const parsed = parseNumericInput(raw);
+      if (parsed === null) {
+        setError(`Invalid number for "${k}"`);
+        return;
+      }
+      // n_inputs / n / n_outputs などの整数 param は明示的に整数化
+      const isIntParam =
+        k === "n" ||
+        k === "n_inputs" ||
+        k === "n_outputs" ||
+        k === "decimals" ||
+        k === "port_idx";
+      newValue = isIntParam ? Math.trunc(parsed) : parsed;
+    } else if (originalType === "boolean") {
+      newValue = raw === "true";
+    } else {
+      // string param (e.g. Sum.signs, Switch.criterion)
+      newValue = raw;
     }
     setError(null);
-    updateBlockParams(block.id, { ...block.params, [k]: parsed });
+    updateBlockParams(
+      block.id,
+      { ...block.params, [k]: newValue },
+      registryMap,
+    );
   };
 
   return (
     <div
       data-testid="parameter-panel"
-      className="flex h-full flex-col gap-2 border-l border-gray-200 bg-white p-3 text-xs"
+      className="flex h-full flex-col gap-2 p-3 text-xs"
     >
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate text-sm font-medium">{block.id}</h3>
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+        <h3 className="truncate text-sm font-semibold text-slate-800">
+          {block.id}
+        </h3>
         <span
           title={block.type}
-          className="truncate font-mono text-[10px] text-gray-500"
+          className="truncate font-mono text-[10px] text-slate-500"
         >
           {shortType}
         </span>
       </div>
 
       {editableEntries.length === 0 && (
-        <div className="text-gray-500">
-          No editable numeric parameters on this block.
+        <div className="text-slate-500">
+          No editable parameters on this block.
         </div>
       )}
 
-      {editableEntries.map(([k]) => (
-        <label key={k} className="flex flex-col gap-1">
-          <span className="text-gray-700">{k}</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="any"
-            data-testid={`param-input-${k}`}
-            value={draft[k] ?? ""}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, [k]: e.target.value }))
-            }
-            onBlur={(e) => commit(k, e.target.value)}
-            className="rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-        </label>
-      ))}
+      {editableEntries.map(([k, v]) => {
+        const valueType = typeof v;
+        return (
+          <label key={k} className="flex flex-col gap-0.5">
+            <span className="flex items-center justify-between text-slate-700">
+              <span className="font-medium">{k}</span>
+              <span className="font-mono text-[9px] text-slate-400">
+                {valueType}
+              </span>
+            </span>
+            {valueType === "boolean" ? (
+              <select
+                data-testid={`param-input-${k}`}
+                value={draft[k] ?? "false"}
+                onChange={(e) => {
+                  setDraft((prev) => ({ ...prev, [k]: e.target.value }));
+                  commit(k, e.target.value, "boolean");
+                }}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            ) : valueType === "number" ? (
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                data-testid={`param-input-${k}`}
+                value={draft[k] ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDraft((prev) => ({ ...prev, [k]: val }));
+                  // 入力途中でも有効な数値なら即 commit (= canvas 表示が live 更新される)
+                  if (val !== "" && parseNumericInput(val) !== null) {
+                    commit(k, val, "number");
+                  }
+                }}
+                onBlur={(e) => commit(k, e.target.value, "number")}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            ) : (
+              <input
+                type="text"
+                data-testid={`param-input-${k}`}
+                value={draft[k] ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDraft((prev) => ({ ...prev, [k]: val }));
+                  // 任意の文字列でも即 commit (空でも OK)。Sum.signs / Switch.criterion 等の
+                  // ライブ反映用 (ハンドル数が ``signs.length`` で変わる)。
+                  commit(k, val, "string");
+                }}
+                onBlur={(e) => commit(k, e.target.value, "string")}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            )}
+          </label>
+        );
+      })}
 
       {readOnlyEntries.length > 0 && (
-        <details className="mt-2 rounded border border-gray-200 p-2">
-          <summary className="cursor-pointer text-gray-600">
+        <details className="mt-2 rounded border border-slate-200 p-2">
+          <summary className="cursor-pointer text-slate-600">
             Other parameters ({readOnlyEntries.length}, read-only)
           </summary>
-          <pre className="mt-1 overflow-auto text-[10px] text-gray-700">
+          <pre className="mt-1 overflow-auto text-[10px] text-slate-700">
             {readOnlyJson}
           </pre>
         </details>
       )}
 
-      {error && <div className="text-red-600">{error}</div>}
-      <div className="mt-2 text-[10px] text-gray-400">
-        Edits auto-save (debounce 500 ms or Ctrl+S).
+      {error && <div className="text-rose-600">{error}</div>}
+      <div className="mt-2 text-[10px] text-slate-400">
+        Edits auto-save (debounce 500 ms · Ctrl+S to flush).
       </div>
     </div>
   );
+}
+
+function formatForDraft(v: number | string | boolean): string {
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +370,14 @@ function MaskValuesEditor({
               step={p.type === "int" ? "1" : "any"}
               data-testid={`mask-input-${p.name}`}
               value={draft[p.name] ?? ""}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, [p.name]: e.target.value }))
-              }
+              onChange={(e) => {
+                const val = e.target.value;
+                setDraft((prev) => ({ ...prev, [p.name]: val }));
+                // 有効な数値なら即 commit (= live 反映)
+                if (val !== "" && parseNumericInput(val) !== null) {
+                  commit(p.name, val, p.type);
+                }
+              }}
               onBlur={(e) => commit(p.name, e.target.value, p.type)}
               className="rounded border border-gray-300 px-2 py-1 text-sm"
             />

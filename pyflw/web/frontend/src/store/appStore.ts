@@ -2,9 +2,11 @@
 
 import { create } from "zustand";
 
+import { resolvePortCounts } from "../lib/dynamicPorts";
 import { applyAtPath } from "../lib/pathResolver";
 import type {
   BlockEntry,
+  BlockMetadata,
   ConnectionEntry,
   FlwModel,
   LayoutDict,
@@ -22,9 +24,18 @@ interface AppState {
   selectedModelId: string | null;
   selectModel: (modelId: string | null) => void;
 
-  // ノード選択 (パラメータ編集用、ADR-0012 §(3) ParameterPanel)
-  selectedNodeId: string | null;
+  // ノード選択 (パラメータ編集 + 一括操作用)。複数選択対応。
+  // ParameterPanel は ``selectedNodeIds.length === 1`` の時だけ表示する設計。
+  selectedNodeIds: string[];
+  selectedNodeId: string | null; // 互換性: selectedNodeIds.length === 1 のとき先頭、それ以外 null
   selectNode: (nodeId: string | null) => void;
+  setSelectedNodeIds: (ids: readonly string[]) => void;
+  toggleNodeSelection: (nodeId: string) => void;
+
+  // エッジ選択 (= 矩形選択 / クリック選択 で React Flow が select イベントを発火する。
+  // controlled mode では prop 経由で ``selected`` を渡し直さないと視覚反映されない)。
+  selectedEdgeIds: string[];
+  setSelectedEdgeIds: (ids: readonly string[]) => void;
 
   // ADR-0019 §(5): 編集中モデル (=PUT する前の最新) を保持。
   // null のときは「読み取りモード」(従来の Phase 2 と同じ TanStack Query キャッシュ)。
@@ -71,7 +82,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectModel: (modelId) =>
     set({
       selectedModelId: modelId,
+      selectedNodeIds: [],
       selectedNodeId: null,
+      selectedEdgeIds: [],
       simulationId: null,
       status: "idle",
       scopes: {},
@@ -81,8 +94,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingPath: [],
     }),
 
+  selectedNodeIds: [],
   selectedNodeId: null,
-  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  selectNode: (nodeId) =>
+    set({
+      selectedNodeIds: nodeId === null ? [] : [nodeId],
+      selectedNodeId: nodeId,
+      // ノード選択を切り替えたらエッジ選択も解除 (= ParameterPanel の整合性)
+      ...(nodeId === null ? { selectedEdgeIds: [] } : {}),
+    }),
+  setSelectedNodeIds: (ids) => {
+    const arr = Array.from(new Set(ids));
+    set({
+      selectedNodeIds: arr,
+      // ParameterPanel 表示用の単一 id (= 1 件選択時のみ)
+      selectedNodeId: arr.length === 1 ? arr[0]! : null,
+    });
+  },
+  toggleNodeSelection: (nodeId) =>
+    set((state) => {
+      const has = state.selectedNodeIds.includes(nodeId);
+      const next = has
+        ? state.selectedNodeIds.filter((id) => id !== nodeId)
+        : [...state.selectedNodeIds, nodeId];
+      return {
+        selectedNodeIds: next,
+        selectedNodeId: next.length === 1 ? next[0]! : null,
+      };
+    }),
+
+  selectedEdgeIds: [],
+  setSelectedEdgeIds: (ids) =>
+    set({ selectedEdgeIds: Array.from(new Set(ids)) }),
 
   editingModel: null,
   setEditingModel: (model) => set({ editingModel: model }),
@@ -101,6 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       editingPath: [...state.editingPath, subsystemId],
       selectedNodeId: null,
+      selectedNodeIds: [],
     })),
   drillUp: (depth) =>
     set((state) => ({
@@ -109,6 +153,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? state.editingPath.slice(0, -1)
           : state.editingPath.slice(0, depth),
       selectedNodeId: null,
+      selectedNodeIds: [],
     })),
 
   simulationId: null,
@@ -213,11 +258,47 @@ export function updateBlockPosition(
 ): void {
   const path = currentPath();
   useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => ({
-      blocks: view.blocks,
-      connections: view.connections,
-      layout: { ...view.layout, [blockId]: position },
-    })),
+    applyAtPath(m, path, (view) => {
+      // 既存 entry の w/h を保持しつつ x/y のみ更新
+      const prev = view.layout[blockId];
+      const next = {
+        ...view.layout,
+        [blockId]: { ...prev, x: position.x, y: position.y },
+      };
+      return {
+        blocks: view.blocks,
+        connections: view.connections,
+        layout: next,
+      };
+    }),
+  );
+}
+
+export function updateBlockSize(
+  blockId: string,
+  size: { w: number; h: number },
+): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const prev = view.layout[blockId];
+      // 位置情報がまだ無い場合は (0,0) で fallback (= NodeResizer 作動時に必ず position は
+      // 別途 onNodesChange でも書かれているので、ほぼ起きないケース)
+      const next = {
+        ...view.layout,
+        [blockId]: {
+          x: prev?.x ?? 0,
+          y: prev?.y ?? 0,
+          w: size.w,
+          h: size.h,
+        },
+      };
+      return {
+        blocks: view.blocks,
+        connections: view.connections,
+        layout: next,
+      };
+    }),
   );
 }
 
@@ -275,16 +356,34 @@ export function removeConnectionFromEditing(
 export function updateBlockParams(
   blockId: string,
   params: Record<string, unknown>,
+  registry?: ReadonlyMap<string, BlockMetadata>,
 ): void {
   const path = currentPath();
   useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => ({
-      blocks: view.blocks.map((b) =>
+    applyAtPath(m, path, (view) => {
+      const target = view.blocks.find((b) => b.id === blockId);
+      if (!target) return view;
+      const newBlocks = view.blocks.map((b) =>
         b.id === blockId ? { ...b, params } : b,
-      ),
-      connections: view.connections,
-      layout: view.layout,
-    })),
+      );
+      // param 変更により port 数が減った場合、index out-of-range の edge を剪定する。
+      const meta = registry?.get(target.type);
+      const before = resolvePortCounts(target.type, target.params, meta);
+      const after = resolvePortCounts(target.type, params, meta);
+      let newConnections = view.connections;
+      if (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs) {
+        newConnections = view.connections.filter((c) => {
+          if (c.dst === blockId && c.dst_idx >= after.nInputs) return false;
+          if (c.src === blockId && c.src_idx >= after.nOutputs) return false;
+          return true;
+        });
+      }
+      return {
+        blocks: newBlocks,
+        connections: newConnections,
+        layout: view.layout,
+      };
+    }),
   );
 }
 

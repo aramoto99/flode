@@ -22,10 +22,14 @@ export interface SimulatorConfig {
   dt_base: number | null;
 }
 
-// ADR-0020: 各 block の GUI 上の位置 (CSS px、React Flow 互換)。
+// ADR-0020: 各 block の GUI 上の位置 + optional サイズ (CSS px、React Flow 互換)。
+// ``w`` / ``h`` は NodeResizer でユーザーが手動リサイズしたときのみ書かれる。
+// 欠落時は shape のデフォルトサイズを使う。
 export interface LayoutEntry {
   x: number;
   y: number;
+  w?: number;
+  h?: number;
 }
 
 export type LayoutDict = Record<string, LayoutEntry>;

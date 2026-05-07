@@ -1,4 +1,4 @@
-__version__ = "0.7.1"  # ADR-0021 Subsystem drilldown + mask params (schema 0.6, 2026-05-07)
+__version__ = "0.7.2"  # GUI polish: desktop shell, sinks (Display/XYGraph), dynamic ports, resize, multi-select, shift-disconnect (2026-05-07)
 
 from .core.block import Block
 from .core.decorator import block

@@ -190,6 +190,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str, str]] = {
     "pyflw.blocks.routing.Demux": ("routing", "Demux", "routing.demux", "#06b6d4"),
     # sinks
     "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope", "#64748b"),
+    "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display", "#0ea5e9"),
+    "pyflw.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph", "#0ea5e9"),
     "pyflw.blocks.sinks.Terminator": (
         "sinks",
         "Terminator",
@@ -281,8 +283,20 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
     ``self`` / ``id`` / ``name`` / ``*`` / ``**kwargs`` 等は除外。default 値が
     JSON-serializable でない (= `to_json_value` が raise) 場合は ``default=None``
     に fallback (= ブロック全体は registry に残す)。
+
+    シグネチャに default が無い required param (``Mux(n: int)``,
+    ``Subsystem(n_inputs: int, n_outputs: int)`` 等) は、``_default_factory_args``
+    class attribute または中央テーブル ``_BUILTIN_DEFAULT_ARGS`` の値を
+    ``has_default=True`` の代替として使う。これがないとフロント側で「ドロップ時の
+    params が 0 になる」事故 (= ``Mux(n=0)`` で配置されてしまう) が起きる。
     """
     sig = inspect.signature(cls)
+    type_path = block_type_path(cls)
+    factory_args: dict[str, Any] = (
+        getattr(cls, "_default_factory_args", None)
+        or _BUILTIN_DEFAULT_ARGS.get(type_path)
+        or {}
+    )
     out: list[ParamSpec] = []
     for name, param in sig.parameters.items():
         if name in ("self", "id", "name"):
@@ -292,9 +306,10 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
             inspect.Parameter.VAR_KEYWORD,
         ):
             continue
-        has_default = param.default is not inspect.Parameter.empty
+        sig_has_default = param.default is not inspect.Parameter.empty
+        has_default = sig_has_default
         default: Any = None
-        if has_default and param.default is not None:
+        if sig_has_default and param.default is not None:
             try:
                 default = to_json_value(param.default)
             except Exception:  # noqa: BLE001
@@ -304,6 +319,17 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
                     name,
                 )
                 default = None
+        elif not sig_has_default and name in factory_args:
+            # required param に factory fallback がある場合は has_default 扱い。
+            try:
+                default = to_json_value(factory_args[name])
+                has_default = True
+            except Exception:  # noqa: BLE001
+                _logger.debug(
+                    "registry: cannot serialize factory default for %s.%s; using None",
+                    cls.__name__,
+                    name,
+                )
         out.append(
             ParamSpec(
                 name=name,

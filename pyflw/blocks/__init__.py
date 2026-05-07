@@ -16,7 +16,7 @@ from .discrete import (
 from .logic import LogicalOperator, RelationalOperator
 from .mathops import Abs, Divide, Gain, MinMax, Product, Saturation, Sign, Sum
 from .routing import Demux, Mux, Switch
-from .sinks import Scope, Terminator
+from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "Constant",
     "Demux",
     "Derivative",
+    "Display",
     "DiscreteIntegrator",
     "DiscreteStateSpace",
     "DiscreteTransferFunction",
@@ -50,6 +51,7 @@ __all__ = [
     "Terminator",
     "TransferFunction",
     "UnitDelay",
+    "XYGraph",
     "ZeroOrderHold",
     "ZeroOrderHoldDirect",
 ]

@@ -175,9 +175,10 @@ def resolve_block_class(type_path: str) -> type:
 def normalize_layout(layout: object) -> LayoutDict | None:
     """ADR-0020 §(1)(8): 任意の layout 入力を canonical な ``LayoutDict`` に変換する。
 
-    各 entry は ``{"x": float, "y": float}`` であり、x / y 以外のキーは破棄、値は
-    ``int | float`` を ``float`` に強制変換する。stale な id (= 削除済み block を
-    参照) の整合性 check は呼び出し側の責務 (本関数は形式のみ整える)。
+    各 entry は ``{"x": float, "y": float}`` を必須とし、optional ``"w"`` / ``"h"`` を
+    含めても良い (= ノードサイズ永続化、初期は ADR-0020 §(2) で Phase 4+ 送りとされて
+    いたが GUI ユーザー要望で先行投入)。それ以外のキーは破棄、値は ``int | float`` を
+    ``float`` に強制変換する。
 
     Args:
         layout: 正規化対象の任意の値。``None`` または空 dict のとき ``None`` を返す。
@@ -187,7 +188,7 @@ def normalize_layout(layout: object) -> LayoutDict | None:
 
     Raises:
         ModelLoadError: ``layout`` が ``dict[str, dict]`` の形式でない、x/y が欠落、
-            または x/y が数値変換不可能な場合。
+            または x/y/w/h が数値変換不可能な場合。
     """
     if layout is None:
         return None
@@ -216,7 +217,19 @@ def normalize_layout(layout: object) -> LayoutDict | None:
             raise ModelLoadError(
                 f"layout[{key!r}] has non-numeric x/y: {value!r}"
             ) from e
-        out[key] = {"x": x, "y": y}
+        entry: dict[str, float] = {"x": x, "y": y}
+        for size_key in ("w", "h"):
+            if size_key in value:
+                try:
+                    sv = float(value[size_key])
+                except (TypeError, ValueError) as e:
+                    raise ModelLoadError(
+                        f"layout[{key!r}].{size_key} has non-numeric value: "
+                        f"{value[size_key]!r}"
+                    ) from e
+                if sv > 0:
+                    entry[size_key] = sv
+        out[key] = entry
     return out
 
 

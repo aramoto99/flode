@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-07
+
+GUI polish iteration. No ADR-level architectural changes; this release
+sands down the rough edges of v0.7.1 in response to interactive
+feedback so the editor feels closer to a desktop simulation tool than a
+generic web app. Schema, JSON wire format, runtime, and CLI behaviour
+are unchanged (so v0.7.1 model files load identically).
+
+### Added — Sinks
+
+- `Display` block: live numerical readout drawn on the block face
+  during simulation. Reuses Scope's WebSocket pipeline (duck-typed
+  `record` / `times` / `values` / `labels`), so the server side is
+  unchanged. Frontend renders the latest sample as a large monospaced
+  number; configurable `decimals` and `n_inputs`.
+- `XYGraph` block: parametric x-y scatter line. Two scalar inputs
+  (`x`, `y`); same WebSocket pipeline; new `XYGraphView` component
+  draws axes, polyline, and a marker on the latest point. `plot()`
+  helper for CLI/pytest.
+- 19 new `tests/blocks/test_display_xygraph.py` cases (defaults,
+  validation, simulation round-trip, JSON persistence, registry
+  membership).
+
+### Added — Editor (visual / interaction)
+
+- **Per-block shape system** (`lib/blockShapes.ts`): triangle (Gain),
+  circle / pill (Sum, Product, Divide), bar (Mux, Demux), trapezoids
+  (Inport / Outport), wide rect (TF, StateSpace, MIMO TF, Discrete
+  TF/SS, Display). Compact rect (~72×40) for the rest. Block ID is
+  rendered absolutely outside the React Flow node bounding box so it
+  doesn't get covered by the resizer.
+- **Per-block SVG glyph library** (`lib/blockGlyphs.tsx`): 35 hand-drawn
+  glyphs (formulas, waveforms, switches, scope/screens, etc.). When a
+  rect-shaped block has no primary parameter to display, the glyph is
+  centered larger (so blocks like `Sign` / `Abs` / `Integrator` stop
+  looking half-empty).
+- **Dynamic port count** (`lib/dynamicPorts.ts`): the GUI now reads
+  `Sum.signs` / `Product.n_inputs` / `Mux.n` / `Demux.n` / `MinMax.n_inputs`
+  / `LogicalOperator.n_inputs` / `Scope.n_inputs` / `Display.n_inputs` /
+  `Terminator.n_inputs` / `Subsystem.n_inputs/outputs` /
+  `StateSpace.B.shape[1]` / `C.shape[0]` / `MimoTransferFunction.numerators`
+  shape / `DiscreteStateSpace` matrix shape, and updates the visible
+  handle count live as the user edits the parameter. Accompanied by
+  19 unit tests in `tests/dynamicPorts.test.ts`.
+- **Block size persistence** (ADR-0020 §(2) Phase-4 item brought
+  forward): `LayoutEntry` gains optional `w` / `h`. `Subsystem` /
+  `Simulator.save / load` / `normalize_layout` accept these fields.
+  React Flow's `NodeResizer` is wired up — drag a corner to resize,
+  size persists across reloads. Six new pytest cases in
+  `tests/core/test_layout_persistence.py`.
+- **Live resize / live drag**: `liveSize` state in `BlockNodeView`
+  reflects every `onResize` event, so the SVG geometry of circles,
+  triangles, and rects follows the cursor smoothly. Both
+  `updateBlockPosition` (during node drag) and `updateBlockSize`
+  (during resize) now fire on every frame, fixing the React Flow
+  controlled-mode "snap-back to original on render" bug that previously
+  made horizontal resize and node drag look like they failed.
+- **NodeResizer dynamic port handling**: `useUpdateNodeInternals`
+  refreshes React Flow's internal handle registry whenever `nIn` /
+  `nOut` change, so handle dots actually move when the user changes
+  port count. Block height grows automatically (`max(baseH, n*12+8)`)
+  so 8 inputs no longer overlap; circles stretch to a pill shape.
+- **Multi-selection** of nodes and edges: `selectedNodeIds` and
+  `selectedEdgeIds` stores. Box selection (left-drag on empty pane,
+  partial intersection mode) selects nodes and edges together. Shift /
+  Ctrl / Cmd add to selection. `Backspace` / `Delete` removes everything
+  selected.
+- **Edge selection visibility**: removed inline edge `style` (which was
+  beating the `.selected` CSS rule on specificity) and centralised the
+  hover / selected stroke rules in `index.css`. Hovering an edge now
+  shows it's clickable; selecting one tints it blue and adds a soft
+  glow.
+- **Right-click duplicate** (Simulink-style): right-click + drag on a
+  node clones it (deep params copy, new auto-incremented `{TypeName}_{N}`
+  id) and follows the cursor. Right-click drag on the empty pane still
+  pans. OS context menu is suppressed inside the canvas.
+- **Shift+drag = disconnect**: holding Shift while starting a node drag
+  removes every edge connected to the selected nodes, matching Simulink.
+- **Param panel covers more types**: numeric, string, and boolean
+  parameters are all editable. `signs`, `operator`, `criterion` strings
+  are exposed as text inputs. Edits commit on every keystroke (with
+  type-aware coercion) so the canvas reflects port-count changes
+  without waiting for blur.
+- **Block dropping initial values**: the registry now folds
+  `_default_factory_args` into `params_spec.default`, so dropping
+  `Mux` / `Demux` / `Subsystem` / `TransferFunction` / `Inport` /
+  `Outport` produces correct defaults (`n=2`, `n_inputs=1`, `numerator=[1.0]`,
+  …) instead of the previous `0` / `null` placeholders.
+
+### Changed — Layout & polish
+
+- **Desktop-shell layout**: title bar + menu bar (File / Edit / View /
+  Simulation / Help) + toolbar (Save / Undo / Redo / Zoom / Fit / Run /
+  Stop) + tab strip + status bar. The old `Models` sidebar tab is
+  gone — model open / save / rename / save-as / delete moved into the
+  File menu and dialog modals. `useSimulation` hook centralizes
+  start/stop + WebSocket lifecycle so the toolbar Run button feeds the
+  same scope stream as the bottom progress bar.
+- **Auto-layout**: horizontal-first grid (left → right, 8-wide before
+  wrap) with tighter pitch, matching Simulink reading order.
+- **Canvas chrome**: smooth-step edges by default, slate-toned stroke,
+  thicker / glowing on hover and selection. MiniMap and Controls flat
+  (no rounded shadow), system fonts (Segoe UI), tighter spacing
+  throughout. Selected nodes get a subtle drop-shadow halo + small
+  4×4 dark resize handles (no heavy blue rectangle outline).
+- **Block-following animation**: 160 ms ease transition on node
+  position/transform when not actively dragged; transition is force-
+  disabled (`body.pyflw-copying` class) during the right-click clone
+  so the duplicate sticks to the cursor instead of trailing.
+
+### Tests
+
+- 737 pytest pass (existing 712 + 19 sinks + 6 layout w/h).
+- 79 vitest pass (existing tests + 19 dynamic-ports + 7 block-shapes
+  + 3 block-glyph smoke).
+- ruff, mypy strict, `npx tsc --noEmit`, `npm run build` all clean.
+- `examples/spring_mass_damper.py` numerical output unchanged.
+
 ## [0.7.1] - 2026-05-07
 
 ADR-0021 (Subsystem drilldown UI + mask parameters) Accepted. Phase 3

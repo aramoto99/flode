@@ -1,99 +1,47 @@
-// シミュレーション開始/停止 + 進捗表示。
+// シミュレーション進捗バー。Run/Stop は Toolbar の icon button に集約済み。
+// ここでは「実行中なら status + progress を細い帯で表示」のみに絞る (= 隠せる UI)。
 
-import { useEffect, useRef } from "react";
-
-import { startSimulation, stopSimulation } from "../api/client";
-import { streamSimulation } from "../api/stream";
 import { useAppStore } from "../store/appStore";
 
-interface SimulationControlsProps {
+export function SimulationControls(_props: {
   modelId: string;
-}
-
-export function SimulationControls({ modelId }: SimulationControlsProps): JSX.Element {
+}): JSX.Element | null {
   const status = useAppStore((s) => s.status);
   const progress = useAppStore((s) => s.progress);
-  const simulationId = useAppStore((s) => s.simulationId);
-  const startedSimulation = useAppStore((s) => s.startedSimulation);
-  const handleStreamMessage = useAppStore((s) => s.handleStreamMessage);
-  const wsRef = useRef<WebSocket | null>(null);
 
-  // アンマウント時に WS をクリーンアップ
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close();
-      wsRef.current = null;
-    };
-  }, []);
+  if (status === "idle") return null;
 
-  // シミュレーションが終端状態 (completed / stopped / failed) になったら、
-  // 開きっぱなしの WS を閉じる (code-reviewer SHOULD 修正)。サーバ側でも close
-  // するが冪等性のため両方で対応。
-  useEffect(() => {
-    if (status === "completed" || status === "stopped" || status === "failed") {
-      wsRef.current?.close();
-      wsRef.current = null;
-    }
-  }, [status]);
-
-  const onRun = async (): Promise<void> => {
-    try {
-      const { simulation_id } = await startSimulation(modelId);
-      startedSimulation(simulation_id);
-      const ws = streamSimulation(simulation_id, handleStreamMessage);
-      wsRef.current?.close();
-      wsRef.current = ws;
-    } catch (e) {
-      console.error("Failed to start simulation", e);
-    }
-  };
-
-  const onStop = async (): Promise<void> => {
-    if (!simulationId) return;
-    try {
-      await stopSimulation(simulationId);
-    } catch (e) {
-      console.error("Failed to stop simulation", e);
-    }
-  };
-
-  const isRunning = status === "running";
   const ratio =
     progress && progress.t_end > 0 ? progress.current_t / progress.t_end : 0;
 
+  const statusColor =
+    status === "running"
+      ? "bg-blue-600"
+      : status === "completed"
+        ? "bg-emerald-600"
+        : status === "stopped"
+          ? "bg-amber-600"
+          : "bg-rose-600";
+
   return (
-    <div className="flex flex-col gap-2 border-t border-gray-200 p-3">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={isRunning}
-          className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:bg-gray-400"
-        >
-          Run
-        </button>
-        <button
-          type="button"
-          onClick={onStop}
-          disabled={!isRunning}
-          className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white disabled:bg-gray-400"
-        >
-          Stop
-        </button>
-        <span className="text-xs text-gray-600">status: {status}</span>
-      </div>
+    <div className="flex items-center gap-2 border-t border-slate-300 bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${statusColor}`}
+        aria-hidden
+      />
+      <span className="font-medium uppercase tracking-wide">{status}</span>
       {progress && (
-        <div className="space-y-1">
-          <div className="h-2 overflow-hidden rounded bg-gray-200">
+        <>
+          <div className="ml-2 h-1.5 flex-1 overflow-hidden border border-slate-300 bg-white">
             <div
               className="h-full bg-blue-500 transition-all"
               style={{ width: `${Math.min(100, ratio * 100).toFixed(1)}%` }}
             />
           </div>
-          <div className="text-xs text-gray-500">
-            t = {progress.current_t.toFixed(3)} / {progress.t_end.toFixed(3)}
-          </div>
-        </div>
+          <span className="font-mono text-[10px] tabular-nums text-slate-600">
+            t={progress.current_t.toFixed(3)} / {progress.t_end.toFixed(3)}
+          </span>
+        </>
       )}
     </div>
   );

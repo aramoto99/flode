@@ -70,14 +70,15 @@ describe("modelToDiagram", () => {
     };
     const { nodes } = modelToDiagram(model);
     expect(nodes[0]?.position).toEqual({ x: 100, y: 60 });
-    // g は idx=1 → grid (1*200, 0)
-    expect(nodes[1]?.position).toEqual({ x: 200, y: 0 });
+    // g は idx=1 → horizontal grid (1*120, 0)
+    expect(nodes[1]?.position).toEqual({ x: 120, y: 0 });
   });
 
-  it("returns auto-layout when layout key is absent (backward compatible)", () => {
+  it("returns horizontal grid auto-layout when layout key is absent", () => {
+    // Simulink-like horizontal flow: idx 0 = (0,0), idx 1 = (120,0), ... wrap at 8
     const { nodes } = modelToDiagram(baseModel);
     expect(nodes[0]?.position).toEqual({ x: 0, y: 0 });
-    expect(nodes[1]?.position).toEqual({ x: 200, y: 0 });
+    expect(nodes[1]?.position).toEqual({ x: 120, y: 0 });
   });
 });
 

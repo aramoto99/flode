@@ -348,6 +348,38 @@ class TestNormalizeLayout:
         with pytest.raises(ModelLoadError, match="must be a dict"):
             normalize_layout({"a": "not a dict"})  # type: ignore[dict-item]
 
+    # --- optional w/h (NodeResizer 用、ユーザー要望で追加) ---
+
+    def test_w_h_round_trip(self) -> None:
+        out = normalize_layout(
+            {"a": {"x": 1.0, "y": 2.0, "w": 100.0, "h": 50.0}}
+        )
+        assert out == {"a": {"x": 1.0, "y": 2.0, "w": 100.0, "h": 50.0}}
+
+    def test_w_h_int_coerced_to_float(self) -> None:
+        out = normalize_layout({"a": {"x": 0, "y": 0, "w": 80, "h": 40}})
+        assert out == {"a": {"x": 0.0, "y": 0.0, "w": 80.0, "h": 40.0}}
+
+    def test_missing_w_h_is_ok(self) -> None:
+        # 既存の x/y のみのエントリは依然として valid
+        out = normalize_layout({"a": {"x": 1.0, "y": 2.0}})
+        assert out == {"a": {"x": 1.0, "y": 2.0}}
+
+    def test_zero_or_negative_size_is_dropped(self) -> None:
+        # 不正値 (NodeResizer の minWidth/Height で起こり得ない) は黙って drop
+        out = normalize_layout(
+            {"a": {"x": 1.0, "y": 2.0, "w": 0.0, "h": -10.0}}
+        )
+        assert out == {"a": {"x": 1.0, "y": 2.0}}
+
+    def test_partial_w_only(self) -> None:
+        out = normalize_layout({"a": {"x": 0.0, "y": 0.0, "w": 80.0}})
+        assert out == {"a": {"x": 0.0, "y": 0.0, "w": 80.0}}
+
+    def test_non_numeric_w_raises(self) -> None:
+        with pytest.raises(ModelLoadError, match="non-numeric"):
+            normalize_layout({"a": {"x": 0.0, "y": 0.0, "w": "abc"}})
+
 
 # ---------------------------------------------------------------------------
 # v0.6.x → v0.7.0 forward compatibility
