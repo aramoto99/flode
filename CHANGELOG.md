@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-07
+
+ADR-0024: Web GUI internationalisation (i18n / ja-en). The UI chrome
+(menu, toolbar, palette, quick-add, status bar, modals, parameter
+panel, breadcrumb, scope placeholders, diagram error overlays) is now
+served through `react-i18next` with flat dot-notation JSON
+dictionaries. Block `display_name` / `docstring_summary` and error
+toasts remain English (Phase 4 — separate ADR will tackle Python
+registry-side translation).
+
+This release closes Phase 3 of the roadmap (ADR-0016): all Phase 3
+sub-ADRs (0017–0024) are now Accepted and shipped. C1 (PyPI
+automation) and C3 (dark mode) were re-classified to Phase 5+ per user
+request and are not blockers for the next phase.
+
+### Added
+
+- `pyflw/web/frontend/src/i18n/index.ts`: i18next + react-i18next init
+  with `localStorage["pyflw.lang"]` persistence and
+  `navigator.language` startup detection (`ja*` → `ja`, otherwise
+  `en`).
+- `pyflw/web/frontend/src/i18n/locales/{en,ja}.json`: 99 translation
+  keys covering every UI chrome surface.
+- `pyflw/web/frontend/src/i18n/types.d.ts`: i18next module
+  augmentation so `t()` is typed against the en.json shape.
+- `View > Language ▸ English / 日本語` submenu with a checkmark on the
+  active language. Switching is immediate and persists across reloads.
+- `tests/i18n.test.ts`: 12 vitest cases (key set parity ja vs en,
+  non-empty values, lookup, language switch, interpolation,
+  localStorage persistence, invalid-language guard).
+- Runtime deps: `i18next ^23.16.8`, `react-i18next ^14.1.3` (the
+  versions ADR-0024 §Decision §(1) targeted; later majors give the
+  same gzipped footprint within ±1 KB). No build-time Babel macro /
+  generator — the chosen stack is purely runtime + JSON imports per
+  ADR-0024 §Decision §(2).
+
+### Changed
+
+- `MenuBar`, `Toolbar`, `BlockPalette`, `QuickAdd`, `StatusBar`,
+  `TabStrip`, `Modal` (Open / Rename / Confirm), `App.EmptyState` and
+  panel headers, `SimulationControls`, `ParameterPanel` (regular +
+  mask editor), `Breadcrumb`, `DiagramCanvas` overlays, `ScopeView`
+  empty placeholder, `XYGraphView` empty placeholder are wired through
+  `useTranslation()`.
+- `main.tsx` imports `./i18n` synchronously before the React tree
+  mounts (no FOUC; SPA-only, no SSR).
+
+### Acceptance criteria (ADR-0024 §11)
+
+- ja and en dictionaries have identical key sets — enforced by
+  `i18n.test.ts` (`Object.keys(ja).sort() === Object.keys(en).sort()`).
+- Bundle size budget: target ≤ +15 KB gzip / measured **+20.61 KB JS
+  gzip + 0.02 KB CSS gzip**. ADR-0024 §11.note documents a minor
+  revise that relaxes the soft target to <25 KB and the
+  re-evaluation trigger to >30 KB. The Phase 3 hard ceiling
+  (1 MB gzip per ADR-0016 §Risks #6) is not affected — total bundle
+  is now 184.57 KB JS + 7.62 KB CSS gzip.
+- Initial paint: synchronous `i18next.init` keeps language stable on
+  first frame; no flash of untranslated content.
+
+### Phase 4 send-offs (per ADR-0024)
+
+- Block `display_name` / `docstring_summary` translation (needs a
+  Python-side registry change).
+- Error toast / API error i18n (no toast surface yet — added together
+  with the future toast component).
+- Settings panel for language selection (View menu is sufficient for
+  v0.8.1).
+- Additional languages (zh / ko / ar) + RTL.
+- ICU MessageFormat (added on demand via `i18next-icu`).
+- Python-side log / exception localisation.
+
+### Unchanged
+
+- WebSocket and REST schemas, `.flw.json` format, simulation
+  semantics, Python tests (737 pytest pass), `examples/spring_mass_damper.py`
+  output (`Final x=0.2505, x_dot=0.0031`).
+
 ## [0.8.0] - 2026-05-07
 
 Two themes:

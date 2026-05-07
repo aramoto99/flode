@@ -17,6 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { getModel, listBlockMetadata } from "../api/client";
 import { modelToDiagram, type BlockNode } from "../lib/diagramConverter";
@@ -53,6 +54,7 @@ const NODE_TYPES = { blockNode: BlockNodeView } as const;
 const PAN_BUTTONS = [1, 2];
 
 export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
+  const { t } = useTranslation();
   // サーバ最新モデルを fetch (= editingModel の初期値)
   const { data: serverModel, isLoading, error } = useQuery({
     queryKey: ["model", modelId],
@@ -236,18 +238,18 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   };
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-gray-500">Loading model...</div>;
+    return <div className="p-4 text-sm text-gray-500">{t("diagram.loading")}</div>;
   }
   if (error) {
     return (
       <div className="p-4 text-sm text-red-600">
-        Failed to load model: {(error as Error).message}
+        {t("diagram.load_failed", { message: (error as Error).message })}
       </div>
     );
   }
   const model = editingModel ?? serverModel;
   if (!model) {
-    return <div className="p-4 text-sm text-gray-500">No model</div>;
+    return <div className="p-4 text-sm text-gray-500">{t("diagram.no_model")}</div>;
   }
   // ADR-0021 §(2): editingPath を辿って現スコープの blocks/connections/layout を取得
   let pathView;
@@ -256,7 +258,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   } catch (e) {
     return (
       <div className="p-4 text-sm text-red-600">
-        Path resolution failed: {(e as Error).message}
+        {t("diagram.path_failed", { message: (e as Error).message })}
       </div>
     );
   }
@@ -351,7 +353,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     const srcBlock = pathView.blocks.find((b) => b.id === connection.source);
     const dstBlock = pathView.blocks.find((b) => b.id === connection.target);
     if (!srcBlock || !dstBlock) {
-      showToast("Connection refused: source or target block not found.");
+      showToast(t("diagram.connect_no_block"));
       return;
     }
     const srcIdx = Number(connection.sourceHandle ?? 0);
@@ -364,7 +366,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       registryMap,
     );
     if (!check.ok) {
-      showToast(check.reason ?? "Port shape mismatch.");
+      showToast(check.reason ?? t("diagram.port_shape_mismatch"));
       return;
     }
     addConnectionToEditing({

@@ -5,6 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { findBlockAtPath } from "../lib/pathResolver";
@@ -25,6 +26,7 @@ interface ParameterPanelProps {
 }
 
 export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.Element {
+  const { t } = useTranslation();
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
@@ -44,7 +46,7 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
         data-testid="parameter-panel-empty"
         className="border-l border-gray-200 bg-white p-3 text-xs text-gray-500"
       >
-        Click a block in the diagram to edit its parameters.
+        {t("inspector.empty")}
       </div>
     );
   }
@@ -54,7 +56,7 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
         data-testid="parameter-panel-not-found"
         className="border-l border-gray-200 bg-white p-3 text-xs text-red-600"
       >
-        Block {selectedNodeId} not found in current scope.
+        {t("inspector.not_found", { id: selectedNodeId })}
       </div>
     );
   }
@@ -80,6 +82,7 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
 // ---------------------------------------------------------------------------
 
 function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
+  const { t } = useTranslation();
   const { data: registryData } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
@@ -120,7 +123,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     if (originalType === "number") {
       const parsed = parseNumericInput(raw);
       if (parsed === null) {
-        setError(`Invalid number for "${k}"`);
+        setError(t("inspector.invalid_number", { name: k }));
         return;
       }
       // n_inputs / n / n_outputs などの整数 param は明示的に整数化
@@ -164,7 +167,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
 
       {editableEntries.length === 0 && (
         <div className="text-slate-500">
-          No editable parameters on this block.
+          {t("inspector.no_editable")}
         </div>
       )}
 
@@ -232,7 +235,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       {readOnlyEntries.length > 0 && (
         <details className="mt-2 rounded border border-slate-200 p-2">
           <summary className="cursor-pointer text-slate-600">
-            Other parameters ({readOnlyEntries.length}, read-only)
+            {t("inspector.read_only_summary", {
+              count: readOnlyEntries.length,
+            })}
           </summary>
           <pre className="mt-1 overflow-auto text-[10px] text-slate-700">
             {readOnlyJson}
@@ -242,7 +247,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
 
       {error && <div className="text-rose-600">{error}</div>}
       <div className="mt-2 text-[10px] text-slate-400">
-        Edits auto-save (debounce 500 ms · Ctrl+S to flush).
+        {t("inspector.autosave_hint")}
       </div>
     </div>
   );
@@ -264,6 +269,7 @@ function MaskValuesEditor({
   block: BlockEntry;
   maskParams: MaskParamSpec[];
 }): JSX.Element {
+  const { t } = useTranslation();
   const initialValues = useMemo(() => {
     const fromBlock = block.params.mask_values as
       | Record<string, unknown>
@@ -294,7 +300,7 @@ function MaskValuesEditor({
     } else {
       const n = parseNumericInput(raw);
       if (n === null) {
-        setError(`Invalid number for "${name}"`);
+        setError(t("inspector.invalid_number", { name }));
         return;
       }
       parsed = type === "int" ? Math.trunc(n) : n;
@@ -333,13 +339,12 @@ function MaskValuesEditor({
           title={block.type}
           className="truncate font-mono text-[10px] text-gray-500"
         >
-          {shortType} · mask
+          {shortType} · {t("inspector.mask.suffix")}
         </span>
       </div>
 
       <div className="text-[10px] text-gray-500">
-        Mask parameters (declared on the Subsystem). Editing here updates the
-        inner block placeholders on save.
+        {t("inspector.mask.section_hint")}
       </div>
 
       {maskParams.map((p) => (
@@ -390,8 +395,7 @@ function MaskValuesEditor({
 
       {error && <div className="text-red-600">{error}</div>}
       <div className="mt-2 text-[10px] text-gray-400">
-        Mask edits auto-save. Double-click the Subsystem to drill into its
-        internal diagram.
+        {t("inspector.mask.autosave_hint")}
       </div>
     </div>
   );

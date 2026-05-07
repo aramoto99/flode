@@ -5,6 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { BlockGlyph } from "../lib/blockGlyphs";
@@ -23,19 +24,8 @@ const CATEGORY_ORDER = [
   "uncategorized",
 ] as const;
 
-const CATEGORY_LABEL: Record<string, string> = {
-  sources: "Sources",
-  mathops: "Math",
-  continuous: "Continuous",
-  discrete: "Discrete",
-  logic: "Logic",
-  routing: "Routing",
-  sinks: "Sinks",
-  subsystems: "Subsystems",
-  uncategorized: "Other",
-};
-
 export function BlockPalette(): JSX.Element {
+  const { t } = useTranslation();
   const { data, isLoading, error } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
@@ -82,12 +72,12 @@ export function BlockPalette(): JSX.Element {
   };
 
   if (isLoading) {
-    return <div className="p-3 text-xs text-slate-500">Loading palette...</div>;
+    return <div className="p-3 text-xs text-slate-500">{t("palette.loading")}</div>;
   }
   if (error) {
     return (
       <div className="p-3 text-xs text-rose-600">
-        Failed to load palette: {(error as Error).message}
+        {t("palette.error", { message: (error as Error).message })}
       </div>
     );
   }
@@ -105,14 +95,14 @@ export function BlockPalette(): JSX.Element {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search blocks…"
+          placeholder={t("palette.search")}
           className="w-full rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          aria-label="Search blocks"
+          aria-label={t("palette.search")}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
         {visibleCategories.length === 0 ? (
-          <div className="p-3 text-xs text-slate-500">No blocks match.</div>
+          <div className="p-3 text-xs text-slate-500">{t("palette.no_match")}</div>
         ) : (
           visibleCategories.map((cat) => {
             const isCollapsed = collapsed[cat] && !isFiltering;
@@ -130,7 +120,7 @@ export function BlockPalette(): JSX.Element {
                   <span className="w-3 text-slate-400">
                     {isCollapsed ? "▸" : "▾"}
                   </span>
-                  <span>{CATEGORY_LABEL[cat] ?? cat}</span>
+                  <span>{t(`palette.category.${cat}` as const)}</span>
                   <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[9px] text-slate-500">
                     {blocks.length}
                   </span>

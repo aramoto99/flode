@@ -1,9 +1,12 @@
 // VS Code 風タブストリップ。Phase 3 では「現在開いているモデル 1 件のタブ」のみ表示。
 // 複数モデル並列オープンは Phase 4+ 送り (= 同じ UI で拡張可能な箱だけ用意)。
 
+import { useTranslation } from "react-i18next";
+
 import { useAppStore } from "../store/appStore";
 
 export function TabStrip(): JSX.Element {
+  const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
   const dirty = useAppStore((s) => s.dirty);
   const selectModel = useAppStore((s) => s.selectModel);
@@ -27,8 +30,8 @@ export function TabStrip(): JSX.Element {
           {dirty && (
             <span
               className="text-amber-500"
-              title="Unsaved (Ctrl+S)"
-              aria-label="Unsaved"
+              title={t("tabstrip.unsaved_title")}
+              aria-label={t("tabstrip.unsaved_title")}
             >
               ●
             </span>
@@ -36,7 +39,7 @@ export function TabStrip(): JSX.Element {
           <button
             type="button"
             onClick={handleClose}
-            title="Close"
+            title={t("tabstrip.close")}
             className="ml-1 flex h-4 w-4 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
           >
             <svg
@@ -53,7 +56,9 @@ export function TabStrip(): JSX.Element {
           </button>
         </div>
       ) : (
-        <span className="px-3 py-1 text-[11px] text-slate-400">No file</span>
+        <span className="px-3 py-1 text-[11px] text-slate-400">
+          {t("tabstrip.no_file")}
+        </span>
       )}
     </div>
   );

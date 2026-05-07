@@ -2,9 +2,12 @@
 // `Top › sub_outer › sub_inner` のクリック可能パスを表示し、
 // 各セグメントクリックで `editingPath` を切り詰めて該当階層に戻る。
 
+import { useTranslation } from "react-i18next";
+
 import { useAppStore } from "../store/appStore";
 
 export function Breadcrumb(): JSX.Element {
+  const { t } = useTranslation();
   const editingPath = useAppStore((s) => s.editingPath);
   const drillUp = useAppStore((s) => s.drillUp);
 
@@ -14,7 +17,7 @@ export function Breadcrumb(): JSX.Element {
 
   return (
     <nav
-      aria-label="Subsystem path"
+      aria-label={t("breadcrumb.aria")}
       className="flex items-center gap-1.5 border-b border-slate-200 bg-white px-3 py-1.5 text-xs"
     >
       <svg
@@ -37,7 +40,7 @@ export function Breadcrumb(): JSX.Element {
             : "text-blue-600 transition-colors hover:text-blue-800 hover:underline"
         }
       >
-        Top
+        {t("breadcrumb.top")}
       </button>
       {editingPath.map((segId, idx) => {
         const isLast = idx === editingPath.length - 1;
@@ -53,7 +56,11 @@ export function Breadcrumb(): JSX.Element {
                   : "text-blue-600 transition-colors hover:text-blue-800 hover:underline"
               }
               disabled={isLast}
-              title={isLast ? "current scope" : `go to ${segId}`}
+              title={
+                isLast
+                  ? t("breadcrumb.current_scope")
+                  : t("breadcrumb.go_to", { id: segId })
+              }
             >
               {segId}
             </button>

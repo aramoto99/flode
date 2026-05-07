@@ -3,6 +3,7 @@
 // 共通動作: Escape で cancel、外クリックで cancel、Enter で primary action。
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ModalShellProps {
   title: string;
@@ -12,6 +13,7 @@ interface ModalShellProps {
 }
 
 function ModalShell({ title, onClose, children, width = "w-[420px]" }: ModalShellProps): JSX.Element {
+  const { t } = useTranslation();
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -38,7 +40,7 @@ function ModalShell({ title, onClose, children, width = "w-[420px]" }: ModalShel
             type="button"
             onClick={onClose}
             className="text-slate-400 transition-colors hover:text-slate-700"
-            aria-label="Close"
+            aria-label={t("modal.close")}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -69,20 +71,21 @@ export function OpenModelDialog({
   onOpen,
   onClose,
 }: OpenModelDialogProps): JSX.Element {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const filtered = models.filter((m) =>
     m.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
   return (
-    <ModalShell title="Open Model" onClose={onClose}>
+    <ModalShell title={t("modal.open.title")} onClose={onClose}>
       <div className="p-3">
         <input
           autoFocus
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter models…"
+          placeholder={t("modal.open.filter")}
           className="w-full rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
           onKeyDown={(e) => {
             if (e.key === "Enter" && filtered.length > 0) {
@@ -94,7 +97,9 @@ export function OpenModelDialog({
       <div className="max-h-80 overflow-y-auto px-1.5 pb-2">
         {filtered.length === 0 ? (
           <div className="p-4 text-center text-xs text-slate-500">
-            {models.length === 0 ? "No models yet." : "No models match."}
+            {models.length === 0
+              ? t("modal.open.no_models")
+              : t("modal.open.no_match")}
           </div>
         ) : (
           <ul className="flex flex-col gap-0.5">
@@ -116,7 +121,7 @@ export function OpenModelDialog({
                   <span className="truncate">{m}</span>
                   {currentId === m && (
                     <span className="ml-auto text-[10px] uppercase tracking-wide text-blue-500">
-                      current
+                      {t("modal.open.current")}
                     </span>
                   )}
                 </button>
@@ -150,6 +155,7 @@ export function RenameDialog({
   onConfirm,
   onClose,
 }: RenameDialogProps): JSX.Element {
+  const { t } = useTranslation();
   const [value, setValue] = useState(defaultValue);
   const trimmed = value.trim();
   const conflict =
@@ -161,7 +167,7 @@ export function RenameDialog({
     <ModalShell title={title} onClose={onClose}>
       <div className="flex flex-col gap-2 p-4">
         <label className="flex flex-col gap-1 text-xs text-slate-600">
-          Model name
+          {t("modal.rename.label")}
           <input
             autoFocus
             type="text"
@@ -176,12 +182,12 @@ export function RenameDialog({
         </label>
         {invalid && (
           <span className="text-[11px] text-rose-600">
-            Name must be non-empty and contain only letters, digits, ``_``, ``-``, ``.``.
+            {t("modal.rename.invalid")}
           </span>
         )}
         {!invalid && conflict && (
           <span className="text-[11px] text-rose-600">
-            A model named &ldquo;{trimmed}&rdquo; already exists.
+            {t("modal.rename.conflict", { name: trimmed })}
           </span>
         )}
       </div>
@@ -191,7 +197,7 @@ export function RenameDialog({
           onClick={onClose}
           className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
         >
-          Cancel
+          {t("modal.button.cancel")}
         </button>
         <button
           type="button"
@@ -227,6 +233,7 @@ export function ConfirmDialog({
   onConfirm,
   onClose,
 }: ConfirmDialogProps): JSX.Element {
+  const { t } = useTranslation();
   return (
     <ModalShell title={title} onClose={onClose}>
       <div className="p-4 text-sm text-slate-700">{message}</div>
@@ -236,7 +243,7 @@ export function ConfirmDialog({
           onClick={onClose}
           className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
         >
-          Cancel
+          {t("modal.button.cancel")}
         </button>
         <button
           type="button"

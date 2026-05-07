@@ -3,6 +3,7 @@
 // 開いた瞬間に「(empty / coming soon)」を出す placeholder。
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -13,6 +14,11 @@ import {
   nextUntitledName,
   updateModel,
 } from "../api/client";
+import {
+  currentLanguage,
+  setLanguage,
+  type SupportedLanguage,
+} from "../i18n";
 import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import {
@@ -53,9 +59,17 @@ interface MenuItemSpec {
   disabled?: boolean;
   destructive?: boolean;
   divider?: boolean;
+  // ADR-0024 §(4): View > Language サブメニュー用。値が現在言語と一致していれば
+  // チェックマークを描画する。`language` 指定時は disabled / shortcut は無視。
+  language?: SupportedLanguage;
 }
 
 export function MenuBar(): JSX.Element {
+  const { t, i18n: _i18n } = useTranslation();
+  // ADR-0024: useTranslation を購読することで changeLanguage 後に再 render される。
+  // ``currentLanguage()`` は BCP47 タグ (例 ``en-US``) を ``en``/``ja`` に正規化する。
+  const lang = currentLanguage();
+  void _i18n; // 購読のためだけに参照
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -193,29 +207,50 @@ export function MenuBar(): JSX.Element {
 
   // ---- Menu definitions ----
   const fileItems: MenuItemSpec[] = [
-    { label: "New", shortcut: "Ctrl+N", onClick: handleNew },
-    { label: "Open…", shortcut: "Ctrl+O", onClick: handleOpen },
+    { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: handleNew },
+    { label: t("menu.file.open"), shortcut: "Ctrl+O", onClick: handleOpen },
     { label: "", divider: true },
     {
-      label: "Save",
+      label: t("menu.file.save"),
       shortcut: "Ctrl+S",
       onClick: handleSave,
       disabled: !hasModel,
     },
-    { label: "Save As…", onClick: handleSaveAs, disabled: !hasModel },
-    { label: "Rename…", onClick: handleRename, disabled: !hasModel },
+    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasModel },
+    { label: t("menu.file.rename"), onClick: handleRename, disabled: !hasModel },
     { label: "", divider: true },
-    { label: "Close", onClick: handleClose, disabled: !hasModel },
+    { label: t("menu.file.close"), onClick: handleClose, disabled: !hasModel },
     {
-      label: "Delete…",
+      label: t("menu.file.delete"),
       onClick: handleDelete,
       disabled: !hasModel,
       destructive: true,
     },
   ];
-  // Edit / View / Simulation / Help は placeholder (Phase 4+)
+  // Edit / Simulation / Help は placeholder (Phase 4+ で項目追加予定)
   const placeholder: MenuItemSpec[] = [
-    { label: "(no actions yet)", disabled: true },
+    { label: t("menu.placeholder.empty"), disabled: true },
+  ];
+  // ADR-0024 §(4): View メニューに Language の見出し行 + English / 日本語 を置く。
+  // 見出しはクリック不可 (= disabled) で、項目をグルーピングする視覚 hint。
+  const viewItems: MenuItemSpec[] = [
+    { label: t("menu.view.language"), disabled: true },
+    {
+      label: t("menu.view.language.en"),
+      language: "en",
+      onClick: () => {
+        setOpenMenu(null);
+        void setLanguage("en");
+      },
+    },
+    {
+      label: t("menu.view.language.ja"),
+      language: "ja",
+      onClick: () => {
+        setOpenMenu(null);
+        void setLanguage("ja");
+      },
+    },
   ];
 
   return (
@@ -224,41 +259,46 @@ export function MenuBar(): JSX.Element {
       className="flex items-center gap-px border-b border-slate-300 bg-slate-100 px-1 text-[12px] text-slate-700"
     >
       <Menu
-        label="File"
+        label={t("menu.file")}
         open={openMenu === "File"}
         onToggle={() => setOpenMenu((m) => (m === "File" ? null : "File"))}
         onHover={() => openMenu && setOpenMenu("File")}
         items={fileItems}
+        currentLang={lang}
       />
       <Menu
-        label="Edit"
+        label={t("menu.edit")}
         open={openMenu === "Edit"}
         onToggle={() => setOpenMenu((m) => (m === "Edit" ? null : "Edit"))}
         onHover={() => openMenu && setOpenMenu("Edit")}
         items={placeholder}
+        currentLang={lang}
       />
       <Menu
-        label="View"
+        label={t("menu.view")}
         open={openMenu === "View"}
         onToggle={() => setOpenMenu((m) => (m === "View" ? null : "View"))}
         onHover={() => openMenu && setOpenMenu("View")}
-        items={placeholder}
+        items={viewItems}
+        currentLang={lang}
       />
       <Menu
-        label="Simulation"
+        label={t("menu.simulation")}
         open={openMenu === "Simulation"}
         onToggle={() =>
           setOpenMenu((m) => (m === "Simulation" ? null : "Simulation"))
         }
         onHover={() => openMenu && setOpenMenu("Simulation")}
         items={placeholder}
+        currentLang={lang}
       />
       <Menu
-        label="Help"
+        label={t("menu.help")}
         open={openMenu === "Help"}
         onToggle={() => setOpenMenu((m) => (m === "Help" ? null : "Help"))}
         onHover={() => openMenu && setOpenMenu("Help")}
         items={placeholder}
+        currentLang={lang}
       />
 
       {/* dialogs */}
@@ -275,29 +315,29 @@ export function MenuBar(): JSX.Element {
       )}
       {dialog?.kind === "save-as" && selectedModelId && (
         <RenameDialog
-          title="Save As"
+          title={t("menu.file.save_as")}
           defaultValue={`${selectedModelId}_copy`}
           forbiddenIds={models}
-          primaryLabel="Save As"
+          primaryLabel={t("modal.button.save_as")}
           onConfirm={(newName) => performSaveAs.mutate(newName)}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === "rename" && selectedModelId && (
         <RenameDialog
-          title="Rename Model"
+          title={t("menu.file.rename")}
           defaultValue={selectedModelId}
           forbiddenIds={models.filter((m) => m !== selectedModelId)}
-          primaryLabel="Rename"
+          primaryLabel={t("modal.button.rename")}
           onConfirm={(newName) => performRename.mutate(newName)}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === "delete" && selectedModelId && (
         <ConfirmDialog
-          title="Delete Model"
-          message={`Permanently delete "${selectedModelId}.flw.json"?`}
-          primaryLabel="Delete"
+          title={t("modal.delete.title")}
+          message={t("modal.delete.message", { name: selectedModelId })}
+          primaryLabel={t("modal.button.delete")}
           destructive
           onConfirm={() => performDelete.mutate()}
           onClose={() => setDialog(null)}
@@ -313,9 +353,18 @@ interface MenuProps {
   onToggle: () => void;
   onHover: () => void;
   items: readonly MenuItemSpec[];
+  /** Language item のチェックマーク描画用 (現在言語と一致時に ✓)。 */
+  currentLang: SupportedLanguage;
 }
 
-function Menu({ label, open, onToggle, onHover, items }: MenuProps): JSX.Element {
+function Menu({
+  label,
+  open,
+  onToggle,
+  onHover,
+  items,
+  currentLang,
+}: MenuProps): JSX.Element {
   return (
     <div className="relative">
       <button
@@ -352,7 +401,21 @@ function Menu({ label, open, onToggle, onHover, items }: MenuProps): JSX.Element
                       : "text-slate-700 hover:bg-blue-600 hover:text-white"
                 }`}
               >
-                <span>{item.label}</span>
+                <span className="flex items-center gap-1.5">
+                  {item.language && (
+                    <span
+                      aria-hidden
+                      className={
+                        item.language === currentLang
+                          ? "text-blue-600"
+                          : "text-transparent"
+                      }
+                    >
+                      ✓
+                    </span>
+                  )}
+                  <span>{item.label}</span>
+                </span>
                 {item.shortcut && (
                   <span
                     className={`font-mono text-[10px] ${

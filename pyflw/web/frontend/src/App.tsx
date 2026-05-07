@@ -1,5 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
@@ -18,6 +19,7 @@ import { useShortcuts } from "./lib/useShortcuts";
 import { useAppStore } from "./store/appStore";
 
 export default function App(): JSX.Element {
+  const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
   const scopes = useAppStore((s) => s.scopes);
   const editingModel = useAppStore((s) => s.editingModel);
@@ -69,7 +71,7 @@ export default function App(): JSX.Element {
         <div className="grid min-h-0 grid-cols-[240px_1fr_280px] overflow-hidden">
           {/* Left: Library / Palette */}
           <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
-            <PanelHeader>Library</PanelHeader>
+            <PanelHeader>{t("panel.library")}</PanelHeader>
             <div className="min-h-0 flex-1 overflow-hidden">
               <BlockPalette />
             </div>
@@ -87,14 +89,14 @@ export default function App(): JSX.Element {
                 <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
                   {Object.entries(scopes).length === 0 ? (
                     <div className="px-1 text-[11px] text-slate-500">
-                      No scope output. Run a simulation to plot data.
+                      {t("app.scope.no_output")}
                     </div>
                   ) : (
                     Object.entries(scopes).map(([scopeId, buffer]) => {
-                      const t = blockTypeById.get(scopeId) ?? "";
+                      const blockType = blockTypeById.get(scopeId) ?? "";
                       // Display は block face に live 表示 → bottom panel には出さない
-                      if (t.endsWith(".Display")) return null;
-                      if (t.endsWith(".XYGraph")) {
+                      if (blockType.endsWith(".Display")) return null;
+                      if (blockType.endsWith(".XYGraph")) {
                         return (
                           <XYGraphView
                             key={scopeId}
@@ -121,12 +123,12 @@ export default function App(): JSX.Element {
 
           {/* Right: Inspector */}
           <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-slate-300 bg-white">
-            <PanelHeader>Inspector</PanelHeader>
+            <PanelHeader>{t("panel.inspector")}</PanelHeader>
             {selectedModelId ? (
               <ParameterPanel modelId={selectedModelId} />
             ) : (
               <div className="p-3 text-[11px] text-slate-400">
-                Open a model to inspect block parameters.
+                {t("app.inspector.locked")}
               </div>
             )}
           </aside>
@@ -148,14 +150,15 @@ function PanelHeader({ children }: { children: React.ReactNode }): JSX.Element {
 }
 
 function EmptyState(): JSX.Element {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-1 items-center justify-center bg-slate-50">
       <div className="max-w-sm rounded border border-slate-200 bg-white px-6 py-5 text-center text-[12px] text-slate-600">
-        <div className="mb-2 font-semibold text-slate-700">No file open</div>
+        <div className="mb-2 font-semibold text-slate-700">{t("app.empty.title")}</div>
         <div className="text-slate-500">
-          File → New (Ctrl+N) to create a model
+          {t("app.empty.hint_new")}
           <br />
-          File → Open… (Ctrl+O) to open an existing model
+          {t("app.empty.hint_open")}
         </div>
       </div>
     </div>

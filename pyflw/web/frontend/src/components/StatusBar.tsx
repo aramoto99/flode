@@ -2,11 +2,13 @@
 // model 名 / dirty / solver / sim 状態 / block 数 / current path を表示する。
 
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { resolveBlocksAtPath } from "../lib/pathResolver";
 import { useAppStore } from "../store/appStore";
 
 export function StatusBar(): JSX.Element {
+  const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
@@ -36,12 +38,15 @@ export function StatusBar(): JSX.Element {
         100,
         Math.round((progress.current_t / progress.t_end) * 100),
       );
-      return `Running ${pct}% (t=${progress.current_t.toFixed(2)})`;
+      return t("statusbar.running", {
+        pct,
+        t: progress.current_t.toFixed(2),
+      });
     }
-    if (status === "completed") return "Completed";
-    if (status === "stopped") return "Stopped";
-    if (status === "failed") return "Failed";
-    return "Idle";
+    if (status === "completed") return t("statusbar.completed");
+    if (status === "stopped") return t("statusbar.stopped");
+    if (status === "failed") return t("statusbar.failed");
+    return t("statusbar.idle");
   })();
 
   const simStatusColor =
@@ -69,12 +74,19 @@ export function StatusBar(): JSX.Element {
       <span>
         {selectedModelId ? (
           <>
-            <span className="text-slate-500">file:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.file")}</span>{" "}
             <span className="font-mono">{selectedModelId}</span>
-            {dirty && <span className="ml-1 text-amber-600">●</span>}
+            {dirty && (
+              <span
+                className="ml-1 text-amber-600"
+                title={t("statusbar.unsaved_dot_title")}
+              >
+                ●
+              </span>
+            )}
           </>
         ) : (
-          <span className="text-slate-400">no file</span>
+          <span className="text-slate-400">{t("statusbar.label.no_file")}</span>
         )}
       </span>
 
@@ -84,7 +96,7 @@ export function StatusBar(): JSX.Element {
       {editingPath.length > 0 && (
         <>
           <span>
-            <span className="text-slate-500">scope:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.scope")}</span>{" "}
             <span className="font-mono">{editingPath.join(" / ")}</span>
           </span>
           <Sep />
@@ -95,26 +107,26 @@ export function StatusBar(): JSX.Element {
       {stats && (
         <>
           <span>
-            <span className="text-slate-500">blocks:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.blocks")}</span>{" "}
             <span className="font-mono">{stats.blocks}</span>
           </span>
           <span>
-            <span className="text-slate-500">edges:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.edges")}</span>{" "}
             <span className="font-mono">{stats.connections}</span>
           </span>
 
           <Sep />
 
           <span>
-            <span className="text-slate-500">solver:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.solver")}</span>{" "}
             <span className="font-mono">{stats.solver}</span>
           </span>
           <span>
-            <span className="text-slate-500">t_end:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.t_end")}</span>{" "}
             <span className="font-mono">{stats.tEnd}</span>
           </span>
           <span>
-            <span className="text-slate-500">dt:</span>{" "}
+            <span className="text-slate-500">{t("statusbar.label.dt")}</span>{" "}
             <span className="font-mono">{stats.dt}</span>
           </span>
         </>

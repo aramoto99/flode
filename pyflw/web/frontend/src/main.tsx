@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import App from "./App";
+import "./i18n"; // ADR-0024: i18next を起動時に同期 init (FOUC 回避)
 import "./index.css";
 
 const queryClient = new QueryClient({

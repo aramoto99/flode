@@ -5,6 +5,7 @@
 // y = values[1] を index ベースで読む。
 
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ScopeBuffer } from "../store/appStore";
 
@@ -21,6 +22,7 @@ export function XYGraphView({
   xLabel = "x",
   yLabel = "y",
 }: XYGraphViewProps): JSX.Element {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export function XYGraphView({
     if (!xCol || !yCol || buffer.length < 2) {
       ctx.fillStyle = "#64748b";
       ctx.font = "12px sans-serif";
-      ctx.fillText("(no data yet)", 8, 16);
+      ctx.fillText(t("xygraph.no_data"), 8, 16);
       return;
     }
 
@@ -138,7 +140,7 @@ export function XYGraphView({
       width - 8,
       12,
     );
-  }, [scopeId, buffer, xLabel, yLabel]);
+  }, [scopeId, buffer, xLabel, yLabel, t]);
 
   return (
     <div className="relative h-56 w-full border border-slate-200 bg-white">

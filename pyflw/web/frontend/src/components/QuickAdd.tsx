@@ -4,6 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { BlockGlyph } from "../lib/blockGlyphs";
@@ -53,6 +54,7 @@ export function QuickAdd({
   flowY,
   onClose,
 }: QuickAddProps): JSX.Element | null {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -157,7 +159,7 @@ export function QuickAdd({
       className="absolute z-40 flex flex-col overflow-hidden rounded-md border border-slate-300 bg-white text-[12px] shadow-2xl"
       style={{ left, top, width: POPUP_W, height: POPUP_H }}
       role="dialog"
-      aria-label="Quick add block"
+      aria-label={t("quickadd.aria")}
     >
       <input
         ref={inputRef}
@@ -165,13 +167,13 @@ export function QuickAdd({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Search a block to insert…"
+        placeholder={t("quickadd.placeholder")}
         className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[12px] focus:bg-white focus:outline-none"
       />
       {isLoading ? (
-        <div className="p-3 text-slate-500">Loading…</div>
+        <div className="p-3 text-slate-500">{t("quickadd.loading")}</div>
       ) : results.length === 0 ? (
-        <div className="p-3 text-slate-400">No match.</div>
+        <div className="p-3 text-slate-400">{t("quickadd.no_match")}</div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
           {results.map((m, i) => (
@@ -211,7 +213,7 @@ export function QuickAdd({
         </div>
       )}
       <div className="border-t border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
-        ↑↓ Navigate · Enter Insert · Esc Cancel
+        {t("quickadd.footer_hint")}
       </div>
     </div>
   );

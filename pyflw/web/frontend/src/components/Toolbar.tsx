@@ -4,6 +4,7 @@
 // 右: simulation (Run / Stop)
 
 import { useReactFlow } from "@xyflow/react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { updateModel } from "../api/client";
@@ -11,6 +12,7 @@ import { useSimulation } from "../lib/useSimulation";
 import { useAppStore } from "../store/appStore";
 
 export function Toolbar(): JSX.Element {
+  const { t } = useTranslation();
   const reactFlow = useReactFlow();
   const queryClient = useQueryClient();
 
@@ -40,16 +42,16 @@ export function Toolbar(): JSX.Element {
     <div className="flex items-center gap-0.5 border-b border-slate-300 bg-slate-50 px-1.5 py-0.5">
       {/* Group: File */}
       <ToolButton
-        title="Save (Ctrl+S)"
+        title={t("toolbar.save")}
         disabled={!hasModel || !dirty || saveMutation.isPending}
         onClick={() => saveMutation.mutate()}
       >
         <SaveIcon />
       </ToolButton>
-      <ToolButton title="Undo (Phase 4)" disabled>
+      <ToolButton title={t("toolbar.undo")} disabled>
         <UndoIcon />
       </ToolButton>
-      <ToolButton title="Redo (Phase 4)" disabled>
+      <ToolButton title={t("toolbar.redo")} disabled>
         <RedoIcon />
       </ToolButton>
 
@@ -57,21 +59,21 @@ export function Toolbar(): JSX.Element {
 
       {/* Group: Zoom */}
       <ToolButton
-        title="Zoom In"
+        title={t("toolbar.zoom_in")}
         disabled={!hasModel}
         onClick={() => reactFlow.zoomIn()}
       >
         <ZoomInIcon />
       </ToolButton>
       <ToolButton
-        title="Zoom Out"
+        title={t("toolbar.zoom_out")}
         disabled={!hasModel}
         onClick={() => reactFlow.zoomOut()}
       >
         <ZoomOutIcon />
       </ToolButton>
       <ToolButton
-        title="Fit to View"
+        title={t("toolbar.fit")}
         disabled={!hasModel}
         onClick={() => reactFlow.fitView({ padding: 0.2 })}
       >
@@ -82,7 +84,7 @@ export function Toolbar(): JSX.Element {
 
       {/* Group: Simulation */}
       <ToolButton
-        title="Run Simulation (F9 / Ctrl+T)"
+        title={t("toolbar.run")}
         disabled={!hasModel || isRunning}
         onClick={() => void run()}
         accent="run"
@@ -90,7 +92,7 @@ export function Toolbar(): JSX.Element {
         <RunIcon />
       </ToolButton>
       <ToolButton
-        title="Stop Simulation (Shift+F9 / Ctrl+Shift+T)"
+        title={t("toolbar.stop")}
         disabled={!isRunning}
         onClick={() => void stop()}
         accent="stop"

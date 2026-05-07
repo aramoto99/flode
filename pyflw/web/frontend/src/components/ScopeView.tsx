@@ -13,6 +13,7 @@
 
 import uPlot from "uplot";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ScopeBuffer } from "../store/appStore";
 import { UPlotChart } from "./UPlotChart";
@@ -83,6 +84,7 @@ export function buildOptions(scopeId: string, n_signals: number): uPlot.Options 
  * placeholder (= 「No data」) を表示する。
  */
 export function ScopeView({ scopeId, buffer }: ScopeViewProps): JSX.Element {
+  const { t } = useTranslation();
   // signals 数が変わったら uPlot を再生成する必要があるので、options を memo
   // 依存に含める (= options 参照変更で UPlotChart が destroy → 再生成)。
   const options = useMemo(
@@ -102,7 +104,7 @@ export function ScopeView({ scopeId, buffer }: ScopeViewProps): JSX.Element {
   if (buffer.length === 0) {
     return (
       <div className="flex h-48 w-full items-center justify-center border border-slate-200 bg-white text-[12px] text-slate-400">
-        {scopeId}: (no data yet)
+        {t("scopeview.no_data", { scope_id: scopeId })}
       </div>
     );
   }
