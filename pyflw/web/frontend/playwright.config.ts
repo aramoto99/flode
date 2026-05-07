@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const FIXTURES_DIR = path.join("pyflw", "web", "frontend", "tests", "e2e", "fixtures");
 
-const E2E_BACKEND_PORT = 8765;
+const E2E_BACKEND_PORT = 8770;
 const E2E_FRONTEND_PORT = 5173;
 
 export default defineConfig({
@@ -42,7 +42,7 @@ export default defineConfig({
   // Playwright が両方の port を待ってから spec を流し込む
   webServer: [
     {
-      // pyflw FastAPI backend (port 8765)。Python 環境に pyflw がインストール済み
+      // pyflw FastAPI backend (port 8770)。Python 環境に pyflw がインストール済み
       // (例: `pip install -e ".[gui]"`) であること。
       // ``pyflw-server`` console script が PATH に通っていない環境でも動くよう
       // ``python -m pyflw.server.cli`` で起動する。``cwd`` は本ファイルからの
@@ -56,7 +56,7 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      // Vite dev server (5173)。`/api/*` と WebSocket を 8765 にプロキシ (vite.config.ts)。
+      // Vite dev server (5173)。`/api/*` と WebSocket を 8770 にプロキシ (vite.config.ts)。
       // ``--host 127.0.0.1`` で IPv4 にバインドさせる: Vite default の `localhost` は
       // Windows で IPv6 (`[::1]`) のみになるケースがあり、Playwright の IPv4 health
       // check が通らないため。

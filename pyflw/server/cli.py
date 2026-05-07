@@ -2,7 +2,7 @@
 
 ``pip install pyflw[gui]`` 後、コマンドラインから::
 
-    pyflw-server --model-dir ./models --port 8765
+    pyflw-server --model-dir ./models --port 8770
 
 で FastAPI サーバを起動する。``pyflw[gui]`` extras が無い場合は
 ``pyflw.server`` の import 時点で ``PyflwError`` が出るので、ユーザーが extras を
@@ -34,7 +34,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory holding .flw.json model files (default: ./models).",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
-    parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765).")
+    parser.add_argument("--port", type=int, default=8770, help="Bind port (default: 8770).")
     parser.add_argument(
         "--allow-origin",
         action="append",

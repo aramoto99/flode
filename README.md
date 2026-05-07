@@ -85,10 +85,10 @@ blocks that prefer separate `output` / `derivative` / `update` methods.
 After installing the `gui` extras, launch the FastAPI server:
 
 ```bash
-pyflw-server --model-dir ./models --port 8765
+pyflw-server --model-dir ./models --port 8770
 ```
 
-Then open `http://127.0.0.1:8765` in a browser. Models are read from and
+Then open `http://127.0.0.1:8770` in a browser. Models are read from and
 written to `--model-dir` as `.flw.json` files (ADR-0008). The browser UI gives
 you a model list, a read-only diagram view (React Flow), Run/Stop controls,
 and a live scope plot fed by WebSocket. Drag-and-drop editing and parameter

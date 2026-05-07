@@ -11,7 +11,7 @@ const pkg = JSON.parse(
   readFileSync(resolve(__dirname, "package.json"), "utf-8"),
 ) as { version: string };
 
-// ADR-0012 §(7): dev server (port 5173) → backend (port 8765) を proxy で接続。
+// ADR-0012 §(7): dev server (port 5173) → backend (port 8770) を proxy で接続。
 // production build は FastAPI が静的配信するため同一オリジン。
 export default defineConfig({
   plugins: [react()],
@@ -22,7 +22,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:8765",
+        target: "http://localhost:8770",
         changeOrigin: true,
         ws: true,
       },

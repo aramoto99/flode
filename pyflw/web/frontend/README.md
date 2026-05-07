@@ -20,11 +20,11 @@ PYFLW_MODEL_DIR=./models python -c "
 from pyflw.server import create_app, Settings
 import uvicorn
 app = create_app('./models', settings=Settings(model_dir=__import__('pathlib').Path('./models'), allow_origins=['http://localhost:5173']))
-uvicorn.run(app, host='127.0.0.1', port=8765)
+uvicorn.run(app, host='127.0.0.1', port=8770)
 "
 ```
 
-Vite dev server が `/api/*` を `localhost:8765` に proxy するため、frontend からは
+Vite dev server が `/api/*` を `localhost:8770` に proxy するため、frontend からは
 同一オリジンのように見える (CORS 不要)。
 
 ## ビルド
