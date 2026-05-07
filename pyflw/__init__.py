@@ -1,4 +1,4 @@
-__version__ = "0.8.1"  # ADR-0024: Web GUI i18n (ja/en) via react-i18next (2026-05-07)
+__version__ = "0.9.0"  # Phase 3 complete (= ADR-0016 §(8) v0.9.0 リリース判定基準達成、2026-05-07)
 
 from .core.block import Block
 from .core.decorator import block

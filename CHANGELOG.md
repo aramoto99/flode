@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-07
+
+**Phase 3 complete.** No code changes since v0.8.1 — this release is the
+SemVer milestone marking the close of Phase 3 of the roadmap
+(SPEC-0001 §機能要件 Phase 3, ADR-0016).
+
+### Phase 3 in summary
+
+ADR-0016 (Phase 3 全体方針) chose to clear the Phase 2 backlog before
+moving on to analysis / codegen / GPU. The eight sub-ADRs that follow
+were all Accepted and shipped between v0.5.0 and v0.8.1:
+
+| ADR | tag | scope |
+|---|---|---|
+| ADR-0014 | v0.3.0 | Simulator update timing fix (BREAKING) |
+| ADR-0015 | v0.4.0 | UnitDelay 2-state augmentation refactor (BREAKING) |
+| ADR-0017 | v0.6.0 | SM-B vector ports + Block API extension (BREAKING) |
+| ADR-0018 | v0.6.1 | Mux / Demux + SM-B run path |
+| ADR-0020 | v0.6.2 | JSON schema 0.5 layout persistence |
+| ADR-0019 | v0.7.0 | GUI drag-drop + palette + Block class registry |
+| ADR-0021 | v0.7.1 | Subsystem drilldown + mask parameters (schema 0.6) |
+| (—) | v0.7.2 | GUI polish (Display / XYGraph, dynamic ports, resize, multi-select) |
+| ADR-0023 | v0.8.0 | uPlot Scope + SoA ScopeBuffer (BREAKING for ScopeBuffer consumers) |
+| ADR-0024 | v0.8.1 | Web GUI i18n (ja / en) via react-i18next |
+
+### SPEC-0001 revision
+
+`.claude/docs/specs/0001-pyflw-overview-and-roadmap.md` is rewritten:
+
+- §機能要件 Phase 3 is replaced with the actual delivered set
+  (#15-#25, mapping to ADR-0014/15/17–24).
+- §機能要件 Phase 4 collects the SPEC-original #16-#21 (block library
+  files, linearisation, frequency response, stability analysis,
+  codegen, GPU) and the items that ADR-0016 §(2) explicitly punted
+  (RateTransition, Triggered subsystems, block `display_name`
+  translation, error toast i18n, a11y aria-label).
+- §機能要件 Phase 5+ collects the items the user pulled out of
+  Phase 3 scope (PyPI automation, dark mode) plus other
+  later-phase work (additional languages, settings panel, 3D
+  animation, optimisation solver, parameter sweep).
+- §未決事項 reflects which Phase 3 ADRs resolved which entries.
+- §変更履歴 has a 2026-05-07 entry summarising the closure.
+
+### Carried into Phase 4 (next)
+
+ADR-0025 (Phase 4 overview) will be drafted next to declare:
+
+- Sub-ADR slots for #26 (linearisation), #29 (codegen), #30 (GPU).
+- The ordering: SM-B is now stable, so `Jacobian` API design can
+  proceed without rework risk.
+- Versioning plan: minor bumps per major capability (linearisation
+  v0.10.0, codegen v0.11.0, GPU v0.12.0; all subject to ADR-0025
+  reordering).
+- Phase 5+ deferral reaffirmed: PyPI automation, dark mode,
+  additional languages, settings panel.
+
+### Unchanged
+
+- `pyflw/__init__.py.__version__` and `pyproject.toml.version` bumped
+  to `0.9.0`. No source code changes between v0.8.1 and v0.9.0.
+- All tests still pass (Python pytest 737, frontend vitest 145).
+- All Python and frontend dependencies unchanged from v0.8.1.
+
 ## [0.8.1] - 2026-05-07
 
 ADR-0024: Web GUI internationalisation (i18n / ja-en). The UI chrome
