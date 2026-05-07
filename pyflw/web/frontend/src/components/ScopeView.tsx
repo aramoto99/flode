@@ -1,86 +1,115 @@
-// Scope ストリームの可視化 (ADR-0012 §(3))。
-// Phase 2 はシンプルな表形式表示 + 簡易プロット (canvas 自前)。
-// uPlot は別途依存追加するが、Phase 2 では canvas ベースの最小プロットで足りる
-// (表現力が必要になったら uPlot に置き換える前提で API は分離)。
+// ADR-0023: Scope ストリームの可視化を uPlot 化。
+// 旧 canvas 自前実装 (ADR-0012 §(7) で「Phase 3 で uPlot に置換」と宣言) を完全置換し、
+// 100k 点規模で 60fps スクロールを担保する。
+//
+// データフロー:
+//   appStore.scopes[scopeId]: ScopeBuffer (SoA, Float64Array)
+//     -> ``buildAlignedData(buffer)``: uPlot.AlignedData の subarray view を生成
+//        (= ゼロコピー、length に応じて先頭から view を切る)
+//     -> UPlotChart に渡す
+//
+// uPlot options は ``buffer.n_signals`` + ``scopeId`` ごとに 1 回だけ生成し
+// useMemo で参照固定 (= UPlotChart の effect が再生成 trigger するのを抑える)。
 
-import { useEffect, useRef } from "react";
+import uPlot from "uplot";
+import { useMemo } from "react";
 
 import type { ScopeBuffer } from "../store/appStore";
+import { UPlotChart } from "./UPlotChart";
 
 interface ScopeViewProps {
   scopeId: string;
   buffer: ScopeBuffer;
 }
 
+/** Tailwind パレット 8 色ローテーション (ADR-0023 §Decision §(7))。 */
+const SCOPE_COLORS = [
+  "#0ea5e9", // sky-500
+  "#10b981", // emerald-500
+  "#f59e0b", // amber-500
+  "#f43f5e", // rose-500
+  "#8b5cf6", // violet-500
+  "#06b6d4", // cyan-500
+  "#84cc16", // lime-500
+  "#ec4899", // pink-500
+];
+
+/** ScopeBuffer から uPlot AlignedData (= ゼロコピー subarray view) を組み立てる。
+ * @internal テスト用 export。
+ */
+export function buildAlignedData(buffer: ScopeBuffer): uPlot.AlignedData {
+  if (buffer.length === 0 || buffer.n_signals === 0) {
+    // 空データ: uPlot は最低限 [xs, ys1] を要求するので 1 系列の空 array を返す
+    return [new Float64Array(0), new Float64Array(0)];
+  }
+  const xs = buffer.times.subarray(0, buffer.length);
+  const ys = buffer.values.map((col) => col.subarray(0, buffer.length));
+  return [xs, ...ys] as uPlot.AlignedData;
+}
+
+/** uPlot.Options を信号数 / scopeId / サイズから組み立てる。
+ * @internal テスト用 export。
+ */
+export function buildOptions(scopeId: string, n_signals: number): uPlot.Options {
+  const series: uPlot.Series[] = [
+    {}, // x 軸 (時間)
+    ...Array.from({ length: n_signals }, (_, i): uPlot.Series => ({
+      label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
+      stroke: SCOPE_COLORS[i % SCOPE_COLORS.length],
+      width: 1.5,
+      points: { show: false },
+    })),
+  ];
+  return {
+    width: 400, // ResizeObserver で実寸に追従するため初期値で良い
+    height: 192, // h-48 = 12rem = 192px
+    series,
+    scales: {
+      x: { time: false }, // シミュレーション時間 [s] は時刻として扱わない (= 数値軸)
+    },
+    axes: [
+      { stroke: "#94a3b8", grid: { stroke: "#e2e8f0" }, label: "t [s]" },
+      { stroke: "#94a3b8", grid: { stroke: "#e2e8f0" } },
+    ],
+    legend: { show: true, live: false },
+    cursor: { show: true, drag: { x: true, y: false } },
+  };
+}
+
+/**
+ * Scope ストリームを uPlot で時系列描画するコンポーネント。
+ *
+ * 信号数 ``buffer.n_signals`` は最初のサンプルを受信するまで 0 で、その間は
+ * placeholder (= 「No data」) を表示する。
+ */
 export function ScopeView({ scopeId, buffer }: ScopeViewProps): JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // signals 数が変わったら uPlot を再生成する必要があるので、options を memo
+  // 依存に含める (= options 参照変更で UPlotChart が destroy → 再生成)。
+  const options = useMemo(
+    () => buildOptions(scopeId, Math.max(buffer.n_signals, 1)),
+    [scopeId, buffer.n_signals],
+  );
+  // data は buffer の length が変わるたびに新参照を作る (= setData が走る)。
+  // ``buffer`` 参照だけでなく ``buffer.length`` を依存に明示することで、in-place
+  // 追記 (= buffer 参照は変わったが内部 typed array 参照は同一) でも data の
+  // 再構成 trigger が確実に走るよう意図を露出させる。
+  const data = useMemo(
+    () => buildAlignedData(buffer),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- length 変化で再計算
+    [buffer, buffer.length],
+  );
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const { width, height } = canvas.getBoundingClientRect();
-    // 親が ``display:none`` 等で 0 サイズの場合は描画スキップ (NaN を防ぐ)。
-    if (width === 0 || height === 0) return;
-    canvas.width = width;
-    canvas.height = height;
-    ctx.clearRect(0, 0, width, height);
-
-    if (buffer.times.length < 2 || buffer.values.length < 2) {
-      ctx.fillStyle = "#6b7280";
-      ctx.font = "12px sans-serif";
-      ctx.fillText("(no data yet)", 8, 16);
-      return;
-    }
-
-    const padding = 24;
-    const plotW = width - padding * 2;
-    const plotH = height - padding * 2;
-    const tMin = buffer.times[0];
-    const tMax = buffer.times[buffer.times.length - 1];
-    const tRange = tMax - tMin || 1;
-
-    const nPorts = buffer.values[0]?.length ?? 0;
-    if (nPorts === 0) return;
-
-    let yMin = Infinity;
-    let yMax = -Infinity;
-    for (const row of buffer.values) {
-      for (const v of row) {
-        if (v < yMin) yMin = v;
-        if (v > yMax) yMax = v;
-      }
-    }
-    if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
-      return;
-    }
-    const yRange = yMax - yMin || 1;
-
-    const colors = ["#2563eb", "#dc2626", "#16a34a", "#ca8a04"];
-    for (let p = 0; p < nPorts; p += 1) {
-      ctx.beginPath();
-      ctx.strokeStyle = colors[p % colors.length] ?? "#000";
-      ctx.lineWidth = 1.5;
-      for (let i = 0; i < buffer.times.length; i += 1) {
-        const x = padding + ((buffer.times[i]! - tMin) / tRange) * plotW;
-        const v = buffer.values[i]?.[p] ?? 0;
-        const y = padding + plotH - ((v - yMin) / yRange) * plotH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "11px sans-serif";
-    ctx.fillText(`${scopeId}  t=[${tMin.toFixed(2)}, ${tMax.toFixed(2)}]`, 8, 14);
-    ctx.fillText(`y=[${yMin.toFixed(3)}, ${yMax.toFixed(3)}]`, 8, height - 6);
-  }, [scopeId, buffer]);
+  if (buffer.length === 0) {
+    return (
+      <div className="flex h-48 w-full items-center justify-center border border-slate-200 bg-white text-[12px] text-slate-400">
+        {scopeId}: (no data yet)
+      </div>
+    );
+  }
 
   return (
-    <div className="relative h-48 w-full border border-gray-200 bg-white">
-      <canvas ref={canvasRef} className="absolute inset-0" />
+    <div className="relative h-48 w-full border border-slate-200 bg-white">
+      <UPlotChart options={options} data={data} className="absolute inset-0" />
     </div>
   );
 }

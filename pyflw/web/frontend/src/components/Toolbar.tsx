@@ -82,7 +82,7 @@ export function Toolbar(): JSX.Element {
 
       {/* Group: Simulation */}
       <ToolButton
-        title="Run Simulation"
+        title="Run Simulation (F9 / Ctrl+T)"
         disabled={!hasModel || isRunning}
         onClick={() => void run()}
         accent="run"
@@ -90,7 +90,7 @@ export function Toolbar(): JSX.Element {
         <RunIcon />
       </ToolButton>
       <ToolButton
-        title="Stop Simulation"
+        title="Stop Simulation (Shift+F9 / Ctrl+Shift+T)"
         disabled={!isRunning}
         onClick={() => void stop()}
         accent="stop"

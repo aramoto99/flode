@@ -14,6 +14,7 @@ import { Toolbar } from "./components/Toolbar";
 import { XYGraphView } from "./components/XYGraphView";
 import { resolveBlocksAtPath } from "./lib/pathResolver";
 import { useAutoSave } from "./lib/useAutoSave";
+import { useShortcuts } from "./lib/useShortcuts";
 import { useAppStore } from "./store/appStore";
 
 export default function App(): JSX.Element {
@@ -24,6 +25,8 @@ export default function App(): JSX.Element {
 
   // ADR-0019 §(5): debounce auto-save / Ctrl+S / beforeunload
   useAutoSave();
+  // Simulink 風キーボードショートカット (Ctrl+T/A/C/V, Esc, Enter)
+  useShortcuts();
 
   // 各 scope_id がどのブロック type かを引くためのマップ (現スコープ内のみ)
   const blockTypeById = useMemo(() => {

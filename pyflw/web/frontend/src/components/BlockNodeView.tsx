@@ -463,12 +463,14 @@ function formatScalar(v: unknown): string {
 // 最新サンプルをブロックフェース上に大きく描画する (Simulink Display 相当)。
 // ---------------------------------------------------------------------------
 
-function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element {
-  // scopes[blockId] は { times: number[], values: number[][] }。最後の sample を取る。
+/** @internal テスト用 export。プロダクション利用は BlockNodeView 経由。 */
+export function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element {
+  // ADR-0023: scopes[blockId] は SoA ScopeBuffer (Float64Array 列指向)。
+  // 最新サンプル (= 各信号の length-1 番目の要素) を集める。
   const buffer = useAppStore((s) => s.scopes[blockId]);
   const latest =
-    buffer && buffer.values.length > 0
-      ? buffer.values[buffer.values.length - 1]
+    buffer && buffer.length > 0 && buffer.n_signals > 0
+      ? buffer.values.map((col) => col[buffer.length - 1]!)
       : null;
 
   if (!latest || latest.length === 0) {
@@ -498,7 +500,8 @@ function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element {
   );
 }
 
-function formatDisplayValue(v: number): string {
+/** @internal テスト用 export。 */
+export function formatDisplayValue(v: number): string {
   if (!Number.isFinite(v)) return String(v);
   if (Math.abs(v) >= 10000 || (Math.abs(v) < 0.001 && v !== 0)) {
     return v.toExponential(2);

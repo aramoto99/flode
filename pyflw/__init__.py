@@ -1,4 +1,4 @@
-__version__ = "0.7.2"  # GUI polish: desktop shell, sinks (Display/XYGraph), dynamic ports, resize, multi-select, shift-disconnect (2026-05-07)
+__version__ = "0.8.0"  # ADR-0023: uPlot-based Scope + SoA ScopeBuffer for 100k-point throughput (2026-05-07)
 
 from .core.block import Block
 from .core.decorator import block

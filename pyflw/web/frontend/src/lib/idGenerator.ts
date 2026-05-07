@@ -34,9 +34,16 @@ export function generateUniqueId(
  * `has_default=false` のパラメータには UI 上で editor を開いて入力させるため、
  * 安全な仮値 (型に応じて 0 / [] / "") を入れる。これは Phase 3 で簡易対応、
  * Phase 4+ でユーザーへの即時 modal 入力に置き換える可能性あり (Open Question)。
+ *
+ * is_container=true (= Subsystem) ブロックは ``blocks`` / ``connections`` フィールドを
+ * 必ず空配列で持たないと、フロント側の ``resolveBlocksAtPath`` がドリルダウン時に
+ * ``Array.isArray(null) === false`` で「Subsystem ではない」と誤判定する。registry の
+ * Python シグネチャは ``blocks: list | None = None`` で default=null を返すため、
+ * 受信側で必ず上書きする。
  */
 export function buildDefaultParams(
   paramsSpec: Array<{ name: string; type: string; has_default: boolean; default: unknown }>,
+  options?: { isContainer?: boolean },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const p of paramsSpec) {
@@ -45,6 +52,12 @@ export function buildDefaultParams(
     } else {
       out[p.name] = fallbackForType(p.type);
     }
+  }
+  if (options?.isContainer) {
+    // Subsystem 専用: 内部編集用 (ドリルダウン / 内部ブロック追加) には必ず空配列で
+    // 始める。registry が null を返しても上書きする。
+    if (out.blocks === null || out.blocks === undefined) out.blocks = [];
+    if (out.connections === null || out.connections === undefined) out.connections = [];
   }
   return out;
 }

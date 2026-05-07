@@ -3,7 +3,12 @@
 import { create } from "zustand";
 
 import { resolvePortCounts } from "../lib/dynamicPorts";
-import { applyAtPath } from "../lib/pathResolver";
+import { applyAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
+import {
+  appendBatch as appendScopeBatchSoA,
+  createBuffer as createScopeBuffer,
+  type ScopeBuffer,
+} from "../lib/scopeBuffer";
 import type {
   BlockEntry,
   BlockMetadata,
@@ -15,9 +20,16 @@ import type {
   StreamMessage,
 } from "../types/api";
 
-export interface ScopeBuffer {
-  times: number[];
-  values: number[][]; // [time_index][port_index]
+// ADR-0023 §Decision §(3): ScopeBuffer は ``../lib/scopeBuffer`` に SoA 実装を抽出。
+// ここでは re-export して既存 import (= ScopeView / XYGraphView / BlockNodeView 経由) を
+// 壊さないように維持する。
+export type { ScopeBuffer };
+
+/** Ctrl+C で蓄えるブロック群のコピー (Ctrl+V でオフセット位置に貼り付け)。 */
+export interface ClipboardPayload {
+  blocks: BlockEntry[];
+  connections: ConnectionEntry[];
+  layout: LayoutDict; // 元 id → 元位置 (paste 時に位相平均から bbox 中心を計算する基準)
 }
 
 interface AppState {
@@ -36,6 +48,10 @@ interface AppState {
   // controlled mode では prop 経由で ``selected`` を渡し直さないと視覚反映されない)。
   selectedEdgeIds: string[];
   setSelectedEdgeIds: (ids: readonly string[]) => void;
+
+  // クリップボード (Ctrl+C / Ctrl+V のための in-memory バッファ、cross-window 永続化なし)。
+  clipboard: ClipboardPayload | null;
+  setClipboard: (cb: ClipboardPayload | null) => void;
 
   // ADR-0019 §(5): 編集中モデル (=PUT する前の最新) を保持。
   // null のときは「読み取りモード」(従来の Phase 2 と同じ TanStack Query キャッシュ)。
@@ -85,6 +101,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedNodeIds: [],
       selectedNodeId: null,
       selectedEdgeIds: [],
+      clipboard: null,
       simulationId: null,
       status: "idle",
       scopes: {},
@@ -126,6 +143,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedEdgeIds: [],
   setSelectedEdgeIds: (ids) =>
     set({ selectedEdgeIds: Array.from(new Set(ids)) }),
+
+  // Phase 3: in-app クリップボード (= cross-window で persist する必要は今のところ
+  // ない、シンプルな in-memory の単一バッファ)。
+  clipboard: null,
+  setClipboard: (cb) => set({ clipboard: cb }),
 
   editingModel: null,
   setEditingModel: (model) => set({ editingModel: model }),
@@ -169,14 +191,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   scopes: {},
   appendScopeBatch: (scope_id, times, values) =>
     set((state) => {
-      const current = state.scopes[scope_id] ?? { times: [], values: [] };
+      const current = state.scopes[scope_id] ?? createScopeBuffer();
       return {
         scopes: {
           ...state.scopes,
-          [scope_id]: {
-            times: [...current.times, ...times],
-            values: [...current.values, ...values],
-          },
+          [scope_id]: appendScopeBatchSoA(current, times, values),
         },
       };
     }),
@@ -188,18 +207,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ progress: { current_t: msg.current_t, t_end: msg.t_end } });
         break;
       case "scope_batch":
-        set((state) => {
-          const current = state.scopes[msg.scope_id] ?? { times: [], values: [] };
-          return {
-            scopes: {
-              ...state.scopes,
-              [msg.scope_id]: {
-                times: [...current.times, ...msg.times],
-                values: [...current.values, ...msg.values],
-              },
-            },
-          };
-        });
+        // appendScopeBatch ロジックを再利用 (= 同じ SoA 追記パスを通すことで
+        // 整合性管理が 1 か所に集約される)。
+        get().appendScopeBatch(msg.scope_id, msg.times, msg.values);
         break;
       case "completed":
       case "stopped":
@@ -385,6 +395,139 @@ export function updateBlockParams(
       };
     }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// 全選択 / コピー / 貼り付け (Simulink Ctrl+A / Ctrl+C / Ctrl+V)
+// ---------------------------------------------------------------------------
+
+/**
+ * 現在 path 配下のすべての node + edge を選択状態にする。
+ * 入力フォーカス中は呼び出し側で抑制する想定 (= テキスト編集中の Ctrl+A は
+ * テキスト全選択として OS / ブラウザが扱うべき)。
+ */
+export function selectAllInScope(): void {
+  const state = useAppStore.getState();
+  const model = state.editingModel;
+  if (!model) return;
+  let view;
+  try {
+    view = resolveBlocksAtPath(model, state.editingPath);
+  } catch {
+    return;
+  }
+  state.setSelectedNodeIds(view.blocks.map((b) => b.id));
+  // edge id 規則 = modelToDiagram の "e{idx}-{src}-{dst}" と一致させる
+  state.setSelectedEdgeIds(
+    view.connections.map((c, idx) => `e${idx}-${c.src}-${c.dst}`),
+  );
+}
+
+/**
+ * 選択中の block + そのブロック間に閉じる connection を clipboard に保存する。
+ * 既存 layout も込みで保存し、paste 時にレイアウトを忠実に再現する。
+ */
+export function copySelectionToClipboard(): void {
+  const state = useAppStore.getState();
+  const model = state.editingModel;
+  if (!model || state.selectedNodeIds.length === 0) return;
+  let view;
+  try {
+    view = resolveBlocksAtPath(model, state.editingPath);
+  } catch {
+    return;
+  }
+  const selectedSet = new Set(state.selectedNodeIds);
+  const blocks = view.blocks
+    .filter((b) => selectedSet.has(b.id))
+    .map((b) => ({ ...b, params: deepClone(b.params) }));
+  // 選択ブロック同士の connection だけコピー (= 切れた配線の貼り付けは不自然)
+  const connections = view.connections.filter(
+    (c) => selectedSet.has(c.src) && selectedSet.has(c.dst),
+  );
+  const layout: LayoutDict = {};
+  for (const id of selectedSet) {
+    const e = view.layout[id];
+    if (e) layout[id] = { ...e };
+  }
+  state.setClipboard({ blocks, connections, layout });
+}
+
+/**
+ * Clipboard の中身を現在 path / オフセットで貼り付け。新しい block id を生成し、
+ * connection の src/dst を新 id にリマップする。貼り付け後、貼り付けた block 群を
+ * 選択状態にする。
+ */
+export function pasteClipboard(offset = { x: 20, y: 20 }): void {
+  const state = useAppStore.getState();
+  const cb = state.clipboard;
+  if (!cb || cb.blocks.length === 0) return;
+  const path = state.editingPath;
+
+  const idMap = new Map<string, string>();
+  let pastedIds: string[] = [];
+
+  state.applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const existingIds = new Set(view.blocks.map((b) => b.id));
+      // ID 採番: generateUniqueId と同じく "{typeName}_{i}" を空きまでスキャン。
+      // store の独立性のため inline 実装。
+      const allocateId = (orig: string): string => {
+        const typeName = orig.split("_")[0] ?? orig;
+        for (let i = 0; i < 10000; i++) {
+          const candidate = `${typeName}_${i}`;
+          if (!existingIds.has(candidate)) {
+            existingIds.add(candidate);
+            return candidate;
+          }
+        }
+        throw new Error(`Cannot allocate id for paste from ${orig}`);
+      };
+
+      const newBlocks: BlockEntry[] = [];
+      for (const b of cb.blocks) {
+        const newId = allocateId(b.id);
+        idMap.set(b.id, newId);
+        newBlocks.push({ ...b, id: newId, params: deepClone(b.params) });
+      }
+      pastedIds = newBlocks.map((b) => b.id);
+
+      const newConnections = cb.connections
+        .map((c) => {
+          const src = idMap.get(c.src);
+          const dst = idMap.get(c.dst);
+          if (!src || !dst) return null;
+          return { ...c, src, dst };
+        })
+        .filter((c): c is ConnectionEntry => c !== null);
+
+      const newLayout: LayoutDict = { ...view.layout };
+      for (const [oldId, entry] of Object.entries(cb.layout)) {
+        const newId = idMap.get(oldId);
+        if (!newId) continue;
+        newLayout[newId] = {
+          ...entry,
+          x: entry.x + offset.x,
+          y: entry.y + offset.y,
+        };
+      }
+
+      return {
+        blocks: [...view.blocks, ...newBlocks],
+        connections: [...view.connections, ...newConnections],
+        layout: newLayout,
+      };
+    }),
+  );
+
+  // 貼り付けた block 群を選択 (Simulink でも Ctrl+V 直後は新規分が選択される)
+  if (pastedIds.length > 0) {
+    state.setSelectedNodeIds(pastedIds);
+  }
+}
+
+function deepClone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
 }
 
 // ADR-0021 §(9): Subsystem の mask_values 更新 (= ParameterPanel mask edit からの呼び出し)

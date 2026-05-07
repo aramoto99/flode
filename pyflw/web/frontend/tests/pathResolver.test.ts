@@ -86,6 +86,40 @@ describe("resolveBlocksAtPath", () => {
   it("throws when descending into a non-subsystem", () => {
     expect(() => resolveBlocksAtPath(NESTED_MODEL, ["outer", "g"])).toThrow();
   });
+
+  it("tolerates a Subsystem with null blocks/connections (registry default)", () => {
+    // registry の Python シグネチャ ``blocks: list | None = None`` が default=null を
+    // 返した状態で配置された Subsystem を救済する (空 Subsystem として drill-down 可)。
+    const model: FlwModel = {
+      schema_version: "0.6",
+      simulator: {
+        t_end: 1,
+        dt: 0.01,
+        solver: "RK45",
+        rtol: 1e-6,
+        atol: 1e-9,
+        dt_base: null,
+      },
+      blocks: [
+        {
+          id: "Subsystem_0",
+          type: "pyflw.subsystems.subsystem.Subsystem",
+          params: {
+            n_inputs: 1,
+            n_outputs: 1,
+            blocks: null,
+            connections: null,
+          },
+        },
+      ],
+      connections: [],
+      layout: {},
+    };
+    const v = resolveBlocksAtPath(model, ["Subsystem_0"]);
+    expect(v.blocks).toEqual([]);
+    expect(v.connections).toEqual([]);
+    expect(v.layout).toEqual({});
+  });
 });
 
 describe("applyAtPath", () => {

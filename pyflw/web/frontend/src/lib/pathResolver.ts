@@ -32,15 +32,22 @@ export function resolveBlocksAtPath(
     if (!sub) {
       throw new Error(`Subsystem path segment not found: ${segId}`);
     }
-    const innerBlocks = (sub.params as Record<string, unknown>).blocks;
-    const innerConnections = (sub.params as Record<string, unknown>).connections;
-    const innerLayout = (sub.params as Record<string, unknown>).layout;
-    if (!Array.isArray(innerBlocks)) {
+    const params = sub.params as Record<string, unknown>;
+    // Subsystem は ``blocks`` キーを持つ。registry default = None で生成された Subsystem
+    // は ``blocks: null`` を持つことがあるので、キーが存在すれば null/undefined を空配列
+    // として縮退する。キーが存在しない (= 真の非 Subsystem) なら従来通り throw。
+    if (!("blocks" in params)) {
       throw new Error(`Block ${segId} is not a Subsystem (no params.blocks)`);
     }
-    blocks = innerBlocks as BlockEntry[];
-    connections = (innerConnections as ConnectionEntry[]) ?? [];
-    layout = (innerLayout as LayoutDict | undefined) ?? {};
+    const innerBlocks = params.blocks;
+    const innerConnections = params.connections;
+    const innerLayout = params.layout;
+    if (innerBlocks !== undefined && innerBlocks !== null && !Array.isArray(innerBlocks)) {
+      throw new Error(`Block ${segId} is not a Subsystem (params.blocks is not array)`);
+    }
+    blocks = (innerBlocks as BlockEntry[] | null | undefined) ?? [];
+    connections = (innerConnections as ConnectionEntry[] | null | undefined) ?? [];
+    layout = (innerLayout as LayoutDict | null | undefined) ?? {};
   }
   return { blocks, connections, layout };
 }
@@ -75,10 +82,11 @@ export function applyAtPath(
   }
   const sub = model.blocks[idx]!;
   const innerParams = sub.params as Record<string, unknown>;
+  // null/undefined を空 array/dict として安全に縮退 (resolveBlocksAtPath と同様)
   const innerView: BlockListView = {
-    blocks: (innerParams.blocks as BlockEntry[] | undefined) ?? [],
-    connections: (innerParams.connections as ConnectionEntry[] | undefined) ?? [],
-    layout: (innerParams.layout as LayoutDict | undefined) ?? {},
+    blocks: (innerParams.blocks as BlockEntry[] | null | undefined) ?? [],
+    connections: (innerParams.connections as ConnectionEntry[] | null | undefined) ?? [],
+    layout: (innerParams.layout as LayoutDict | null | undefined) ?? {},
   };
   // Recurse into inner Subsystem at rest path
   const innerModel: FlwModel = {

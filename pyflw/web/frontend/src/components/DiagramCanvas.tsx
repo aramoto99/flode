@@ -27,6 +27,7 @@ import {
   validatePortShapeConnection,
 } from "../lib/portShapeValidate";
 import { BlockNodeView } from "./BlockNodeView";
+import { QuickAdd } from "./QuickAdd";
 import {
   addBlockToEditing,
   addConnectionToEditing,
@@ -79,6 +80,12 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
   const [toast, setToast] = useState<string | null>(null);
+  const [quickAdd, setQuickAdd] = useState<{
+    screenX: number;
+    screenY: number;
+    flowX: number;
+    flowY: number;
+  } | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlow = useReactFlow();
 
@@ -99,7 +106,12 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     } | null = null;
 
     const onMouseDown = (e: MouseEvent): void => {
-      if (e.button !== 2) return; // right click のみ
+      // 右クリック (button=2) または Ctrl+左クリック (button=0 + ctrlKey) で複製ドラッグ。
+      // Simulink は両方のキーバインドを公式対応している。Mac の場合 metaKey でも反応する
+      // ようにしておく。
+      const isRightDrag = e.button === 2;
+      const isCtrlLeftDrag = e.button === 0 && (e.ctrlKey || e.metaKey);
+      if (!isRightDrag && !isCtrlLeftDrag) return;
       const target = e.target as HTMLElement | null;
       const nodeEl = target?.closest(".react-flow__node") as HTMLElement | null;
       if (!nodeEl) return;
@@ -176,11 +188,26 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       }
     };
 
+    // React Flow v12 はノード drag を ``pointerdown`` で開始する。``mousedown`` だけ
+     // captureしてもそちらが先に走って original ノードがドラッグに参加してしまうので、
+    // ``pointerdown`` も同じ捕捉ロジックで横取りする (= isCtrlLeftDrag の時に重要)。
+    const onPointerDown = (e: PointerEvent): void => {
+      // PointerEvent の button は MouseEvent と互換 (0=left, 2=right) なので
+      // 同じ判定式で足りる。Ctrl+左の場合のみここで処理 (= 右クリックはブラウザによって
+      // pointerdown が来ない / mousedown と二重に来るケースがあるため、右は mousedown
+      // 側に任せる)。
+      if (!(e.button === 0 && (e.ctrlKey || e.metaKey))) return;
+      // PointerEvent extends MouseEvent (DOM 仕様) なのでキャスト不要。
+      onMouseDown(e);
+    };
+
+    wrapper.addEventListener("pointerdown", onPointerDown, true);
     wrapper.addEventListener("mousedown", onMouseDown, true);
     wrapper.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
+      wrapper.removeEventListener("pointerdown", onPointerDown, true);
       wrapper.removeEventListener("mousedown", onMouseDown, true);
       wrapper.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mousemove", onMouseMove);
@@ -392,6 +419,36 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     }
   };
 
+  // 空ペーン (どのノードにも乗っていない領域) をダブルクリックで Quick Insert を開く。
+  // Simulink R2014b〜のクイック挿入と同等の操作。React Flow v12 には ``onPaneDoubleClick``
+  // prop が無いので、wrapper の ``onDoubleClick`` で受けて、target が ``.react-flow__pane``
+  // (= 空エリア) または背景 SVG の時だけ反応する。
+  const onWrapperDoubleClick = (event: React.MouseEvent): void => {
+    if (!editingModel) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    // ノード / ハンドル / エッジ / コントロールの上では発火させない。
+    if (
+      target.closest(".react-flow__node") ||
+      target.closest(".react-flow__handle") ||
+      target.closest(".react-flow__edge") ||
+      target.closest(".react-flow__controls") ||
+      target.closest(".react-flow__minimap")
+    ) {
+      return;
+    }
+    const flow = reactFlow.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
+    });
+    setQuickAdd({
+      screenX: event.clientX,
+      screenY: event.clientY,
+      flowX: flow.x,
+      flowY: flow.y,
+    });
+  };
+
   return (
     // ADR-0019 §(4.1): React Flow v12 では ``onDragOver`` / ``onDrop`` を
     // ``<ReactFlow>`` の props ではなく **wrapper div** に付けるのが公式推奨パターン。
@@ -402,6 +459,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       ref={reactFlowWrapper}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onDoubleClick={onWrapperDoubleClick}
     >
       <ReactFlow
         nodes={decoratedNodes}
@@ -465,6 +523,15 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         />
         <Controls className="!shadow-md" />
       </ReactFlow>
+      {quickAdd && (
+        <QuickAdd
+          screenX={quickAdd.screenX}
+          screenY={quickAdd.screenY}
+          flowX={quickAdd.flowX}
+          flowY={quickAdd.flowY}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
       {toast && (
         <div
           className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md bg-rose-600 px-3.5 py-2 text-xs font-medium text-white shadow-lg ring-1 ring-rose-400"

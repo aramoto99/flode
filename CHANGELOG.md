@@ -7,6 +7,139 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-07
+
+Two themes:
+
+1. **ADR-0023**: Scope rendering performance. Replaces the hand-rolled
+   canvas 2D plot with [uPlot](https://github.com/leeoniya/uPlot) and
+   rebuilds the in-memory `ScopeBuffer` as Structure-of-Arrays
+   (`Float64Array` per signal) with a doubling ring buffer. Long
+   simulations no longer suffer the O(N²) append cost that came from
+   `[...arr, ...batch]` spreading on every WebSocket frame. Wire format
+   (`scope_batch` `number[][]`) is unchanged — the SoA conversion is
+   purely a frontend boundary detail.
+2. **Phase 3 GUI polish**: Simulink-style keyboard shortcuts, a
+   double-click "quick insert" popup, Ctrl-drag (in addition to
+   right-drag) for block duplication, and a fix for Subsystems whose
+   default `params.blocks` was the registry's `null` (not the empty
+   array).
+
+### Added — Scope rendering (ADR-0023)
+
+- `pyflw/web/frontend/src/lib/scopeBuffer.ts`: column-major SoA buffer
+  with `createBuffer()` / `appendBatch()` and amortized O(1) append.
+- `pyflw/web/frontend/src/components/UPlotChart.tsx`: minimal uPlot
+  React wrapper (no `uplot-react` dependency). Mounts uPlot once,
+  `setData` on data prop change, ResizeObserver-driven `setSize` on
+  parent size change, `destroy()` on unmount.
+- `tests/scopeBuffer.test.ts`: 27 new vitest cases covering capacity
+  doubling at the 1024-boundary, transposition (wire row-major → SoA
+  column-major), batch rejection on `n_signals` mismatch, NaN /
+  Infinity / -0 storage, 50000-point single batch (multi-stage
+  doubling), reference stability for in-capacity appends, and a
+  100k-point linear-time smoke.
+- `tests/uPlotChart.test.tsx`: 8 new vitest cases (mount, unmount,
+  setData on data change, no setData on identical reference, options
+  reference change → destroy + rebuild, options-change-with-stable-data
+  doesn't double-call setData, className prop wiring, double-unmount
+  protection) using `@testing-library/react` + jsdom.
+- `tests/displayLiveValue.test.tsx`: 18 new vitest cases for the
+  `Display` block live readout (extracted last sample from each SoA
+  column, formatter behaviour for exponential / fixed / NaN / Infinity).
+- `uplot ^1.6.32` runtime dependency. Devs: `jsdom`,
+  `@testing-library/react`.
+
+### Added — Editor shortcuts and polish
+
+- `pyflw/web/frontend/src/components/QuickAdd.tsx`: fuzzy block search
+  popup. Trigger by double-clicking on the empty pane; arrow keys
+  navigate, Enter inserts at the cursor position, Esc closes. Position
+  is clamped against all four window edges.
+- `pyflw/web/frontend/src/lib/useShortcuts.ts`: Simulink-style global
+  shortcuts wired in `App.tsx`:
+  - **Ctrl+T / F9**: run simulation (Ctrl+T may be hijacked by the
+    browser as "open new tab"; F9 is the reliable alias).
+  - **Ctrl+Shift+T / Shift+F9**: stop simulation.
+  - **Ctrl+A**: select all blocks + edges in the current scope (skips
+    when focus is on an `<input>` / `<textarea>` / contenteditable).
+  - **Ctrl+C / Ctrl+V**: copy selection to in-memory clipboard / paste
+    at +20px offset, new IDs auto-allocated, connections internal to
+    the selection are preserved, clipboard payload survives
+    drilldown-up but not page reload.
+  - **Esc**: drill up one Subsystem level, or clear selection if at the
+    top of the path.
+  - **Enter**: drill down into the single selected `is_container`
+    block (no-op otherwise).
+- `pyflw/web/frontend/src/components/DiagramCanvas.tsx`:
+  **Ctrl+left-drag** (in addition to **right-drag**) on a block now
+  duplicates it and follows the cursor — Simulink's two-button
+  duplicate. Listener is registered with capture on both `mousedown`
+  and `pointerdown` so React Flow's internal drag does not start on
+  the original node.
+- `pyflw/web/frontend/src/components/Toolbar.tsx`: tooltips updated to
+  show the new shortcuts.
+
+### Fixed — Subsystem with null inner blocks (regression from v0.7.2)
+
+- `pyflw/web/frontend/src/lib/idGenerator.ts`: `buildDefaultParams`
+  now accepts an `{ isContainer }` option and injects
+  `blocks: []` / `connections: []` for `is_container=true` blocks,
+  even when the registry returns the Python-side default of `null`
+  (`Subsystem.__init__(blocks: list[Block] | None = None)`).
+- `pyflw/web/frontend/src/lib/pathResolver.ts`:
+  `resolveBlocksAtPath` and `applyAtPath` now coerce `null` /
+  `undefined` `params.blocks` / `params.connections` / `params.layout`
+  to empty array / dict, rescuing existing models that were saved
+  with the buggy shape. A truly non-Subsystem block (no `blocks` key
+  at all) still throws as before.
+- `pyflw/web/frontend/src/components/BlockPalette.tsx` and
+  `QuickAdd.tsx` pass `isContainer` to `buildDefaultParams`.
+- `tests/pathResolver.test.ts`: regression test for null `blocks` /
+  `connections` rescue (`+1` case).
+
+### Changed — Frontend (BREAKING for `ScopeBuffer` consumers)
+
+- `pyflw/web/frontend/src/store/appStore.ts`: `ScopeBuffer` is now
+  `{ times: Float64Array; values: readonly Float64Array[]; length;
+  capacity; n_signals }` (re-exported from `lib/scopeBuffer.ts`). Any
+  external code reading `buffer.values[i][p]` (row-major) must switch
+  to `buffer.values[p][i]` (column-major). All in-tree consumers
+  (ScopeView, XYGraphView, BlockNodeView's Display) have been updated.
+  `handleStreamMessage` now delegates to `appendScopeBatch` so the SoA
+  append path is single-sourced.
+- `pyflw/web/frontend/src/components/ScopeView.tsx`: completely
+  rewritten on top of `UPlotChart`. Tailwind 8-color palette (sky,
+  emerald, amber, rose, violet, cyan, lime, pink) rotates per signal
+  index. Empty-buffer placeholder kept. `buildAlignedData` /
+  `buildOptions` exposed under `@internal` for testing.
+- `pyflw/web/frontend/src/components/XYGraphView.tsx`: still canvas
+  self-rendered (uPlot requires monotonic X — parametric trajectories
+  are out of scope per ADR-0023 §Decision §(2)). Updated to read SoA
+  column slices `values[0]` (x) / `values[1]` (y).
+- `pyflw/web/frontend/src/components/BlockNodeView.tsx` (Display block
+  live readout): updated to extract last sample from each SoA column.
+  `DisplayLiveValue` / `formatDisplayValue` exposed under `@internal`
+  for testing.
+- `pyflw/web/frontend/vitest.config.ts`: added `environment: "jsdom"`
+  + setup file with a `ResizeObserver` polyfill stub.
+
+### Acceptance criteria (ADR-0023 §Decision §(8))
+
+- 100k points × 1 trace at 60 fps scroll
+- 100k points × 4 traces at 30 fps
+- Initial draw < 100 ms
+- Heap stays under ~50 MB for the 100k-point window
+- Bundle size budget: ≤ +25 KB gzip vs v0.7.2 — actual measured
+  +25.07 KB gzip JS / +0.41 KB gzip CSS (well under the +37.5 KB
+  re-evaluation trigger documented in ADR-0023 §再考トリガー).
+
+### Unchanged
+
+- WebSocket `scope_batch` wire format (`{ times: number[]; values: number[][] }`).
+- Server-side Python (`pyflw/server/`): no changes.
+- All Python tests, JSON schema, simulation semantics: unchanged.
+
 ## [0.7.2] - 2026-05-07
 
 GUI polish iteration. No ADR-level architectural changes; this release

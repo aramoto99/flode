@@ -74,7 +74,9 @@ export function BlockPalette(): JSX.Element {
     event.dataTransfer.setData("application/pyflw-block-type", block.type_path);
     event.dataTransfer.setData(
       "application/pyflw-default-params",
-      JSON.stringify(buildDefaultParams(block.params_spec)),
+      JSON.stringify(
+        buildDefaultParams(block.params_spec, { isContainer: block.is_container }),
+      ),
     );
     event.dataTransfer.effectAllowed = "copy";
   };

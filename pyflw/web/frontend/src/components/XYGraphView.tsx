@@ -1,5 +1,8 @@
 // XYGraph の可視化: 入力 0 = x, 入力 1 = y のパラメトリック散布線プロット。
-// ScopeView と同じ ScopeBuffer を受けるが、時間軸ではなく x-y 平面に描く。
+// ADR-0023 §Decision §(2): uPlot は単調 X 前提のためパラメトリック軌跡には
+// 不向き。XYGraphView は引き続き canvas 自前で描画する。
+// ADR-0023 で SoA 化した ScopeBuffer (列指向 Float64Array) から x = values[0],
+// y = values[1] を index ベースで読む。
 
 import { useEffect, useRef } from "react";
 
@@ -31,7 +34,10 @@ export function XYGraphView({
     canvas.height = height;
     ctx.clearRect(0, 0, width, height);
 
-    if (buffer.values.length < 2) {
+    // SoA: values[0] = x 列、values[1] = y 列。両方揃っていない / サンプル <2 ならスキップ。
+    const xCol = buffer.values[0];
+    const yCol = buffer.values[1];
+    if (!xCol || !yCol || buffer.length < 2) {
       ctx.fillStyle = "#64748b";
       ctx.font = "12px sans-serif";
       ctx.fillText("(no data yet)", 8, 16);
@@ -46,10 +52,9 @@ export function XYGraphView({
     let xMax = -Infinity;
     let yMin = Infinity;
     let yMax = -Infinity;
-    for (const row of buffer.values) {
-      const x = row[0];
-      const y = row[1];
-      if (x === undefined || y === undefined) continue;
+    for (let i = 0; i < buffer.length; i += 1) {
+      const x = xCol[i]!;
+      const y = yCol[i]!;
       if (x < xMin) xMin = x;
       if (x > xMax) xMax = x;
       if (y < yMin) yMin = y;
@@ -93,12 +98,9 @@ export function XYGraphView({
     ctx.beginPath();
     ctx.strokeStyle = "#2563eb";
     ctx.lineWidth = 1.5;
-    for (let i = 0; i < buffer.values.length; i += 1) {
-      const row = buffer.values[i];
-      if (!row) continue;
-      const x = row[0];
-      const y = row[1];
-      if (x === undefined || y === undefined) continue;
+    for (let i = 0; i < buffer.length; i += 1) {
+      const x = xCol[i]!;
+      const y = yCol[i]!;
       const px = padding + ((x - xMin) / xRange) * plotW;
       const py = padding + plotH - ((y - yMin) / yRange) * plotH;
       if (i === 0) ctx.moveTo(px, py);
@@ -107,10 +109,11 @@ export function XYGraphView({
     ctx.stroke();
 
     // 最新点をマーカー
-    const last = buffer.values[buffer.values.length - 1];
-    if (last && last[0] !== undefined && last[1] !== undefined) {
-      const px = padding + ((last[0] - xMin) / xRange) * plotW;
-      const py = padding + plotH - ((last[1] - yMin) / yRange) * plotH;
+    const lastX = xCol[buffer.length - 1]!;
+    const lastY = yCol[buffer.length - 1]!;
+    if (Number.isFinite(lastX) && Number.isFinite(lastY)) {
+      const px = padding + ((lastX - xMin) / xRange) * plotW;
+      const py = padding + plotH - ((lastY - yMin) / yRange) * plotH;
       ctx.beginPath();
       ctx.fillStyle = "#dc2626";
       ctx.arc(px, py, 3, 0, Math.PI * 2);
