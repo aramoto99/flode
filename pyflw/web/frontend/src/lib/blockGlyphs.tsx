@@ -342,6 +342,19 @@ const ZeroOrderHoldDirectGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// ADR-0036: RateTransition glyph — 2 つの異なる周期の階段波 + 矢印 (= レート変換を示唆)。
+const RateTransitionGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 入力側 (細かい周期) */}
+    <polyline points="3,16 5,16 5,12 7,12 7,16 9,16 9,12 11,12" />
+    {/* 矢印 */}
+    <line x1="11" y1="14" x2="14" y2="14" />
+    <polyline points="13,12 14,14 13,16" />
+    {/* 出力側 (粗い周期) */}
+    <polyline points="14,16 17,16 17,10 21,10" />
+  </svg>
+);
+
 const DiscreteStateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
@@ -586,6 +599,7 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.discrete.UnitDelay": UnitDelayGlyph,
   "pyflw.blocks.discrete.DiscreteIntegrator": DiscreteIntegratorGlyph,
   "pyflw.blocks.discrete.ZeroOrderHoldDirect": ZeroOrderHoldDirectGlyph,
+  "pyflw.blocks.discrete.RateTransition": RateTransitionGlyph,
   "pyflw.blocks.discrete.DiscreteStateSpace": DiscreteStateSpaceGlyph,
   "pyflw.blocks.discrete.DiscreteTransferFunction": DiscreteTransferFunctionGlyph,
   // logic

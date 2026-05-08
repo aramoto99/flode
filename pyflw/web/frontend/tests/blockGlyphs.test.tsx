@@ -34,6 +34,7 @@ const KNOWN_TYPE_PATHS = [
   "pyflw.blocks.discrete.UnitDelay",
   "pyflw.blocks.discrete.DiscreteIntegrator",
   "pyflw.blocks.discrete.ZeroOrderHoldDirect",
+  "pyflw.blocks.discrete.RateTransition",
   "pyflw.blocks.discrete.DiscreteStateSpace",
   "pyflw.blocks.discrete.DiscreteTransferFunction",
   "pyflw.blocks.logic.RelationalOperator",

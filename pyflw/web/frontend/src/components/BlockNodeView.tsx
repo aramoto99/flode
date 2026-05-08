@@ -428,6 +428,10 @@ function summarizePrimaryParam(data: BlockNodeData): string | null {
   ) {
     return `Ts=${formatScalar(p.sample_time)}`;
   }
+  if (t.endsWith(".RateTransition")) {
+    // ADR-0036: 入力 / 出力周期を併記して mode (= zoh / delay / auto) と区別する
+    return `${formatScalar(p.input_sample_time)}→${formatScalar(p.output_sample_time)}`;
+  }
   if (t.endsWith(".Mux") || t.endsWith(".Demux")) {
     return `n=${formatScalar(p.n)}`;
   }
