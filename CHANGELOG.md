@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-09
+
+**Phase 5a ローンチ — 配布基盤 + 借入金返済**。ADR-0031 (Phase 5 全体方針) で
+確定した Phase 5 を 2 段階構成 (5a 軽量 → 5b コア大改修) で進める前半の
+最初のリリース。
+
+ADR-0034 (ダークモード + Settings panel 統合、当初 v0.14.0 予定) は
+**2026-05-08 ユーザー判断で永続的に out-of-scope** に変更 (ADR-0031
+§Amendments)。Phase 5a の sub-ADR は ADR-0032 / ADR-0033 / ADR-0035 の 3 本
+に縮小、`v0.14.0` タグは欠番。
+
+### Added — PyPI publishing automation (ADR-0032)
+
+- `.github/workflows/pypi-publish.yml`: Trusted Publishers (OIDC) ベースの
+  TestPyPI → PyPI 2 段階 publish workflow。tag push (`v*`) で起動、
+  PEP 440 準拠の final/pre-release 判定 (final tag のみ本 PyPI)。
+- `tools/check_version_sync.py`: 3 ファイル version 同期検証
+  (`pyflw/__init__.py` + `pyproject.toml` + `pyflw/web/frontend/package.json`)。
+  CI / release.yml / pypi-publish.yml の 3 箇所で fail-fast。
+- `docs/release_runbook.md`: 事前準備 (Trusted Publisher 登録 + GitHub
+  environments 作成) と通常 release 手順、失敗時 rollback (yank → patch
+  bump) を集約。
+- `tests/test_version_consistency.py`: `package.json` version check 追加
+  (= 既存 pyproject 整合 test を 3 ファイル化)。
+
+### Changed — Release workflow
+
+- `.github/workflows/release.yml`: 既存の version sync step を 3 ファイル
+  整合に拡張 (`tools/check_version_sync.py` 呼び出しに置換)。GitHub
+  Releases upload は維持。
+- `.github/workflows/ci.yml`: lint-and-type job に version sync 検証 step
+  を追加 (= push 時の事故予防)。
+
+### Removed — ZeroOrderHold (legacy) (ADR-0033, **BREAKING**)
+
+`ZeroOrderHold` (legacy 2-state state-based ホールド) を完全削除。ADR-0014
+(v0.3.0) で `Simulator.run()` が修正されて以降、`UnitDelay` と完全同一の
+semantics になっており、v0.5.0 から `DeprecationWarning` を発出してきた。
+8 minor versions の deprecation cycle を経て v0.13.0 で完済。
+
+利用者は以下に移行する:
+
+| 用途 | 移行先 |
+|---|---|
+| 1 サンプル遅延 (`y[k+1] = u[k]`) | `pyflw.blocks.UnitDelay` |
+| Simulink ZOH 互換 (`y(t_k) = u(t_k)` 即時反映) | `pyflw.blocks.ZeroOrderHoldDirect` |
+
+`pyflw.blocks.ZeroOrderHold` を import するコードは `ImportError` で失敗、
+JSON モデルファイルで `"type": "pyflw.blocks.discrete.ZeroOrderHold"` を含む
+ものは load 時に `UnknownBlockTypeError` で失敗する。`.flw.json` schema は
+0.6 のまま (= type_path 削除は構造変更でない、ADR-0033 §2-A)。
+
+### Compat / Risks
+
+- pytest 949 件 (= v0.12.0 の 958 件から ZOH legacy テスト 9 件削除分の純減)、
+  vitest 193 件 全 pass。
+- mypy --strict / ruff / Sphinx warnings-as-errors clean。
+- bundle gzip 185.78 KB (= v0.12.0 と同等、`ZeroOrderHoldGlyph` SVG 削除分は
+  わずかに減少)。
+- `examples/spring_mass_damper.py` 出力数値完全不変 (Final x=0.2505,
+  x_dot=0.0031)。
+- 本リリースで pyflw が **PyPI で初公開** される (`pip install pyflw==0.13.0`)。
+  以後の release は GitHub Actions が自動 publish する (Trusted Publishers OIDC)。
+
 ## [0.12.0] - 2026-05-08
 
 **Phase 4 完了タグ (release)**。ADR-0025 §(7) のリリース判定基準を満たす:
