@@ -515,7 +515,7 @@ def _validate_param_type(cls_name: str, pname: str, value: Any, ptype: Any) -> N
 def _coerce_x0(cls_name: str, x0_value: Any, n_states: int) -> np.ndarray:
     if n_states == 1 and isinstance(x0_value, numbers.Real) and not isinstance(x0_value, bool):
         return np.array([float(x0_value)])
-    arr = np.atleast_1d(np.asarray(x0_value, dtype=float))
+    arr: np.ndarray = np.atleast_1d(np.asarray(x0_value, dtype=float))
     if arr.shape != (n_states,):
         raise BlockSpecError(f"{cls_name}: x0 has shape {arr.shape}, expected ({n_states},)")
     return arr
@@ -556,7 +556,7 @@ def _pack_y(y_raw: Any, kind: str, n_outputs: int, cls_name: str) -> np.ndarray:
 
 
 def _coerce_state_change(value: Any, n_states: int, cls_name: str, *, role: str) -> np.ndarray:
-    arr = np.atleast_1d(np.asarray(value, dtype=float))
+    arr: np.ndarray = np.atleast_1d(np.asarray(value, dtype=float))
     if arr.shape != (n_states,):
         raise BlockSpecError(
             f"{cls_name}: {role} shape {arr.shape} does not match expected ({n_states},)"

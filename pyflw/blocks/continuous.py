@@ -97,6 +97,7 @@ class StateSpace(Block):
                 f"StateSpace: C must have shape (p, n) with n={n}, got {C_arr.shape}"
             )
         p = C_arr.shape[0]
+        D_arr: np.ndarray
         if D is None:
             D_arr = np.zeros((p, m))
         else:

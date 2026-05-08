@@ -336,6 +336,7 @@ class DiscreteStateSpace(Block):
                 f"DiscreteStateSpace: C must have shape (p, n) with n={n}, got {C_arr.shape}"
             )
         p = C_arr.shape[0]
+        D_arr: np.ndarray
         if D is None:
             D_arr = np.zeros((p, m))
         else:
@@ -361,6 +362,7 @@ class DiscreteStateSpace(Block):
         self._C = C_arr
         self._D = D_arr
         self._n = n
+        x0_user: np.ndarray
         if x0 is None:
             x0_user = np.zeros(n)
         else:
@@ -471,6 +473,7 @@ class DiscreteTransferFunction(Block):
         self._n = n
         self.numerator = num
         self.denominator = den
+        x0_user: np.ndarray
         if x0 is None:
             x0_user = np.zeros(n)
         else:

@@ -592,6 +592,7 @@ def linearize(
     n_out = len(output_specs)
 
     # ----- 動作点 (x*, u*) のセットアップ -----
+    x_op: np.ndarray
     if x is None:
         x_op = np.zeros(n_states)
         for b, sl in layout:
@@ -601,6 +602,7 @@ def linearize(
         if x_op.shape != (n_states,):
             raise BlockSpecError(f"linearize: x must have shape ({n_states},), got {x_op.shape}")
 
+    u_op: np.ndarray
     if u is None:
         u_op = np.zeros(n_in)
     else:

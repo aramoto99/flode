@@ -99,6 +99,13 @@ warn_redundant_casts = true
 # numpy/scipy は型 stub が部分的なので、strict のうち厳しすぎる項目を緩める
 disallow_untyped_calls = false
 disallow_subclassing_any = false
+# numpy 2.3 で ndarray の TypeVar に default が付いたが、Python 3.10 上では numpy が
+# 2.2 までしか入らない (numpy 2.3+ は 3.11+ 要求)。よって 3.10 マトリクスでは bare
+# ``np.ndarray`` が ``[type-arg]`` で大量に失敗する。コア API の signature は
+# ``np.ndarray`` を多用しており、型パラメータの全面追加は影響が大きいため、
+# strict のうち generic 引数チェックのみ緩める (= ``disallow_any_generics = false``)。
+# numpy 2.3 が 3.10 の minimum をドロップしたら再検討する (= Phase 5+)。
+disallow_any_generics = false
 
 [[tool.mypy.overrides]]
 module = ["scipy.*", "matplotlib.*", "control.*"]
