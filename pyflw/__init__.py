@@ -1,4 +1,4 @@
-__version__ = "0.16.0"  # Phase 5b #1a: ADR-0036 RateTransition + schema 0.7
+__version__ = "0.16.1"  # Phase 5b #1b: ADR-0036 TriggeredSubsystem (edge-driven fire)
 
 from .analysis import (
     BodeResponse,
@@ -37,7 +37,7 @@ from .libraries import (
     load_library,
     validate_library,
 )
-from .subsystems import Inport, Outport, Subsystem
+from .subsystems import Inport, Outport, Subsystem, TriggeredSubsystem
 
 __all__ = [
     "AlgebraicLoopError",
@@ -62,6 +62,7 @@ __all__ = [
     "Simulator",
     "SolverError",
     "Subsystem",
+    "TriggeredSubsystem",
     "UnknownBlockIdError",
     "UnknownBlockTypeError",
     "block",

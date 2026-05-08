@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-05-09
+
+**Phase 5b 中間 — TriggeredSubsystem (edge-driven fire)**。ADR-0036 後半の
+リリース。トリガー信号の rising/falling/either edge でのみ内部ブロックを
+発火するサブシステムを追加 (Simulink Triggered Subsystem 互換)。
+
+### Added
+
+- ``pyflw.TriggeredSubsystem`` (ADR-0036 §(2)): :class:`pyflw.Subsystem` を継承、
+  trigger 入力は **入力末尾** (``input_sources[-1]``) 固定で内部に流さない。
+  - ``trigger_mode``: ``"rising"`` / ``"falling"`` / ``"either"`` (default ``"rising"``)
+  - 内部ブロックは **edge 検出時のみ** ``output`` / ``update`` が呼ばれる。
+    fire しないステップでは内部状態凍結 + 前回出力 (``_last_y``) をキャッシュ
+  - NaN sentinel で起動時の偽 edge を防止 (= ``_prev_trigger_value`` 初期値 NaN)
+  - ``_build`` override で内部 Inport 数 ``n_inputs - 1`` を許容
+  - ``to_dict`` / ``_from_dict`` override で ``trigger_mode`` を JSON round-trip
+- ``pyflw.subsystems.triggered._is_trigger_edge``: rising/falling/either 共通
+  edge 判定 helper
+- Block class registry (ADR-0019 §(1)) に TriggeredSubsystem 登録 (= category
+  ``subsystems``、``is_container=True``、ja/en 翻訳付き)
+- frontend block palette に Subsystems カテゴリで TriggeredSubsystem 表示、
+  専用 SVG glyph (= Subsystem rect + 雷マーク)
+
+### Phase 5b MVP 制約 (ADR-0036 §(4-C))
+
+- **離散信号 trigger のみ**対応。連続信号からの zero-crossing 検出は将来 Phase
+  で別 ADR 化 (= ``solve_ivp(events=...)`` 統合の検討)
+- TriggeredSubsystem 内部の連続状態は fire 中のみ進む (= fire していないステップでは
+  ``derivative=0`` で凍結)、warning ログを 1 度発出
+
+### Compat / Risks
+
+- pytest 1005 件 (= v0.16.0 の 974 件 + 31 件 TriggeredSubsystem) 全 pass
+- vitest 193 件 / mypy --strict / ruff / sphinx -W clean
+- ``examples/spring_mass_damper.py`` 出力数値完全不変 (= ADR-0036 §(8) 構造的
+  不変性ガード達成: TriggeredSubsystem を含まないモデルでは ``Simulator`` の
+  実行経路は本 ADR 前と完全一致)
+- bundle gzip 増分 ≤ +2 KB (= ADR-0023 予算 1 MB の 18.7 → 18.7%)
+- JSON schema は 0.7 のまま (= v0.16.0 で bump 済、TriggeredSubsystem も 0.7
+  schema で永続化される)
+
+### Phase 5b の次
+
+ADR-0037 (Codegen + GPU + ``pyflw.array_backend``) に進む (v0.17.0)。
+TriggeredSubsystem は ADR-0037 MVP では Codegen out-of-scope (= Python
+fallback)、JIT 化は Phase 6+ 検討。
+
 ## [0.16.0] - 2026-05-09
 
 **Phase 5b ローンチ — RateTransition Block + JSON schema 0.7**。Phase 5b

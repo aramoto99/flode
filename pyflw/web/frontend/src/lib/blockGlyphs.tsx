@@ -536,6 +536,22 @@ const SubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// ADR-0036: TriggeredSubsystem glyph — Subsystem rect + 雷 (= trigger 信号を示唆)。
+const TriggeredSubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <rect x="3" y="5" width="18" height="14" rx="1.5" />
+    <rect x="7" y="9" width="10" height="6" rx="0.8" opacity="0.4" />
+    {/* 雷マーク (= trigger 入力を象徴) */}
+    <polyline
+      points="13,3 11,8 14,8 12,13"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="0.5"
+      strokeLinejoin="miter"
+    />
+  </svg>
+);
+
 const InportGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <polygon points="3,6 16,6 21,12 16,18 3,18" />
@@ -616,6 +632,7 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.sinks.Terminator": TerminatorGlyph,
   // subsystems
   "pyflw.subsystems.subsystem.Subsystem": SubsystemGlyph,
+  "pyflw.subsystems.triggered.TriggeredSubsystem": TriggeredSubsystemGlyph,
   "pyflw.subsystems.ports.Inport": InportGlyph,
   "pyflw.subsystems.ports.Outport": OutportGlyph,
 };

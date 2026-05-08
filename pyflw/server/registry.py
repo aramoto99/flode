@@ -215,6 +215,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str, str]] = {
         "subsys.subsystem",
         "#8b5cf6",
     ),
+    "pyflw.subsystems.triggered.TriggeredSubsystem": (
+        "subsystems",
+        "Triggered Subsystem",
+        "subsys.triggered",
+        "#a855f7",
+    ),
     "pyflw.subsystems.ports.Inport": (
         "subsystems",
         "Inport",
@@ -273,6 +279,11 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     "pyflw.subsystems.ports.Inport": {"port_idx": 0},
     "pyflw.subsystems.ports.Outport": {"port_idx": 0},
     "pyflw.subsystems.subsystem.Subsystem": {"n_inputs": 1, "n_outputs": 1},
+    # ADR-0036: TriggeredSubsystem は trigger 入力分の最低 1 入力 + 出力 1 が必要
+    "pyflw.subsystems.triggered.TriggeredSubsystem": {
+        "n_inputs": 1,
+        "n_outputs": 1,
+    },
 }
 
 
