@@ -1,4 +1,4 @@
-__version__ = "0.15.0"  # Phase 5a #3: ADR-0035 Python 3.11+ bump + strict typing
+__version__ = "0.16.0"  # Phase 5b #1a: ADR-0036 RateTransition + schema 0.7
 
 from .analysis import (
     BodeResponse,

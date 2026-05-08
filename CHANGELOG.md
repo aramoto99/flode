@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-09
+
+**Phase 5b ローンチ — RateTransition Block + JSON schema 0.7**。Phase 5b
+最初の sub-ADR (ADR-0036) の前半リリース。マルチレートモデルで異なるサンプル
+時間を持つブロック間のレート変換を明示的に行う ``RateTransition`` を追加。
+
+### Added
+
+- ``pyflw.blocks.RateTransition`` (ADR-0036 §(1)): Simulink RateTransition 互換。
+  - ``mode="zoh"`` (fast-to-slow ラッチ) / ``"delay"`` (slow-to-fast 1-step 遅延)
+    / ``"auto"`` (input/output 周期から自動決定、default)
+  - n_states=2、ADR-0015 §(2) の 2-state ローテーション流用
+  - ``_resolved_sample_time = output_sample_time`` (= 下流レートで fire)、
+    既存 ``_run_sm_a_loop`` の発火経路で動作 (= 新スケジューラ不要)
+  - 引数バリデーション: 同一レート / 0 以下 / mode 不正で ``BlockSpecError``
+- Block class registry (ADR-0019 §(1)) に RateTransition 登録、ja/en 翻訳追加
+- frontend block palette に Discrete カテゴリで表示、専用 SVG glyph と
+  ``input → output`` 周期表示の node label
+
+### Changed (BREAKING — schema)
+
+- ``CURRENT_SCHEMA_VERSION = "0.6"`` → ``"0.7"`` (ADR-0036 §(4))。
+  ``_builtin_migrate_0_6_to_0_7`` は schema_version 文字列のみ更新する no-op
+  (= 既存 0.6 ファイルに新 type_path は出現しないため、意味論変化なしで 100%
+  互換)。0.6 ファイルは load 時に自動 migrate、save は 0.7 で行う
+
+### Compat / Risks
+
+- pytest 974 件 (= v0.15.0 から +25、RateTransition 21 + registry 2 + migration 2)
+  / vitest 193 件 全 pass
+- mypy --strict / ruff / sphinx -W clean
+- ``examples/spring_mass_damper.py`` 出力数値完全不変 (= ADR-0036 §(8) 数値
+  完全不変ガード)
+- frontend bundle 増分 ≤ +2 KB gzip (= ADR-0023 予算 1 MB の 18.6 → 18.7%)
+
+### Phase 5b の次
+
+ADR-0036 §(8) commit 計画に従い、v0.16.1 で:
+- TriggeredSubsystem (= rising/falling/either edge トリガーで内部発火)
+- Priority queue layer (= 既存モデルで 1 行も変えない構造的不変性)
+
+その後 v0.17.0 (ADR-0037 Codegen + GPU + array_backend) → v0.13.0 判定
+(ADR-0038)。
+
 ## [0.15.0] - 2026-05-09
 
 **Phase 5a 完了 — Python 3.11+ + strict typing 完全復元 (BREAKING)**。
