@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-09
+
+**Phase 5a 完了 — Python 3.11+ + strict typing 完全復元 (BREAKING)**。
+Phase 5a 最後の sub-ADR (ADR-0035)。Phase 4 v0.12.0 hotfix で導入していた
+``disallow_any_generics = false`` 借入金を Python 3.10 EOL (2026-10) より
+5 ヶ月前倒しで完済し、mypy ``--strict`` を完全復元する。
+
+**v0.14.0 は欠番** (= ADR-0034 ダークモード + Settings panel が 2026-05-08
+ユーザー判断で永続的に out-of-scope となったため、ADR-0031 §Amendments)。
+
+### Changed (BREAKING)
+
+- ``requires-python``: ``>=3.10`` → ``>=3.11``。**Python 3.10 サポート終了**
+  (= EOL 2026-10、numpy 2.3+ が Python 3.11+ 要求)。Python 3.10 利用者は
+  ``v0.13.0`` で停止、``v0.15.0`` 以降は 3.11+ 必須
+- ``numpy>=1.24`` → ``numpy>=2.3`` (= ``ndarray`` の PEP 696 TypeVar default
+  を活用、bare ``np.ndarray`` も 3.11+ なら strict mypy を通る)
+
+### Changed (typing)
+
+- pyflw コア API シグネチャの bare ``np.ndarray`` を ``npt.NDArray[Any]`` に
+  全面置換 (17 ファイル、約 330 箇所)。**runtime 動作は完全不変** (=
+  ``npt.NDArray[T]`` は ``np.ndarray[Any, np.dtype[T]]`` の typing alias)。
+  下流コードで ``mypy --strict`` を使う利用者は、自身の ``np.ndarray``
+  annotation も ``npt.NDArray[Any]`` (= 推奨) または同等の parametrized 形に
+  更新を検討
+- ``[tool.mypy] disallow_any_generics`` を ``false`` (Phase 4 hotfix で緩めて
+  いた値) から ``--strict`` default の ``true`` に復元。bare ``np.ndarray`` 等の
+  型パラメータ無し generic を CI で検出
+- ``[tool.mypy] python_version = "3.11"``、``[tool.ruff] target-version =
+  "py311"`` (= 3.11 specific pyupgrade rules を有効化)
+- ``pyflw/core/simulator.py``: ``datetime.timezone.utc`` → ``datetime.UTC``
+  (= 3.11 alias、ruff UP 検出)
+
+### Removed
+
+- ``[project.optional-dependencies] dev`` から ``tomli>=2.0; python_version <
+  '3.11'`` を削除 (= ``tomllib`` stdlib 利用)
+- ``tests/test_version_consistency.py`` / ``tools/check_version_sync.py`` の
+  ``sys.version_info >= (3, 11)`` 分岐を削除し ``import tomllib`` 一発に統一
+
+### CI
+
+- ``.github/workflows/ci.yml`` matrix を 3.10 抜きに更新:
+  - ``lint-and-type``: ``["3.10", "3.13"]`` → ``["3.11", "3.13"]``
+  - ``test``: ``["3.10", "3.11", "3.12", "3.13"]`` →
+    ``["3.11", "3.12", "3.13"]``
+
+### Compat / Risks
+
+- pytest 949 件 / vitest 193 件 全 pass
+- mypy --strict (= ``disallow_any_generics = true`` 復元) clean
+- ruff / sphinx -W clean
+- ``examples/spring_mass_damper.py`` 出力数値完全不変
+- bundle gzip 不変 (frontend 影響無し)
+
+### Phase 5a 完了
+
+ADR-0031 §Phase 5a / 5b 境界 (= Python 3.11+ 移行完了) を満たし、Phase 5a
+完了。次は Phase 5b コア大改修 (ADR-0036 マルチレート → ADR-0037 Codegen + GPU
++ array_backend → ADR-0038 v0.13.0 判定)。
+
 ## [0.13.0] - 2026-05-09
 
 **Phase 5a ローンチ — 配布基盤 + 借入金返済**。ADR-0031 (Phase 5 全体方針) で
