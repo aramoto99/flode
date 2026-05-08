@@ -1,6 +1,17 @@
-__version__ = "0.10.0"  # ADR-0026: model linearization API (Phase 4 #1, 2026-05-07)
+__version__ = "0.10.1"  # ADR-0027: Bode/Nyquist + eigenvalues/is_stable/root_locus (Phase 4 #2, 2026-05-07)
 
-from .analysis import LinearSystem, linearize
+from .analysis import (
+    BodeResponse,
+    LinearSystem,
+    NyquistResponse,
+    RootLocus,
+    bode,
+    eigenvalues,
+    is_stable,
+    linearize,
+    nyquist,
+    root_locus,
+)
 from .core.block import Block
 from .core.decorator import block
 from .core.simulator import Simulator
@@ -23,12 +34,15 @@ __all__ = [
     "AlgebraicLoopError",
     "Block",
     "BlockSpecError",
+    "BodeResponse",
     "Inport",
     "LinearSystem",
     "ModelLoadError",
     "ModelSerializationError",
+    "NyquistResponse",
     "Outport",
     "PyflwError",
+    "RootLocus",
     "SchedulingError",
     "SchemaVersionError",
     "SimulationStillRunningError",
@@ -38,5 +52,10 @@ __all__ = [
     "UnknownBlockIdError",
     "UnknownBlockTypeError",
     "block",
+    "bode",
+    "eigenvalues",
+    "is_stable",
     "linearize",
+    "nyquist",
+    "root_locus",
 ]

@@ -46,8 +46,7 @@ Connecting to ``python-control``
 
 If you install ``pyflw`` with the ``[control]`` extra
 (``pip install pyflw[control]``), :meth:`LinearSystem.to_control_ss`
-returns a ``control.StateSpace`` instance suitable for Bode plots,
-Nyquist analysis, eigenvalue computation, and the rest of the
+returns a ``control.StateSpace`` instance suitable for the rest of the
 `python-control <https://python-control.readthedocs.io/>`_ ecosystem:
 
 .. code-block:: python
@@ -58,11 +57,62 @@ Nyquist analysis, eigenvalue computation, and the rest of the
    ss = ls.to_control_ss()
    mag, phase, omega = control.frequency_response(ss)
 
+Frequency response and stability (ADR-0027, v0.10.1)
+----------------------------------------------------
+
+Built on top of :class:`LinearSystem`, ``v0.10.1`` ships a thin layer
+of analysis helpers:
+
+* :func:`pyflw.bode` — Bode magnitude/phase via ``python-control``
+  (``[control]`` extra required).
+* :func:`pyflw.nyquist` — Nyquist locus.
+* :func:`pyflw.eigenvalues` — A-matrix eigenvalues, ``np.linalg.eig``
+  thin wrapper. Works **without** the ``[control]`` extra.
+* :func:`pyflw.is_stable` — strict-negative real-part check, also
+  numpy-only.
+* :func:`pyflw.root_locus` — SISO root locus (``[control]`` required;
+  pass ``input_idx`` / ``output_idx`` to slice a SISO sub-system out
+  of a MIMO :class:`LinearSystem`).
+
+Each of these is also available as a method on :class:`LinearSystem`,
+following the same delegation pattern as ``Simulator.linearize``.
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+   from pyflw import bode, eigenvalues, is_stable, linearize
+
+   ls = linearize(sim)
+   print("Eigenvalues:", eigenvalues(ls))
+   print("Stable?", is_stable(ls))
+
+   ax = ls.bode().plot()                   # 2-row Bode plot
+   ax_ny = ls.nyquist().plot()             # Nyquist locus
+   ax_rl = ls.root_locus().plot()          # SISO root locus
+
+   plt.show()
+
+The result objects (:class:`BodeResponse`, :class:`NyquistResponse`,
+:class:`RootLocus`) are frozen dataclasses holding the raw numpy arrays
+plus the ``input_names`` / ``output_names`` labels inherited from the
+``LinearSystem`` they were derived from. ``magnitude`` / ``phase`` /
+``response`` arrays follow ``python-control`` 0.10's MIMO convention
+(``(p, m, n_omega)``) — index with ``[output_idx, input_idx, :]`` to
+extract a SISO channel.
+
 API reference
 -------------
 
 .. automodule:: pyflw.analysis.linearize
    :members: linearize, LinearSystem
+   :show-inheritance:
+
+.. automodule:: pyflw.analysis.frequency_response
+   :members: bode, nyquist, BodeResponse, NyquistResponse
+   :show-inheritance:
+
+.. automodule:: pyflw.analysis.stability
+   :members: eigenvalues, is_stable, root_locus, RootLocus
    :show-inheritance:
 
 Operating-point convention

@@ -30,6 +30,8 @@ from ..exceptions import BlockSpecError, SolverError
 if TYPE_CHECKING:  # pragma: no cover - import 循環回避
     from ..core.block import Block
     from ..core.simulator import Simulator
+    from .frequency_response import BodeResponse, NyquistResponse
+    from .stability import RootLocus
 
 _logger = logging.getLogger("pyflw.analysis.linearize")
 
@@ -88,10 +90,8 @@ class LinearSystem:
                 ``pip install pyflw[control]`` を案内する。
 
         Example:
-            >>> ls = sim.linearize()
-            >>> ss = ls.to_control_ss()  # control.StateSpace
-            >>> import control
-            >>> mag, phase, omega = control.bode(ss)  # doctest: +SKIP
+            >>> ls = sim.linearize()  # doctest: +SKIP
+            >>> ax = ls.bode().plot()  # 直接 Bode 線図を描画 (ADR-0027)
         """
         try:
             import control as _control
@@ -102,6 +102,67 @@ class LinearSystem:
                 "`pip install python-control`."
             ) from e
         return _control.ss(self.A, self.B, self.C, self.D)
+
+    # ADR-0027 §(1)C: 委譲メソッド (= ``Simulator.linearize`` パターン)。循環 import を
+    # 避けるため、各メソッドの中で対応関数を遅延 import する。
+    def bode(
+        self,
+        *,
+        omega: np.ndarray | None = None,
+        omega_limits: tuple[float, float] | None = None,
+        omega_num: int | None = None,
+        Hz: bool = False,
+    ) -> BodeResponse:
+        """Bode 応答を計算する (:func:`pyflw.bode` への薄ラッパ、ADR-0027)。"""
+        from .frequency_response import bode as _bode
+
+        return _bode(
+            self,
+            omega=omega,
+            omega_limits=omega_limits,
+            omega_num=omega_num,
+            Hz=Hz,
+        )
+
+    def nyquist(
+        self,
+        *,
+        omega: np.ndarray | None = None,
+        omega_limits: tuple[float, float] | None = None,
+        omega_num: int | None = None,
+    ) -> NyquistResponse:
+        """Nyquist 軌跡を計算する (:func:`pyflw.nyquist` への薄ラッパ、ADR-0027)。"""
+        from .frequency_response import nyquist as _nyquist
+
+        return _nyquist(
+            self, omega=omega, omega_limits=omega_limits, omega_num=omega_num
+        )
+
+    def eigenvalues(self) -> np.ndarray:
+        """A 行列の固有値 (:func:`pyflw.eigenvalues` への薄ラッパ、ADR-0027)。"""
+        from .stability import eigenvalues as _eigenvalues
+
+        return _eigenvalues(self)
+
+    def is_stable(self, *, tol: float = 1e-9) -> bool:
+        """漸近安定性判定 (:func:`pyflw.is_stable` への薄ラッパ、ADR-0027)。"""
+        from .stability import is_stable as _is_stable
+
+        return _is_stable(self, tol=tol)
+
+    def root_locus(
+        self,
+        *,
+        k_range: tuple[float, float] | np.ndarray | None = None,
+        input_idx: int = 0,
+        output_idx: int = 0,
+    ) -> RootLocus:
+        """根軌跡を計算する (:func:`pyflw.root_locus` への薄ラッパ、ADR-0027)。"""
+        from .stability import root_locus as _root_locus
+
+        return _root_locus(
+            self, k_range=k_range, input_idx=input_idx, output_idx=output_idx
+        )
 
 
 # ---------------------------------------------------------------------------

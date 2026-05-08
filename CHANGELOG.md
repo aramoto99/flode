@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-05-07
+
+ADR-0027: frequency response (Bode / Nyquist) and stability analysis
+(eigenvalues, ``is_stable``, root locus). Phase 4 sub-ADR #2 — adds a
+thin layer of analysis helpers on top of :class:`pyflw.LinearSystem`
+from ``v0.10.0``. ``eigenvalues`` and ``is_stable`` are numpy-only and
+work without the ``pyflw[control]`` extra; ``bode`` / ``nyquist`` /
+``root_locus`` delegate to ``python-control`` and require the extra.
+
+### Added — `pyflw.analysis`
+
+- `pyflw/analysis/frequency_response.py`: :func:`pyflw.bode` /
+  :func:`pyflw.nyquist` and the corresponding :class:`BodeResponse` /
+  :class:`NyquistResponse` frozen dataclasses (matching the
+  :class:`LinearSystem` pattern: numpy arrays + labels +
+  ``plot(ax, show)``). Magnitude / phase / response are 3-D arrays
+  shaped ``(p, m, n_omega)`` to match ``python-control`` 0.10.
+- `pyflw/analysis/stability.py`: :func:`pyflw.eigenvalues`,
+  :func:`pyflw.is_stable`, :func:`pyflw.root_locus`, and the
+  :class:`RootLocus` dataclass. ``is_stable`` follows ADR-0027 §(6) —
+  strict ``Re(λ) < -tol`` (default ``tol=1e-9``), so marginal /
+  imaginary-axis poles count as **unstable**. ``root_locus`` extracts
+  a SISO sub-system from a MIMO :class:`LinearSystem` via
+  ``input_idx`` / ``output_idx`` (ADR-0027 §(7)).
+- :class:`LinearSystem` gains ``bode`` / ``nyquist`` /
+  ``eigenvalues`` / ``is_stable`` / ``root_locus`` instance methods
+  (lazy-imported delegations, same pattern as ``Simulator.linearize``
+  in ADR-0026).
+- 31 new pytest cases (`tests/analysis/test_frequency_response.py`
+  + `tests/analysis/test_stability.py`) covering Integrator,
+  TransferFunction, second-order resonance, Nyquist locus shape,
+  marginal stability of pure-imaginary poles, custom ``tol``,
+  ``input_idx`` / ``output_idx`` validation, and matplotlib ``plot``
+  smoke tests with the Agg backend.
+- `examples/pid_bode.py`: PI + 1st-order plant feedback loop
+  linearised, eigenvalue + Bode rendering example.
+- `docs/analysis.rst`: Sphinx page extended with the new helpers and
+  their result types.
+
+### Changed
+
+- Top-level `pyflw` package re-exports the new functions and
+  dataclasses (`bode`, `nyquist`, `eigenvalues`, `is_stable`,
+  `root_locus`, `BodeResponse`, `NyquistResponse`, `RootLocus`).
+- :class:`LinearSystem.to_control_ss` docstring example refreshed to
+  ``ls.bode().plot()`` (the new direct path).
+- `pyflw/__init__.py.__version__`, `pyproject.toml.version`, and
+  `pyflw/web/frontend/package.json` bumped to ``0.10.1``.
+
+### Acceptance criteria (ADR-0027 §(10))
+
+- Integrator Bode magnitude / phase match analytical 1/ω, -π/2
+  within ``rtol=1e-4``.
+- 1st-order LPF magnitude / phase match
+  ``1/sqrt(1+ω²)`` / ``-atan(ω)`` within ``rtol=1e-4``.
+- 2nd-order resonance peak ``1/(2ζ√(1-ζ²))`` within ``rtol=1e-3``.
+- Diagonal LTI eigenvalues within ``rtol=1e-12`` (LAPACK ``geev``).
+- Pure-imaginary poles → ``is_stable = False`` (ADR-0027 §(6)).
+- pytest 848 pass (817 baseline + 31 new), mypy --strict clean,
+  ruff clean, sphinx ``-W`` warning-free.
+- ``examples/spring_mass_damper.py`` numerics unchanged
+  (``Final x=0.2505, x_dot=0.0031``).
+
+### Phase 4 status
+
+ADR-0025 §(1) #2 (A2 frequency response) and #3 (A3 stability) are
+now ``Accepted (v0.10.1)``. Next up is the GUI extension chain —
+ADR-0028 (Block registry i18n), ADR-0029 (`.flwlib.json` library
+files), ADR-0030 (toast + a11y) — heading toward the Phase 4 closure
+tag at ``v0.12.0``.
+
 ## [0.10.0] - 2026-05-07
 
 ADR-0026: model linearisation. First sub-ADR of **Phase 4** (analysis

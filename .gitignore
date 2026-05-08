@@ -31,6 +31,7 @@ Thumbs.db
 
 # Generated artifacts (regenerate via examples/*.py)
 spring_mass_damper.png
+pid_bode.png
 
 # Local model storage for `pyflw-server --model-dir ./models` (= ユーザーデータ、
 # repo に含めない)
