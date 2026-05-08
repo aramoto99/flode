@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyflw"
-version = "0.17.0"
+version = "0.13.0"
 description = "Block-diagram dynamic system simulator (Simulink-inspired)"
 requires-python = ">=3.11"
 license = "MIT"
@@ -62,9 +62,16 @@ control = [
 ]
 # ADR-0037: jax-first Codegen + Autodiff (Phase 5b、v0.17.0)。``Simulator.compile()``
 # / ``linearize(method="jax")`` 等で利用。CPU only、minor 互換は明示 pin。GPU は
-# ``pyflw[gpu]`` extras (= v0.17.1)。
+# 別 extras ``pyflw[gpu]`` 経由 (ADR-0038 §論点 3 §(11))。
 codegen = [
     "jax[cpu]>=0.4,<0.5",
+]
+# ADR-0038 (Phase 5 closure / v0.13.0): GPU バックエンド extras。NVIDIA CUDA 12 /
+# Linux x86_64 wheel 限定 (jax の制約)、ROCm / Apple Silicon / TPU は Phase 6+。
+# 実機ベンチマークは Phase 6+ ADR-0039 で整備、v1.0 では best-effort 扱い
+# (SPEC §非機能要件「state size >= 10^5 で CPU 比 5x 以上を目標」と整合)。
+gpu = [
+    "jax[cuda12]>=0.4,<0.5",
 ]
 
 [tool.setuptools.packages.find]

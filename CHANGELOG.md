@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-09
+
+**Phase 5 complete — pyflw stable**。ADR-0038 (Phase 5 closure + v0.13.0 判定)
+を Accepted とし、v0.17.0 → v0.13.0 へ major bump。Public API + JSON schema 0.7 +
+REST `/api/v1/*` + extras 名 (`pyflw[gui/control/codegen/gpu]`) を v1.0 として
+fix、以降 breaking change は v2.0 を要する SemVer 厳守体制に移行する。
+
+### Added
+
+- ``pyflw[gpu]`` extras (= ``jax[cuda12]>=0.4,<0.5``、NVIDIA CUDA 12 / Linux
+  x86_64 wheel only)。実機ベンチマークと CI 整備は Phase 6+ ADR-0039 で着手、
+  v1.0 では best-effort 扱い (= SPEC §非機能要件「state size >= 10^5 で CPU
+  比 5x 以上を **目標**」と整合)
+- ``README.md`` Codegen / Autodiff セクション (= ``Simulator.compile()`` +
+  ``linearize(method="jax")`` の最小例)、Stable as of v1.0 注記
+- ``docs/index.rst`` に Stable as of v1.0 注記、凍結範囲を明示
+
+### Changed
+
+- ``README.md`` Requirements: ``Python 3.10+`` → ``Python 3.11+`` 修正
+  (= ADR-0035 / v0.15.0 で ``requires-python = ">=3.11"`` に bump 済の
+  反映漏れ修正)、Block Library 表に RateTransition / TriggeredSubsystem /
+  Display / XYGraph / Mux / Demux / MimoTransferFunction を反映
+- ADR-0031 / ADR-0036 / ADR-0037 のヘッダに
+  ``Phase 5 closed by ADR-0038 (v0.13.0, 2026-05-09)`` を追記
+- SPEC-0001 §機能要件 Phase 5 の項目 #31〜#36 を ``[x]`` 完了状態に更新、
+  §Phase 6+ を ADR-0038 §論点 5 表で再整理 (= jax 拡張 / Diffrax / GPU 実機 /
+  array_backend / 追加言語 / E4 Settings panel / 3D ビュー / 最適化ソルバー /
+  Monte Carlo / C コード生成 / HIL / ダークモード永続)
+
+### Phase 5 全体総括
+
+- **Phase 5a (配布基盤 + 借入金返済)**:
+  - ADR-0032 (PyPI 自動化、v0.13.0): Trusted Publishers + GitHub Actions
+    release workflow 整備済 (実 publish はユーザー任意)
+  - ADR-0033 (ZeroOrderHold legacy 削除、v0.13.0): ADR-0014 §(4) で
+    v0.5.0 から発行してきた deprecation 完済
+  - ADR-0035 (Python 3.11+ + strict typing 復元、v0.15.0): Python 3.10 EOL
+    5 ヶ月前倒し、``disallow_any_generics = true`` 復元、numpy 2.3+ TypeVar
+    default 採用、bare ``np.ndarray`` を ``npt.NDArray[Any]`` に全置換、
+    ``tomli`` 条件付き dep 削除
+  - ADR-0034 (ダークモード) は永続的 out-of-scope (ADR-0031 §Amendments、
+    user memory ``feedback_no_dark_mode``)、v0.14.0 タグは欠番
+- **Phase 5b (コア大改修)**:
+  - ADR-0036 (RateTransition + TriggeredSubsystem、v0.16.0 / v0.16.1):
+    Option B priority queue ベースのスケジューラ拡張、構造的不変性ガード
+    (= 該当ブロック未使用なら数値挙動不変) 達成
+  - ADR-0037 (jax-first Codegen + Autodiff、v0.17.0): ``Simulator.compile()``
+    + ``linearize(method="jax")`` で機械精度 (``atol=1e-12``) 自動微分。
+    numba / cupy / numba.cuda は棄却、jax 1 本で GPU + Codegen + Autodiff を
+    統合
+  - ADR-0038 (Phase 5 closure + v0.13.0 判定、v0.13.0): SPEC §スコープ
+    14 項目を表で全評価 (14/14 達成または extras 経路で達成)、Plan B 採用
+    (= 元 v0.17.1 GPU benchmark / v0.17.2 array_backend を Phase 6+ 送り)、
+    Public API 凍結範囲を 9 項目で確定
+
+### Public API 凍結範囲 (= ADR-0038 §論点 2)
+
+以降 breaking change は v2.0 を要する。凍結対象:
+
+- **Block 基底契約**: ``Block.output(t, x, u)`` / ``derivative(t, x, u)`` /
+  ``update(t, x, u)`` シグネチャ、``direct_feedthrough`` / ``n_states`` /
+  ``port_shapes`` 宣言
+- **Simulator 公開 API**: ``add`` / ``connect`` / ``run`` / ``compile`` /
+  ``save`` / ``load``、``Simulator(t_end, dt, solver=...)`` コンストラクタ
+- **38 ブロック** (v0.17.0 時点、RateTransition / TriggeredSubsystem 含む) の
+  クラス + コンストラクタ引数
+- **解析 API**: ``linearize`` (``method="central" / "forward" / "jax"``)、
+  ``bode`` / ``nyquist`` / ``eigenvalues`` / ``is_stable`` / ``root_locus``
+- **Codegen API**: ``Simulator.compile(backend="jax" | "numpy")``、
+  ``CompiledSimulator`` frozen dataclass の公開フィールド
+- **JSON schema 0.7** (= ADR-0036 で bump)、以降の minor bump は migration
+  関数を必須提供
+- **REST API**: ``/api/v1/blocks`` (``blocks.v2``) / ``/api/v1/libraries``
+  (``libraries.v1``) / ``/api/v1/models`` / ``/api/v1/simulate/*`` /
+  WebSocket ``/ws/*``。breaking 変更は ``/api/v2/`` 別系統で許容
+- **Library file schema**: ``LibraryFile`` (``libraries.v1``)、組み込み
+  ``std.flwlib.json`` の 3 entry ID
+- **extras 名**: ``pyflw[gui]`` / ``pyflw[control]`` / ``pyflw[codegen]`` /
+  ``pyflw[gpu]``。依存パッケージのバージョン pin は v1.x で更新可
+
+凍結しない (= v1.x で改修可): 内部実装 (``_`` prefix)、frontend 内部
+component 構造、``CompiledSimulator.step`` / ``run`` の本格実装、エラー
+メッセージ文言。
+
+### Phase 6+ 引き渡し (= ADR-0038 §論点 5)
+
+ADR-0039 (Phase 6 親 ADR) で別途整理:
+
+- GPU 実機 benchmark + ``pyflw[gpu]`` CI 整備 (元 v0.17.1)
+- ``pyflw.array_backend`` 抽象化 (元 v0.17.2、実需が立った時点で起動)
+- ``StateSpace`` / ``TransferFunction`` / ``MimoTransferFunction`` /
+  ``DiscreteIntegrator`` / ``UnitDelay`` / ``ZeroOrderHoldDirect`` /
+  ``Subsystem`` / ``TriggeredSubsystem`` の jax tracing
+- 連続 ODE の Diffrax 連携 (= ``CompiledSimulator.run()`` の本格実装)
+- 追加言語 (zh / ko / ar) + RTL (ADR-0024 §Phase 4 送り → Phase 6+)
+- 連続 trigger / 可変ステップ離散の一般 API (ADR-0036 §(11))
+- E4 Settings panel (editor preferences、ADR-0031 §Amendments)
+- アニメーション 3D ビュー / 最適化ソルバー連携 / Monte Carlo (SPEC §未達)
+- C コード生成 / HIL は本プロジェクトでは現状やらない
+- ダークモードは永続的 out-of-scope (memory ``feedback_no_dark_mode``)、
+  提案禁止
+
+### Compat / Risks
+
+- pytest 1015 件 / vitest 193 件 all pass (= v0.17.0 baseline 維持)
+- mypy --strict / ruff / sphinx -W すべて clean
+- bundle gzip 185.78 KB (= ADR-0023 予算 1 MB の 18.6%、Phase 4 完了時
+  から不変)
+- ``examples/spring_mass_damper.py`` 数値完全不変 (= Final x=0.2505,
+  x_dot=0.0031、Phase 1 v0.1.0 baseline 維持)
+- ``Simulator.compile()`` で未対応ブロックを含むモデルは ``BlockSpecError``
+  で拒否、利用者からの「v1.0 なのに compile できない」指摘は Phase 6+ で
+  段階対応 (= Public API 不変なので v1.x の minor リリースで吸収可)
+- ``CompiledSimulator.step`` / ``run`` は ``NotImplementedError`` stub のまま
+  v1.0、API shape は凍結済、本格実装は v1.x で追加可
+- PyPI 初版 publish はユーザー任意のタイミング (memory
+  ``feedback_pypi_user_responsibility``)。git tag ``v0.13.0`` push 時点で
+  workflow が走るが、発火タイミングはユーザー判断
+
 ## [0.17.0] - 2026-05-09
 
 **Phase 5b コア改修 — jax-first Codegen + Autodiff**。ADR-0037 採択 (jax-first

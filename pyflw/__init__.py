@@ -1,4 +1,4 @@
-__version__ = "0.17.0"  # Phase 5b #2: ADR-0037 jax compile + jacfwd autodiff
+__version__ = "0.13.0"  # Phase 5 complete (ADR-0038): pyflw stable
 
 from .analysis import (
     BodeResponse,

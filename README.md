@@ -4,10 +4,14 @@ A block-diagram dynamic system simulator for Python, inspired by Simulink. Build
 continuous, discrete, and hybrid models by wiring pre-built blocks, then integrate
 with `scipy.solve_ivp` (default: RK45).
 
+**Stable as of v0.13.0** (2026-05-09, ADR-0038). Public API + JSON schema + REST
+`/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) are frozen under
+SemVer; subsequent breaking changes require v2.0.
+
 ## Requirements
 
-- Python 3.10+
-- numpy, scipy, matplotlib (installed automatically)
+- Python 3.11+
+- numpy >= 2.3, scipy >= 1.10, matplotlib >= 3.7 (installed automatically)
 
 ## Installation
 
@@ -17,6 +21,18 @@ pip install -e .
 
 # With Web GUI (FastAPI server + bundled React frontend)
 pip install -e ".[gui]"
+
+# Analysis (linearize + control extras for Bode/Nyquist/root locus)
+pip install -e ".[control]"
+
+# jax-first Codegen + Autodiff (CPU only; required for Simulator.compile()
+# and linearize(method="jax"))
+pip install -e ".[codegen]"
+
+# GPU backend (NVIDIA CUDA 12, Linux x86_64 wheel only). Real-machine
+# benchmarks are Phase 6+; SPEC-0001 §non-functional treats GPU as
+# best-effort.
+pip install -e ".[gpu]"
 
 # Development environment (pytest, ruff, mypy, sphinx, server tooling)
 pip install -e ".[dev]"
@@ -52,13 +68,13 @@ See `examples/spring_mass_damper.py` for a complete second-order system example.
 | Category   | Blocks                                                                    |
 |------------|---------------------------------------------------------------------------|
 | Sources    | Constant, Step, Sine, Ramp, Clock, PulseGenerator                        |
-| Sinks      | Scope, Terminator                                                         |
-| Continuous | Integrator, StateSpace, TransferFunction, Derivative                      |
-| Discrete   | UnitDelay, DiscreteIntegrator, ZeroOrderHold, DiscreteStateSpace, DiscreteTransferFunction |
+| Sinks      | Scope, Terminator, Display, XYGraph                                       |
+| Continuous | Integrator, StateSpace, TransferFunction, MimoTransferFunction, Derivative |
+| Discrete   | UnitDelay, DiscreteIntegrator, ZeroOrderHoldDirect, DiscreteStateSpace, DiscreteTransferFunction, RateTransition |
 | Math       | Gain, Sum, Product, Saturation, Abs, Sign, MinMax, Divide                 |
 | Logic      | RelationalOperator, LogicalOperator                                       |
-| Routing    | Switch                                                                    |
-| Subsystem  | Subsystem, Inport, Outport (Phase 2, atomic only)                         |
+| Routing    | Switch, Mux, Demux                                                        |
+| Subsystem  | Subsystem, TriggeredSubsystem, Inport, Outport                            |
 
 Full API reference: `docs/` (build with `sphinx-build -b html docs docs/_build`).
 
@@ -79,6 +95,43 @@ def my_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]
 
 Class-form (`@block` applied to a class) is also supported (ADR-0003 §(9)) for
 blocks that prefer separate `output` / `derivative` / `update` methods.
+
+## Codegen + Autodiff (jax-first, opt-in)
+
+`Simulator.compile(backend="jax")` and `linearize(method="jax")` (ADR-0037,
+v0.17.0) trace selected blocks through `jax.jit` / `jax.jacfwd` for XLA
+compilation and machine-precision Jacobians. The numpy hot path is unchanged
+unless `compile()` is called (= `examples/spring_mass_damper.py` numerics
+remain bit-identical to v0.1.0).
+
+```python
+from pyflw import Simulator, linearize
+from pyflw.blocks import Constant, Sum, Gain, Integrator
+
+sim = Simulator(t_end=10.0, dt=0.01)
+src   = sim.add(Constant(value=1.0))
+err   = sim.add(Sum(signs="+-"))
+gain  = sim.add(Gain(k=2.0))
+integ = sim.add(Integrator())
+sim.connect(src, (err, 0))
+sim.connect(integ, (err, 1))
+sim.connect(err, gain)
+sim.connect(gain, integ)
+
+# jax.jacfwd で機械精度 (atol=1e-12) の (A, B, C, D) を取得
+ls = linearize(sim, method="jax")
+print(ls.A.shape, ls.eigenvalues())
+
+# CompiledSimulator (Phase 6+ で run() 本格実装予定)
+compiled = sim.compile(backend="jax")
+print(compiled.n_states, compiled.backend)
+```
+
+`pyflw[codegen]` extras (`jax[cpu]`) を要求。GPU は `pyflw[gpu]` extras
+(`jax[cuda12]`、Linux x86_64 / NVIDIA CUDA 12 only)、実機ベンチマークは Phase
+6+ で整備予定。`Simulator.compile()` で未対応ブロック (= `StateSpace` /
+`TransferFunction` / `Subsystem` / `TriggeredSubsystem` 等) を含むモデルは
+`BlockSpecError` で拒否される。詳細: ADR-0037 / ADR-0038。
 
 ## Web GUI (Phase 2)
 
