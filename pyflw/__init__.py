@@ -1,4 +1,4 @@
-__version__ = "0.13.0"  # Phase 5a: ADR-0032 PyPI auto + ADR-0033 ZOH removal (v0.13.0)
+__version__ = "0.15.0"  # Phase 5a #3: ADR-0035 Python 3.11+ bump + strict typing
 
 from .analysis import (
     BodeResponse,

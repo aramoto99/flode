@@ -5,14 +5,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyflw"
-version = "0.13.0"
+version = "0.15.0"
 description = "Block-diagram dynamic system simulator (Simulink-inspired)"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "aramoto99" }]
 readme = "README.md"
 dependencies = [
-    "numpy>=1.24",
+    # ADR-0035: Python 3.11+ で numpy 2.3+ の TypeVar default を活用、
+    # bare ``np.ndarray`` を ``[type-arg]`` で弾けるようにする (= mypy --strict 完全復元)
+    "numpy>=2.3",
     "scipy>=1.10",
     "matplotlib>=3.7",
 ]
@@ -39,7 +41,7 @@ dev = [
     "websockets>=12",
     "httpx>=0.27",
     "build>=1.2",
-    "tomli>=2.0; python_version < '3.11'",
+    # ADR-0035: Python 3.11+ で ``tomllib`` stdlib 利用、``tomli`` 条件付き dep 削除
     # ADR-0026: LinearSystem.to_control_ss() 用の python-control。dev には含めて
     # CI 上でも `to_control_ss` の実テスト (= test_linearize_to_control.py) が
     # importorskip しないよう default インストールする。
@@ -72,7 +74,7 @@ addopts = "-ra"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -92,20 +94,16 @@ ignore = [
 "tests/**" = ["B011"]  # assert False in tests is fine
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 # numpy/scipy は型 stub が部分的なので、strict のうち厳しすぎる項目を緩める
 disallow_untyped_calls = false
 disallow_subclassing_any = false
-# numpy 2.3 で ndarray の TypeVar に default が付いたが、Python 3.10 上では numpy が
-# 2.2 までしか入らない (numpy 2.3+ は 3.11+ 要求)。よって 3.10 マトリクスでは bare
-# ``np.ndarray`` が ``[type-arg]`` で大量に失敗する。コア API の signature は
-# ``np.ndarray`` を多用しており、型パラメータの全面追加は影響が大きいため、
-# strict のうち generic 引数チェックのみ緩める (= ``disallow_any_generics = false``)。
-# numpy 2.3 が 3.10 の minimum をドロップしたら再検討する (= Phase 5+)。
-disallow_any_generics = false
+# ADR-0035: ``disallow_any_generics = true`` を復元 (= Phase 4 hotfix で false に
+# していた借入金返済)。bare ``np.ndarray`` は全て ``npt.NDArray[Any]`` に置換済
+# (Python 3.11+ + numpy 2.3+ なら不要だが、明示の方が型解析が安定する)。
 
 [[tool.mypy.overrides]]
 module = ["scipy.*", "matplotlib.*", "control.*"]

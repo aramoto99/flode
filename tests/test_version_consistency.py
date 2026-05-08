@@ -9,17 +9,10 @@ pytest 経由でも走らせる (= CI 内 2 箇所で fail-fast)。
 from __future__ import annotations
 
 import json
-import sys
+import tomllib
 from pathlib import Path
 
 import pyflw
-
-# ``tomllib`` is 3.11+; fall back to ``tomli`` on 3.10 (added to dev extras
-# below, ADR-0013 §V-A).
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - tested only when running on 3.10
-    import tomli as tomllib  # type: ignore[no-redef, import-not-found]
 
 
 def test_version_matches_pyproject() -> None:

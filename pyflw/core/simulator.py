@@ -910,7 +910,7 @@ class Simulator:
         payload: dict[str, Any] = {
             "schema_version": CURRENT_SCHEMA_VERSION,
             "metadata": {
-                "created_at": datetime.datetime.now(datetime.timezone.utc)
+                "created_at": datetime.datetime.now(datetime.UTC)
                 .replace(microsecond=0)
                 .isoformat()
                 .replace("+00:00", "Z"),

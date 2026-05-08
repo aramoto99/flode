@@ -18,12 +18,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python 3.10 fallback (tomli は dev extras 経由)
-    import tomli as tomllib  # type: ignore[no-redef, import-not-found]
 
 
 _VERSION_LINE_RE = re.compile(r'^\s*__version__\s*=\s*"([^"]+)"')
