@@ -1,4 +1,4 @@
-__version__ = "0.11.2"  # ADR-0030: global toast + a11y aria-label i18n polish (Phase 4 #5, 2026-05-08)
+__version__ = "0.12.0"  # Phase 4 complete (ADR-0026〜0030 all Accepted, 2026-05-08)
 
 from .analysis import (
     BodeResponse,

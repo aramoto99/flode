@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-08
+
+**Phase 4 完了タグ (release)**。ADR-0025 §(7) のリリース判定基準を満たす:
+
+- ADR-0026 (model linearization, v0.10.0)
+- ADR-0027 (frequency response + stability analysis, v0.10.1)
+- ADR-0028 (Block registry i18n, v0.11.0)
+- ADR-0029 (.flwlib.json library file format, v0.11.1)
+- ADR-0030 (global toast + a11y aria-label i18n polish, v0.11.2)
+
+すべて Accepted で実装済み、Phase 4 候補項目のうち PyPI 自動化 (E1) と
+ダークモード (E2) は事前合意済の Phase 5+ 送り。本タグは **コード変更ゼロの
+release commit** で、Phase 5 着手前の安定版マーカーとして機能する。
+
+### Phase 4 で達成した機能 (ADR-0025 §(7) 判定基準)
+
+- **解析機能**: 線形化 (central / forward 差分による Jacobian)、状態空間 (A,B,C,D)、
+  Bode / Nyquist (python-control 経由 + numpy fallback)、固有値 / 根軌跡 / 安定性判定。
+  `examples/pid_bode.py` で実例を配信。
+- **Block 翻訳 (C1)**: `display_name` / `docstring_summary` の ja/en 両対応、REST schema
+  `blocks.v2`、frontend client-side selection (`<30ms` 切替)。
+- **`.flwlib.json` 配布 (C2)**: マスク Subsystem 集合の JSON 配布、組み込み 3 entry
+  (PID + 1次/2次 plant)、Inline 配置で `.flw.json` 自己完結性を維持。
+- **エラー toast (C3)**: グローバル Zustand store + `<ToastContainer>`、severity 4 種
+  + WAI-ARIA 準拠の `role` / `aria-live`。
+- **aria-label 網羅 (C4)**: ADR-0024 / ADR-0028 / ADR-0030 で UI chrome 全域カバー。
+
+### 検証
+
+- pytest 957 件 / vitest 193 件 全 pass
+- mypy --strict / ruff / Sphinx warnings-as-errors clean
+- frontend bundle 185.78 KB gzip (ADR-0023 §予算 1 MB の 18.6%)
+- 数値完全不変: `examples/spring_mass_damper.py` の出力 (`Final x=0.2505,
+  x_dot=0.0031`) は Phase 1 v0.1.0 から不変
+
+### Phase 5 への持ち越し
+
+- A4 (Python コード生成、numba/cython JIT)
+- A5 (GPU バックエンド、jax / cupy / numba.cuda 選定)
+- B1 (RateTransition、Simulink 同名)
+- B2 (Triggered subsystem、可変ステップ離散)
+- E1 (PyPI 公開自動化)
+- E2 (ダークモード)
+- E3 (追加言語 zh / ko / ar、RTL)
+- E4 (Settings panel)
+- ZeroOrderHold (legacy) の deprecation cycle 完了 (= 削除)
+
+詳細は SPEC-0001 §機能要件 Phase 5 を参照。
+
 ## [0.11.2] - 2026-05-08
 
 ADR-0030: グローバル toast 通知機構 + a11y aria-label 国際化総仕上げ。
