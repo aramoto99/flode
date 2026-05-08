@@ -50,13 +50,9 @@ class TestTranslationFormat:
     def test_all_translations_have_both_locales(self, type_path: str) -> None:
         entry = _BLOCK_TRANSLATIONS[type_path]
         for locale in SUPPORTED_LOCALES:
-            assert locale in entry, (
-                f"{type_path}: missing locale {locale!r}"
-            )
+            assert locale in entry, f"{type_path}: missing locale {locale!r}"
             for field in ("display_name", "docstring_summary"):
-                assert field in entry[locale], (
-                    f"{type_path}.{locale}: missing field {field!r}"
-                )
+                assert field in entry[locale], f"{type_path}.{locale}: missing field {field!r}"
 
     @pytest.mark.parametrize("type_path", sorted(_BLOCK_TRANSLATIONS.keys()))
     def test_translations_are_non_empty(self, type_path: str) -> None:
@@ -67,9 +63,7 @@ class TestTranslationFormat:
                 assert isinstance(value, str), (
                     f"{type_path}.{locale}.{field}: expected str, got {type(value).__name__}"
                 )
-                assert value.strip(), (
-                    f"{type_path}.{locale}.{field}: must be non-empty"
-                )
+                assert value.strip(), f"{type_path}.{locale}.{field}: must be non-empty"
 
     def test_get_translations_unknown_returns_empty(self) -> None:
         """未登録の type_path は空 dict を返す (= フォールバック挙動の前提)。"""

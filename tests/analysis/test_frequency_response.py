@@ -43,9 +43,7 @@ class TestBodeAnalytical:
         # SISO → shape (1, 1, n_omega)
         assert br.magnitude.shape == (1, 1, omega.size)
         np.testing.assert_allclose(br.magnitude[0, 0, :], 1.0 / omega, rtol=1e-4)
-        np.testing.assert_allclose(
-            br.phase[0, 0, :], -np.pi / 2 * np.ones_like(omega), rtol=1e-4
-        )
+        np.testing.assert_allclose(br.phase[0, 0, :], -np.pi / 2 * np.ones_like(omega), rtol=1e-4)
 
     def test_first_order_lpf(self) -> None:
         """G(s) = 1/(s+1) → mag = 1/sqrt(1+ω²), phase = -atan(ω)。"""
@@ -75,9 +73,7 @@ class TestBodeAnalytical:
         zeta = 0.2
         expected_peak = 1.0 / (2.0 * zeta * np.sqrt(1.0 - zeta**2))
         # 線形化は厳密なので、共振ピークは解析解と RTOL=1e-3 内
-        np.testing.assert_allclose(
-            br.magnitude[0, 0, peak_idx], expected_peak, rtol=1e-3
-        )
+        np.testing.assert_allclose(br.magnitude[0, 0, peak_idx], expected_peak, rtol=1e-3)
 
 
 class TestBodeReturnShape:
@@ -133,13 +129,9 @@ class TestBodeReturnShape:
         assert br.magnitude.shape == (2, 2, 7)
         assert br.phase.shape == (2, 2, 7)
         # チャネル (0,0) は 1/(s+1)、解析解と一致 (rtol=1e-4)
-        np.testing.assert_allclose(
-            br.magnitude[0, 0, :], 1.0 / np.sqrt(1.0 + omega**2), rtol=1e-4
-        )
+        np.testing.assert_allclose(br.magnitude[0, 0, :], 1.0 / np.sqrt(1.0 + omega**2), rtol=1e-4)
         # チャネル (1,1) は 1/(s+2)
-        np.testing.assert_allclose(
-            br.magnitude[1, 1, :], 1.0 / np.sqrt(4.0 + omega**2), rtol=1e-4
-        )
+        np.testing.assert_allclose(br.magnitude[1, 1, :], 1.0 / np.sqrt(4.0 + omega**2), rtol=1e-4)
         # 対角 → off-diagonal はゼロ
         assert np.all(np.abs(br.magnitude[0, 1, :]) < 1e-9)
         assert np.all(np.abs(br.magnitude[1, 0, :]) < 1e-9)

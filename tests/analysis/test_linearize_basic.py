@@ -100,9 +100,7 @@ class TestTransferFunction:
     def test_second_order(self) -> None:
         # G(s) = (s+2)/(s²+3s+2) → 2 状態
         sim = Simulator(t_end=1.0, dt=0.01)
-        tf = sim.add(
-            TransferFunction(numerator=[1.0, 2.0], denominator=[1.0, 3.0, 2.0])
-        )
+        tf = sim.add(TransferFunction(numerator=[1.0, 2.0], denominator=[1.0, 3.0, 2.0]))
         sim.connect(tf, sim.add(Scope()))
         ls = linearize(sim)
         np.testing.assert_allclose(ls.A, tf._A, rtol=1e-4, atol=1e-9)
@@ -122,9 +120,7 @@ class TestMimoTransferFunction:
         ]
         denominator = [1.0, 1.0]
         sim = Simulator(t_end=1.0, dt=0.01)
-        tf = sim.add(
-            MimoTransferFunction(numerators=numerators, denominator=denominator)
-        )
+        tf = sim.add(MimoTransferFunction(numerators=numerators, denominator=denominator))
         sim.connect(tf, sim.add(Scope(n_inputs=2)))
         ls = linearize(sim)
         # MIMO companion form: state size = p*q*n = 2*2*1 = 4
@@ -245,9 +241,7 @@ class TestLinearBlockOperatingPointInvariance:
     def test_transfer_function_abcd_constant_across_x(self) -> None:
         """TransferFunction (2状態) は動作点 x を変えても A が一定である。"""
         sim = Simulator(t_end=1.0, dt=0.01)
-        tf = sim.add(
-            TransferFunction(numerator=[1.0, 2.0], denominator=[1.0, 3.0, 2.0])
-        )
+        tf = sim.add(TransferFunction(numerator=[1.0, 2.0], denominator=[1.0, 3.0, 2.0]))
         sim.connect(tf, sim.add(Scope()))
         ls1 = linearize(sim, x=np.array([0.0, 0.0]))
         ls2 = linearize(sim, x=np.array([1.0, -1.0]))

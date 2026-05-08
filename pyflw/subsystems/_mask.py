@@ -35,9 +35,7 @@ def extract_placeholder_name(value: str) -> str | None:
     return m.group(1) if m else None
 
 
-def substitute_placeholders(
-    params: dict[str, Any], mask_values: dict[str, Any]
-) -> dict[str, Any]:
+def substitute_placeholders(params: dict[str, Any], mask_values: dict[str, Any]) -> dict[str, Any]:
     """``params`` 内の placeholder を ``mask_values`` で置換した新 dict を返す。
 
     ネストした dict / list / tuple も再帰的に処理する。``params`` 自体は変更しない。
@@ -123,18 +121,14 @@ def normalize_mask_params(
     if spec is None:
         return None
     if not isinstance(spec, list):
-        raise BlockSpecError(
-            f"mask_params must be a list of dicts, got {type(spec).__name__}"
-        )
+        raise BlockSpecError(f"mask_params must be a list of dicts, got {type(spec).__name__}")
     if len(spec) == 0:
         return None
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for i, entry in enumerate(spec):
         if not isinstance(entry, dict):
-            raise BlockSpecError(
-                f"mask_params[{i}] must be a dict, got {type(entry).__name__}"
-            )
+            raise BlockSpecError(f"mask_params[{i}] must be a dict, got {type(entry).__name__}")
         name = entry.get("name")
         if not isinstance(name, str) or not _IDENTIFIER_RE.match(name):
             raise BlockSpecError(
@@ -142,9 +136,7 @@ def normalize_mask_params(
                 f"(letters/digits/underscore, leading non-digit), got {name!r}"
             )
         if name in seen:
-            raise BlockSpecError(
-                f"mask_params[{i}].name {name!r} is duplicated"
-            )
+            raise BlockSpecError(f"mask_params[{i}].name {name!r} is duplicated")
         seen.add(name)
         type_ = entry.get("type")
         if type_ not in ("float", "int", "bool"):

@@ -24,9 +24,7 @@ from .linearize import LinearSystem
 if TYPE_CHECKING:  # pragma: no cover - optional matplotlib type
     from matplotlib.axes import Axes
 
-_PYFLW_CONTROL_HINT = (
-    "Install via `pip install pyflw[control]` or `pip install python-control`."
-)
+_PYFLW_CONTROL_HINT = "Install via `pip install pyflw[control]` or `pip install python-control`."
 
 
 def _import_control() -> Any:
@@ -35,8 +33,7 @@ def _import_control() -> Any:
         import control as _control
     except ImportError as e:
         raise ImportError(
-            f"This function requires the optional `python-control` package. "
-            f"{_PYFLW_CONTROL_HINT}"
+            f"This function requires the optional `python-control` package. {_PYFLW_CONTROL_HINT}"
         ) from e
     return _control
 
@@ -139,9 +136,7 @@ class RootLocus:
         ax.set_xlabel("Re")
         ax.set_ylabel("Im")
         ax.grid(True, linestyle=":")
-        ax.set_title(
-            f"Root locus (input[{self.input_idx}] → output[{self.output_idx}])"
-        )
+        ax.set_title(f"Root locus (input[{self.input_idx}] → output[{self.output_idx}])")
         if show:
             plt.show()
         return ax
@@ -158,13 +153,11 @@ def _siso_extract(
     n_out = ls.C.shape[0]
     if input_idx < 0 or input_idx >= n_in:
         raise BlockSpecError(
-            f"root_locus: input_idx={input_idx} out of range "
-            f"(LinearSystem has {n_in} input(s))"
+            f"root_locus: input_idx={input_idx} out of range (LinearSystem has {n_in} input(s))"
         )
     if output_idx < 0 or output_idx >= n_out:
         raise BlockSpecError(
-            f"root_locus: output_idx={output_idx} out of range "
-            f"(LinearSystem has {n_out} output(s))"
+            f"root_locus: output_idx={output_idx} out of range (LinearSystem has {n_out} output(s))"
         )
     A = np.asarray(ls.A, dtype=float)
     B = np.asarray(ls.B[:, input_idx : input_idx + 1], dtype=float)

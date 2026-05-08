@@ -34,11 +34,7 @@ def _flat(scope: Scope) -> np.ndarray:
 
 def _sample_indices(times: np.ndarray, sample_time: float, tol: float = 1e-9) -> list[int]:
     """sample_time の整数倍に該当する times の index リスト。"""
-    return [
-        i
-        for i, t in enumerate(times)
-        if abs(round(t / sample_time) * sample_time - t) < tol
-    ]
+    return [i for i, t in enumerate(times) if abs(round(t / sample_time) * sample_time - t) < tol]
 
 
 # ---------------------------------------------------------------------------

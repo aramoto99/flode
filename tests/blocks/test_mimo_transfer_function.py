@@ -46,9 +46,7 @@ class TestCompanionFormSiso:
 
     def test_second_order_strict_proper(self) -> None:
         """H(s) = (s+2)/(s^2+3s+2) の SS 実現 (controllable canonical)。"""
-        A, B, C, D = build_companion_form_siso(
-            np.array([1.0, 2.0]), np.array([1.0, 3.0, 2.0])
-        )
+        A, B, C, D = build_companion_form_siso(np.array([1.0, 2.0]), np.array([1.0, 3.0, 2.0]))
         assert A.shape == (2, 2)
         # A = [[0, 1], [-2, -3]]
         np.testing.assert_allclose(A, [[0.0, 1.0], [-2.0, -3.0]])
@@ -106,9 +104,7 @@ class TestMimoSiso:
         """1x1 MIMO TF H(s) = 1/(s+1) で Step 応答 = 1 - exp(-t)。"""
         sim = Simulator(t_end=1.0, dt=0.01, rtol=1e-8, atol=1e-10)
         src = sim.add(Step(initial_value=0.0, final_value=1.0, step_time=0.0))
-        mimo = sim.add(
-            MimoTransferFunction(numerators=[[[1.0]]], denominator=[1.0, 1.0])
-        )
+        mimo = sim.add(MimoTransferFunction(numerators=[[[1.0]]], denominator=[1.0, 1.0]))
         sc = sim.add(Scope(n_inputs=1))
         sim.connect(src, mimo)
         sim.connect(mimo, sc)
@@ -135,9 +131,7 @@ class TestMimoSiso:
 
         sim_b = Simulator(t_end=2.0, dt=0.01, rtol=1e-9, atol=1e-12)
         src_b = sim_b.add(Step(initial_value=0.0, final_value=1.0, step_time=0.0))
-        mimo_b = sim_b.add(
-            MimoTransferFunction(numerators=[[num]], denominator=den)
-        )
+        mimo_b = sim_b.add(MimoTransferFunction(numerators=[[num]], denominator=den))
         sc_b = sim_b.add(Scope(n_inputs=1))
         sim_b.connect(src_b, mimo_b)
         sim_b.connect(mimo_b, sc_b)
@@ -341,6 +335,7 @@ class TestMimoPersistence:
         path = tmp_path / "m.flw.json"
         sim.save(path)
         import json
+
         data = json.loads(path.read_text(encoding="utf-8"))
         m_entry = next(b for b in data["blocks"] if b["id"] == "m")
         assert m_entry["type"] == "pyflw.blocks.continuous.MimoTransferFunction"

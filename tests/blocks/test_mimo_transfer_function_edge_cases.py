@@ -47,7 +47,7 @@ class TestBiproper:
         """H(s) = (s+1)/(s+2) (biproper) は direct_feedthrough=True になる。"""
         mimo = MimoTransferFunction(
             numerators=[[[1.0, 1.0]]],  # s+1
-            denominator=[1.0, 2.0],    # s+2
+            denominator=[1.0, 2.0],  # s+2
         )
         assert mimo.direct_feedthrough is True
 
@@ -88,8 +88,8 @@ class TestBiproper:
 
     def test_siso_biproper_matches_transfer_function_block(self) -> None:
         """biproper MimoTF と TransferFunction の数値一致検証。"""
-        num = [2.0, 3.0]   # 2s + 3
-        den = [1.0, 4.0]   # s + 4
+        num = [2.0, 3.0]  # 2s + 3
+        den = [1.0, 4.0]  # s + 4
 
         sim_a = Simulator(t_end=1.0, dt=0.01, rtol=1e-9, atol=1e-12)
         src_a = sim_a.add(Step(initial_value=0.0, final_value=1.0, step_time=0.0))
@@ -101,9 +101,7 @@ class TestBiproper:
 
         sim_b = Simulator(t_end=1.0, dt=0.01, rtol=1e-9, atol=1e-12)
         src_b = sim_b.add(Step(initial_value=0.0, final_value=1.0, step_time=0.0))
-        mimo_b = sim_b.add(
-            MimoTransferFunction(numerators=[[num]], denominator=den)
-        )
+        mimo_b = sim_b.add(MimoTransferFunction(numerators=[[num]], denominator=den))
         sc_b = sim_b.add(Scope(n_inputs=1))
         sim_b.connect(src_b, mimo_b)
         sim_b.connect(mimo_b, sc_b)
@@ -127,8 +125,8 @@ class TestBiproperMimoCases:
         """
         mimo = MimoTransferFunction(
             numerators=[
-                [[1.0, 1.0], [1.0]],   # row 0: [(s+1)/(s+2), 1/(s+2)]
-                [[1.0], [1.0]],         # row 1: [1/(s+2), 1/(s+2)]
+                [[1.0, 1.0], [1.0]],  # row 0: [(s+1)/(s+2), 1/(s+2)]
+                [[1.0], [1.0]],  # row 1: [1/(s+2), 1/(s+2)]
             ],
             denominator=[1.0, 2.0],
         )
@@ -245,9 +243,7 @@ class TestHighOrderNumericalStability:
 
         sim = Simulator(t_end=20.0, dt=0.05, rtol=1e-9, atol=1e-12)
         src = sim.add(Step(initial_value=0.0, final_value=1.0, step_time=0.0))
-        mimo = sim.add(
-            MimoTransferFunction(numerators=[[[1.0]]], denominator=list(den_poly))
-        )
+        mimo = sim.add(MimoTransferFunction(numerators=[[[1.0]]], denominator=list(den_poly)))
         sc = sim.add(Scope(n_inputs=1))
         sim.connect(src, mimo)
         sim.connect(mimo, sc)
@@ -255,7 +251,7 @@ class TestHighOrderNumericalStability:
 
         arr = _flat(sc)
         # 後半 20% を定常値として評価
-        steady = arr[int(len(arr) * 0.8):]
+        steady = arr[int(len(arr) * 0.8) :]
         dc_gain = 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0)  # 1/120
         np.testing.assert_allclose(np.mean(steady), dc_gain, rtol=1e-3)
 
@@ -275,9 +271,9 @@ class TestSimoMiso:
         """
         mimo = MimoTransferFunction(
             numerators=[
-                [[1.0]],    # 1/(s+1)
-                [[2.0]],    # 2/(s+2)
-                [[3.0]],    # 3/(s+3)
+                [[1.0]],  # 1/(s+1)
+                [[2.0]],  # 2/(s+2)
+                [[3.0]],  # 3/(s+3)
             ],
             denominator=[1.0, 6.0, 11.0, 6.0],  # (s+1)(s+2)(s+3)
         )

@@ -57,9 +57,7 @@ def build_companion_form_siso(
     num = np.asarray(numerator, dtype=float).ravel()
     den = np.asarray(denominator, dtype=float).ravel()
     if num.size == 0 or den.size == 0:
-        raise BlockSpecError(
-            "build_companion_form_siso: numerator/denominator must be non-empty"
-        )
+        raise BlockSpecError("build_companion_form_siso: numerator/denominator must be non-empty")
     if den[0] == 0.0:
         raise BlockSpecError(
             "build_companion_form_siso: leading coefficient of denominator must be non-zero"
@@ -91,9 +89,7 @@ def build_companion_form_siso(
     # 分子を分母と同じ正規化で除して、長さを n+1 に左 0 パディング
     num_normed = num / den[0]
     if num_normed.size < n + 1:
-        num_padded = np.concatenate(
-            [np.zeros(n + 1 - num_normed.size, dtype=float), num_normed]
-        )
+        num_padded = np.concatenate([np.zeros(n + 1 - num_normed.size, dtype=float), num_normed])
     else:
         num_padded = num_normed
     # b_asc[i] = b_i (昇べき)、b_asc[n] = b_n (= biproper 時の D)

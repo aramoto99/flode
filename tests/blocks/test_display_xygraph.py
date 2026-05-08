@@ -112,9 +112,7 @@ class TestXYGraph:
         """Sine(0) を x、Sine(π/2 phase) を y に繋ぐと単位円が描ける。"""
         sim = Simulator(t_end=2 * np.pi, dt=0.1)
         sx = sim.add(Sine(amplitude=1.0, frequency=1.0, phase=0.0, id="sx"))
-        sy = sim.add(
-            Sine(amplitude=1.0, frequency=1.0, phase=np.pi / 2, id="sy")
-        )
+        sy = sim.add(Sine(amplitude=1.0, frequency=1.0, phase=np.pi / 2, id="sy"))
         xy = sim.add(XYGraph(id="xy"))
         sim.connect(sx, xy, dst_idx=0)
         sim.connect(sy, xy, dst_idx=1)

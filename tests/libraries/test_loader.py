@@ -138,9 +138,7 @@ def test_std_bundle_resource_resolves_via_importlib() -> None:
     """
     import importlib.resources
 
-    ref = importlib.resources.files("pyflw.libraries").joinpath(
-        "std.flwlib.json"
-    )
+    ref = importlib.resources.files("pyflw.libraries").joinpath("std.flwlib.json")
     assert ref.is_file(), (
         "pyflw/libraries/std.flwlib.json must be discoverable via "
         "importlib.resources (check pyproject.toml package-data)"
@@ -172,15 +170,11 @@ def test_std_bundle_byte_identical_to_generator(tmp_path: Path) -> None:
         ("first_order_plant", build_std_library.build_first_order_plant_params()),
         ("second_order_plant", build_std_library.build_second_order_plant_params()),
     ]
-    bundle_path = (
-        repo_root / "pyflw" / "libraries" / "std.flwlib.json"
-    )
+    bundle_path = repo_root / "pyflw" / "libraries" / "std.flwlib.json"
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     bundle_entries = bundle["entries"]
     assert len(bundle_entries) == len(expected_entries)
-    for (entry_id, params), bundle_entry in zip(
-        expected_entries, bundle_entries, strict=True
-    ):
+    for (entry_id, params), bundle_entry in zip(expected_entries, bundle_entries, strict=True):
         assert bundle_entry["id"] == entry_id
         regen_subsystem = build_std_library._build_subsystem(params)
         assert bundle_entry["subsystem"] == regen_subsystem, (

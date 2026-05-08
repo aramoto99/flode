@@ -122,9 +122,7 @@ class Subsystem(Block):
 
         # ADR-0021 §(6)(9): マスクパラメータ宣言 + 現在値。declarative `mask_params`
         # が None / 空のとき「マスクなし Subsystem」として byte-identical を維持。
-        self.mask_params: list[dict[str, Any]] | None = normalize_mask_params(
-            mask_params
-        )
+        self.mask_params: list[dict[str, Any]] | None = normalize_mask_params(mask_params)
         self.mask_values: dict[str, Any] = self._init_mask_values(mask_values)
 
         if blocks is not None:
@@ -428,9 +426,7 @@ class Subsystem(Block):
 
     # ---------- マスクパラメータ (ADR-0021) ----------
 
-    def _init_mask_values(
-        self, explicit: dict[str, Any] | None
-    ) -> dict[str, Any]:
+    def _init_mask_values(self, explicit: dict[str, Any] | None) -> dict[str, Any]:
         """``mask_params`` のデフォルトと明示指定 ``explicit`` を merge する。
 
         宣言 ``mask_params`` が ``None`` のとき:
@@ -461,13 +457,9 @@ class Subsystem(Block):
     def set_mask_value(self, name: str, value: Any) -> None:
         """マスク値を更新し、次回 ``_build`` で再 resolve させる (ADR-0021 §(6))。"""
         if not self.mask_params:
-            raise BlockSpecError(
-                f"Subsystem {self.id!r} has no mask_params declared"
-            )
+            raise BlockSpecError(f"Subsystem {self.id!r} has no mask_params declared")
         if name not in {p["name"] for p in self.mask_params}:
-            raise BlockSpecError(
-                f"Subsystem {self.id!r}: unknown mask name {name!r}"
-            )
+            raise BlockSpecError(f"Subsystem {self.id!r}: unknown mask name {name!r}")
         self.mask_values[name] = value
         self._exec_order = None  # 次 build で resolve を再実行させる
 
@@ -661,9 +653,7 @@ class Subsystem(Block):
         if self.layout:
             inner_ids = {b.id for b in self._inner_blocks}
             ordered_layout: LayoutDict = {
-                b.id: self.layout[b.id]
-                for b in self._inner_blocks
-                if b.id in self.layout
+                b.id: self.layout[b.id] for b in self._inner_blocks if b.id in self.layout
             }
             stale = [k for k in self.layout if k not in inner_ids]
             for s in stale:
@@ -764,9 +754,7 @@ class Subsystem(Block):
                 block_cls = resolve_block_class(b["type"])
                 raw_params: dict[str, Any] = dict(b["params"])
                 if active_mask_values is not None:
-                    resolved_params = substitute_placeholders(
-                        raw_params, active_mask_values
-                    )
+                    resolved_params = substitute_placeholders(raw_params, active_mask_values)
                 else:
                     resolved_params = raw_params
                 instance = block_cls(id=b["id"], **resolved_params)

@@ -134,9 +134,7 @@ class LinearSystem:
         """Nyquist 軌跡を計算する (:func:`pyflw.nyquist` への薄ラッパ、ADR-0027)。"""
         from .frequency_response import nyquist as _nyquist
 
-        return _nyquist(
-            self, omega=omega, omega_limits=omega_limits, omega_num=omega_num
-        )
+        return _nyquist(self, omega=omega, omega_limits=omega_limits, omega_num=omega_num)
 
     def eigenvalues(self) -> np.ndarray:
         """A 行列の固有値 (:func:`pyflw.eigenvalues` への薄ラッパ、ADR-0027)。"""
@@ -160,9 +158,7 @@ class LinearSystem:
         """根軌跡を計算する (:func:`pyflw.root_locus` への薄ラッパ、ADR-0027)。"""
         from .stability import root_locus as _root_locus
 
-        return _root_locus(
-            self, k_range=k_range, input_idx=input_idx, output_idx=output_idx
-        )
+        return _root_locus(self, k_range=k_range, input_idx=input_idx, output_idx=output_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +187,7 @@ def _drives_sink(simulator: Simulator, src_block: Block, src_idx: int) -> bool:
     return False
 
 
-def _has_non_sink_consumer(
-    simulator: Simulator, src_block: Block, src_idx: int
-) -> bool:
+def _has_non_sink_consumer(simulator: Simulator, src_block: Block, src_idx: int) -> bool:
     """``(src_block, src_idx)`` を sink 以外のブロックが入力にしているか。"""
     for b in simulator.blocks:
         for src in b.input_sources:
@@ -329,9 +323,7 @@ def _evaluate(
     external_inputs_b: dict[int, dict[int, np.ndarray]] = {}
     if sm_a_mode:
         for s in input_specs:
-            external_inputs_a.setdefault(id(s.block), {})[s.port_idx] = float(
-                u_ext[s.u_slice]
-            )
+            external_inputs_a.setdefault(id(s.block), {})[s.port_idx] = float(u_ext[s.u_slice])
     else:
         # SM-B: port ごとに flat_idx を集めて C-order reshape
         # まず block_id -> port_idx -> flat array を組み立てる
@@ -353,9 +345,7 @@ def _evaluate(
                 buf = np.zeros(flat_size, dtype=float)
                 for flat, val in entries:
                     buf[flat] = val
-                external_inputs_b[bid][p_idx] = (
-                    buf.reshape(shape) if shape else buf.reshape(())
-                )
+                external_inputs_b[bid][p_idx] = buf.reshape(shape) if shape else buf.reshape(())
 
     # ----- 連続状態を block 別に slice -----
     cont_state = {b: x_cont[sl] for b, sl in layout}
@@ -465,17 +455,13 @@ def _evaluate(
                 f"input ports. Vector-port continuous blocks are not yet supported "
                 f"(Phase 5+, ADR-0026 §(10))."
             )
-        u_1d = np.array(
-            [float(np.asarray(ui).item()) for ui in u_tuple], dtype=float
-        )
+        u_1d = np.array([float(np.asarray(ui).item()) for ui in u_tuple], dtype=float)
         xdot[sl] = np.asarray(b.derivative(t, x_cont[sl], u_1d), dtype=float)
 
     # 外部出力 y_external を取り出す (port shape を C-order で flatten)
     y_ext = np.zeros(len(output_specs))
     for os_b in output_specs:
-        out_arr = np.asarray(
-            outputs_b[os_b.block][os_b.port_idx], dtype=float
-        ).ravel(order="C")
+        out_arr = np.asarray(outputs_b[os_b.block][os_b.port_idx], dtype=float).ravel(order="C")
         y_ext[os_b.y_slice] = float(out_arr[os_b.flat_idx])
     return xdot, y_ext
 
@@ -563,8 +549,7 @@ def linearize(
         )
     if method not in ("central", "forward"):
         raise ValueError(
-            f"linearize: method must be 'central' or 'forward' (or 'jax' Phase 5+), "
-            f"got {method!r}"
+            f"linearize: method must be 'central' or 'forward' (or 'jax' Phase 5+), got {method!r}"
         )
     if epsilon is not None and epsilon <= 0.0:
         raise ValueError(f"linearize: epsilon must be > 0 (or None for auto), got {epsilon}")
@@ -614,21 +599,19 @@ def linearize(
     else:
         x_op = np.asarray(x, dtype=float).copy()
         if x_op.shape != (n_states,):
-            raise BlockSpecError(
-                f"linearize: x must have shape ({n_states},), got {x_op.shape}"
-            )
+            raise BlockSpecError(f"linearize: x must have shape ({n_states},), got {x_op.shape}")
 
     if u is None:
         u_op = np.zeros(n_in)
     else:
         u_op = np.asarray(u, dtype=float).copy()
         if u_op.shape != (n_in,):
-            raise BlockSpecError(
-                f"linearize: u must have shape ({n_in},), got {u_op.shape}"
-            )
+            raise BlockSpecError(f"linearize: u must have shape ({n_in},), got {u_op.shape}")
 
     # ----- 動作点で 1 回評価 (Forward 差分用 base、結果 sanity check) -----
-    def evaluate(t_eval: float, x_eval: np.ndarray, u_eval: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def evaluate(
+        t_eval: float, x_eval: np.ndarray, u_eval: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         return _evaluate(
             simulator,
             t_eval,

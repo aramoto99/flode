@@ -149,9 +149,7 @@ class TestLabelsLengthInvariant:
             (2, 2, 2),
         ],
     )
-    def test_labels_lengths_match_dims(
-        self, n_states: int, n_inputs: int, n_outputs: int
-    ) -> None:
+    def test_labels_lengths_match_dims(self, n_states: int, n_inputs: int, n_outputs: int) -> None:
         """state/input/output の labels 長が A/B/C の各次元に一致する (parametrize)。"""
         A_mat = -np.eye(n_states)
         B_mat = np.ones((n_states, n_inputs)) / n_states

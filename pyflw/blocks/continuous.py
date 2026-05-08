@@ -398,9 +398,7 @@ class MimoTransferFunction(Block):
 
         # JSON 表現は input list of lists のまま保存 (ADR-0008、3D list-of-lists)
         self._params = {
-            "numerators": [
-                [list(self._numerators_raw[i][j]) for j in range(q)] for i in range(p)
-            ],
+            "numerators": [[list(self._numerators_raw[i][j]) for j in range(q)] for i in range(p)],
             "denominator": list(den),
             "x0": self.x0,
         }

@@ -209,9 +209,7 @@ class TestStaleLayoutEntries:
             sim.save(path, layout=layout)
         data = json.loads(path.read_text(encoding="utf-8"))
         assert "deleted" not in data["layout"]
-        assert any(
-            "deleted" in record.getMessage() for record in caplog.records
-        )
+        assert any("deleted" in record.getMessage() for record in caplog.records)
 
     def test_load_drops_stale_id_with_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -244,9 +242,7 @@ class TestStaleLayoutEntries:
         with caplog.at_level(logging.WARNING):
             sim = Simulator.load(path)
         assert sim.last_loaded_layout == {"src": {"x": 100.0, "y": 60.0}}
-        assert any(
-            "ghost" in record.getMessage() for record in caplog.records
-        )
+        assert any("ghost" in record.getMessage() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -255,9 +251,7 @@ class TestStaleLayoutEntries:
 
 
 class TestSubsystemLayoutRoundTrip:
-    def _build_subsystem_model(
-        self, layout: dict[str, dict[str, float]] | None
-    ) -> Simulator:
+    def _build_subsystem_model(self, layout: dict[str, dict[str, float]] | None) -> Simulator:
         sub = Subsystem(n_inputs=1, n_outputs=1, id="sub", layout=layout)
         sub.add(Inport(port_idx=0, id="ip0"))
         sub.add(Gain(k=2.0, id="g_inner"))
@@ -268,9 +262,7 @@ class TestSubsystemLayoutRoundTrip:
         sim.add(sub)
         return sim
 
-    def test_subsystem_without_layout_omits_params_layout(
-        self, tmp_path: Path
-    ) -> None:
+    def test_subsystem_without_layout_omits_params_layout(self, tmp_path: Path) -> None:
         sim = self._build_subsystem_model(layout=None)
         path = tmp_path / "no_layout.flw.json"
         sim.save(path)
@@ -278,9 +270,7 @@ class TestSubsystemLayoutRoundTrip:
         sub_entry = next(b for b in data["blocks"] if b["id"] == "sub")
         assert "layout" not in sub_entry["params"]
 
-    def test_subsystem_with_layout_persists_in_params(
-        self, tmp_path: Path
-    ) -> None:
+    def test_subsystem_with_layout_persists_in_params(self, tmp_path: Path) -> None:
         layout = {
             "ip0": {"x": 40.0, "y": 80.0},
             "g_inner": {"x": 200.0, "y": 80.0},
@@ -351,9 +341,7 @@ class TestNormalizeLayout:
     # --- optional w/h (NodeResizer 用、ユーザー要望で追加) ---
 
     def test_w_h_round_trip(self) -> None:
-        out = normalize_layout(
-            {"a": {"x": 1.0, "y": 2.0, "w": 100.0, "h": 50.0}}
-        )
+        out = normalize_layout({"a": {"x": 1.0, "y": 2.0, "w": 100.0, "h": 50.0}})
         assert out == {"a": {"x": 1.0, "y": 2.0, "w": 100.0, "h": 50.0}}
 
     def test_w_h_int_coerced_to_float(self) -> None:
@@ -367,9 +355,7 @@ class TestNormalizeLayout:
 
     def test_zero_or_negative_size_is_dropped(self) -> None:
         # 不正値 (NodeResizer の minWidth/Height で起こり得ない) は黙って drop
-        out = normalize_layout(
-            {"a": {"x": 1.0, "y": 2.0, "w": 0.0, "h": -10.0}}
-        )
+        out = normalize_layout({"a": {"x": 1.0, "y": 2.0, "w": 0.0, "h": -10.0}})
         assert out == {"a": {"x": 1.0, "y": 2.0}}
 
     def test_partial_w_only(self) -> None:
@@ -387,9 +373,7 @@ class TestNormalizeLayout:
 
 
 class TestForwardCompat:
-    def test_load_0_5_with_layout_then_resave_includes_layout(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_0_5_with_layout_then_resave_includes_layout(self, tmp_path: Path) -> None:
         """0.5 ファイル (layout あり) を load → 同じ layout で再 save できる。"""
         path1 = tmp_path / "in.flw.json"
         sim = _build_simple_sim()

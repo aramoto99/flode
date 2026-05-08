@@ -37,15 +37,11 @@ def _registry(request: Request) -> LibraryRegistry:
         # テスト fixture 等で lifespan が起動していない場合の lazy build
         settings = getattr(request.app.state, "settings", None)
         library_paths = list(getattr(settings, "library_paths", []) or [])
-        bundle_builtin = bool(
-            getattr(settings, "bundle_builtin_libraries", True)
-        )
+        bundle_builtin = bool(getattr(settings, "bundle_builtin_libraries", True))
         reg = build_library_registry(library_paths, bundle_builtin=bundle_builtin)
         request.app.state.library_registry = reg
     if not isinstance(reg, LibraryRegistry):
-        raise HTTPException(
-            status_code=500, detail="library_registry state is corrupted"
-        )
+        raise HTTPException(status_code=500, detail="library_registry state is corrupted")
     return reg
 
 
@@ -91,18 +87,14 @@ def list_libraries(request: Request) -> dict[str, Any]:
     reg = _registry(request)
     return {
         "libraries": [_library_metadata_dict(lib) for lib in reg.libraries.values()],
-        "load_errors": [
-            {"path": e.path, "message": e.message} for e in reg.load_errors
-        ],
+        "load_errors": [{"path": e.path, "message": e.message} for e in reg.load_errors],
         "schema_version": "libraries.v1",
         "supported_locales": list(SUPPORTED_LOCALES),
     }
 
 
 @router.get("/{library_name}/{entry_id}")
-def get_library_entry(
-    request: Request, library_name: str, entry_id: str
-) -> dict[str, Any]:
+def get_library_entry(request: Request, library_name: str, entry_id: str) -> dict[str, Any]:
     """1 entry の subsystem body を含めた詳細を返す (ADR-0029)。
 
     Inline 配置時の drop 経路で frontend が呼ぶ。subsystem body は

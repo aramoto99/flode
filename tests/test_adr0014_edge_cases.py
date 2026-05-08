@@ -89,6 +89,7 @@ def test_zero_order_hold_direct_json_roundtrip_x0(_zohd_persisted) -> None:
 
 def test_zero_order_hold_direct_json_roundtrip_run_produces_same_output() -> None:
     """load 後に run() した結果が save 前と同じ出力になる。"""
+
     def _run(sample_time: float, x0: float) -> np.ndarray:
         sim = Simulator(t_end=0.04, dt=0.01)
         src = sim.add(Constant(value=3.0, id="src"))
@@ -195,9 +196,7 @@ def test_zero_order_hold_direct_inherits_sample_time_output_correct() -> None:
     """
     sim = Simulator(t_end=0.06, dt=0.01)
     src = sim.add(Constant(value=1.0))
-    di_upstream = sim.add(
-        DiscreteIntegrator(sample_time=0.02, gain=1.0, x0=0.0, id="di")
-    )
+    di_upstream = sim.add(DiscreteIntegrator(sample_time=0.02, gain=1.0, x0=0.0, id="di"))
     zohd = sim.add(ZeroOrderHoldDirect(sample_time=-1.0, id="zohd"))
     sc = sim.add(Scope(n_inputs=1, id="sc_zohd"))
     sim.connect(src, di_upstream)
@@ -296,6 +295,7 @@ def test_zero_order_hold_direct_x0_irrelevant_at_t0_sample_time() -> None:
 
     x0=0 と x0=999 の場合でも、sample_time=dt_base なら t=0 で即時反映により同じ出力。
     """
+
     def run_with_x0(x0_val: float) -> np.ndarray:
         sim = Simulator(t_end=0.03, dt=0.01)
         src = sim.add(Constant(value=5.0))
@@ -575,7 +575,10 @@ def test_discrete_state_space_2nd_order_stable() -> None:
     src = sim.add(Constant(value=1.0))
     dss = sim.add(
         DiscreteStateSpace(
-            A=A, B=B, C=C, D=D,
+            A=A,
+            B=B,
+            C=C,
+            D=D,
             sample_time=0.01,
             x0=np.array([0.0, 0.0]),
         )
@@ -638,6 +641,7 @@ def test_discrete_transfer_function_2nd_order_standard_form() -> None:
     arr = _flat(sc)
     # scipy.signal.tf2ss 経由の内部 SS 表現に従う解析解
     import scipy.signal
+
     A_ss, B_ss, C_ss, D_ss = scipy.signal.tf2ss(np.array(num), np.array(den))
     x = np.zeros(A_ss.shape[0])
     expected = []
@@ -699,9 +703,7 @@ def test_multirate_unit_delay_simulink_semantics() -> None:
 
     # サンプル時刻 (step_ratio=10) のインデックスを抽出
     sample_indices = [
-        i
-        for i, t in enumerate(times)
-        if abs(round(t / sample_time) * sample_time - t) < 1e-9
+        i for i, t in enumerate(times) if abs(round(t / sample_time) * sample_time - t) < 1e-9
     ]
 
     y_at_sample_times = arr[sample_indices]
@@ -746,9 +748,7 @@ def test_multirate_unit_delay_simulink_systematic() -> None:
     arr = _flat(sc)
     times = np.array(sc.times)
     sample_indices = [
-        i
-        for i, t in enumerate(times)
-        if abs(round(t / sample_time) * sample_time - t) < 1e-9
+        i for i, t in enumerate(times) if abs(round(t / sample_time) * sample_time - t) < 1e-9
     ]
     y_at_sample = arr[sample_indices]
     t_at_sample = times[sample_indices]

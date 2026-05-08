@@ -193,9 +193,7 @@ def normalize_layout(layout: object) -> LayoutDict | None:
     if layout is None:
         return None
     if not isinstance(layout, dict):
-        raise ModelLoadError(
-            f"layout must be a dict[str, dict], got {type(layout).__name__}"
-        )
+        raise ModelLoadError(f"layout must be a dict[str, dict], got {type(layout).__name__}")
     if not layout:
         return None
     out: LayoutDict = {}
@@ -207,16 +205,12 @@ def normalize_layout(layout: object) -> LayoutDict | None:
                 f"layout[{key!r}] must be a dict with x / y, got {type(value).__name__}"
             )
         if "x" not in value or "y" not in value:
-            raise ModelLoadError(
-                f"layout[{key!r}] must contain both 'x' and 'y', got {value!r}"
-            )
+            raise ModelLoadError(f"layout[{key!r}] must contain both 'x' and 'y', got {value!r}")
         try:
             x = float(value["x"])
             y = float(value["y"])
         except (TypeError, ValueError) as e:
-            raise ModelLoadError(
-                f"layout[{key!r}] has non-numeric x/y: {value!r}"
-            ) from e
+            raise ModelLoadError(f"layout[{key!r}] has non-numeric x/y: {value!r}") from e
         entry: dict[str, float] = {"x": x, "y": y}
         for size_key in ("w", "h"):
             if size_key in value:
@@ -224,8 +218,7 @@ def normalize_layout(layout: object) -> LayoutDict | None:
                     sv = float(value[size_key])
                 except (TypeError, ValueError) as e:
                     raise ModelLoadError(
-                        f"layout[{key!r}].{size_key} has non-numeric value: "
-                        f"{value[size_key]!r}"
+                        f"layout[{key!r}].{size_key} has non-numeric value: {value[size_key]!r}"
                     ) from e
                 if sv > 0:
                     entry[size_key] = sv

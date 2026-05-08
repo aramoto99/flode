@@ -317,9 +317,7 @@ class Simulator:
                     f"direct_feedthrough=False sink block."
                 )
             # tuple of rank-0 ndarrays → 1D ndarray (length = n_inputs)
-            u_1d = np.array(
-                [float(np.asarray(ui).item()) for ui in u_tuple], dtype=float
-            )
+            u_1d = np.array([float(np.asarray(ui).item()) for ui in u_tuple], dtype=float)
             b.record(t, u_1d)
 
     def _is_sm_a_mode(self) -> bool:
@@ -637,13 +635,9 @@ class Simulator:
         # f_continuous は loop method 内で定義する (= ``discrete_state`` の再代入を
         # closure が正しく拾えるようにする)。
         if sm_a_mode:
-            self._run_sm_a_loop(
-                n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
-            )
+            self._run_sm_a_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
         else:
-            self._run_sm_b_loop(
-                n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
-            )
+            self._run_sm_b_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
 
     def _run_sm_a_loop(
         self,
@@ -764,9 +758,7 @@ class Simulator:
 
             # [A'] 離散ブロック update (SM-B path)
             if discrete_state:
-                _, inputs_pre_v = self._step_vector(
-                    t, x_cont, discrete_state, order, layout
-                )
+                _, inputs_pre_v = self._step_vector(t, x_cont, discrete_state, order, layout)
                 next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
                 for b in order:
                     if b not in discrete_state:
@@ -782,9 +774,7 @@ class Simulator:
                             [float(np.asarray(ui).item()) for ui in u_tuple],
                             dtype=float,
                         )
-                        next_discrete[b] = np.array(
-                            b.update(t, x_b, u_1d), dtype=float
-                        )
+                        next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
                 # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
@@ -947,9 +937,7 @@ class Simulator:
             if normalized_layout:
                 # blocks 順に揃えて canonical な diff を出す (ADR-0020 §Decision (1))
                 ordered: LayoutDict = {
-                    b.id: normalized_layout[b.id]
-                    for b in self.blocks
-                    if b.id in normalized_layout
+                    b.id: normalized_layout[b.id] for b in self.blocks if b.id in normalized_layout
                 }
                 payload["layout"] = ordered
         text = json.dumps(payload, indent=indent if indent > 0 else None)
@@ -1015,13 +1003,9 @@ class Simulator:
             # 入る。`__init__` の kwargs として渡すため取り出す (default は None)。
             extra_kwargs: dict[str, Any] = {}
             if "port_shapes_in" in b_data:
-                extra_kwargs["port_shapes_in"] = [
-                    tuple(s) for s in b_data["port_shapes_in"]
-                ]
+                extra_kwargs["port_shapes_in"] = [tuple(s) for s in b_data["port_shapes_in"]]
             if "port_shapes_out" in b_data:
-                extra_kwargs["port_shapes_out"] = [
-                    tuple(s) for s in b_data["port_shapes_out"]
-                ]
+                extra_kwargs["port_shapes_out"] = [tuple(s) for s in b_data["port_shapes_out"]]
             try:
                 # Subsystem は ``_from_dict`` factory 経由で復元する (内部 blocks
                 # の dict を resolve_block_class で展開するため)。それ以外の通常
@@ -1031,9 +1015,7 @@ class Simulator:
                         id=b_data["id"], **b_data["params"], **extra_kwargs
                     )
                 else:
-                    block = block_cls(
-                        id=b_data["id"], **b_data["params"], **extra_kwargs
-                    )
+                    block = block_cls(id=b_data["id"], **b_data["params"], **extra_kwargs)
             except (TypeError, ValueError) as e:
                 raise ModelLoadError(
                     f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"

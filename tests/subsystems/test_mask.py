@@ -62,9 +62,7 @@ class TestPlaceholderHelpers:
         assert out == {"k": 2.0}
 
     def test_substitute_placeholders_nested(self) -> None:
-        out = substitute_placeholders(
-            {"a": [1, "$x"], "b": {"c": "$y"}}, {"x": 10, "y": 20}
-        )
+        out = substitute_placeholders({"a": [1, "$x"], "b": {"c": "$y"}}, {"x": 10, "y": 20})
         assert out == {"a": [1, 10], "b": {"c": 20}}
 
     def test_substitute_placeholders_unknown_raises(self) -> None:
@@ -72,9 +70,7 @@ class TestPlaceholderHelpers:
             substitute_placeholders({"k": "$NoSuch"}, {})
 
     def test_collect_placeholder_names(self) -> None:
-        names = collect_placeholder_names(
-            {"a": "$Kp", "b": [1, "$Ki"], "c": "no placeholder"}
-        )
+        names = collect_placeholder_names({"a": "$Kp", "b": [1, "$Ki"], "c": "no placeholder"})
         assert names == {"Kp", "Ki"}
 
 
@@ -91,18 +87,12 @@ class TestNormalizeMaskParams:
         assert normalize_mask_params([]) is None
 
     def test_single_entry(self) -> None:
-        out = normalize_mask_params(
-            [{"name": "Kp", "type": "float", "default": 2.0}]
-        )
-        assert out == [
-            {"name": "Kp", "type": "float", "default": 2.0, "description": ""}
-        ]
+        out = normalize_mask_params([{"name": "Kp", "type": "float", "default": 2.0}])
+        assert out == [{"name": "Kp", "type": "float", "default": 2.0, "description": ""}]
 
     def test_invalid_type_rejected(self) -> None:
         with pytest.raises(BlockSpecError, match="must be 'float'/'int'/'bool'"):
-            normalize_mask_params(
-                [{"name": "Kp", "type": "ndarray", "default": []}]
-            )
+            normalize_mask_params([{"name": "Kp", "type": "ndarray", "default": []}])
 
     def test_duplicate_name_rejected(self) -> None:
         with pytest.raises(BlockSpecError, match="duplicated"):
@@ -115,9 +105,7 @@ class TestNormalizeMaskParams:
 
     def test_invalid_identifier_rejected(self) -> None:
         with pytest.raises(BlockSpecError, match="valid identifier"):
-            normalize_mask_params(
-                [{"name": "1Kp", "type": "float", "default": 1.0}]
-            )
+            normalize_mask_params([{"name": "1Kp", "type": "float", "default": 1.0}])
 
     def test_non_list_rejected(self) -> None:
         with pytest.raises(BlockSpecError, match="must be a list"):
@@ -148,19 +136,25 @@ def _build_mask_pi_subsystem_dict(
             "n_inputs": 1,
             "n_outputs": 1,
             "mask_params": [
-                {"name": "Kp", "type": "float", "default": 2.0,
-                 "description": "Proportional gain"}
+                {"name": "Kp", "type": "float", "default": 2.0, "description": "Proportional gain"}
             ],
-            **(
-                {"mask_values": dict(mask_values)} if mask_values is not None else {}
-            ),
+            **({"mask_values": dict(mask_values)} if mask_values is not None else {}),
             "blocks": [
-                {"id": "Inport_0", "type": "pyflw.subsystems.ports.Inport",
-                 "params": {"port_idx": 0}},
-                {"id": "g_kp", "type": "pyflw.blocks.mathops.Gain",
-                 "params": {"k": inner_kp_param}},
-                {"id": "Outport_0", "type": "pyflw.subsystems.ports.Outport",
-                 "params": {"port_idx": 0}},
+                {
+                    "id": "Inport_0",
+                    "type": "pyflw.subsystems.ports.Inport",
+                    "params": {"port_idx": 0},
+                },
+                {
+                    "id": "g_kp",
+                    "type": "pyflw.blocks.mathops.Gain",
+                    "params": {"k": inner_kp_param},
+                },
+                {
+                    "id": "Outport_0",
+                    "type": "pyflw.subsystems.ports.Outport",
+                    "params": {"port_idx": 0},
+                },
             ],
             "connections": [
                 {"src": "Inport_0", "src_idx": 0, "dst": "g_kp", "dst_idx": 0},
@@ -184,9 +178,7 @@ class TestSubsystemMask:
         assert sub.get_block("g_kp").k == 2.0
 
     def test_explicit_mask_values_override_defaults(self) -> None:
-        sub = _instantiate_mask_subsystem(
-            _build_mask_pi_subsystem_dict(mask_values={"Kp": 5.0})
-        )
+        sub = _instantiate_mask_subsystem(_build_mask_pi_subsystem_dict(mask_values={"Kp": 5.0}))
         assert sub.mask_values == {"Kp": 5.0}
         sub._build()
         g = sub.get_block("g_kp")
@@ -236,19 +228,25 @@ class TestSubsystemMask:
                 "n_outputs": 1,
                 "port_shapes_in": [[], []],
                 "port_shapes_out": [[2]],
-                "mask_params": [
-                    {"name": "N", "type": "int", "default": 2}
-                ],
+                "mask_params": [{"name": "N", "type": "int", "default": 2}],
                 "mask_values": {"N": 2},
                 "blocks": [
-                    {"id": "Inport_0", "type": "pyflw.subsystems.ports.Inport",
-                     "params": {"port_idx": 0}},
-                    {"id": "Inport_1", "type": "pyflw.subsystems.ports.Inport",
-                     "params": {"port_idx": 1}},
-                    {"id": "m", "type": "pyflw.blocks.routing.Mux",
-                     "params": {"n": "$N"}},
-                    {"id": "Outport_0", "type": "pyflw.subsystems.ports.Outport",
-                     "params": {"port_idx": 0, "port_shape": [2]}},
+                    {
+                        "id": "Inport_0",
+                        "type": "pyflw.subsystems.ports.Inport",
+                        "params": {"port_idx": 0},
+                    },
+                    {
+                        "id": "Inport_1",
+                        "type": "pyflw.subsystems.ports.Inport",
+                        "params": {"port_idx": 1},
+                    },
+                    {"id": "m", "type": "pyflw.blocks.routing.Mux", "params": {"n": "$N"}},
+                    {
+                        "id": "Outport_0",
+                        "type": "pyflw.subsystems.ports.Outport",
+                        "params": {"port_idx": 0, "port_shape": [2]},
+                    },
                 ],
                 "connections": [
                     {"src": "Inport_0", "src_idx": 0, "dst": "m", "dst_idx": 0},
@@ -271,9 +269,7 @@ class TestSubsystemMask:
 
 
 class TestMaskJsonRoundTrip:
-    def _full_model_dict(
-        self, sub_spec: dict, *, model_id: str = "test"
-    ) -> dict:
+    def _full_model_dict(self, sub_spec: dict, *, model_id: str = "test") -> dict:
         return {
             "schema_version": "0.6",
             "metadata": {"name": model_id, "tool": "pyflw test"},
@@ -292,15 +288,12 @@ class TestMaskJsonRoundTrip:
     def test_mask_subsystem_json_roundtrip(self, tmp_path: Path) -> None:
         sub_spec = _build_mask_pi_subsystem_dict(mask_values={"Kp": 4.0})
         path = tmp_path / "mask.flw.json"
-        path.write_text(
-            json.dumps(self._full_model_dict(sub_spec)), encoding="utf-8"
-        )
+        path.write_text(json.dumps(self._full_model_dict(sub_spec)), encoding="utf-8")
 
         sim = Simulator.load(path)
         sub = sim.get_block("pi")
         assert sub.mask_params == [
-            {"name": "Kp", "type": "float", "default": 2.0,
-             "description": "Proportional gain"}
+            {"name": "Kp", "type": "float", "default": 2.0, "description": "Proportional gain"}
         ]
         assert sub.mask_values == {"Kp": 4.0}
         sub._build()
@@ -310,9 +303,7 @@ class TestMaskJsonRoundTrip:
         out = tmp_path / "rt.flw.json"
         sim.save(out)
         data2 = json.loads(out.read_text(encoding="utf-8"))
-        gain_entry = next(
-            b for b in data2["blocks"][0]["params"]["blocks"] if b["id"] == "g_kp"
-        )
+        gain_entry = next(b for b in data2["blocks"][0]["params"]["blocks"] if b["id"] == "g_kp")
         assert gain_entry["params"]["k"] == "$Kp"
         assert data2["blocks"][0]["params"]["mask_values"] == {"Kp": 4.0}
 
@@ -332,11 +323,9 @@ class TestMaskJsonRoundTrip:
                 "dt_base": None,
             },
             "blocks": [
-                {"id": "c", "type": "pyflw.blocks.sources.Constant",
-                 "params": {"value": 1.0}},
+                {"id": "c", "type": "pyflw.blocks.sources.Constant", "params": {"value": 1.0}},
                 sub_spec,
-                {"id": "sc", "type": "pyflw.blocks.sinks.Scope",
-                 "params": {"n_inputs": 1}},
+                {"id": "sc", "type": "pyflw.blocks.sinks.Scope", "params": {"n_inputs": 1}},
             ],
             "connections": [
                 {"src": "c", "src_idx": 0, "dst": "amp", "dst_idx": 0},
@@ -352,9 +341,7 @@ class TestMaskJsonRoundTrip:
         # 1.0 * 3.0 (= mask Kp) = 3.0
         np.testing.assert_allclose(arr, 3.0 * np.ones_like(arr))
 
-    def test_mask_less_subsystem_remains_byte_identical(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mask_less_subsystem_remains_byte_identical(self, tmp_path: Path) -> None:
         """mask_params なしの Subsystem は JSON に mask キーを出さない。"""
         sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
         sub.add(Inport(port_idx=0))

@@ -102,21 +102,15 @@ def build_library_registry(
         if builtin is not None:
             files.append(builtin)
         else:
-            _logger.warning(
-                "library_registry: built-in std.flwlib.json not found in package data"
-            )
+            _logger.warning("library_registry: built-in std.flwlib.json not found in package data")
     files.extend(_expand_paths(library_paths))
 
     for f in files:
         try:
             lib = load_library(f)
         except LibraryFileError as e:
-            _logger.warning(
-                "library_registry: skipping %s (load failed: %s)", f, e
-            )
-            registry.load_errors.append(
-                LibraryLoadError(path=str(f), message=str(e))
-            )
+            _logger.warning("library_registry: skipping %s (load failed: %s)", f, e)
+            registry.load_errors.append(LibraryLoadError(path=str(f), message=str(e)))
             continue
         if lib.name in registry.libraries:
             msg = (

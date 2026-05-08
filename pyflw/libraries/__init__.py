@@ -126,9 +126,7 @@ class Library:
 # ----------------------------------------------------------------------------
 
 
-def validate_library(
-    data: dict[str, Any], *, source_path: Path | None = None
-) -> Library:
+def validate_library(data: dict[str, Any], *, source_path: Path | None = None) -> Library:
     """既に load 済みの dict を検証して :class:`Library` を返す。
 
     実装は :mod:`pyflw.libraries._loader` に閉じ、本関数は public API surface
@@ -158,15 +156,11 @@ def load_library(path: str | Path) -> Library:
     try:
         text = p.read_text(encoding="utf-8")
     except OSError as e:
-        raise LibraryFileError(
-            f"Cannot read library file {str(p)!r}: {e}"
-        ) from e
+        raise LibraryFileError(f"Cannot read library file {str(p)!r}: {e}") from e
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
-        raise LibraryFileError(
-            f"Library file {str(p)!r} is not valid JSON: {e}"
-        ) from e
+        raise LibraryFileError(f"Library file {str(p)!r} is not valid JSON: {e}") from e
     return validate_library(data, source_path=p.resolve())
 
 
@@ -209,13 +203,11 @@ def export_subsystem_to_library(
     em = entry_metadata or {}
     if "id" not in em or not isinstance(em["id"], str) or not em["id"]:
         raise LibraryFileError(
-            "export_subsystem_to_library: entry_metadata must contain a non-empty "
-            "string 'id'"
+            "export_subsystem_to_library: entry_metadata must contain a non-empty string 'id'"
         )
     if "display_name" not in em or not isinstance(em["display_name"], str):
         raise LibraryFileError(
-            "export_subsystem_to_library: entry_metadata must contain a string "
-            "'display_name'"
+            "export_subsystem_to_library: entry_metadata must contain a string 'display_name'"
         )
 
     lib_name: str
@@ -291,9 +283,7 @@ def export_subsystem_to_library(
             encoding="utf-8",
         )
     except OSError as e:
-        raise LibraryFileError(
-            f"Cannot write library file {str(p)!r}: {e}"
-        ) from e
+        raise LibraryFileError(f"Cannot write library file {str(p)!r}: {e}") from e
     _logger.info(
         "exported subsystem to library %s (entry id=%s, total entries=%d)",
         p,

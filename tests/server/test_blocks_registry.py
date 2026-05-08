@@ -74,9 +74,7 @@ class TestListBlocks:
             i18n_name = entry["display_name_i18n"]
             i18n_summary = entry["docstring_summary_i18n"]
             # 3rd-party 拡張は空 dict を許容するが、built-in は両言語が揃う
-            if type_path.startswith("pyflw.blocks.") or type_path.startswith(
-                "pyflw.subsystems."
-            ):
+            if type_path.startswith("pyflw.blocks.") or type_path.startswith("pyflw.subsystems."):
                 assert "en" in i18n_name and "ja" in i18n_name, (
                     f"{type_path}: missing locale in display_name_i18n {i18n_name}"
                 )
@@ -103,8 +101,7 @@ class TestListBlocks:
         """ADR-0028: Constant の ja 翻訳が "定数" になっている。"""
         resp = client.get("/api/v1/blocks")
         c = next(
-            b for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.sources.Constant"
+            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sources.Constant"
         )
         assert c["display_name_i18n"]["ja"] == "定数"
         assert c["docstring_summary_i18n"]["ja"].startswith("定数値ソース")
@@ -112,8 +109,7 @@ class TestListBlocks:
     def test_gain_entry_specifics(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
         gain = next(
-            b for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.mathops.Gain"
+            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.mathops.Gain"
         )
         assert gain["category"] == "mathops"
         assert gain["display_name"] == "Gain"
@@ -124,18 +120,14 @@ class TestListBlocks:
 
     def test_mux_is_sm_b_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
-        mux = next(
-            b for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.routing.Mux"
-        )
+        mux = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.routing.Mux")
         assert "sm_b" in mux["tags"]
         assert mux["category"] == "routing"
 
     def test_constant_is_source_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
         c = next(
-            b for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.sources.Constant"
+            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sources.Constant"
         )
         assert "source" in c["tags"]
         assert c["category"] == "sources"
@@ -144,10 +136,7 @@ class TestListBlocks:
 
     def test_scope_is_sink_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
-        sc = next(
-            b for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.sinks.Scope"
-        )
+        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sinks.Scope")
         assert "sink" in sc["tags"]
         assert sc["category"] == "sinks"
 

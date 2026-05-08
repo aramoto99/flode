@@ -35,9 +35,7 @@ CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v1"
 SUPPORTED_LIBRARY_SCHEMA_VERSIONS: tuple[str, ...] = (CURRENT_LIBRARY_SCHEMA_VERSION,)
 
 # Phase 4 では空。Phase 5+ で v2 を導入したとき (from, to) -> migrate fn を登録する。
-_LIBRARY_MIGRATIONS: dict[
-    tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]
-] = {}
+_LIBRARY_MIGRATIONS: dict[tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]] = {}
 
 
 # ----------------------------------------------------------------------------
@@ -51,13 +49,9 @@ def _require(data: dict[str, Any], key: str, type_: type | tuple[type, ...]) -> 
     value = data[key]
     if not isinstance(value, type_):
         type_label = (
-            type_.__name__
-            if isinstance(type_, type)
-            else " | ".join(t.__name__ for t in type_)
+            type_.__name__ if isinstance(type_, type) else " | ".join(t.__name__ for t in type_)
         )
-        raise LibraryFileError(
-            f"Key {key!r} must be {type_label}, got {type(value).__name__}"
-        )
+        raise LibraryFileError(f"Key {key!r} must be {type_label}, got {type(value).__name__}")
     return value
 
 
@@ -69,13 +63,9 @@ def _optional(
     value = data[key]
     if not isinstance(value, type_):
         type_label = (
-            type_.__name__
-            if isinstance(type_, type)
-            else " | ".join(t.__name__ for t in type_)
+            type_.__name__ if isinstance(type_, type) else " | ".join(t.__name__ for t in type_)
         )
-        raise LibraryFileError(
-            f"Key {key!r} must be {type_label}, got {type(value).__name__}"
-        )
+        raise LibraryFileError(f"Key {key!r} must be {type_label}, got {type(value).__name__}")
     return value
 
 
@@ -93,9 +83,7 @@ def _validate_i18n_dict(value: Any, path: str) -> dict[str, str]:
         if not isinstance(k, str):
             raise LibraryFileError(f"{path!r} keys must be str, got {type(k).__name__}")
         if not isinstance(v, str):
-            raise LibraryFileError(
-                f"{path!r}[{k!r}] must be str, got {type(v).__name__}"
-            )
+            raise LibraryFileError(f"{path!r}[{k!r}] must be str, got {type(v).__name__}")
         out[k] = v
     return out
 
@@ -110,14 +98,10 @@ def _ensure_schema_version(data: dict[str, Any]) -> dict[str, Any]:
     古ければ migration ループを通る)。
     """
     if "schema_version" not in data:
-        raise LibraryFileError(
-            "Missing required key 'schema_version' in .flwlib.json"
-        )
+        raise LibraryFileError("Missing required key 'schema_version' in .flwlib.json")
     version = data["schema_version"]
     if not isinstance(version, str):
-        raise LibraryFileError(
-            f"schema_version must be a string, got {type(version).__name__}"
-        )
+        raise LibraryFileError(f"schema_version must be a string, got {type(version).__name__}")
     if version == CURRENT_LIBRARY_SCHEMA_VERSION:
         return data
     # NOTE: ``SUPPORTED_LIBRARY_SCHEMA_VERSIONS in version`` で早期 return しない
@@ -126,9 +110,7 @@ def _ensure_schema_version(data: dict[str, Any]) -> dict[str, Any]:
     cur = version
     visited: set[str] = {cur}
     while cur != CURRENT_LIBRARY_SCHEMA_VERSION:
-        next_step = next(
-            (to for (frm, to) in _LIBRARY_MIGRATIONS if frm == cur), None
-        )
+        next_step = next((to for (frm, to) in _LIBRARY_MIGRATIONS if frm == cur), None)
         if next_step is None:
             raise LibraryFileError(
                 f"Unsupported library schema_version {version!r}. "
@@ -137,9 +119,7 @@ def _ensure_schema_version(data: dict[str, Any]) -> dict[str, Any]:
                 f"No migration registered from {cur!r}."
             )
         if next_step in visited:
-            raise LibraryFileError(
-                f"Library migration cycle detected at {next_step!r}; aborting"
-            )
+            raise LibraryFileError(f"Library migration cycle detected at {next_step!r}; aborting")
         data = _LIBRARY_MIGRATIONS[(cur, next_step)](data)
         visited.add(next_step)
         cur = next_step
@@ -151,9 +131,7 @@ def _ensure_schema_version(data: dict[str, Any]) -> dict[str, Any]:
 # ----------------------------------------------------------------------------
 
 
-def _validate_entry(
-    raw: Any, *, library_name: str, index: int
-) -> LibraryEntry:
+def _validate_entry(raw: Any, *, library_name: str, index: int) -> LibraryEntry:
     """``entries[i]`` の dict を ``LibraryEntry`` に検証 + 変換する (内部)。"""
     # Library / LibraryEntry は ``pyflw.libraries.__init__`` 側に存在 (= public API)。
     # 循環 import を避けるため遅延 import する。
@@ -161,9 +139,7 @@ def _validate_entry(
 
     where = f"library {library_name!r} entry #{index}"
     if not isinstance(raw, dict):
-        raise LibraryFileError(
-            f"{where}: entry must be a dict, got {type(raw).__name__}"
-        )
+        raise LibraryFileError(f"{where}: entry must be a dict, got {type(raw).__name__}")
     entry_id = _require(raw, "id", str)
     display_name = _require(raw, "display_name", str)
     description = _optional(raw, "description", str, default="")
@@ -200,9 +176,7 @@ def _validate_entry(
     )
 
 
-def validate_library_dict(
-    data: dict[str, Any], *, source_path: Path | None = None
-) -> Library:
+def validate_library_dict(data: dict[str, Any], *, source_path: Path | None = None) -> Library:
     """既に load 済みの dict を schema 検証して :class:`pyflw.Library` を返す。
 
     本関数が ``pyflw.libraries.__init__`` から呼ばれる唯一の public entry point。
@@ -219,9 +193,7 @@ def validate_library_dict(
     from . import Library  # 循環 import 回避の遅延 import
 
     if not isinstance(data, dict):
-        raise LibraryFileError(
-            f"Library data must be a dict, got {type(data).__name__}"
-        )
+        raise LibraryFileError(f"Library data must be a dict, got {type(data).__name__}")
     data = _ensure_schema_version(data)
     name = _require(data, "name", str)
     if not name:
@@ -235,9 +207,7 @@ def validate_library_dict(
     for idx, raw in enumerate(raw_entries):
         entry = _validate_entry(raw, library_name=name, index=idx)
         if entry.id in seen_ids:
-            raise LibraryFileError(
-                f"Library {name!r}: duplicate entry id {entry.id!r}"
-            )
+            raise LibraryFileError(f"Library {name!r}: duplicate entry id {entry.id!r}")
         seen_ids.add(entry.id)
         entries.append(entry)
     return Library(

@@ -41,9 +41,7 @@ def build_pi_loop(Kp: float = 2.0, Ki: float = 0.5) -> Simulator:
     integ = sim.add(Integrator(id="integ"))
     ki = sim.add(Gain(k=Ki, id="ki"))
     u_sum = sim.add(Sum(signs="++", id="u_sum"))
-    plant = sim.add(
-        TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="plant")
-    )
+    plant = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="plant"))
     sc = sim.add(Scope(id="sc"))
 
     sim.connect(err, kp, dst_idx=0)

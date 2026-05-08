@@ -30,9 +30,7 @@ def _registry(request: Request) -> list[BlockMetadata]:
         request.app.state.block_registry = reg
     # ``-O`` モード対策で assert を使わない実行時 check (ADR-0019 code-reviewer MUST)。
     if not isinstance(reg, list):
-        raise HTTPException(
-            status_code=500, detail="block_registry state is corrupted"
-        )
+        raise HTTPException(status_code=500, detail="block_registry state is corrupted")
     return reg
 
 
@@ -52,9 +50,7 @@ def list_blocks(request: Request) -> dict[str, Any]:
     from ..registry_translations import SUPPORTED_LOCALES
 
     return {
-        "blocks": [
-            metadata_to_dict(m, include_full_docstring=False) for m in _registry(request)
-        ],
+        "blocks": [metadata_to_dict(m, include_full_docstring=False) for m in _registry(request)],
         "schema_version": "blocks.v2",
         "supported_locales": list(SUPPORTED_LOCALES),
     }
@@ -97,13 +93,9 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
     type_path = body.get("type_path")
     params = body.get("params", {})
     if not isinstance(type_path, str) or not type_path:
-        raise HTTPException(
-            status_code=400, detail="`type_path` (string) is required in body"
-        )
+        raise HTTPException(status_code=400, detail="`type_path` (string) is required in body")
     if not isinstance(params, dict):
-        raise HTTPException(
-            status_code=400, detail="`params` must be a JSON object"
-        )
+        raise HTTPException(status_code=400, detail="`params` must be a JSON object")
     try:
         resolved = resolve_port_shapes(type_path, params)
     except UnknownBlockTypeError as e:

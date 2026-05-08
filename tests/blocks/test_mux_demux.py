@@ -61,9 +61,7 @@ class TestDemuxStandalone:
 
     def test_demux_n5_split_in_order(self) -> None:
         d = Demux(n=5)
-        ys = d.output_v(
-            0.0, np.zeros(0), (np.array([0.0, 1.0, 2.0, 3.0, 4.0]),)
-        )
+        ys = d.output_v(0.0, np.zeros(0), (np.array([0.0, 1.0, 2.0, 3.0, 4.0]),))
         for i, yi in enumerate(ys):
             np.testing.assert_allclose(yi, float(i))
 

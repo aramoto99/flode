@@ -93,7 +93,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "周期と Duty 比を指定できる矩形パルス信号。",
         },
     },
-
     # ----- mathops (8) ---------------------------------------------------
     "pyflw.blocks.mathops.Gain": {
         "en": {
@@ -175,7 +174,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "ポートごとに * または / を指定して入力を乗除算。",
         },
     },
-
     # ----- continuous (5) -------------------------------------------------
     "pyflw.blocks.continuous.Integrator": {
         "en": {
@@ -227,7 +225,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "MIMO 連続伝達関数 H(s) = N(s) / d(s) (共通分母)。",
         },
     },
-
     # ----- discrete (6) ---------------------------------------------------
     "pyflw.blocks.discrete.UnitDelay": {
         "en": {
@@ -289,7 +286,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "SISO 離散伝達関数 H(z) = num(z) / den(z)。",
         },
     },
-
     # ----- logic (2) ------------------------------------------------------
     "pyflw.blocks.logic.RelationalOperator": {
         "en": {
@@ -311,7 +307,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "n 入力に対する AND / OR / XOR / NAND / NOR / XNOR / NOT 論理演算。",
         },
     },
-
     # ----- routing (3) ----------------------------------------------------
     "pyflw.blocks.routing.Switch": {
         "en": {
@@ -343,7 +338,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "1 本の (n,) ベクトル入力を n 個のスカラー出力に分割。",
         },
     },
-
     # ----- sinks (4) ------------------------------------------------------
     "pyflw.blocks.sinks.Scope": {
         "en": {
@@ -385,7 +379,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力信号を破棄 (未接続出力の警告を抑制)。",
         },
     },
-
     # ----- subsystems (3) -------------------------------------------------
     "pyflw.subsystems.subsystem.Subsystem": {
         "en": {

@@ -303,9 +303,7 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
     sig = inspect.signature(cls)
     type_path = block_type_path(cls)
     factory_args: dict[str, Any] = (
-        getattr(cls, "_default_factory_args", None)
-        or _BUILTIN_DEFAULT_ARGS.get(type_path)
-        or {}
+        getattr(cls, "_default_factory_args", None) or _BUILTIN_DEFAULT_ARGS.get(type_path) or {}
     )
     out: list[ParamSpec] = []
     for name, param in sig.parameters.items():
@@ -393,9 +391,7 @@ def _derive_tags(blk: Block | None) -> list[str]:
     tags: list[str] = []
     if blk is None:
         return ["unknown"]
-    sm_b = any(s != () for s in blk.port_shapes_in) or any(
-        s != () for s in blk.port_shapes_out
-    )
+    sm_b = any(s != () for s in blk.port_shapes_in) or any(s != () for s in blk.port_shapes_out)
     tags.append("sm_b" if sm_b else "sm_a")
     if blk.n_states > 0:
         tags.append("stateful")
@@ -410,20 +406,14 @@ def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str, str]:
     """class attribute → built-in テーブル → default の順でメタを解決する。"""
     type_path = block_type_path(cls)
     fallback = _BUILTIN_METADATA.get(type_path)
-    category = (
-        getattr(cls, "_block_category", None)
-        or (fallback[0] if fallback else "uncategorized")
+    category = getattr(cls, "_block_category", None) or (
+        fallback[0] if fallback else "uncategorized"
     )
-    display_name = (
-        getattr(cls, "_block_display_name", None)
-        or (fallback[1] if fallback else cls.__name__)
+    display_name = getattr(cls, "_block_display_name", None) or (
+        fallback[1] if fallback else cls.__name__
     )
-    icon = (
-        getattr(cls, "_block_icon", None) or (fallback[2] if fallback else "default")
-    )
-    color = (
-        getattr(cls, "_block_color", None) or (fallback[3] if fallback else "#94a3b8")
-    )
+    icon = getattr(cls, "_block_icon", None) or (fallback[2] if fallback else "default")
+    color = getattr(cls, "_block_color", None) or (fallback[3] if fallback else "#94a3b8")
     return category, display_name, icon, color
 
 
@@ -480,12 +470,8 @@ def build_metadata(cls: type) -> BlockMetadata:
         params_spec=_build_params_spec(cls),
         default_n_inputs=blk.n_inputs if blk else 0,
         default_n_outputs=blk.n_outputs if blk else 0,
-        port_shapes_in_default=(
-            [list(s) for s in blk.port_shapes_in] if blk else []
-        ),
-        port_shapes_out_default=(
-            [list(s) for s in blk.port_shapes_out] if blk else []
-        ),
+        port_shapes_in_default=([list(s) for s in blk.port_shapes_in] if blk else []),
+        port_shapes_out_default=([list(s) for s in blk.port_shapes_out] if blk else []),
         tags=tags,
         is_container=is_container,
         mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
@@ -506,9 +492,7 @@ def _walk_block_classes() -> list[type]:
         try:
             root = importlib.import_module(root_name)
         except ImportError as e:
-            _logger.warning(
-                "registry: cannot import root module %r for walk: %s", root_name, e
-            )
+            _logger.warning("registry: cannot import root module %r for walk: %s", root_name, e)
             continue
         if not hasattr(root, "__path__"):
             # 単一ファイル module → そのまま class 列挙
@@ -522,9 +506,7 @@ def _walk_block_classes() -> list[type]:
             try:
                 mod = importlib.import_module(mod_name)
             except Exception as e:  # noqa: BLE001
-                _logger.warning(
-                    "registry: skipping module %r (import failed: %s)", mod_name, e
-                )
+                _logger.warning("registry: skipping module %r (import failed: %s)", mod_name, e)
                 continue
             for _name, obj in inspect.getmembers(mod, inspect.isclass):
                 if (
@@ -546,15 +528,15 @@ def build_block_registry() -> list[BlockMetadata]:
         try:
             registry.append(build_metadata(cls))
         except Exception as e:  # noqa: BLE001
-            _logger.warning(
-                "registry: skipping %r (metadata build failed: %s)", cls.__name__, e
-            )
+            _logger.warning("registry: skipping %r (metadata build failed: %s)", cls.__name__, e)
     # canonical 順 = type_path 昇順 (= 起動 ↔ テストの安定性)
     registry.sort(key=lambda m: m.type_path)
     return registry
 
 
-def metadata_to_dict(meta: BlockMetadata, *, include_full_docstring: bool = False) -> dict[str, Any]:
+def metadata_to_dict(
+    meta: BlockMetadata, *, include_full_docstring: bool = False
+) -> dict[str, Any]:
     """``BlockMetadata`` を JSON-serializable dict に変換する (ADR-0019、ADR-0028)。"""
     out: dict[str, Any] = {
         "type_path": meta.type_path,
@@ -623,9 +605,7 @@ def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortS
     try:
         instance = cls(**params)
     except (TypeError, ValueError, BlockSpecError) as e:
-        raise BlockSpecError(
-            f"Cannot instantiate {type_path!r} with params {params!r}: {e}"
-        ) from e
+        raise BlockSpecError(f"Cannot instantiate {type_path!r} with params {params!r}: {e}") from e
     return ResolvedPortShapes(
         n_inputs=instance.n_inputs,
         n_outputs=instance.n_outputs,

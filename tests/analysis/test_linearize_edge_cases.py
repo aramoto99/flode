@@ -180,9 +180,7 @@ class TestEpsilonPrecisionGradient:
         sim = self._make_sim()
         for eps in [1e-2, 1e-6]:
             ls = linearize(sim, x=np.array([1.0]), epsilon=eps)
-            np.testing.assert_allclose(
-                ls.C, [[1.0]], rtol=1e-3, err_msg=f"eps={eps}"
-            )
+            np.testing.assert_allclose(ls.C, [[1.0]], rtol=1e-3, err_msg=f"eps={eps}")
 
     def test_epsilon_1e14_degrades_accuracy(self) -> None:
         """epsilon=1e-14 (桁落ち域) は最適 epsilon より精度が落ちる。"""
@@ -213,9 +211,7 @@ class TestCentralVsForwardNonlinear:
         from pyflw import block
 
         @block(states=1)  # type: ignore[untyped-decorator]
-        def cubic_integrator(
-            t: float, x: np.ndarray, u: float
-        ) -> tuple[float, np.ndarray]:
+        def cubic_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]:
             """y = x, xdot = u^3 (cubic nonlinearity)."""
             return float(x[0]), np.array([u**3])
 

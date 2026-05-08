@@ -39,9 +39,7 @@ class TestPIDControl:
         integ = sim.add(Integrator(id="integ"))
         ki = sim.add(Gain(k=Ki, id="ki"))
         u_sum = sim.add(Sum(signs="++", id="u_sum"))
-        plant = sim.add(
-            TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="plant")
-        )
+        plant = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="plant"))
         sc = sim.add(Scope(id="sc"))
 
         # err の入力 0 = r (未結線、外部入力)、入力 1 = y (フィードバック)
@@ -74,9 +72,7 @@ class TestStateNamesOrdering:
         sim = Simulator(t_end=1.0, dt=0.01)
         # 登録順: Integrator → TransferFunction
         i1 = sim.add(Integrator(id="i1"))
-        tf = sim.add(
-            TransferFunction(numerator=[1.0], denominator=[1.0, 2.0, 1.0], id="tf2")
-        )
+        tf = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 2.0, 1.0], id="tf2"))
         i2 = sim.add(Integrator(id="i2"))
         # 結線: i1 → tf → i2 → Scope
         sim.connect(i1, tf)

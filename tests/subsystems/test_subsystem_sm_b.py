@@ -176,9 +176,7 @@ class TestSubsystemSmBRoundTrip:
         assert "port_shapes_in" not in sub_entry["params"]
         assert "port_shapes_out" not in sub_entry["params"]
 
-    def test_sm_b_subsystem_json_roundtrip_preserves_port_shapes(
-        self, tmp_path: object
-    ) -> None:
+    def test_sm_b_subsystem_json_roundtrip_preserves_port_shapes(self, tmp_path: object) -> None:
         """SM-B Subsystem を save→load すると外側 ``port_shapes_in/out`` が復元される
         (ADR-0018 §(5) MUST 修正、code-reviewer 検出回帰防止)。
 
@@ -238,6 +236,7 @@ class TestSubsystemSmBRunRejected:
         c1 = sim.add(Constant(value=2.0, id="c1"))
         c2 = sim.add(Constant(value=3.0, id="c2"))
         from pyflw.blocks import Mux
+
         m = sim.add(Mux(n=3, id="m"))
         sub = Subsystem(
             n_inputs=1,
@@ -285,9 +284,7 @@ class TestInportOutportPortShapeJsonRoundTrip:
         d = op.to_dict()
         assert "port_shape" not in d["params"]
 
-    def test_inport_vector_port_shape_restored_after_save_load(
-        self, tmp_path: object
-    ) -> None:
+    def test_inport_vector_port_shape_restored_after_save_load(self, tmp_path: object) -> None:
         """Inport(port_shape=(3,)) を save → load すると port_shape=(3,) で復元される。
 
         注意: Subsystem 内部の Inport は Subsystem.to_dict / _from_dict 経由で

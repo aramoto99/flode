@@ -26,9 +26,7 @@ if TYPE_CHECKING:  # pragma: no cover - optional matplotlib type
     from matplotlib.axes import Axes
 
 
-_PYFLW_CONTROL_HINT = (
-    "Install via `pip install pyflw[control]` or `pip install python-control`."
-)
+_PYFLW_CONTROL_HINT = "Install via `pip install pyflw[control]` or `pip install python-control`."
 
 
 def _import_control() -> Any:
@@ -37,8 +35,7 @@ def _import_control() -> Any:
         import control as _control
     except ImportError as e:
         raise ImportError(
-            f"This function requires the optional `python-control` package. "
-            f"{_PYFLW_CONTROL_HINT}"
+            f"This function requires the optional `python-control` package. {_PYFLW_CONTROL_HINT}"
         ) from e
     return _control
 
