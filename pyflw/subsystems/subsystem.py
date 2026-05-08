@@ -20,6 +20,7 @@ from collections import defaultdict, deque
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..core.persistence import LayoutDict, normalize_layout
@@ -527,8 +528,8 @@ class Subsystem(Block):
     # ---------- Block 契約の実装 (内部ランタイム委譲) ----------
 
     def _step_inner(
-        self, t: float, x: np.ndarray, u_external: np.ndarray
-    ) -> tuple[dict[Block, np.ndarray], dict[Block, np.ndarray]]:
+        self, t: float, x: npt.NDArray[Any], u_external: npt.NDArray[Any]
+    ) -> tuple[dict[Block, npt.NDArray[Any]], dict[Block, npt.NDArray[Any]]]:
         """内部の 2 パス出力計算 (``Simulator._step`` の縮小版)。
 
         外部 ``u_external[port_idx]`` を Inport の ``_external_value`` に注入してから
@@ -543,10 +544,10 @@ class Subsystem(Block):
         # 内部状態を slice ごとに取り出す
         cont_state = {b: x[sl] for b, sl in self._state_slices}
 
-        outputs: dict[Block, np.ndarray] = {}
-        inputs: dict[Block, np.ndarray] = {}
+        outputs: dict[Block, npt.NDArray[Any]] = {}
+        inputs: dict[Block, npt.NDArray[Any]] = {}
 
-        def state_for(b: Block) -> np.ndarray:
+        def state_for(b: Block) -> npt.NDArray[Any]:
             return cont_state.get(b, np.zeros(0))
 
         assert self._exec_order is not None
@@ -573,7 +574,7 @@ class Subsystem(Block):
                 inputs[b] = u
         return outputs, inputs
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         outputs, _inputs = self._step_inner(t, x, u)
         # Outport ごとに集める
@@ -586,7 +587,7 @@ class Subsystem(Block):
                 y[port_idx] = outputs[sb][si]
         return y
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         if self.n_states == 0:
             return np.zeros(0)
@@ -599,12 +600,12 @@ class Subsystem(Block):
             )
         return xdot
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         if self.n_states == 0:
             return np.asarray(x, dtype=float)
         _outputs, inputs = self._step_inner(t, x, u)
-        x_next: np.ndarray = np.array(x, dtype=float, copy=True)
+        x_next: npt.NDArray[Any] = np.array(x, dtype=float, copy=True)
         for b, sl in self._discrete_slices:
             x_next[sl] = np.asarray(
                 b.update(t, x[sl], inputs.get(b, np.zeros(b.n_inputs))),

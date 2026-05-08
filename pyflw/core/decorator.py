@@ -27,6 +27,7 @@ import numbers
 from typing import Any, get_args, get_origin, get_type_hints
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .block import Block
@@ -302,9 +303,12 @@ def _infer_count_from_hint(
                 f"{arg_name!r} of {func_name!r}. Use @block({role}=N) instead."
             )
         return len(args), "tuple"
+    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` (= ``np.ndarray[Any, np.dtype[Any]]``
+    # generic alias) の両方を「サイズ不明な ndarray」として拒否する。後者は
+    # ``get_origin`` が ``np.ndarray`` を返す。
     if hint is np.ndarray or origin is np.ndarray:
         raise BlockSpecError(
-            f"@block: np.ndarray annotation for {arg_name!r} of {func_name!r} "
+            f"@block: bare ndarray annotation for {arg_name!r} of {func_name!r} "
             f"cannot be inferred (size unknown). Use @block({role}=N) to "
             f"specify."
         )
@@ -316,7 +320,7 @@ def _infer_count_from_hint(
 
 
 def _split_state_return(return_hint: Any, func_name: str) -> Any:
-    """状態あり関数の戻り値 ``tuple[<output>, np.ndarray]`` から output 部分を返す。
+    """状態あり関数の戻り値 ``tuple[<output>, npt.NDArray[Any]]`` から output 部分を返す。
 
     return_hint が ``None`` (未注釈) の場合は ``None`` を返し、後段の
     ``_resolve_output_count`` で warning が出る。
@@ -327,7 +331,7 @@ def _split_state_return(return_hint: Any, func_name: str) -> Any:
     if origin is not tuple:
         raise BlockSpecError(
             f"@block(states>0): return annotation of {func_name!r} must be "
-            f"`tuple[<output>, np.ndarray]`, got {return_hint!r}"
+            f"`tuple[<output>, npt.NDArray[Any]]`, got {return_hint!r}"
         )
     args = get_args(return_hint)
     if len(args) != 2:
@@ -335,11 +339,15 @@ def _split_state_return(return_hint: Any, func_name: str) -> Any:
             f"@block(states>0): return tuple of {func_name!r} must have exactly "
             f"2 elements (output, x_dot/x_next), got {len(args)}"
         )
-    if args[1] is not np.ndarray:
+    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` (= generic alias) の両方を
+    # 受け入れる。後者の場合 ``get_origin`` が ``np.ndarray`` を返す。
+    second_arg = args[1]
+    second_origin = get_origin(second_arg) or second_arg
+    if second_origin is not np.ndarray:
         raise BlockSpecError(
             f"@block(states>0): second element of return tuple of {func_name!r} "
-            f"must be `np.ndarray` (the x_dot or x_next vector), got {args[1]!r}. "
-            f"Example: tuple[float, np.ndarray]"
+            f"must be `np.ndarray` or `npt.NDArray[Any]` (the x_dot or x_next vector), "
+            f"got {args[1]!r}. Example: tuple[float, npt.NDArray[Any]]"
         )
     return args[0]
 
@@ -419,7 +427,9 @@ def _make_block_class(
         if has_state and _RESERVED_X0 in bound:
             self.x0 = _coerce_x0(cls_name, bound[_RESERVED_X0], n_states)
 
-    def _call_inner(t: float, x: np.ndarray, u: np.ndarray, params: dict[str, Any]) -> Any:
+    def _call_inner(
+        t: float, x: npt.NDArray[Any], u: npt.NDArray[Any], params: dict[str, Any]
+    ) -> Any:
         call_args: list[Any] = [float(t)]
         if has_state:
             call_args.append(x)
@@ -427,7 +437,7 @@ def _make_block_class(
             call_args.append(_pack_u_for_func(u, u_arg_kind, n_inputs))
         return func(*call_args, **params)
 
-    def output(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         result = _call_inner(t, x, u, self._params)
         if has_state:
             y_raw, _ = _split_state_result(result, cls_name)
@@ -435,7 +445,9 @@ def _make_block_class(
             y_raw = result
         return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
 
-    def derivative(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(
+        self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
         if not has_state:
             return np.zeros(0)
         # Simulator は連続ブロック (resolved_sample_time is None) のみ derivative
@@ -446,7 +458,7 @@ def _make_block_class(
         _, x_change = _split_state_result(result, cls_name)
         return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
 
-    def update(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         if not has_state:
             return x
         if not _effective_is_discrete(self):
@@ -500,7 +512,7 @@ def _validate_param_type(cls_name: str, pname: str, value: Any, ptype: Any) -> N
                 f"{cls_name}: parameter {pname!r} must be str, got {type(value).__name__}"
             )
         return
-    # その他の型 (np.ndarray, list, ユーザー定義 class 等) は素朴に isinstance
+    # その他の型 (npt.NDArray[Any], list, ユーザー定義 class 等) は素朴に isinstance
     # 試行。typing 形 (tuple[...] 等) で isinstance できない場合は skip し、
     # ランタイムでの型違反は実装側の責任とする (Phase 1 ではこれで割り切る)。
     try:
@@ -512,16 +524,16 @@ def _validate_param_type(cls_name: str, pname: str, value: Any, ptype: Any) -> N
         return
 
 
-def _coerce_x0(cls_name: str, x0_value: Any, n_states: int) -> np.ndarray:
+def _coerce_x0(cls_name: str, x0_value: Any, n_states: int) -> npt.NDArray[Any]:
     if n_states == 1 and isinstance(x0_value, numbers.Real) and not isinstance(x0_value, bool):
         return np.array([float(x0_value)])
-    arr: np.ndarray = np.atleast_1d(np.asarray(x0_value, dtype=float))
+    arr: npt.NDArray[Any] = np.atleast_1d(np.asarray(x0_value, dtype=float))
     if arr.shape != (n_states,):
         raise BlockSpecError(f"{cls_name}: x0 has shape {arr.shape}, expected ({n_states},)")
     return arr
 
 
-def _pack_u_for_func(u: np.ndarray, kind: str, n_inputs: int) -> Any:
+def _pack_u_for_func(u: npt.NDArray[Any], kind: str, n_inputs: int) -> Any:
     if kind == "scalar":
         return float(u[0])
     if kind == "tuple":
@@ -538,7 +550,7 @@ def _split_state_result(result: Any, cls_name: str) -> tuple[Any, Any]:
     return result[0], result[1]
 
 
-def _pack_y(y_raw: Any, kind: str, n_outputs: int, cls_name: str) -> np.ndarray:
+def _pack_y(y_raw: Any, kind: str, n_outputs: int, cls_name: str) -> npt.NDArray[Any]:
     if kind == "tuple":
         if not isinstance(y_raw, tuple):
             raise BlockSpecError(
@@ -555,8 +567,10 @@ def _pack_y(y_raw: Any, kind: str, n_outputs: int, cls_name: str) -> np.ndarray:
     return arr
 
 
-def _coerce_state_change(value: Any, n_states: int, cls_name: str, *, role: str) -> np.ndarray:
-    arr: np.ndarray = np.atleast_1d(np.asarray(value, dtype=float))
+def _coerce_state_change(
+    value: Any, n_states: int, cls_name: str, *, role: str
+) -> npt.NDArray[Any]:
+    arr: npt.NDArray[Any] = np.atleast_1d(np.asarray(value, dtype=float))
     if arr.shape != (n_states,):
         raise BlockSpecError(
             f"{cls_name}: {role} shape {arr.shape} does not match expected ({n_states},)"
@@ -814,7 +828,9 @@ def _make_block_class_from_class(
             return resolved is not None and resolved > 0.0
         return static_is_discrete
 
-    def _pack_method_args(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> list[Any]:
+    def _pack_method_args(
+        self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> list[Any]:
         call_args: list[Any] = [self, float(t)]
         if has_state:
             call_args.append(x)
@@ -861,12 +877,14 @@ def _make_block_class_from_class(
         if has_state and _RESERVED_X0 in bound:
             self.x0 = _coerce_x0(cls_name, bound[_RESERVED_X0], n_states)
 
-    def output(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         args = _pack_method_args(self, t, x, u)
         y_raw = user_output(*args)
         return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
 
-    def derivative(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(
+        self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
         if not has_state:
             return np.zeros(0)
         if _effective_is_discrete(self):
@@ -880,7 +898,7 @@ def _make_block_class_from_class(
         x_change = user_derivative(*args)
         return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
 
-    def update(self: Block, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         if not has_state:
             return x
         if not _effective_is_discrete(self):

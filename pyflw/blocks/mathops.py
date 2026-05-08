@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -24,7 +27,7 @@ class Gain(Block):
         self.k = float(k)
         self._params = {"k": self.k}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.k * u[0]])
 
 
@@ -48,7 +51,7 @@ class Sum(Block):
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
         self._params = {"signs": signs}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([float(np.dot(self.signs, u))])
 
 
@@ -69,7 +72,7 @@ class Product(Block):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
         self._params = {"n_inputs": int(n_inputs)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([float(np.prod(u))])
 
 
@@ -96,7 +99,7 @@ class Saturation(Block):
         self.upper = float(upper)
         self._params = {"lower": self.lower, "upper": self.upper}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([float(np.clip(u[0], self.lower, self.upper))])
 
 
@@ -112,7 +115,7 @@ class Abs(Block):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self._params = {}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([abs(float(u[0]))])
 
 
@@ -128,7 +131,7 @@ class Sign(Block):
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self._params = {}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         v = float(u[0])
         return np.array([1.0 if v > 0.0 else (-1.0 if v < 0.0 else 0.0)])
 
@@ -161,7 +164,7 @@ class MinMax(Block):
         self.operator = operator
         self._params = {"operator": operator, "n_inputs": int(n_inputs)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         v = float(np.min(u)) if self.operator == "min" else float(np.max(u))
         return np.array([v])
 
@@ -197,7 +200,7 @@ class Divide(Block):
         self.signs = signs
         self._params = {"signs": signs}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # 先頭が "/" のときは "1 / u[0]" (= 逆数) を起点として後続の乗除を続ける。
         result = float(u[0]) if self.signs[0] == "*" else 1.0 / float(u[0])
         for s, val in zip(self.signs[1:], u[1:], strict=True):

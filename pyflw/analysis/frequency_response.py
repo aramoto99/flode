@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .linearize import LinearSystem
@@ -66,14 +67,14 @@ class BodeResponse:
         ndarray 含む dataclass の ``__eq__`` は truth-ambiguous になるため eq 無効。
     """
 
-    magnitude: np.ndarray
-    phase: np.ndarray
-    omega: np.ndarray
+    magnitude: npt.NDArray[Any]
+    phase: npt.NDArray[Any]
+    omega: npt.NDArray[Any]
     is_hz: bool
     input_names: list[str]
     output_names: list[str]
 
-    def magnitude_db(self) -> np.ndarray:
+    def magnitude_db(self) -> npt.NDArray[Any]:
         """振幅を dB に変換するヘルパ (``20 * log10(abs(magnitude))``)。
 
         Returns:
@@ -176,8 +177,8 @@ class NyquistResponse:
         input_names / output_names: ``LinearSystem`` ラベル継承。
     """
 
-    response: np.ndarray
-    omega: np.ndarray
+    response: npt.NDArray[Any]
+    omega: npt.NDArray[Any]
     input_names: list[str]
     output_names: list[str]
 
@@ -242,7 +243,7 @@ def _validate_linear_system(ls: LinearSystem) -> None:
 def bode(
     ls: LinearSystem,
     *,
-    omega: np.ndarray | None = None,
+    omega: npt.NDArray[Any] | None = None,
     omega_limits: tuple[float, float] | None = None,
     omega_num: int | None = None,
     Hz: bool = False,
@@ -303,7 +304,7 @@ def bode(
 def nyquist(
     ls: LinearSystem,
     *,
-    omega: np.ndarray | None = None,
+    omega: npt.NDArray[Any] | None = None,
     omega_limits: tuple[float, float] | None = None,
     omega_num: int | None = None,
 ) -> NyquistResponse:

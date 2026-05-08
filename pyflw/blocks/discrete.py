@@ -24,8 +24,10 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import scipy.signal
 
 from ..core.block import Block
@@ -80,10 +82,10 @@ class UnitDelay(Block):
         # JSON serialize 時は scalar の ``x0`` を保持 (ADR-0015 §(4))。
         self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # state[0] ← 前回の state[1] (前サンプルで保存した値が現サンプルで visible)
         # state[1] ← u(t_k) (次サンプルで output される値)
         return np.array([x[1], u[0]])
@@ -133,10 +135,10 @@ class DiscreteIntegrator(Block):
             "x0": float(x0),
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ステップ幅は **解決後の sample_time** を使う (継承時の動的解決に対応)。
         # Simulator 経由なら ``_resolve_sample_times`` で必ず確定する。直接呼びだ
         # された場合や未登録の状態では `BlockSpecError` で明示する (silent zero-step
@@ -206,7 +208,7 @@ class ZeroOrderHoldDirect(Block):
         self.x0 = np.array([float(x0)])
         self._params = {"sample_time": float(sample_time), "x0": float(x0)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         ts = self._resolved_sample_time
         if ts is None or ts <= 0.0:
             # サンプル時間未解決時は素朴 fallback (継承未解決などの境界条件)。
@@ -228,7 +230,7 @@ class ZeroOrderHoldDirect(Block):
         # 中間時刻: 前回サンプル値を保持
         return np.array([x[0]])
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([u[0]])
 
 
@@ -256,11 +258,11 @@ class DiscreteStateSpace(Block):
 
     def __init__(
         self,
-        A: np.ndarray,
-        B: np.ndarray,
-        C: np.ndarray,
-        D: np.ndarray | None = None,
-        x0: np.ndarray | None = None,
+        A: npt.NDArray[Any],
+        B: npt.NDArray[Any],
+        C: npt.NDArray[Any],
+        D: npt.NDArray[Any] | None = None,
+        x0: npt.NDArray[Any] | None = None,
         *,
         sample_time: float,
         id: str | None = None,
@@ -287,7 +289,7 @@ class DiscreteStateSpace(Block):
                 f"DiscreteStateSpace: C must have shape (p, n) with n={n}, got {C_arr.shape}"
             )
         p = C_arr.shape[0]
-        D_arr: np.ndarray
+        D_arr: npt.NDArray[Any]
         if D is None:
             D_arr = np.zeros((p, m))
         else:
@@ -313,7 +315,7 @@ class DiscreteStateSpace(Block):
         self._C = C_arr
         self._D = D_arr
         self._n = n
-        x0_user: np.ndarray
+        x0_user: npt.NDArray[Any]
         if x0 is None:
             x0_user = np.zeros(n)
         else:
@@ -335,12 +337,12 @@ class DiscreteStateSpace(Block):
             "sample_time": float(sample_time),
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # output は前半 (= output_curr) のみを使う
         x_curr = x[: self._n]
         return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0015 §(3) 2n-state augmentation の semantics:
         # - x[n:]  = x[k] (累積最新値、A@x + B@u を毎 fire で適用)
         # - x[:n]  = x[k-1] (output 用スナップショット、fire 時に旧 x[n:] からシフト)
@@ -372,9 +374,9 @@ class DiscreteTransferFunction(Block):
 
     def __init__(
         self,
-        numerator: np.ndarray | list[float],
-        denominator: np.ndarray | list[float],
-        x0: np.ndarray | None = None,
+        numerator: npt.NDArray[Any] | list[float],
+        denominator: npt.NDArray[Any] | list[float],
+        x0: npt.NDArray[Any] | None = None,
         *,
         sample_time: float,
         id: str | None = None,
@@ -424,7 +426,7 @@ class DiscreteTransferFunction(Block):
         self._n = n
         self.numerator = num
         self.denominator = den
-        x0_user: np.ndarray
+        x0_user: npt.NDArray[Any]
         if x0 is None:
             x0_user = np.zeros(n)
         else:
@@ -442,11 +444,11 @@ class DiscreteTransferFunction(Block):
             "sample_time": float(sample_time),
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         x_curr = x[: self._n]
         return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0015 §(3) 2n-state augmentation: x[:n]=x[k-1] (output snapshot)、
         # x[n:]=x[k] (累積)。state[n:] からの再帰更新で標準形の連続性を保つ
         # (DiscreteStateSpace と同じ semantics)。

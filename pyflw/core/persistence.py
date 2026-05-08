@@ -79,7 +79,7 @@ def to_json_value(value: Any) -> Any:
       * ``bool``, ``str``, ``None`` → そのまま
       * ``numbers.Integral`` (bool 除く) → ``int``
       * ``numbers.Real`` (bool 除く) → ``float``
-      * ``np.ndarray`` → 再帰的に ``list``
+      * ``npt.NDArray[Any]`` → 再帰的に ``list``
       * ``list`` / ``tuple`` → 各要素を再帰変換した ``list``
       * ``dict`` → キーを ``str`` に変換、値を再帰変換
       * 上記以外 → ``ModelSerializationError``
@@ -105,7 +105,7 @@ def to_json_value(value: Any) -> Any:
     raise ModelSerializationError(
         f"Cannot serialize value of type {type(value).__name__!r} "
         f"({value!r}) to JSON. Supported types: bool, int, float, str, None, "
-        f"list, tuple, dict, np.ndarray."
+        f"list, tuple, dict, npt.NDArray[Any]."
     )
 
 

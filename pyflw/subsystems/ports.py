@@ -10,7 +10,10 @@ ADR-0009 §(2)。``Subsystem`` 内部に置かれる専用ブロックで、外�
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -61,7 +64,7 @@ class Inport(Block):
         self.port_shape: tuple[int, ...] = tuple(port_shape)
         # Subsystem ランタイムが各ステップで上書きする
         # SM-A (port_shape=()) では float、SM-B では ndarray を保持する。
-        self._external_value: np.ndarray | float
+        self._external_value: npt.NDArray[Any] | float
         if self.port_shape == ():
             self._external_value = 0.0
         else:
@@ -71,16 +74,16 @@ class Inport(Block):
         if self.port_shape != ():
             self._params["port_shape"] = list(self.port_shape)
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: rank-0 → 1D ndarray (n_outputs=1) で返す
         return np.array([float(self._external_value)])
 
     def output_v(
         self,
         t: float,
-        x: np.ndarray,
-        u: tuple[np.ndarray, ...],
-    ) -> tuple[np.ndarray, ...]:
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
         # SM-B path: 任意 shape を tuple of 1 で返す
         return (np.asarray(self._external_value, dtype=float),)
 
@@ -130,14 +133,14 @@ class Outport(Block):
         if self.port_shape != ():
             self._params["port_shape"] = list(self.port_shape)
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
 
     def output_v(
         self,
         t: float,
-        x: np.ndarray,
-        u: tuple[np.ndarray, ...],
-    ) -> tuple[np.ndarray, ...]:
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
         # n_outputs=0 のため empty tuple
         return ()

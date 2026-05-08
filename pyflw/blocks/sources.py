@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -24,7 +27,7 @@ class Constant(Block):
         self.value = float(value)
         self._params = {"value": self.value}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.value])
 
 
@@ -56,7 +59,7 @@ class Step(Block):
             "final_value": self.final_value,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.final_value if t >= self.step_time else self.initial_value])
 
 
@@ -88,7 +91,7 @@ class Sine(Block):
             "phase": self.phase,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase)])
 
 
@@ -120,7 +123,7 @@ class Ramp(Block):
             "initial_output": self.initial_output,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         if t < self.start_time:
             return np.array([self.initial_output])
         return np.array([self.initial_output + self.slope * (t - self.start_time)])
@@ -138,7 +141,7 @@ class Clock(Block):
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
         self._params = {}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([t])
 
 
@@ -183,7 +186,7 @@ class PulseGenerator(Block):
             "phase_delay": self.phase_delay,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         phi = (t - self.phase_delay) % self.period
         threshold = self.period * self.pulse_width / 100.0
         return np.array([self.amplitude if phi < threshold else 0.0])

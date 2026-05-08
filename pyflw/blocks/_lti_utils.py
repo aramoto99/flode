@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 
@@ -14,8 +17,8 @@ _DF_TOLERANCE = 1e-12
 
 
 def build_companion_form_siso(
-    numerator: np.ndarray, denominator: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    numerator: npt.NDArray[Any], denominator: npt.NDArray[Any]
+) -> tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
     """SISO 伝達関数 ``H(s) = num(s) / den(s)`` を controllable canonical form に変換。
 
     ADR-0010 §(6) で予告された companion form 自前構築実装。``scipy.signal.tf2ss`` の

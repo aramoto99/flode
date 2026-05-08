@@ -1,4 +1,4 @@
-__version__ = "0.13.0"  # Phase 5a #1+#2: ADR-0032 PyPI auto + ADR-0033 ZOH legacy removal (2026-05-09)
+__version__ = "0.13.0"  # Phase 5a: ADR-0032 PyPI auto + ADR-0033 ZOH removal (v0.13.0)
 
 from .analysis import (
     BodeResponse,

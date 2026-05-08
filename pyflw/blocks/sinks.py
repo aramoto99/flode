@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -33,25 +34,25 @@ class Scope(Block):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
         self.times: list[float] = []
-        self._values: list[np.ndarray] = []
+        self._values: list[npt.NDArray[Any]] = []
         self._params = {
             "n_inputs": int(n_inputs),
             "labels": self.labels,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
 
     def reset(self) -> None:
         self.times = []
         self._values = []
 
-    def record(self, t: float, u: np.ndarray) -> None:
+    def record(self, t: float, u: npt.NDArray[Any]) -> None:
         self.times.append(float(t))
         self._values.append(np.asarray(u, dtype=float).copy())
 
     @property
-    def values(self) -> np.ndarray:
+    def values(self) -> npt.NDArray[Any]:
         if not self._values:
             return np.empty((0, self.n_inputs))
         return np.array(self._values)
@@ -107,32 +108,32 @@ class Display(Block):
         self.decimals = int(decimals)
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
         self.times: list[float] = []
-        self._values: list[np.ndarray] = []
+        self._values: list[npt.NDArray[Any]] = []
         self._params = {
             "n_inputs": int(n_inputs),
             "decimals": self.decimals,
             "labels": self.labels,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
 
     def reset(self) -> None:
         self.times = []
         self._values = []
 
-    def record(self, t: float, u: np.ndarray) -> None:
+    def record(self, t: float, u: npt.NDArray[Any]) -> None:
         self.times.append(float(t))
         self._values.append(np.asarray(u, dtype=float).copy())
 
     @property
-    def values(self) -> np.ndarray:
+    def values(self) -> npt.NDArray[Any]:
         if not self._values:
             return np.empty((0, self.n_inputs))
         return np.array(self._values)
 
     @property
-    def latest(self) -> np.ndarray | None:
+    def latest(self) -> npt.NDArray[Any] | None:
         """最終 sample の値 ndarray を返す。データなしのとき ``None``。"""
         if not self._values:
             return None
@@ -164,22 +165,22 @@ class XYGraph(Block):
         self.y_label = str(y_label)
         self.labels = [self.x_label, self.y_label]
         self.times: list[float] = []
-        self._values: list[np.ndarray] = []
+        self._values: list[npt.NDArray[Any]] = []
         self._params = {"x_label": self.x_label, "y_label": self.y_label}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
 
     def reset(self) -> None:
         self.times = []
         self._values = []
 
-    def record(self, t: float, u: np.ndarray) -> None:
+    def record(self, t: float, u: npt.NDArray[Any]) -> None:
         self.times.append(float(t))
         self._values.append(np.asarray(u, dtype=float).copy())
 
     @property
-    def values(self) -> np.ndarray:
+    def values(self) -> npt.NDArray[Any]:
         if not self._values:
             return np.empty((0, 2))
         return np.array(self._values)
@@ -226,5 +227,5 @@ class Terminator(Block):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
         self._params = {"n_inputs": int(n_inputs)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)

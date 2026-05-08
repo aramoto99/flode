@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 from scipy.integrate import solve_ivp
 
 from ..exceptions import (
@@ -288,7 +289,7 @@ class Simulator:
     def _record_v(
         self,
         t: float,
-        inputs_v: dict[Block, tuple[np.ndarray, ...]],
+        inputs_v: dict[Block, tuple[npt.NDArray[Any], ...]],
     ) -> None:
         """SM-B run path 用の record。tuple-of-ndarray inputs を SM-A の 1D ndarray に
         変換して既存 ``record(t, u_1d)`` に橋渡しする (ADR-0018 §(3))。
@@ -441,7 +442,7 @@ class Simulator:
                 offset += b.n_states
         return layout, offset
 
-    def _init_discrete_state(self) -> dict[Block, np.ndarray]:
+    def _init_discrete_state(self) -> dict[Block, npt.NDArray[Any]]:
         return {
             b: np.asarray(b.x0, dtype=float).copy()
             for b in self.blocks
@@ -451,11 +452,11 @@ class Simulator:
     def _step(
         self,
         t: float,
-        x_cont: np.ndarray,
-        discrete_state: dict[Block, np.ndarray],
+        x_cont: npt.NDArray[Any],
+        discrete_state: dict[Block, npt.NDArray[Any]],
         order: list[Block],
         layout: list[tuple[Block, slice]],
-    ) -> tuple[dict[Block, np.ndarray], dict[Block, np.ndarray]]:
+    ) -> tuple[dict[Block, npt.NDArray[Any]], dict[Block, npt.NDArray[Any]]]:
         """1 時刻での SM-A scalar-port 用出力計算 (既存 hot path、ADR-0017 §(4))。
 
         全ブロック port_shape == () の場合に呼ばれる。各 ``inputs[b]`` / ``outputs[b]`` は
@@ -466,10 +467,10 @@ class Simulator:
         False はパス 2 で書き込まれる。
         """
         cont_state = {b: x_cont[sl] for b, sl in layout}
-        outputs: dict[Block, np.ndarray] = {}
-        inputs: dict[Block, np.ndarray] = {}
+        outputs: dict[Block, npt.NDArray[Any]] = {}
+        inputs: dict[Block, npt.NDArray[Any]] = {}
 
-        def state_for(b: Block) -> np.ndarray:
+        def state_for(b: Block) -> npt.NDArray[Any]:
             if b in cont_state:
                 return cont_state[b]
             if b in discrete_state:
@@ -502,11 +503,13 @@ class Simulator:
     def _step_vector(
         self,
         t: float,
-        x_cont: np.ndarray,
-        discrete_state: dict[Block, np.ndarray],
+        x_cont: npt.NDArray[Any],
+        discrete_state: dict[Block, npt.NDArray[Any]],
         order: list[Block],
         layout: list[tuple[Block, slice]],
-    ) -> tuple[dict[Block, tuple[np.ndarray, ...]], dict[Block, tuple[np.ndarray, ...]]]:
+    ) -> tuple[
+        dict[Block, tuple[npt.NDArray[Any], ...]], dict[Block, tuple[npt.NDArray[Any], ...]]
+    ]:
         """ADR-0017 §(4) SM-B vector-port 用出力計算。
 
         各ブロックの ``output_v`` を呼び、tuple of ndarrays でポート間の信号を
@@ -517,21 +520,21 @@ class Simulator:
         するため、混在モデルでも動作する。
         """
         cont_state = {b: x_cont[sl] for b, sl in layout}
-        outputs: dict[Block, tuple[np.ndarray, ...]] = {}
-        inputs: dict[Block, tuple[np.ndarray, ...]] = {}
+        outputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+        inputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
 
-        def state_for(b: Block) -> np.ndarray:
+        def state_for(b: Block) -> npt.NDArray[Any]:
             if b in cont_state:
                 return cont_state[b]
             if b in discrete_state:
                 return discrete_state[b]
             return np.zeros(0)
 
-        def _zero_inputs(b: Block) -> tuple[np.ndarray, ...]:
+        def _zero_inputs(b: Block) -> tuple[npt.NDArray[Any], ...]:
             return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
 
-        def _gather_inputs(b: Block) -> tuple[np.ndarray, ...]:
-            u_list: list[np.ndarray] = []
+        def _gather_inputs(b: Block) -> tuple[npt.NDArray[Any], ...]:
+            u_list: list[npt.NDArray[Any]] = []
             for i, src in enumerate(b.input_sources):
                 if src is None:
                     u_list.append(np.zeros(b.port_shapes_in[i], dtype=float))
@@ -646,8 +649,8 @@ class Simulator:
         n_total: int,
         order: list[Block],
         layout: list[tuple[Block, slice]],
-        x_cont: np.ndarray,
-        discrete_state: dict[Block, np.ndarray],
+        x_cont: npt.NDArray[Any],
+        discrete_state: dict[Block, npt.NDArray[Any]],
     ) -> None:
         """SM-A モードのメインループ (ADR-0014/0015 §(1) と完全同一)。
 
@@ -656,7 +659,7 @@ class Simulator:
         (= ADR-0014 §Risks #3 で確認した nonlocal capture セマンティクス)。
         """
 
-        def f_continuous(t: float, x: np.ndarray) -> np.ndarray:
+        def f_continuous(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
             _, ins = self._step(t, x, discrete_state, order, layout)
             xdot = np.zeros(n_total)
             for b, sl in layout:
@@ -669,7 +672,7 @@ class Simulator:
             # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
             if discrete_state:
                 _, inputs_pre = self._step(t, x_cont, discrete_state, order, layout)
-                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
+                next_discrete: dict[Block, npt.NDArray[Any]] = dict(discrete_state)
                 for b in order:
                     if b not in discrete_state:
                         continue
@@ -722,13 +725,13 @@ class Simulator:
         n_total: int,
         order: list[Block],
         layout: list[tuple[Block, slice]],
-        x_cont: np.ndarray,
-        discrete_state: dict[Block, np.ndarray],
+        x_cont: npt.NDArray[Any],
+        discrete_state: dict[Block, npt.NDArray[Any]],
     ) -> None:
         """SM-B (vector ports) モード用メインループ (ADR-0018 §(2))。
 
         構造は SM-A と同一だが、各ステップ内で ``_step_vector`` を呼んで
-        ``inputs[b]: tuple[np.ndarray, ...]`` で signal を伝搬する。``record`` は
+        ``inputs[b]: tuple[npt.NDArray[Any], ...]`` で signal を伝搬する。``record`` は
         SM-A 入力 (rank-0 scalar) のみを Scope に渡すため、Scope 側に SM-B 信号が
         来るとビルド時に既に拒否されている (``_check_scope_inputs_are_scalar``)。
 
@@ -736,7 +739,7 @@ class Simulator:
         ``discrete_state`` 再代入を追跡する (SM-A と同じ理由)。
         """
 
-        def f_continuous_vector(t: float, x: np.ndarray) -> np.ndarray:
+        def f_continuous_vector(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
             # ADR-0018 §(2)(4): SM-B run path。``_step_vector`` から得た
             # ``inputs[b]`` は tuple of ndarrays。SM-A 連続ブロックは SM-A
             # ``derivative(t, x, u_1d)`` を期待するため、tuple を 1D ndarray に
@@ -759,7 +762,7 @@ class Simulator:
             # [A'] 離散ブロック update (SM-B path)
             if discrete_state:
                 _, inputs_pre_v = self._step_vector(t, x_cont, discrete_state, order, layout)
-                next_discrete: dict[Block, np.ndarray] = dict(discrete_state)
+                next_discrete: dict[Block, npt.NDArray[Any]] = dict(discrete_state)
                 for b in order:
                     if b not in discrete_state:
                         continue
@@ -815,7 +818,7 @@ class Simulator:
                     raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
                 x_cont = sol.y[:, -1]
 
-    def _record(self, t: float, inputs: dict[Block, np.ndarray]) -> None:
+    def _record(self, t: float, inputs: dict[Block, npt.NDArray[Any]]) -> None:
         for b in self.blocks:
             if hasattr(b, "record"):
                 b.record(t, inputs[b])
@@ -833,8 +836,8 @@ class Simulator:
         self,
         *,
         t: float = 0.0,
-        x: np.ndarray | None = None,
-        u: np.ndarray | None = None,
+        x: npt.NDArray[Any] | None = None,
+        u: npt.NDArray[Any] | None = None,
         method: Literal["central", "forward", "jax"] = "central",
         epsilon: float | None = None,
     ) -> LinearSystem:

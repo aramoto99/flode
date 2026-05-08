@@ -7,7 +7,10 @@ Phase 1 では ``RelationalOperator`` (比較) と ``LogicalOperator`` (論理) 
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -37,7 +40,7 @@ class RelationalOperator(Block):
         self.operator = operator
         self._params = {"operator": operator}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         a, b = float(u[0]), float(u[1])
         op = self.operator
         if op == "<":
@@ -93,7 +96,7 @@ class LogicalOperator(Block):
         self.operator = operator
         self._params = {"operator": operator, "n_inputs": int(n_inputs)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         op = self.operator
         bools = [bool(v) for v in u]
         if op == "NOT":

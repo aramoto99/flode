@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import scipy.signal
 
 from ..core.block import Block
@@ -44,10 +47,10 @@ class Integrator(Block):
         self.x0 = np.array([float(x0)])
         self._params = {"x0": float(x0)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([u[0]])
 
 
@@ -67,11 +70,11 @@ class StateSpace(Block):
 
     def __init__(
         self,
-        A: np.ndarray,
-        B: np.ndarray,
-        C: np.ndarray,
-        D: np.ndarray | None = None,
-        x0: np.ndarray | None = None,
+        A: npt.NDArray[Any],
+        B: npt.NDArray[Any],
+        C: npt.NDArray[Any],
+        D: npt.NDArray[Any] | None = None,
+        x0: npt.NDArray[Any] | None = None,
         *,
         id: str | None = None,
         name: str | None = None,
@@ -97,7 +100,7 @@ class StateSpace(Block):
                 f"StateSpace: C must have shape (p, n) with n={n}, got {C_arr.shape}"
             )
         p = C_arr.shape[0]
-        D_arr: np.ndarray
+        D_arr: npt.NDArray[Any]
         if D is None:
             D_arr = np.zeros((p, m))
         else:
@@ -133,10 +136,10 @@ class StateSpace(Block):
             "x0": self.x0,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
 
 
@@ -154,9 +157,9 @@ class TransferFunction(Block):
 
     def __init__(
         self,
-        numerator: np.ndarray | list[float],
-        denominator: np.ndarray | list[float],
-        x0: np.ndarray | None = None,
+        numerator: npt.NDArray[Any] | list[float],
+        denominator: npt.NDArray[Any] | list[float],
+        x0: npt.NDArray[Any] | None = None,
         *,
         id: str | None = None,
         name: str | None = None,
@@ -216,12 +219,12 @@ class TransferFunction(Block):
             "x0": self.x0,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # C: (1,n)、x: (n,)、D: (1,1)、u: (1,)
         y = self._C @ x + self._D @ u
         return np.asarray(y, dtype=float).ravel()
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
 
 
@@ -276,8 +279,8 @@ class MimoTransferFunction(Block):
     def __init__(
         self,
         numerators: list[list[list[float]]],
-        denominator: np.ndarray | list[float],
-        x0: np.ndarray | None = None,
+        denominator: npt.NDArray[Any] | list[float],
+        x0: npt.NDArray[Any] | None = None,
         *,
         id: str | None = None,
         name: str | None = None,
@@ -404,10 +407,10 @@ class MimoTransferFunction(Block):
             "x0": self.x0,
         }
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.asarray(self._C @ x + self._D @ u, dtype=float).ravel()
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
 
 
@@ -449,8 +452,8 @@ class Derivative(Block):
         self.x0 = np.array([float(x0)])
         self._params = {"N": self.N, "x0": float(x0)}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.N * (u[0] - x[0])])
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.N * (u[0] - x[0])])

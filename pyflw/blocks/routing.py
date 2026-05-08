@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
@@ -55,7 +58,7 @@ class Switch(Block):
         self.criterion = criterion
         self._params = {"threshold": self.threshold, "criterion": criterion}
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         control = float(u[1])
         if self.criterion == ">=":
             select_true = control >= self.threshold
@@ -114,9 +117,9 @@ class Mux(Block):
     def output_v(
         self,
         t: float,
-        x: np.ndarray,
-        u: tuple[np.ndarray, ...],
-    ) -> tuple[np.ndarray, ...]:
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
         # 各 u[i] は rank-0 ndarray。float 化して 1D に concat。
         vec = np.array([float(np.asarray(ui).item()) for ui in u], dtype=float)
         return (vec,)
@@ -169,9 +172,9 @@ class Demux(Block):
     def output_v(
         self,
         t: float,
-        x: np.ndarray,
-        u: tuple[np.ndarray, ...],
-    ) -> tuple[np.ndarray, ...]:
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
         vec = np.asarray(u[0], dtype=float)
         # 各 element を rank-0 ndarray として返す
         return tuple(np.asarray(vec[i], dtype=float) for i in range(self.n))

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError, SolverError
 
@@ -70,10 +71,10 @@ class LinearSystem:
         で要素ごとに比較する。
     """
 
-    A: np.ndarray
-    B: np.ndarray
-    C: np.ndarray
-    D: np.ndarray
+    A: npt.NDArray[Any]
+    B: npt.NDArray[Any]
+    C: npt.NDArray[Any]
+    D: npt.NDArray[Any]
     state_names: list[str]
     input_names: list[str]
     output_names: list[str]
@@ -108,7 +109,7 @@ class LinearSystem:
     def bode(
         self,
         *,
-        omega: np.ndarray | None = None,
+        omega: npt.NDArray[Any] | None = None,
         omega_limits: tuple[float, float] | None = None,
         omega_num: int | None = None,
         Hz: bool = False,
@@ -127,7 +128,7 @@ class LinearSystem:
     def nyquist(
         self,
         *,
-        omega: np.ndarray | None = None,
+        omega: npt.NDArray[Any] | None = None,
         omega_limits: tuple[float, float] | None = None,
         omega_num: int | None = None,
     ) -> NyquistResponse:
@@ -136,7 +137,7 @@ class LinearSystem:
 
         return _nyquist(self, omega=omega, omega_limits=omega_limits, omega_num=omega_num)
 
-    def eigenvalues(self) -> np.ndarray:
+    def eigenvalues(self) -> npt.NDArray[Any]:
         """A 行列の固有値 (:func:`pyflw.eigenvalues` への薄ラッパ、ADR-0027)。"""
         from .stability import eigenvalues as _eigenvalues
 
@@ -151,7 +152,7 @@ class LinearSystem:
     def root_locus(
         self,
         *,
-        k_range: tuple[float, float] | np.ndarray | None = None,
+        k_range: tuple[float, float] | npt.NDArray[Any] | None = None,
         input_idx: int = 0,
         output_idx: int = 0,
     ) -> RootLocus:
@@ -298,17 +299,17 @@ def _build_output_names(specs: list[_OutputSpec]) -> list[str]:
 def _evaluate(
     simulator: Simulator,
     t: float,
-    x_cont: np.ndarray,
-    u_ext: np.ndarray,
+    x_cont: npt.NDArray[Any],
+    u_ext: npt.NDArray[Any],
     *,
     order: list[Block],
     layout: list[tuple[Block, slice]],
     n_states: int,
-    discrete_state: dict[Block, np.ndarray],
+    discrete_state: dict[Block, npt.NDArray[Any]],
     input_specs: list[_InputSpec],
     output_specs: list[_OutputSpec],
     sm_a_mode: bool,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
     """動作点 ``(t, x_cont, u_ext)`` で ``(xdot, y_external)`` を計算。
 
     ``Simulator._step`` / ``_step_vector`` のロジックを copy しつつ、結線されていない
@@ -320,7 +321,7 @@ def _evaluate(
     # SM-A: block.id -> {port_idx: float}
     # SM-B: block.id -> {port_idx: ndarray (port_shape)}
     external_inputs_a: dict[int, dict[int, float]] = {}
-    external_inputs_b: dict[int, dict[int, np.ndarray]] = {}
+    external_inputs_b: dict[int, dict[int, npt.NDArray[Any]]] = {}
     if sm_a_mode:
         for s in input_specs:
             external_inputs_a.setdefault(id(s.block), {})[s.port_idx] = float(u_ext[s.u_slice])
@@ -350,7 +351,7 @@ def _evaluate(
     # ----- 連続状態を block 別に slice -----
     cont_state = {b: x_cont[sl] for b, sl in layout}
 
-    def state_for(b: Block) -> np.ndarray:
+    def state_for(b: Block) -> npt.NDArray[Any]:
         if b in cont_state:
             return cont_state[b]
         if b in discrete_state:
@@ -359,10 +360,10 @@ def _evaluate(
 
     # ----- SM-A 経路 -----
     if sm_a_mode:
-        outputs_a: dict[Block, np.ndarray] = {}
-        inputs_a: dict[Block, np.ndarray] = {}
+        outputs_a: dict[Block, npt.NDArray[Any]] = {}
+        inputs_a: dict[Block, npt.NDArray[Any]] = {}
 
-        def gather_inputs_a(b: Block) -> np.ndarray:
+        def gather_inputs_a(b: Block) -> npt.NDArray[Any]:
             u = np.zeros(b.n_inputs)
             ext = external_inputs_a.get(id(b), {})
             for i, src in enumerate(b.input_sources):
@@ -401,14 +402,14 @@ def _evaluate(
         return xdot, y_ext
 
     # ----- SM-B 経路 -----
-    outputs_b: dict[Block, tuple[np.ndarray, ...]] = {}
-    inputs_b: dict[Block, tuple[np.ndarray, ...]] = {}
+    outputs_b: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+    inputs_b: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
 
-    def zero_inputs_b(b: Block) -> tuple[np.ndarray, ...]:
+    def zero_inputs_b(b: Block) -> tuple[npt.NDArray[Any], ...]:
         return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
 
-    def gather_inputs_b(b: Block) -> tuple[np.ndarray, ...]:
-        u_list: list[np.ndarray] = []
+    def gather_inputs_b(b: Block) -> tuple[npt.NDArray[Any], ...]:
+        u_list: list[npt.NDArray[Any]] = []
         ext = external_inputs_b.get(id(b), {})
         for i, src in enumerate(b.input_sources):
             if src is None:
@@ -422,7 +423,7 @@ def _evaluate(
         return tuple(u_list)
 
     for b in order:
-        u_b: tuple[np.ndarray, ...]
+        u_b: tuple[npt.NDArray[Any], ...]
         if b.direct_feedthrough:
             u_b = gather_inputs_b(b)
             inputs_b[b] = u_b
@@ -490,8 +491,8 @@ def linearize(
     simulator: Simulator,
     *,
     t: float = 0.0,
-    x: np.ndarray | None = None,
-    u: np.ndarray | None = None,
+    x: npt.NDArray[Any] | None = None,
+    u: npt.NDArray[Any] | None = None,
     method: Literal["central", "forward", "jax"] = "central",
     epsilon: float | None = None,
 ) -> LinearSystem:
@@ -592,7 +593,7 @@ def linearize(
     n_out = len(output_specs)
 
     # ----- 動作点 (x*, u*) のセットアップ -----
-    x_op: np.ndarray
+    x_op: npt.NDArray[Any]
     if x is None:
         x_op = np.zeros(n_states)
         for b, sl in layout:
@@ -602,7 +603,7 @@ def linearize(
         if x_op.shape != (n_states,):
             raise BlockSpecError(f"linearize: x must have shape ({n_states},), got {x_op.shape}")
 
-    u_op: np.ndarray
+    u_op: npt.NDArray[Any]
     if u is None:
         u_op = np.zeros(n_in)
     else:
@@ -612,8 +613,8 @@ def linearize(
 
     # ----- 動作点で 1 回評価 (Forward 差分用 base、結果 sanity check) -----
     def evaluate(
-        t_eval: float, x_eval: np.ndarray, u_eval: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+        t_eval: float, x_eval: npt.NDArray[Any], u_eval: npt.NDArray[Any]
+    ) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
         return _evaluate(
             simulator,
             t_eval,

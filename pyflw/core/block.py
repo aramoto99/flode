@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .identifiers import validate_block_id
@@ -137,7 +138,7 @@ class Block:
         self.n_states = n_states
         self.direct_feedthrough = direct_feedthrough
         self.sample_time: float | None = sample_time
-        self.x0: np.ndarray = np.zeros(n_states)
+        self.x0: npt.NDArray[Any] = np.zeros(n_states)
         self.input_sources: list[tuple[Block, int] | None] = [None] * n_inputs
 
         # ADR-0017 SM-B: port shapes (default 全 () = SM-A scalar)
@@ -198,7 +199,7 @@ class Block:
         """
         return self._id
 
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """SM-A scalar-port API でブロック出力 ``y(t, x, u)`` を計算する。
 
         各 input/output port が rank-0 scalar (= SM-A 互換、port_shapes 全 ``()``) の
@@ -219,9 +220,9 @@ class Block:
     def output_v(
         self,
         t: float,
-        x: np.ndarray,
-        u: tuple[np.ndarray, ...],
-    ) -> tuple[np.ndarray, ...]:
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
         """SM-B vector-port API でブロック出力を計算する (ADR-0017 §(3))。
 
         各 input port が任意 shape ndarray を運ぶ vector-aware ブロック (Mux, Demux,
@@ -259,7 +260,7 @@ class Block:
         # 各出力 port を rank-0 ndarray として分解
         return tuple(np.asarray(y_flat[i], dtype=float) for i in range(self.n_outputs))
 
-    def derivative(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """連続状態の時間微分 ``x_dot(t, x, u)`` を返す。
 
         Default 実装は ``np.zeros(n_states)`` を返す。連続状態を持つブロックは
@@ -267,7 +268,7 @@ class Block:
         """
         return np.zeros(self.n_states)
 
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """離散ブロックの状態更新 ``x_next = update(t, x, u)`` を返す。
 
         Args:

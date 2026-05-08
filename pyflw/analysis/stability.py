@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .linearize import LinearSystem
@@ -43,7 +44,7 @@ def _import_control() -> Any:
 # ---------------------------------------------------------------------------
 
 
-def eigenvalues(ls: LinearSystem) -> np.ndarray:
+def eigenvalues(ls: LinearSystem) -> npt.NDArray[Any]:
     """A 行列の固有値を返す (`np.linalg.eig` の薄ラッパ)。
 
     Args:
@@ -107,8 +108,8 @@ class RootLocus:
         output_idx: SISO 抽出に用いた出力 idx (= ``ls.C`` の行)。
     """
 
-    roots: np.ndarray
-    gains: np.ndarray
+    roots: npt.NDArray[Any]
+    gains: npt.NDArray[Any]
     input_idx: int
     output_idx: int
 
@@ -144,7 +145,7 @@ class RootLocus:
 
 def _siso_extract(
     ls: LinearSystem, input_idx: int, output_idx: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
     """``ls`` から ``(input_idx, output_idx)`` SISO サブシステムを抽出する。
 
     A はそのまま、B は対象列のみ、C は対象行のみ、D は対象要素のみ。
@@ -169,7 +170,7 @@ def _siso_extract(
 def root_locus(
     ls: LinearSystem,
     *,
-    k_range: tuple[float, float] | np.ndarray | None = None,
+    k_range: tuple[float, float] | npt.NDArray[Any] | None = None,
     input_idx: int = 0,
     output_idx: int = 0,
 ) -> RootLocus:
