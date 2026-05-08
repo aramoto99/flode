@@ -50,7 +50,13 @@ class ParamSpec:
 
 @dataclass
 class BlockMetadata:
-    """1 つの Block class の registry エントリ (ADR-0019 §1.2、ADR-0021 §(5))。"""
+    """1 つの Block class の registry エントリ (ADR-0019 §1.2、ADR-0021 §(5)、ADR-0028)。
+
+    ADR-0028 §Decision §1: ``display_name`` / ``docstring_summary`` の en/ja 翻訳を
+    ``display_name_i18n`` / ``docstring_summary_i18n`` に同梱する。既存
+    ``display_name`` / ``docstring_summary`` は en コピーとして維持され、旧 frontend
+    が壊れない (= 後方互換)。
+    """
 
     type_path: str
     display_name: str
@@ -68,6 +74,10 @@ class BlockMetadata:
     # ADR-0021 §(5): GUI ドリルダウン / マスクパラメータ可否のヒント
     is_container: bool = False
     mask_capable: bool = False
+    # ADR-0028: locale → field → str の翻訳テーブル。``_BLOCK_TRANSLATIONS`` 未登録の
+    # type_path では空 dict (= 旧 ``display_name`` / ``docstring_summary`` のみ提供)。
+    display_name_i18n: dict[str, str] = field(default_factory=dict)
+    docstring_summary_i18n: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -418,9 +428,10 @@ def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str, str]:
 
 
 def build_metadata(cls: type) -> BlockMetadata:
-    """1 つの Block サブクラスから ``BlockMetadata`` を構築する。"""
+    """1 つの Block サブクラスから ``BlockMetadata`` を構築する (ADR-0019、ADR-0028)。"""
     # 遅延 import で循環回避 (subsystem.py は core.block / core.persistence に依存)
     from ..subsystems import Subsystem
+    from .registry_translations import SUPPORTED_LOCALES, get_translations
 
     type_path = block_type_path(cls)
     category, display_name, icon, color = _resolve_metadata_fallback(cls)
@@ -435,6 +446,28 @@ def build_metadata(cls: type) -> BlockMetadata:
     tags = _derive_tags(blk)
     if is_container and "container" not in tags:
         tags.append("container")
+
+    # ADR-0028: registry_translations の i18n テーブルを参照。``en`` 値が
+    # 登録されていればそれを ``display_name`` / ``docstring_summary`` (= 旧フィールド、
+    # en コピーとして残す) にも反映 (= 後方互換 + en 表示の正規化)。3rd-party 拡張
+    # 等で未登録の場合は class attribute / inspect.getdoc() のフォールバックを使う。
+    translations = get_translations(type_path)
+    display_name_i18n: dict[str, str] = {}
+    docstring_summary_i18n: dict[str, str] = {}
+    for locale in SUPPORTED_LOCALES:
+        entry = translations.get(locale)
+        if not entry:
+            continue
+        if "display_name" in entry:
+            display_name_i18n[locale] = entry["display_name"]
+        if "docstring_summary" in entry:
+            docstring_summary_i18n[locale] = entry["docstring_summary"]
+
+    # 旧フィールド (= 後方互換、en コピー) を i18n テーブル en で正規化する。
+    if "en" in display_name_i18n:
+        display_name = display_name_i18n["en"]
+    if "en" in docstring_summary_i18n:
+        docstring_summary = docstring_summary_i18n["en"]
 
     return BlockMetadata(
         type_path=type_path,
@@ -456,6 +489,8 @@ def build_metadata(cls: type) -> BlockMetadata:
         tags=tags,
         is_container=is_container,
         mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
+        display_name_i18n=display_name_i18n,
+        docstring_summary_i18n=docstring_summary_i18n,
     )
 
 
@@ -520,14 +555,19 @@ def build_block_registry() -> list[BlockMetadata]:
 
 
 def metadata_to_dict(meta: BlockMetadata, *, include_full_docstring: bool = False) -> dict[str, Any]:
-    """``BlockMetadata`` を JSON-serializable dict に変換する。"""
+    """``BlockMetadata`` を JSON-serializable dict に変換する (ADR-0019、ADR-0028)。"""
     out: dict[str, Any] = {
         "type_path": meta.type_path,
         "display_name": meta.display_name,
+        # ADR-0028: i18n フィールドを REST 同梱。frontend (blockI18n.ts) が
+        # currentLanguage() で値を選択する。空 dict の場合 frontend は旧
+        # ``display_name`` / ``docstring_summary`` にフォールバックする。
+        "display_name_i18n": dict(meta.display_name_i18n),
         "category": meta.category,
         "icon": meta.icon,
         "color": meta.color,
         "docstring_summary": meta.docstring_summary,
+        "docstring_summary_i18n": dict(meta.docstring_summary_i18n),
         "params_spec": [
             {
                 "name": p.name,

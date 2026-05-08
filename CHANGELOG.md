@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-08
+
+ADR-0028: Block class registry の i18n 化。Phase 4 sub-ADR #3 — built-in
+の 35 ブロック全てに ja/en 翻訳テーブルを追加し、REST レスポンスに
+`display_name_i18n` / `docstring_summary_i18n` フィールドを同梱する。
+Frontend は registry を 1 回 fetch して、言語切替時にクライアント側で
+表示文字列を選び替える (= 再 fetch なし、<30ms 切替)。ADR-0024 で残って
+いた「UI chrome は ja、ブロック名は en」というハイブリッド表示が解消され、
+日本語環境では palette / QuickAdd 等で「定数」「加算」「積分器」のように
+表示されるようになる。
+
+### Added — Python registry
+
+- `pyflw/server/registry_translations.py`: ADR-0028 集中翻訳テーブル
+  (`_BLOCK_TRANSLATIONS`、35 type_path × ja/en × {display_name,
+  docstring_summary})。`Locale` 型 / `SUPPORTED_LOCALES` /
+  `get_translations(type_path)` / `all_registered_type_paths()` を export。
+- `BlockMetadata` dataclass に `display_name_i18n: dict[str, str]` /
+  `docstring_summary_i18n: dict[str, str]` を追加 (`field(default_factory=dict)`、
+  3rd-party 拡張で未登録 type_path は空 dict)。
+- `tests/server/test_registry_translations.py`: 翻訳カバレッジ + フォーマット
+  + `build_metadata` / `metadata_to_dict` の round-trip を検証する 80 件
+  (parametrize 展開後)。
+- `tests/server/test_blocks_registry.py`: ADR-0028 用に 3 件追加 (i18n
+  カバレッジ、後方互換、Constant の ja 翻訳)、既存 1 件を `blocks.v2` 用に更新。
+
+### Added — Frontend
+
+- `pyflw/web/frontend/src/lib/blockI18n.ts`: `localizedDisplayName` /
+  `localizedDocstringSummary` / `searchableDisplayNames` の 3 ヘルパー。
+  フォールバック chain は `i18n[lang]` → `display_name` → `type_path`
+  (= 3rd-party 旧サーバ互換)。
+- `pyflw/web/frontend/tests/blockI18n.test.ts`: 10 件の vitest ケース。
+
+### Changed
+
+- `pyflw/server/registry.py`: `build_metadata()` で `get_translations()` を
+  読み、`display_name` / `docstring_summary` を `_BLOCK_TRANSLATIONS["..."]
+  ["en"]` 値で **正規化** (= 既存 `_BUILTIN_METADATA` の手書き en と
+  registry_translations の en が必ず一致するようにする)。`metadata_to_dict()`
+  に `display_name_i18n` / `docstring_summary_i18n` を同梱。
+- `pyflw/server/routes/blocks.py`: `GET /api/v1/blocks` レスポンスの
+  `schema_version` を `"blocks.v1"` → `"blocks.v2"` に bump。
+  `supported_locales: ["en", "ja"]` を追加。
+- `pyflw/web/frontend/src/types/api.ts`: `Locale = "en" | "ja"` 型追加、
+  `BlockMetadata` に `display_name_i18n?` / `docstring_summary_i18n?` (optional)、
+  `BlockRegistryResponse` に `supported_locales?` (optional)。旧 frontend
+  / 旧サーバ間の混在で壊れない。
+- `pyflw/web/frontend/src/components/BlockPalette.tsx`,
+  `QuickAdd.tsx`: 表示文字列を `localizedDisplayName(b)` /
+  `localizedDocstringSummary(b)` 経由に置換。検索フィルタは
+  `searchableDisplayNames(b)` の両言語インデックスで動作 (= ja 環境でも
+  `"sum"` で `"加算"` がヒット、Simulink 経験者向けセーフネット)。
+- `pyflw/__init__.py.__version__`、`pyproject.toml.version`、
+  `pyflw/web/frontend/package.json` を `0.11.0` に bump。
+
+### Acceptance criteria (ADR-0028 §(8))
+
+- 35 built-in blocks に ja/en 両方の `display_name` / `docstring_summary`
+  が登録されている — `tests/server/test_registry_translations.py::
+  TestTranslationCoverage` で継続検証。
+- `display_name` / `docstring_summary` は en コピーで後方互換維持 —
+  `tests/server/test_blocks_registry.py::test_legacy_fields_match_en_translation`
+  で検証。
+- 言語切替が registry 再 fetch を起こさない (`localizedDisplayName` の
+  クライアント側選択)。
+- pytest 933 pass (851 baseline + 82 new)、vitest 155 pass (145 baseline +
+  10 new)、mypy --strict / ruff / sphinx -W clean。
+- `examples/spring_mass_damper.py` 数値完全不変 (`Final x=0.2505,
+  x_dot=0.0031`)。
+
+### Phase 4 status
+
+ADR-0025 §(1) #4 (C1) is now `Accepted (v0.11.0)`. Next up: ADR-0029
+(C2 `.flwlib.json` library file format) and ADR-0030 (C3 toast + C4
+a11y), heading to the Phase 4 closure tag at `v0.12.0`.
+
 ## [0.10.1] - 2026-05-07
 
 ADR-0027: frequency response (Bode / Nyquist) and stability analysis

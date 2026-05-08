@@ -8,6 +8,10 @@ import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { BlockGlyph } from "../lib/blockGlyphs";
+import {
+  localizedDisplayName,
+  searchableDisplayNames,
+} from "../lib/blockI18n";
 import { generateUniqueId, buildDefaultParams } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
 import { addBlockToEditing, useAppStore } from "../store/appStore";
@@ -54,6 +58,10 @@ export function QuickAdd({
   flowY,
   onClose,
 }: QuickAddProps): JSX.Element | null {
+  // ADR-0028: ``useTranslation`` 経由で ``i18n.language`` 変化を購読し、
+  // 言語切替時に再 render される。表示文字列は ``localizedDisplayName(b)`` で
+  // render 時に最新言語を読むため、useMemo の deps に lang を入れる必要は
+  // ない (= 検索結果リスト itself は両言語 index で安定、表示だけが切り替わる)。
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
@@ -88,12 +96,22 @@ export function QuickAdd({
     if (!data) return [];
     const scored: { score: number; meta: (typeof data.blocks)[number] }[] = [];
     for (const m of data.blocks) {
-      const score = fuzzyScore(query.trim(), m.display_name);
-      if (score === null) continue;
-      scored.push({ score, meta: m });
+      // ADR-0028: 両言語の display_name で fuzzy 検索 (= ja 環境で "sum" 入力でも
+      // "加算" がヒット、Simulink 経験者向けセーフネット)。スコアは最大値を採用。
+      const candidates = searchableDisplayNames(m);
+      let best: number | null = null;
+      for (const cand of candidates) {
+        const s = fuzzyScore(query.trim(), cand);
+        if (s !== null && (best === null || s > best)) best = s;
+      }
+      if (best === null) continue;
+      scored.push({ score: best, meta: m });
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, MAX_RESULTS).map((s) => s.meta);
+    // 検索結果リストは両言語 index で安定 (= 言語切替で順番が変わらない)。
+    // 表示文字列は下記 render の ``localizedDisplayName(m)`` が ``useTranslation``
+    // 購読により言語切替時の再 render で更新する。
   }, [data, query]);
 
   // クエリが変わったら active を先頭に戻す
@@ -199,7 +217,7 @@ export function QuickAdd({
                 <BlockGlyph typePath={m.type_path} />
               </div>
               <div className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{m.display_name}</span>
+                <span className="font-medium">{localizedDisplayName(m)}</span>
                 <span
                   className={`ml-2 text-[10px] ${
                     i === activeIdx ? "text-blue-100" : "text-slate-400"

@@ -35,8 +35,9 @@ class TestListBlocks:
         resp = client.get("/api/v1/blocks")
         assert resp.status_code == 200
         data = resp.json()
-        # ADR-0019 §1.2: ``schema_version: "blocks.v1"``
-        assert data["schema_version"] == "blocks.v1"
+        # ADR-0028 (v0.11.0): schema_version を ``"blocks.v1"`` → ``"blocks.v2"`` に bump
+        assert data["schema_version"] == "blocks.v2"
+        assert data["supported_locales"] == ["en", "ja"]
         # built-in は 30+ (sources/math/cont/disc/logic/routing/sinks) +
         # subsystems 3 = 33 以上
         assert len(data["blocks"]) >= 33
@@ -47,10 +48,13 @@ class TestListBlocks:
             for key in (
                 "type_path",
                 "display_name",
+                # ADR-0028 (blocks.v2): i18n フィールド
+                "display_name_i18n",
                 "category",
                 "icon",
                 "color",
                 "docstring_summary",
+                "docstring_summary_i18n",
                 "params_spec",
                 "default_n_inputs",
                 "default_n_outputs",
@@ -61,6 +65,49 @@ class TestListBlocks:
                 assert key in entry, f"missing {key} in {entry['type_path']}"
             # full docstring は list レスポンスに含めない (ADR-0019 §1.3)
             assert "docstring_full" not in entry
+
+    def test_i18n_translations_for_builtin_blocks(self, client: TestClient) -> None:
+        """ADR-0028: built-in 全 33+ ブロックが ja/en 両方の翻訳を持つ。"""
+        resp = client.get("/api/v1/blocks")
+        for entry in resp.json()["blocks"]:
+            type_path = entry["type_path"]
+            i18n_name = entry["display_name_i18n"]
+            i18n_summary = entry["docstring_summary_i18n"]
+            # 3rd-party 拡張は空 dict を許容するが、built-in は両言語が揃う
+            if type_path.startswith("pyflw.blocks.") or type_path.startswith(
+                "pyflw.subsystems."
+            ):
+                assert "en" in i18n_name and "ja" in i18n_name, (
+                    f"{type_path}: missing locale in display_name_i18n {i18n_name}"
+                )
+                assert "en" in i18n_summary and "ja" in i18n_summary, (
+                    f"{type_path}: missing locale in docstring_summary_i18n"
+                )
+
+    def test_legacy_fields_match_en_translation(self, client: TestClient) -> None:
+        """ADR-0028 後方互換: ``display_name`` / ``docstring_summary`` は en コピー。"""
+        resp = client.get("/api/v1/blocks")
+        for entry in resp.json()["blocks"]:
+            i18n_name = entry["display_name_i18n"]
+            if "en" in i18n_name:
+                assert entry["display_name"] == i18n_name["en"], (
+                    f"{entry['type_path']}: display_name and display_name_i18n['en'] mismatch"
+                )
+            i18n_summary = entry["docstring_summary_i18n"]
+            if "en" in i18n_summary:
+                assert entry["docstring_summary"] == i18n_summary["en"], (
+                    f"{entry['type_path']}: docstring_summary and docstring_summary_i18n['en'] mismatch"
+                )
+
+    def test_constant_japanese_translation(self, client: TestClient) -> None:
+        """ADR-0028: Constant の ja 翻訳が "定数" になっている。"""
+        resp = client.get("/api/v1/blocks")
+        c = next(
+            b for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.sources.Constant"
+        )
+        assert c["display_name_i18n"]["ja"] == "定数"
+        assert c["docstring_summary_i18n"]["ja"].startswith("定数値ソース")
 
     def test_gain_entry_specifics(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")

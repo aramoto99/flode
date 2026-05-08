@@ -75,13 +75,22 @@ export interface BlockParamSpec {
   description: string;
 }
 
+// ADR-0028: Block 表示名・docstring summary の i18n (ja/en) 翻訳対応。
+// ADR-0024 §(3) と整合した BCP47 短縮コード。
+export type Locale = "en" | "ja";
+
 export interface BlockMetadata {
   type_path: string;
   display_name: string;
+  // ADR-0028 (schema blocks.v2、v0.11.0): locale → 表示名の翻訳テーブル。
+  // 旧 schema (blocks.v1) では存在しないため optional。
+  display_name_i18n?: Partial<Record<Locale, string>>;
   category: string;
   icon: string;
   color: string;
   docstring_summary: string;
+  // ADR-0028: docstring 1 行説明の翻訳 (palette tooltip 等で使用)。
+  docstring_summary_i18n?: Partial<Record<Locale, string>>;
   docstring_full?: string;
   params_spec: BlockParamSpec[];
   default_n_inputs: number;
@@ -106,7 +115,10 @@ export type MaskValuesDict = Record<string, number | boolean>;
 
 export interface BlockRegistryResponse {
   blocks: BlockMetadata[];
+  /** ``"blocks.v1"`` (legacy) または ``"blocks.v2"`` (ADR-0028)。 */
   schema_version: string;
+  /** ADR-0028: サーバが対応する locale 一覧。``schema_version >= blocks.v2`` のみ。 */
+  supported_locales?: Locale[];
 }
 
 export interface ResolvedPortShapes {

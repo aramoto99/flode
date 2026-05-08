@@ -1,0 +1,444 @@
+"""ADR-0028: Block class registry の i18n 翻訳テーブル。
+
+集中管理方式 (ADR-0028 §Decision Option 1) で、各 built-in Block の
+``display_name`` と ``docstring_summary`` の en/ja 翻訳を 1 か所に集約する。
+``registry.build_metadata()`` から ``get_translations()`` 経由で参照される。
+
+カバー範囲: ``_BUILTIN_METADATA`` (registry.py) に登録された全 Block class。
+カバレッジ完全性は ``tests/server/test_registry_translations.py`` で
+継続的に検証する (新規ブロック追加時の翻訳漏れを CI で検出)。
+
+3rd-party 拡張ブロック (= ``_BUILTIN_METADATA`` 未登録) の翻訳サポートは Phase 5+
+で別 ADR (``pyflw.register_block_translations()`` API 等) として扱う。本テーブル
+未登録の type_path は ``inspect.getdoc()`` の 1 行目を ``docstring_summary`` に、
+class attribute (`_block_display_name`) を ``display_name`` に使う既存挙動に
+フォールバックする (= 後方互換)。
+"""
+
+from __future__ import annotations
+
+from typing import Final, Literal
+
+#: サポート言語コード (ADR-0024 §Decision §(3) と一致)。
+Locale = Literal["en", "ja"]
+
+SUPPORTED_LOCALES: Final[tuple[Locale, ...]] = ("en", "ja")
+
+#: 1 ブロックの 1 言語あたりの翻訳エントリ。
+#: ``display_name``: 短い名詞 (英大文字始まり / 句点なし)
+#: ``docstring_summary``: 1 行説明 (句点あり、数式は両言語共通の半角)
+_BlockEntry = dict[str, str]
+_LocaleMap = dict[Locale, _BlockEntry]
+
+
+_BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
+    # ----- sources (6) ----------------------------------------------------
+    "pyflw.blocks.sources.Constant": {
+        "en": {
+            "display_name": "Constant",
+            "docstring_summary": "Constant value source y(t) = value.",
+        },
+        "ja": {
+            "display_name": "定数",
+            "docstring_summary": "定数値ソース y(t) = value。",
+        },
+    },
+    "pyflw.blocks.sources.Step": {
+        "en": {
+            "display_name": "Step",
+            "docstring_summary": "Step source: 0 before t = step_time, then final_value.",
+        },
+        "ja": {
+            "display_name": "ステップ",
+            "docstring_summary": "ステップ信号: t < step_time でゼロ、以降 final_value。",
+        },
+    },
+    "pyflw.blocks.sources.Sine": {
+        "en": {
+            "display_name": "Sine",
+            "docstring_summary": "Sine wave y(t) = amplitude * sin(2*pi*frequency*t + phase) + bias.",
+        },
+        "ja": {
+            "display_name": "正弦波",
+            "docstring_summary": "正弦波 y(t) = amplitude * sin(2*pi*frequency*t + phase) + bias。",
+        },
+    },
+    "pyflw.blocks.sources.Ramp": {
+        "en": {
+            "display_name": "Ramp",
+            "docstring_summary": "Ramp source y(t) = slope * (t - start_time) for t >= start_time.",
+        },
+        "ja": {
+            "display_name": "ランプ",
+            "docstring_summary": "ランプ信号 y(t) = slope * (t - start_time) (t >= start_time)。",
+        },
+    },
+    "pyflw.blocks.sources.Clock": {
+        "en": {
+            "display_name": "Clock",
+            "docstring_summary": "Clock source y(t) = t (current simulation time).",
+        },
+        "ja": {
+            "display_name": "クロック",
+            "docstring_summary": "シミュレーション時刻ソース y(t) = t。",
+        },
+    },
+    "pyflw.blocks.sources.PulseGenerator": {
+        "en": {
+            "display_name": "Pulse Generator",
+            "docstring_summary": "Periodic rectangular pulse with configurable period and duty cycle.",
+        },
+        "ja": {
+            "display_name": "パルス発生器",
+            "docstring_summary": "周期と Duty 比を指定できる矩形パルス信号。",
+        },
+    },
+
+    # ----- mathops (8) ---------------------------------------------------
+    "pyflw.blocks.mathops.Gain": {
+        "en": {
+            "display_name": "Gain",
+            "docstring_summary": "Scalar gain y(t) = k * u(t).",
+        },
+        "ja": {
+            "display_name": "ゲイン",
+            "docstring_summary": "スカラーゲイン y(t) = k * u(t)。",
+        },
+    },
+    "pyflw.blocks.mathops.Sum": {
+        "en": {
+            "display_name": "Sum",
+            "docstring_summary": "Weighted sum of inputs with per-port +/- signs.",
+        },
+        "ja": {
+            "display_name": "加算",
+            "docstring_summary": "符号付き入力の重み付き和 (ポートごとに +/- を指定)。",
+        },
+    },
+    "pyflw.blocks.mathops.Product": {
+        "en": {
+            "display_name": "Product",
+            "docstring_summary": "Element-wise product of all input ports.",
+        },
+        "ja": {
+            "display_name": "乗算",
+            "docstring_summary": "全入力ポートの要素ごとの積。",
+        },
+    },
+    "pyflw.blocks.mathops.Saturation": {
+        "en": {
+            "display_name": "Saturation",
+            "docstring_summary": "Clamp input to the range [lower, upper].",
+        },
+        "ja": {
+            "display_name": "飽和",
+            "docstring_summary": "入力を [lower, upper] の範囲にクランプ。",
+        },
+    },
+    "pyflw.blocks.mathops.Abs": {
+        "en": {
+            "display_name": "Abs",
+            "docstring_summary": "Absolute value y(t) = |u(t)|.",
+        },
+        "ja": {
+            "display_name": "絶対値",
+            "docstring_summary": "絶対値 y(t) = |u(t)|。",
+        },
+    },
+    "pyflw.blocks.mathops.Sign": {
+        "en": {
+            "display_name": "Sign",
+            "docstring_summary": "Signum y(t) = sign(u(t)) in {-1, 0, +1}.",
+        },
+        "ja": {
+            "display_name": "符号",
+            "docstring_summary": "符号関数 y(t) = sign(u(t)) で {-1, 0, +1}。",
+        },
+    },
+    "pyflw.blocks.mathops.MinMax": {
+        "en": {
+            "display_name": "MinMax",
+            "docstring_summary": "Element-wise min or max of n inputs (mode selectable).",
+        },
+        "ja": {
+            "display_name": "最小・最大",
+            "docstring_summary": "n 入力の要素ごとの最小値または最大値 (モード切替)。",
+        },
+    },
+    "pyflw.blocks.mathops.Divide": {
+        "en": {
+            "display_name": "Divide",
+            "docstring_summary": "Multiply / divide inputs based on per-port * or / signs.",
+        },
+        "ja": {
+            "display_name": "除算",
+            "docstring_summary": "ポートごとに * または / を指定して入力を乗除算。",
+        },
+    },
+
+    # ----- continuous (5) -------------------------------------------------
+    "pyflw.blocks.continuous.Integrator": {
+        "en": {
+            "display_name": "Integrator",
+            "docstring_summary": "Continuous integrator x_dot = u, y = x.",
+        },
+        "ja": {
+            "display_name": "積分器",
+            "docstring_summary": "連続時間積分器 x_dot = u、y = x。",
+        },
+    },
+    "pyflw.blocks.continuous.Derivative": {
+        "en": {
+            "display_name": "Derivative",
+            "docstring_summary": "First-order high-pass approximation of d/dt.",
+        },
+        "ja": {
+            "display_name": "微分器",
+            "docstring_summary": "1 次ハイパスフィルタによる微分の近似。",
+        },
+    },
+    "pyflw.blocks.continuous.TransferFunction": {
+        "en": {
+            "display_name": "Transfer Fcn",
+            "docstring_summary": "SISO continuous transfer function H(s) = num(s) / den(s).",
+        },
+        "ja": {
+            "display_name": "伝達関数",
+            "docstring_summary": "SISO 連続伝達関数 H(s) = num(s) / den(s)。",
+        },
+    },
+    "pyflw.blocks.continuous.StateSpace": {
+        "en": {
+            "display_name": "State Space",
+            "docstring_summary": "Continuous LTI state-space x_dot = A x + B u, y = C x + D u.",
+        },
+        "ja": {
+            "display_name": "状態空間",
+            "docstring_summary": "連続 LTI 状態空間 x_dot = A x + B u、y = C x + D u。",
+        },
+    },
+    "pyflw.blocks.continuous.MimoTransferFunction": {
+        "en": {
+            "display_name": "MIMO TF",
+            "docstring_summary": "MIMO continuous transfer function H(s) = N(s) / d(s) (common denominator).",
+        },
+        "ja": {
+            "display_name": "MIMO 伝達関数",
+            "docstring_summary": "MIMO 連続伝達関数 H(s) = N(s) / d(s) (共通分母)。",
+        },
+    },
+
+    # ----- discrete (6) ---------------------------------------------------
+    "pyflw.blocks.discrete.UnitDelay": {
+        "en": {
+            "display_name": "Unit Delay",
+            "docstring_summary": "One-sample delay y(t_k) = u(t_{k-1}).",
+        },
+        "ja": {
+            "display_name": "単位遅延",
+            "docstring_summary": "1 サンプル遅延 y(t_k) = u(t_{k-1})。",
+        },
+    },
+    "pyflw.blocks.discrete.DiscreteIntegrator": {
+        "en": {
+            "display_name": "Discrete Integrator",
+            "docstring_summary": "Discrete-time accumulator with selectable forward / backward / trapezoidal method.",
+        },
+        "ja": {
+            "display_name": "離散積分器",
+            "docstring_summary": "離散時間累積器 (前進 / 後退 / 台形法を選択可能)。",
+        },
+    },
+    "pyflw.blocks.discrete.ZeroOrderHold": {
+        "en": {
+            "display_name": "ZOH (legacy)",
+            "docstring_summary": "Legacy zero-order hold (deprecated since v0.5; use UnitDelay or ZeroOrderHoldDirect).",
+        },
+        "ja": {
+            "display_name": "ZOH (旧版)",
+            "docstring_summary": "旧版のゼロ次ホールド (v0.5 で deprecated、UnitDelay か ZeroOrderHoldDirect を推奨)。",
+        },
+    },
+    "pyflw.blocks.discrete.ZeroOrderHoldDirect": {
+        "en": {
+            "display_name": "ZOH",
+            "docstring_summary": "Zero-order hold with direct feedthrough (y = u at each sample step).",
+        },
+        "ja": {
+            "display_name": "ZOH",
+            "docstring_summary": "直達経路付きゼロ次ホールド (各サンプルステップで y = u)。",
+        },
+    },
+    "pyflw.blocks.discrete.DiscreteStateSpace": {
+        "en": {
+            "display_name": "Discrete State Space",
+            "docstring_summary": "Discrete LTI state-space x[k+1] = A x[k] + B u[k], y[k] = C x[k] + D u[k].",
+        },
+        "ja": {
+            "display_name": "離散状態空間",
+            "docstring_summary": "離散 LTI 状態空間 x[k+1] = A x[k] + B u[k]、y[k] = C x[k] + D u[k]。",
+        },
+    },
+    "pyflw.blocks.discrete.DiscreteTransferFunction": {
+        "en": {
+            "display_name": "Discrete Transfer Fcn",
+            "docstring_summary": "SISO discrete transfer function H(z) = num(z) / den(z).",
+        },
+        "ja": {
+            "display_name": "離散伝達関数",
+            "docstring_summary": "SISO 離散伝達関数 H(z) = num(z) / den(z)。",
+        },
+    },
+
+    # ----- logic (2) ------------------------------------------------------
+    "pyflw.blocks.logic.RelationalOperator": {
+        "en": {
+            "display_name": "Relational",
+            "docstring_summary": "Compare two inputs with ==, !=, <, <=, >, >=.",
+        },
+        "ja": {
+            "display_name": "関係演算",
+            "docstring_summary": "2 入力を ==、!=、<、<=、>、>= で比較。",
+        },
+    },
+    "pyflw.blocks.logic.LogicalOperator": {
+        "en": {
+            "display_name": "Logical",
+            "docstring_summary": "Logical AND / OR / XOR / NAND / NOR / XNOR / NOT over n inputs.",
+        },
+        "ja": {
+            "display_name": "論理演算",
+            "docstring_summary": "n 入力に対する AND / OR / XOR / NAND / NOR / XNOR / NOT 論理演算。",
+        },
+    },
+
+    # ----- routing (3) ----------------------------------------------------
+    "pyflw.blocks.routing.Switch": {
+        "en": {
+            "display_name": "Switch",
+            "docstring_summary": "Select input 0 or 2 based on threshold criterion on input 1.",
+        },
+        "ja": {
+            "display_name": "スイッチ",
+            "docstring_summary": "入力 1 のしきい値判定で入力 0 または 2 を出力。",
+        },
+    },
+    "pyflw.blocks.routing.Mux": {
+        "en": {
+            "display_name": "Mux",
+            "docstring_summary": "Concatenate n scalar inputs into a single (n,) vector output.",
+        },
+        "ja": {
+            "display_name": "Mux",
+            "docstring_summary": "n 個のスカラー入力を 1 本の (n,) ベクトル出力に統合。",
+        },
+    },
+    "pyflw.blocks.routing.Demux": {
+        "en": {
+            "display_name": "Demux",
+            "docstring_summary": "Split a single (n,) vector input into n scalar outputs.",
+        },
+        "ja": {
+            "display_name": "Demux",
+            "docstring_summary": "1 本の (n,) ベクトル入力を n 個のスカラー出力に分割。",
+        },
+    },
+
+    # ----- sinks (4) ------------------------------------------------------
+    "pyflw.blocks.sinks.Scope": {
+        "en": {
+            "display_name": "Scope",
+            "docstring_summary": "Record signal time series and visualise via plot().",
+        },
+        "ja": {
+            "display_name": "Scope",
+            "docstring_summary": "信号の時系列を記録し plot() で可視化。",
+        },
+    },
+    "pyflw.blocks.sinks.Display": {
+        "en": {
+            "display_name": "Display",
+            "docstring_summary": "Show the latest sample as a numeric readout on the block face.",
+        },
+        "ja": {
+            "display_name": "Display",
+            "docstring_summary": "最新サンプルをブロック上に数値表示。",
+        },
+    },
+    "pyflw.blocks.sinks.XYGraph": {
+        "en": {
+            "display_name": "XY Graph",
+            "docstring_summary": "Parametric x-y plot of inputs 0 (x) and 1 (y).",
+        },
+        "ja": {
+            "display_name": "XY グラフ",
+            "docstring_summary": "入力 0 (x) と 1 (y) のパラメトリックプロット。",
+        },
+    },
+    "pyflw.blocks.sinks.Terminator": {
+        "en": {
+            "display_name": "Terminator",
+            "docstring_summary": "Discard the input signal (suppresses unconnected output warnings).",
+        },
+        "ja": {
+            "display_name": "Terminator",
+            "docstring_summary": "入力信号を破棄 (未接続出力の警告を抑制)。",
+        },
+    },
+
+    # ----- subsystems (3) -------------------------------------------------
+    "pyflw.subsystems.subsystem.Subsystem": {
+        "en": {
+            "display_name": "Subsystem",
+            "docstring_summary": "Atomic subsystem grouping inner blocks with Inport / Outport boundaries.",
+        },
+        "ja": {
+            "display_name": "Subsystem",
+            "docstring_summary": "Inport / Outport で境界を区切った内部ブロック群を 1 つのブロックにまとめる Atomic Subsystem。",
+        },
+    },
+    "pyflw.subsystems.ports.Inport": {
+        "en": {
+            "display_name": "Inport",
+            "docstring_summary": "Subsystem boundary input port (only valid inside a Subsystem).",
+        },
+        "ja": {
+            "display_name": "Inport",
+            "docstring_summary": "Subsystem 境界の入力ポート (Subsystem 内部でのみ使用)。",
+        },
+    },
+    "pyflw.subsystems.ports.Outport": {
+        "en": {
+            "display_name": "Outport",
+            "docstring_summary": "Subsystem boundary output port (only valid inside a Subsystem).",
+        },
+        "ja": {
+            "display_name": "Outport",
+            "docstring_summary": "Subsystem 境界の出力ポート (Subsystem 内部でのみ使用)。",
+        },
+    },
+}
+
+
+def get_translations(type_path: str) -> _LocaleMap:
+    """``type_path`` に対応する翻訳辞書を返す。
+
+    Args:
+        type_path: ``"pyflw.blocks.sources.Constant"`` のような完全 type path。
+
+    Returns:
+        ``{"en": {"display_name": ..., "docstring_summary": ...}, "ja": {...}}``。
+        未登録の type_path には空 dict ``{}`` を返し、registry.py 側で
+        ``inspect.getdoc()`` フォールバックに任せる (= 3rd-party 拡張ブロックは
+        当面 en 固定で動作)。
+    """
+    return _BLOCK_TRANSLATIONS.get(type_path, {})
+
+
+def all_registered_type_paths() -> set[str]:
+    """``_BLOCK_TRANSLATIONS`` に登録済の全 type_path 集合を返す。
+
+    pytest のカバレッジ検証 (``test_all_builtin_blocks_have_translations``) で
+    ``_BUILTIN_METADATA.keys()`` との差集合を取って翻訳漏れを検出する。
+    """
+    return set(_BLOCK_TRANSLATIONS.keys())

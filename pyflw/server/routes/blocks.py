@@ -38,16 +38,25 @@ def _registry(request: Request) -> list[BlockMetadata]:
 
 @router.get("")
 def list_blocks(request: Request) -> dict[str, Any]:
-    """全 Block class metadata を返す (パレット表示用)。
+    """全 Block class metadata を返す (パレット表示用、ADR-0019、ADR-0028)。
 
     完全な docstring はサイズが大きくなるため省略 (``docstring_summary`` のみ)。
     詳細は ``GET /api/v1/blocks/{type_path}`` で個別取得する。
+
+    ADR-0028 (v0.11.0): ``schema_version = "blocks.v2"`` に bump、
+    ``supported_locales`` フィールドを追加。各 block metadata に
+    ``display_name_i18n`` / ``docstring_summary_i18n`` を同梱する (= 旧 frontend が
+    読まない optional フィールドなので後方互換)。
     """
+    # 遅延 import で循環回避
+    from ..registry_translations import SUPPORTED_LOCALES
+
     return {
         "blocks": [
             metadata_to_dict(m, include_full_docstring=False) for m in _registry(request)
         ],
-        "schema_version": "blocks.v1",
+        "schema_version": "blocks.v2",
+        "supported_locales": list(SUPPORTED_LOCALES),
     }
 
 

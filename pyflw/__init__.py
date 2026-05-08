@@ -1,4 +1,4 @@
-__version__ = "0.10.1"  # ADR-0027: Bode/Nyquist + eigenvalues/is_stable/root_locus (Phase 4 #2, 2026-05-07)
+__version__ = "0.11.0"  # ADR-0028: Block registry i18n (display_name_i18n / docstring_summary_i18n, Phase 4 #3, 2026-05-08)
 
 from .analysis import (
     BodeResponse,

@@ -9,6 +9,11 @@ import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { BlockGlyph } from "../lib/blockGlyphs";
+import {
+  localizedDisplayName,
+  localizedDocstringSummary,
+  searchableDisplayNames,
+} from "../lib/blockI18n";
 import { buildDefaultParams } from "../lib/idGenerator";
 import type { BlockMetadata } from "../types/api";
 
@@ -25,7 +30,7 @@ const CATEGORY_ORDER = [
 ] as const;
 
 export function BlockPalette(): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
@@ -34,15 +39,20 @@ export function BlockPalette(): JSX.Element {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // ADR-0028: 言語切替時に block 表示名 / 検索結果が変わるため、``i18n.language`` を
+  // useMemo の依存に含めて再計算する (registry 自体は 1 回 fetch + cache 維持)。
+  const lang = i18n.language;
   const blocksByCategory = useMemo(() => {
     if (!data) return {} as Record<string, BlockMetadata[]>;
     const filter = search.trim().toLowerCase();
     const filtered = data.blocks.filter((b) => {
       if (!filter) return true;
+      // 両言語 display_name + category + tags を検索対象に (ADR-0028 §(4))
+      const names = searchableDisplayNames(b).map((s) => s.toLowerCase());
+      if (names.some((n) => n.includes(filter))) return true;
       return (
-        b.display_name.toLowerCase().includes(filter) ||
         b.category.toLowerCase().includes(filter) ||
-        b.tags.some((t) => t.toLowerCase().includes(filter))
+        b.tags.some((tag) => tag.toLowerCase().includes(filter))
       );
     });
     const grouped: Record<string, BlockMetadata[]> = {};
@@ -52,10 +62,14 @@ export function BlockPalette(): JSX.Element {
       grouped[key]!.push(b);
     }
     for (const list of Object.values(grouped)) {
-      list.sort((a, b) => a.display_name.localeCompare(b.display_name));
+      list.sort((a, b) =>
+        localizedDisplayName(a).localeCompare(localizedDisplayName(b)),
+      );
     }
     return grouped;
-  }, [data, search]);
+    // ``lang`` 変化で sort 順 / 検索ヒットが変わるため依存に追加
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, search, lang]);
 
   const handleDragStart = (
     event: React.DragEvent<HTMLDivElement>,
@@ -127,34 +141,37 @@ export function BlockPalette(): JSX.Element {
                 </button>
                 {!isCollapsed && (
                   <div className="grid grid-cols-2 gap-1 px-1 pt-1">
-                    {blocks.map((b) => (
-                      <div
-                        key={b.type_path}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, b)}
-                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
-                        title={
-                          b.docstring_summary
-                            ? `${b.display_name} — ${b.docstring_summary}`
-                            : b.display_name
-                        }
-                      >
+                    {blocks.map((b) => {
+                      // ADR-0028: 現在言語で表示名・docstring を取り出す。
+                      // ``i18n.language`` 変化で本コンポーネントが再 render され、
+                      // useMemo 経由で再計算されるため、ここはストレートに helper を呼ぶ。
+                      const dispName = localizedDisplayName(b);
+                      const summary = localizedDocstringSummary(b);
+                      return (
                         <div
-                          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 transition-colors group-hover:border-blue-400"
-                          style={{ color: b.color }}
+                          key={b.type_path}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, b)}
+                          className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
+                          title={summary ? `${dispName} — ${summary}` : dispName}
                         >
-                          <BlockGlyph typePath={b.type_path} />
+                          <div
+                            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 transition-colors group-hover:border-blue-400"
+                            style={{ color: b.color }}
+                          >
+                            <BlockGlyph typePath={b.type_path} />
+                          </div>
+                          <div className="w-full truncate text-[10px] font-medium text-slate-700">
+                            {dispName}
+                          </div>
+                          {b.tags.includes("sm_b") && (
+                            <span className="rounded bg-cyan-100 px-1 text-[8px] uppercase tracking-wide text-cyan-700">
+                              SM-B
+                            </span>
+                          )}
                         </div>
-                        <div className="w-full truncate text-[10px] font-medium text-slate-700">
-                          {b.display_name}
-                        </div>
-                        {b.tags.includes("sm_b") && (
-                          <span className="rounded bg-cyan-100 px-1 text-[8px] uppercase tracking-wide text-cyan-700">
-                            SM-B
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
