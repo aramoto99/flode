@@ -166,6 +166,133 @@ class DiscreteIntegrator(Block):
 _ZOH_SAMPLE_TOL = 1e-9
 
 
+class RateTransition(Block):
+    """異なるサンプル時間の離散ブロック間でレート変換を行う (Simulink 同名、ADR-0036)。
+
+    マルチレートモデルで、上流ブロックのサンプル周期 ``input_sample_time`` と
+    下流ブロックのサンプル周期 ``output_sample_time`` が異なる場合に明示的に
+    挿入する。pyflw は ADR-0005 で「自動 RateTransition 挿入はしない」方針を
+    採用しているため、ユーザーが本ブロックで明示する必要がある (Simulink 経験者
+    向けの整合性、ADR-0036 §(2-A))。
+
+    モード:
+      * ``"zoh"`` (fast-to-slow ラッチ): 入力周期 < 出力周期。出力サンプル時刻で
+        現入力をラッチして保持。``ZeroOrderHoldDirect`` 風だが下流レートで fire する
+      * ``"delay"`` (slow-to-fast 1-step 遅延): 入力周期 > 出力周期。``UnitDelay`` 風に
+        前回入力を出力する (= シングルレート 2-state 遅延)
+      * ``"auto"`` (default): build 時に input/output 周期から自動決定。
+        ``input_sample_time < output_sample_time`` なら ``"zoh"``、逆なら ``"delay"``
+
+    Internal state (n_states=2、ADR-0015 §(2) の 2-state pattern を流用):
+        x[0] = output_curr  -- 現サンプル境界での出力 (= ``output(t, x, u)`` の戻り値)
+        x[1] = output_next  -- 次サンプル境界で x[0] にシフトされる buffer
+
+    ``_resolved_sample_time = output_sample_time`` (= 下流レートで fire する)。
+    既存 ``Simulator._run_sm_a_loop`` の ``k % step_ratio == 0`` 経路で発火するため、
+    新スケジューラ不要 (= ADR-0036 §(8) 数値完全不変ガードを満たす)。
+
+    Args:
+        input_sample_time: 入力側サンプル周期 [s]。``> 0`` 必須 (``-1.0`` で継承)。
+        output_sample_time: 出力側サンプル周期 [s]。``> 0`` 必須 (``-1.0`` で継承)。
+        mode: ``"zoh"`` / ``"delay"`` / ``"auto"`` (default)。
+        x0: 初期状態 (= t=0 での出力値)。内部 state[0]=state[1]=x0。
+
+    Raises:
+        BlockSpecError: ``mode`` が不正、``input_sample_time`` / ``output_sample_time``
+            が 0 以下 (継承 -1.0 を除く)、``input_sample_time == output_sample_time``
+            (= 同一レート、RateTransition 不要) の場合。
+    """
+
+    _VALID_MODES = ("zoh", "delay", "auto")
+
+    def __init__(
+        self,
+        *,
+        input_sample_time: float,
+        output_sample_time: float,
+        mode: str = "auto",
+        x0: float = 0.0,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        if mode not in self._VALID_MODES:
+            raise BlockSpecError(
+                f"RateTransition: mode must be one of {self._VALID_MODES}, got {mode!r}"
+            )
+        self._validate_sample_time("input_sample_time", input_sample_time)
+        self._validate_sample_time("output_sample_time", output_sample_time)
+        if (
+            input_sample_time > 0.0
+            and output_sample_time > 0.0
+            and abs(input_sample_time - output_sample_time) < 1e-12
+        ):
+            raise BlockSpecError(
+                f"RateTransition: input_sample_time ({input_sample_time}) and "
+                f"output_sample_time ({output_sample_time}) must differ. Use the "
+                f"block only when bridging two distinct rates."
+            )
+
+        super().__init__(
+            id=id,
+            name=name,
+            n_inputs=1,
+            n_outputs=1,
+            n_states=2,
+            direct_feedthrough=False,
+            # ADR-0036 §(1): 出力レートで fire する (= 下流から見た sample_time)。
+            sample_time=output_sample_time,
+        )
+        self.input_sample_time = float(input_sample_time)
+        self.output_sample_time = float(output_sample_time)
+
+        # mode="auto" は build (instantiate) 時に確定 (sample_time 継承を解決しない
+        # 範囲では input/output が確定済の場合のみ可)。継承 -1.0 が混じっていれば
+        # ``"auto"`` のまま保持し、Simulator の sample_time 解決後に再評価する余地を
+        # 残す。Phase 5b では「両方とも明示的に正値」を前提とした MVP に絞る (= 継承
+        # -1.0 + auto は ``BlockSpecError`` で拒否、SPEC §機能要件 #32-#33)。
+        if mode == "auto":
+            if input_sample_time <= 0.0 or output_sample_time <= 0.0:
+                raise BlockSpecError(
+                    "RateTransition(mode='auto'): input_sample_time and "
+                    "output_sample_time must both be positive (no inheritance) for "
+                    "auto mode resolution. Use mode='zoh' or 'delay' explicitly."
+                )
+            mode = "zoh" if input_sample_time < output_sample_time else "delay"
+        self.mode = mode
+
+        # state[0]=output_curr、state[1]=output_next (ADR-0015 §(2))
+        self.x0 = np.array([float(x0), float(x0)])
+        self._params = {
+            "input_sample_time": float(input_sample_time),
+            "output_sample_time": float(output_sample_time),
+            "mode": mode,
+            "x0": float(x0),
+        }
+
+    @staticmethod
+    def _validate_sample_time(name: str, value: float) -> None:
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise BlockSpecError(
+                f"RateTransition: {name} must be float, got {type(value).__name__}"
+            )
+        if value == -1.0:
+            return  # 継承
+        if value <= 0.0:
+            raise BlockSpecError(
+                f"RateTransition: {name} must be > 0 (or -1.0 for inheritance), got {value}"
+            )
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([x[0]])
+
+    def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0015 §(1)(2) と同じローテーション。state[0] ← 前 buffer、
+        # state[1] ← 現入力。``mode`` (zoh / delay) は出力フェーズで違わない
+        # (= 両モードとも 2-state ローテーション、違いは「下流レートで fire する
+        # ことで実効的に zoh / delay に見える」点)。
+        return np.array([x[1], u[0]])
+
+
 class ZeroOrderHoldDirect(Block):
     """Simulink ZOH 互換 ``y(t_k) = u(t_k)`` の即時反映ホールド (ADR-0014 §(3))。
 

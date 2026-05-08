@@ -256,6 +256,16 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "直達経路付きゼロ次ホールド (各サンプルステップで y = u)。",
         },
     },
+    "pyflw.blocks.discrete.RateTransition": {
+        "en": {
+            "display_name": "Rate Transition",
+            "docstring_summary": "Multirate bridge between blocks with different sample times (zoh / delay / auto).",
+        },
+        "ja": {
+            "display_name": "レート変換",
+            "docstring_summary": "異なるサンプル時間のブロック間を橋渡しするマルチレート変換 (zoh / delay / auto)。",
+        },
+    },
     "pyflw.blocks.discrete.DiscreteStateSpace": {
         "en": {
             "display_name": "Discrete State Space",

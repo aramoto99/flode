@@ -163,6 +163,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str, str]] = {
         "disc.zoh_direct",
         "#f59e0b",
     ),
+    "pyflw.blocks.discrete.RateTransition": (
+        "discrete",
+        "Rate Transition",
+        "disc.rate_transition",
+        "#f59e0b",
+    ),
     "pyflw.blocks.discrete.DiscreteStateSpace": (
         "discrete",
         "Discrete State Space",
@@ -256,6 +262,12 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     "pyflw.blocks.discrete.UnitDelay": {"sample_time": 0.1},
     "pyflw.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
+    # ADR-0036: RateTransition は input_sample_time / output_sample_time が
+    # 必須引数で同値禁止のため、明示の異なるレート組み合わせを default に
+    "pyflw.blocks.discrete.RateTransition": {
+        "input_sample_time": 0.1,
+        "output_sample_time": 0.2,
+    },
     "pyflw.blocks.routing.Mux": {"n": 2},
     "pyflw.blocks.routing.Demux": {"n": 2},
     "pyflw.subsystems.ports.Inport": {"port_idx": 0},

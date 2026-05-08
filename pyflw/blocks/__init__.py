@@ -9,6 +9,7 @@ from .discrete import (
     DiscreteIntegrator,
     DiscreteStateSpace,
     DiscreteTransferFunction,
+    RateTransition,
     UnitDelay,
     ZeroOrderHoldDirect,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "Product",
     "PulseGenerator",
     "Ramp",
+    "RateTransition",
     "RelationalOperator",
     "Saturation",
     "Scope",
