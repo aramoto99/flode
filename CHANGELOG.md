@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-05-08
+
+ADR-0030: グローバル toast 通知機構 + a11y aria-label 国際化総仕上げ。
+Phase 4 sub-ADR #5 (= **Phase 4 sub-ADR の最終枠**)。`DiagramCanvas.tsx`
+ローカル実装 (`useState<string|null>` + `setTimeout`) を全画面共通の Zustand
+store + `<ToastContainer>` (App ルート mount) に置き換え、severity
+(info / success / warning / error) ごとに ARIA role と aria-live を出し分ける。
+最大 3 件 stacking、新着が画面下中央に積み重なる。close ボタンで manual
+dismiss も可能。これにより v0.12.0 (Phase 4 完了タグ) のリリース判定基準
+(ADR-0025 §(7)) を満たす。
+
+### Added — Frontend
+
+- `pyflw/web/frontend/src/store/toastStore.ts`: Zustand store。
+  `pushToast({severity, message, durationMs?})` / `dismissToast(id)` /
+  `clearAllToasts()` API。auto-dismiss timer を store 内で管理 (= memory
+  leak 防止)、最大 3 件 stacking で超過時は最古を即時 dismiss。
+- `pyflw/web/frontend/src/components/Toast.tsx`: `<ToastContainer>` +
+  `<ToastView>`。severity 別の色 / icon / a11y 属性 (info/success →
+  `role=status` / `aria-live=polite`、warning/error → `role=alert` /
+  `aria-live=assertive`)。`<App>` ルートに 1 つ mount。
+- i18n locale: `toast.region` / `toast.dismiss` を ja/en に追加。
+
+### Changed
+
+- `pyflw/web/frontend/src/components/DiagramCanvas.tsx`: ローカル `toast`
+  state + 専用 `<div role="alert">` を削除。`showToast(msg)` ヘルパは
+  `pushToast({severity:"warning", message:msg})` に置換 (port 形状エラー
+  / connect 失敗 / library drop 失敗の 3 箇所が対象)。
+- `pyflw/web/frontend/src/App.tsx`: ルート末尾に `<ToastContainer />` を mount。
+
+### Tests
+
+- `pyflw/web/frontend/tests/toastStore.test.ts` (13 件): push 動作 /
+  severity デフォルト / auto-dismiss (info=3s, warning/error=5s) /
+  durationMs=0 永続表示 / stacking 上限 / dismissToast / clearAllToasts /
+  timer leak 防止 (drop 後に再 dismiss が走らない)。
+- `pyflw/web/frontend/tests/Toast.test.tsx` (9 件): render が空のとき
+  region 不在 / region に i18n aria-label / severity 別 role+aria-live /
+  複数 toast の DOM 順 / 個別 close ボタンの a11y label と動作。
+
+### Compat / Risks
+
+- 純フロントエンド改修 (Python 側無変更)。
+- `.flw.json` schema 0.6 / `.flwlib.json` schema libraries.v1 ともに無変更。
+- 既存 pytest 957 件 / vitest 171 件は全 pass を維持しつつ、frontend +22 件で
+  合計 193 件に増加。bundle gzip 増分 ≤ 1 KB。
+
 ## [0.11.1] - 2026-05-08
 
 ADR-0029: ブロックライブラリファイル `.flwlib.json` フォーマット。Phase 4

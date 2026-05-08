@@ -116,5 +116,8 @@
   "diagram.library_drop_invalid_ref": "不正なライブラリ参照がドロップされました。",
   "diagram.library_drop_failed": "ライブラリ entry の取得に失敗: {{message}}",
 
-  "palette.library_prefix": "ライブラリ"
+  "palette.library_prefix": "ライブラリ",
+
+  "toast.region": "通知",
+  "toast.dismiss": "通知を閉じる"
 }

@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getLibraryEntry, getModel, listBlockMetadata } from "../api/client";
+import { pushToast } from "../store/toastStore";
 import { modelToDiagram, type BlockNode } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
@@ -81,7 +82,6 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const editingPath = useAppStore((s) => s.editingPath);
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
-  const [toast, setToast] = useState<string | null>(null);
   const [quickAdd, setQuickAdd] = useState<{
     screenX: number;
     screenY: number;
@@ -232,9 +232,11 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     }
   }, [serverModel, modelId, selectedModelId, setEditingModel]);
 
+  // ADR-0030: 旧ローカル toast (`useState<string|null>` + `setTimeout`) はグローバル
+  // `<ToastContainer>` (App ルート mount) に置き換え済み。port 形状エラー / connect 失敗 /
+  // library drop 失敗はユーザー操作で訂正可能なので severity=warning で 5 秒表示。
   const showToast = (msg: string): void => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    pushToast({ severity: "warning", message: msg });
   };
 
   if (isLoading) {
@@ -437,9 +439,12 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
           useAppStore.getState().selectNode(newId);
         })
         .catch((err: Error) => {
-          showToast(
-            t("diagram.library_drop_failed", { message: err.message }),
-          );
+          // ADR-0030 SHOULD: API / fetch 失敗はシステムエラー → severity=error
+          // (port 形状エラー等のユーザー操作で訂正可能なものは warning)。
+          pushToast({
+            severity: "error",
+            message: t("diagram.library_drop_failed", { message: err.message }),
+          });
         });
       return;
     }
@@ -591,19 +596,6 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
           flowY={quickAdd.flowY}
           onClose={() => setQuickAdd(null)}
         />
-      )}
-      {toast && (
-        <div
-          className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md bg-rose-600 px-3.5 py-2 text-xs font-medium text-white shadow-lg ring-1 ring-rose-400"
-          role="alert"
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          {toast}
-        </div>
       )}
     </div>
   );

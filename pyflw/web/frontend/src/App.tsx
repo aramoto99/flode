@@ -11,6 +11,7 @@ import { ScopeView } from "./components/ScopeView";
 import { SimulationControls } from "./components/SimulationControls";
 import { StatusBar } from "./components/StatusBar";
 import { TabStrip } from "./components/TabStrip";
+import { ToastContainer } from "./components/Toast";
 import { Toolbar } from "./components/Toolbar";
 import { XYGraphView } from "./components/XYGraphView";
 import { resolveBlocksAtPath } from "./lib/pathResolver";
@@ -136,6 +137,9 @@ export default function App(): JSX.Element {
 
         {/* Status bar */}
         <StatusBar />
+
+        {/* ADR-0030: グローバル toast container (fixed positioning なので grid 末尾でも OK)。 */}
+        <ToastContainer />
       </div>
     </ReactFlowProvider>
   );

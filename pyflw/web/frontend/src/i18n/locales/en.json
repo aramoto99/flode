@@ -116,5 +116,8 @@
   "diagram.library_drop_invalid_ref": "Invalid library entry reference dropped.",
   "diagram.library_drop_failed": "Failed to load library entry: {{message}}",
 
-  "palette.library_prefix": "Library"
+  "palette.library_prefix": "Library",
+
+  "toast.region": "Notifications",
+  "toast.dismiss": "Dismiss notification"
 }
