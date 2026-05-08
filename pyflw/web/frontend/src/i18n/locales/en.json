@@ -112,5 +112,9 @@
   "diagram.no_model": "No model",
   "diagram.path_failed": "Path resolution failed: {{message}}",
   "diagram.connect_no_block": "Connection refused: source or target block not found.",
-  "diagram.port_shape_mismatch": "Port shape mismatch."
+  "diagram.port_shape_mismatch": "Port shape mismatch.",
+  "diagram.library_drop_invalid_ref": "Invalid library entry reference dropped.",
+  "diagram.library_drop_failed": "Failed to load library entry: {{message}}",
+
+  "palette.library_prefix": "Library"
 }

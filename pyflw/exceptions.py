@@ -58,3 +58,17 @@ class ModelSerializationError(PyflwError):
 
 class SimulationStillRunningError(PyflwError):
     """シミュレーションがまだ実行中で、結果が取得できない (ADR-0011)。"""
+
+
+class LibraryFileError(PyflwError):
+    """``.flwlib.json`` の load / 検証失敗 (ADR-0029)。
+
+    schema_version 未対応、必須キー欠落、subsystem body 解釈失敗などを表す。
+    """
+
+
+class LibraryEntryNotFoundError(PyflwError, KeyError):
+    """REST `GET /api/v1/libraries/{lib}/{entry}` で未登録の id が指定された (ADR-0029)。
+
+    ``KeyError`` を継承するため、library / entry を dict 風に扱う code でも互換。
+    """

@@ -112,5 +112,9 @@
   "diagram.no_model": "モデルなし",
   "diagram.path_failed": "パス解決に失敗: {{message}}",
   "diagram.connect_no_block": "接続できません: 接続元または接続先ブロックが見つかりません。",
-  "diagram.port_shape_mismatch": "ポート形状が一致しません。"
+  "diagram.port_shape_mismatch": "ポート形状が一致しません。",
+  "diagram.library_drop_invalid_ref": "不正なライブラリ参照がドロップされました。",
+  "diagram.library_drop_failed": "ライブラリ entry の取得に失敗: {{message}}",
+
+  "palette.library_prefix": "ライブラリ"
 }

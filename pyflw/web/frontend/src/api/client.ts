@@ -1,8 +1,10 @@
-// REST API クライアント (ADR-0011 §(1)、ADR-0019 §(1))。
+// REST API クライアント (ADR-0011 §(1)、ADR-0019 §(1)、ADR-0029)。
 import type {
   BlockMetadata,
   BlockRegistryResponse,
   FlwModel,
+  LibraryEntryDetail,
+  LibraryRegistryResponse,
   ModelList,
   ResolvedPortShapes,
   SimulationState,
@@ -89,6 +91,22 @@ export async function resolvePortShapes(
     method: "POST",
     body: JSON.stringify({ type_path: typePath, params }),
   });
+}
+
+// ADR-0029: Library file format endpoints。
+// list は subsystem body を含めない (= ペイロード削減、palette 表示用)。drop 時に
+// 個別 entry を fetch して inline 展開する。
+export async function listLibraries(): Promise<LibraryRegistryResponse> {
+  return _fetch<LibraryRegistryResponse>("/libraries");
+}
+
+export async function getLibraryEntry(
+  libraryName: string,
+  entryId: string,
+): Promise<LibraryEntryDetail> {
+  return _fetch<LibraryEntryDetail>(
+    `/libraries/${encodeURIComponent(libraryName)}/${encodeURIComponent(entryId)}`,
+  );
 }
 
 // ADR-0019 §(7): Create new model

@@ -18,9 +18,17 @@ class Settings:
         max_concurrent: 同時実行可能なシミュレーション数 (default 4)。
         allow_origins: CORS 許可オリジン (default 空 = CORS 無効)。
             Frontend 別ホスト開発時に opt-in。
+        library_paths: ``.flwlib.json`` のロード対象 path リスト (ADR-0029、v0.11.1)。
+            ファイル / ディレクトリのいずれも可 (ディレクトリの場合は ``*.flwlib.json``
+            を再帰的に検索する) 。空リスト + ``bundle_builtin_libraries=True`` だけでも
+            組み込み ``std`` が利用可能になる。
+        bundle_builtin_libraries: 組み込み ``pyflw/libraries/std.flwlib.json`` を
+            自動的に library registry に追加するか (default ``True``、ADR-0029 §LOC-A)。
     """
 
     model_dir: Path
     scope_batch_size: int = 100
     max_concurrent: int = 4
     allow_origins: list[str] = field(default_factory=list)
+    library_paths: list[Path] = field(default_factory=list)
+    bundle_builtin_libraries: bool = True

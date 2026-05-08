@@ -19,7 +19,7 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { getModel, listBlockMetadata } from "../api/client";
+import { getLibraryEntry, getModel, listBlockMetadata } from "../api/client";
 import { modelToDiagram, type BlockNode } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
@@ -385,6 +385,64 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const onDrop = (event: React.DragEvent): void => {
     event.preventDefault();
     if (!editingModel) return;
+    // ADR-0029: Library entry の drop は別 MIME (`application/pyflw-library-entry-ref`)
+    // で運ばれる。先にそちらを check してから通常 block drop に fallback する。
+    const libraryRefRaw = event.dataTransfer.getData(
+      "application/pyflw-library-entry-ref",
+    );
+    if (libraryRefRaw) {
+      let ref: { library: string; entry: string } | null = null;
+      try {
+        ref = JSON.parse(libraryRefRaw);
+      } catch {
+        ref = null;
+      }
+      if (!ref || !ref.library || !ref.entry) {
+        showToast(t("diagram.library_drop_invalid_ref"));
+        return;
+      }
+      const position = reactFlow.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      // 非同期 fetch → 解決後に inline 展開 (= drop 瞬間に subsystem 定義をモデル
+      // にコピー、ADR-0029 §PLACE-A)。fetch 中は何も配置しない (= drag 操作と認識的
+      // 親和)。失敗時は toast。
+      // SHOULD: 非同期完了時にユーザーが別モデルへ切り替えていたら drop は無視する
+      // (= 古い座標で別モデルにブロックが追加されるのを防ぐ)。
+      const dropModelId = modelId;
+      void getLibraryEntry(ref.library, ref.entry)
+        .then((detail) => {
+          const state = useAppStore.getState();
+          if (state.selectedModelId !== dropModelId) {
+            // ユーザーが drop 中に別モデルに切り替えた → drop を破棄
+            return;
+          }
+          const m = state.editingModel;
+          if (!m) return;
+          let existingIds: Set<string>;
+          try {
+            const view = resolveBlocksAtPath(m, state.editingPath);
+            existingIds = new Set(view.blocks.map((b) => b.id));
+          } catch {
+            return;
+          }
+          const subType = detail.subsystem.type;
+          const newId = generateUniqueId(subType, existingIds);
+          // params は ``Subsystem.to_dict()`` の出力をそのまま使う (= byte-identical)。
+          addBlockToEditing(
+            { id: newId, type: subType, params: detail.subsystem.params },
+            position,
+          );
+          useAppStore.getState().selectNode(newId);
+        })
+        .catch((err: Error) => {
+          showToast(
+            t("diagram.library_drop_failed", { message: err.message }),
+          );
+        });
+      return;
+    }
     const typePath = event.dataTransfer.getData("application/pyflw-block-type");
     if (!typePath) return;
     const defaultParamsRaw = event.dataTransfer.getData(

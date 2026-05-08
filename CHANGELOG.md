@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-05-08
+
+ADR-0029: ブロックライブラリファイル `.flwlib.json` フォーマット。Phase 4
+sub-ADR #4 — マスク Subsystem 集合を JSON ファイルとして配布する仕組み。
+組み込み `std.flwlib.json` (PID コントローラ + 1 次遅れプラント + 2 次プラント
+の 3 entry、約 9.6 KB) を wheel に bundle し、サーバ起動時に
+`/api/v1/libraries` 経由で frontend に提供する。GUI のパレットには既存の
+Block class 一覧の **下** に Libraries セクションが追加され、drag&drop で
+**Inline 配置** (= drop 瞬間に subsystem 定義をモデル本体にコピー、
+`.flw.json` の自己完結性を維持) する。Subsystem のモデル schema (0.6) は
+無変更、純粋に新 schema `libraries.v1` の追加。
+
+### Added — Python libraries package
+
+- `pyflw/libraries/__init__.py`: `Library` / `LibraryEntry` (frozen dataclass)、
+  `load_library(path)` / `validate_library(data)` /
+  `export_subsystem_to_library(subsystem, path, *, library_metadata,
+  entry_metadata, append=True)`。
+- `pyflw/libraries/_loader.py`: `CURRENT_LIBRARY_SCHEMA_VERSION =
+  "libraries.v1"`、`SUPPORTED_LIBRARY_SCHEMA_VERSIONS`、空の
+  `_LIBRARY_MIGRATIONS` registry (Phase 5+ で v2 を導入する際の枠)。
+- `pyflw/libraries/std.flwlib.json`: 組み込みライブラリ 3 entry
+  (`pid_controller` / `first_order_plant` / `second_order_plant`)。
+  Mask placeholder (`$Kp` / `$Ki` / `$Kd` / `$tau` / `$K` / `$a` / `$b`)
+  でパラメトリゼーション、`Subsystem.to_dict()` と byte-identical。
+- `pyflw/server/library_registry.py`: `build_library_registry(library_paths,
+  *, bundle_builtin=True)` で起動時に `Settings.library_paths` + 組み込み
+  std を一括 load。1 ファイル不正でも他は継続 (= `LibraryLoadError` に記録)、
+  library 名の重複は先勝ち + warning。
+- `pyflw/server/routes/libraries.py`: REST 2 endpoint。`GET /api/v1/libraries`
+  は subsystem body を含めない一覧 (= ペイロード削減)、`GET /api/v1/libraries/
+  {lib}/{entry}` は subsystem body 同梱の詳細。
+- `pyflw/exceptions.py`: `LibraryFileError`、`LibraryEntryNotFoundError`。
+- `pyflw/server/settings.py`: `library_paths: list[Path]` /
+  `bundle_builtin_libraries: bool = True`。
+- `tools/build_std_library.py`: 組み込み `std.flwlib.json` のジェネレータ
+  (= `Subsystem._from_dict` → `to_dict` で round-trip 後にディスクへ書く、
+  byte-identical 保証)。
+
+### Added — Frontend
+
+- `pyflw/web/frontend/src/types/api.ts`: `LibraryEntryMetadata` /
+  `LibraryMetadata` / `LibraryRegistryResponse` / `LibraryEntryDetail` /
+  `LibraryLoadError` 型。
+- `pyflw/web/frontend/src/api/client.ts`: `listLibraries()` /
+  `getLibraryEntry(library, entry)`。
+- `pyflw/web/frontend/src/lib/blockI18n.ts`: `localizeName<T>` /
+  `localizeDescription<T>` (generics 化)。`localizedDisplayName` (Block 専用、
+  type_path フォールバック付き) は既存 callers の互換のため別関数として残す。
+- `pyflw/web/frontend/src/components/BlockPalette.tsx`: Libraries セクション
+  追加。組み込みカテゴリと並列に `library.<name>` 単位で折りたたみ表示、
+  drag-start で `application/pyflw-library-entry-ref` MIME に
+  `{library, entry}` を運ぶ。
+- `pyflw/web/frontend/src/components/DiagramCanvas.tsx`: drop 経路で先に
+  `application/pyflw-library-entry-ref` を check し、`getLibraryEntry()` で
+  body を fetch → ID 採番後に `addBlockToEditing` で Inline 展開する。
+- i18n locale: `palette.library_prefix` / `diagram.library_drop_invalid_ref`
+  / `diagram.library_drop_failed` を ja/en に追加。
+
+### Tests
+
+- `tests/libraries/test_loader.py` (8 件): 最小有効 / schema_version 不正 /
+  必須キー欠落 / migration registry 空 / 組み込み std bundle / Subsystem 以外
+  type 拒否 / 重複 entry id 拒否。
+- `tests/libraries/test_registry.py` (5 件): 複数 path / invalid file 耐性 /
+  bundle_builtin / ディレクトリ再帰 / 重複 library 名先勝ち。
+- `tests/libraries/test_export.py` (4 件): 新規 export / append / 重複 id 拒否
+  / round-trip byte-identical。
+- `tests/server/test_libraries_route.py` (5 件): list schema_version /
+  body 省略 / 詳細取得 + 再構築可 / 404 / `/blocks` への影響なし。
+- `pyflw/web/frontend/tests/libraryI18n.test.ts` (10 件): generics 関数の
+  フォールバック chain。
+- `pyflw/web/frontend/tests/libraryDragDrop.test.ts` (5 件): MIME ペイロード
+  契約 + `getLibraryEntry` API 経路 + Inline placement の不変条件。
+
+### Compat / Risks
+
+- `.flw.json` schema 0.6 は無変更 (= 既存モデルファイル全てそのままロード可)。
+- 組み込み 3 entry はすべて `Subsystem._from_dict()` で再構築でき、
+  `examples/spring_mass_damper.py` の出力数値も完全不変。
+- 既存 pytest 933 件 + vitest 156 件は全 pass を維持しつつ、Python +22 件 /
+  frontend +15 件で合計 955 + 171 件に増加。
+
 ## [0.11.0] - 2026-05-08
 
 ADR-0028: Block class registry の i18n 化。Phase 4 sub-ADR #3 — built-in

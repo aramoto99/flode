@@ -2,20 +2,30 @@
 // 各エントリに block 種別固有の SVG glyph プレビューを表示する Simulink Library
 // Browser 風の見た目。検索 + カテゴリ折りたたみ。drag-start で
 // `application/pyflw-block-type` を data transfer に積む。
+//
+// ADR-0029: マスク Subsystem 集合を配布する `.flwlib.json` (= block library) を
+// Block class registry の **下** に Libraries セクションとして表示する。drag-start
+// では `application/pyflw-library-entry-ref` MIME で `{library, entry}` を運び、
+// drop 経路 (DiagramCanvas) で個別 fetch + Inline 展開する。
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { listBlockMetadata } from "../api/client";
+import { listBlockMetadata, listLibraries } from "../api/client";
 import { BlockGlyph } from "../lib/blockGlyphs";
 import {
+  localizeName,
   localizedDisplayName,
   localizedDocstringSummary,
   searchableDisplayNames,
 } from "../lib/blockI18n";
 import { buildDefaultParams } from "../lib/idGenerator";
-import type { BlockMetadata } from "../types/api";
+import type {
+  BlockMetadata,
+  LibraryEntryMetadata,
+  LibraryMetadata,
+} from "../types/api";
 
 const CATEGORY_ORDER = [
   "sources",
@@ -34,6 +44,13 @@ export function BlockPalette(): JSX.Element {
   const { data, isLoading, error } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
+    staleTime: 60 * 60 * 1000,
+  });
+  // ADR-0029: Library registry も同様に長期 cache。drag-start 時には ref のみ
+  // 運び、drop 経路で別 query が body を取りに行く。
+  const { data: libraryData } = useQuery({
+    queryKey: ["libraries-registry"],
+    queryFn: listLibraries,
     staleTime: 60 * 60 * 1000,
   });
   const [search, setSearch] = useState("");
@@ -85,6 +102,38 @@ export function BlockPalette(): JSX.Element {
     event.dataTransfer.effectAllowed = "copy";
   };
 
+  // ADR-0029: Library entry の drag-start。``application/pyflw-library-entry-ref``
+  // で参照のみを運ぶ (body は drop 経路で fetch、= ペイロード削減)。
+  const handleLibraryDragStart = (
+    event: React.DragEvent<HTMLDivElement>,
+    library: LibraryMetadata,
+    entry: LibraryEntryMetadata,
+  ): void => {
+    event.dataTransfer.setData(
+      "application/pyflw-library-entry-ref",
+      JSON.stringify({ library: library.name, entry: entry.id }),
+    );
+    event.dataTransfer.effectAllowed = "copy";
+  };
+
+  /** 検索フィルタを library entry に適用する (両言語名 + library 名)。 */
+  const filterLibraryEntry = (
+    library: LibraryMetadata,
+    entry: LibraryEntryMetadata,
+  ): boolean => {
+    const filter = search.trim().toLowerCase();
+    if (!filter) return true;
+    const candidates = [
+      entry.id,
+      entry.display_name,
+      entry.display_name_i18n?.en ?? "",
+      entry.display_name_i18n?.ja ?? "",
+      library.name,
+      library.display_name,
+    ];
+    return candidates.some((c) => c.toLowerCase().includes(filter));
+  };
+
   if (isLoading) {
     return <div className="p-3 text-xs text-slate-500">{t("palette.loading")}</div>;
   }
@@ -115,7 +164,10 @@ export function BlockPalette(): JSX.Element {
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
-        {visibleCategories.length === 0 ? (
+        {visibleCategories.length === 0 &&
+        (libraryData?.libraries ?? []).every(
+          (lib) => !lib.entries.some((e) => filterLibraryEntry(lib, e)),
+        ) ? (
           <div className="p-3 text-xs text-slate-500">{t("palette.no_match")}</div>
         ) : (
           visibleCategories.map((cat) => {
@@ -178,6 +230,71 @@ export function BlockPalette(): JSX.Element {
             );
           })
         )}
+        {/* ADR-0029: Libraries セクション。組み込み + ユーザー定義の `.flwlib.json` を
+            一覧表示する。各 entry は drag で `application/pyflw-library-entry-ref` を運ぶ。 */}
+        {(libraryData?.libraries ?? []).map((library) => {
+          const libCatKey = `lib::${library.name}`;
+          const isCollapsed = collapsed[libCatKey] && !isFiltering;
+          const visibleEntries = library.entries.filter((e) =>
+            filterLibraryEntry(library, e),
+          );
+          if (visibleEntries.length === 0) return null;
+          const libDispName = localizeName(library, library.name);
+          return (
+            <div key={libCatKey} className="mb-1">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-violet-600 hover:bg-slate-100"
+                onClick={() =>
+                  setCollapsed((prev) => ({
+                    ...prev,
+                    [libCatKey]: !prev[libCatKey],
+                  }))
+                }
+                aria-expanded={!isCollapsed}
+              >
+                <span className="w-3 text-slate-400">
+                  {isCollapsed ? "▸" : "▾"}
+                </span>
+                <span>
+                  {t("palette.library_prefix", { defaultValue: "Library" })} ·{" "}
+                  {libDispName}
+                </span>
+                <span className="ml-auto rounded bg-violet-100 px-1.5 py-px text-[9px] text-violet-700">
+                  {visibleEntries.length}
+                </span>
+              </button>
+              {!isCollapsed && (
+                <div className="grid grid-cols-2 gap-1 px-1 pt-1">
+                  {visibleEntries.map((entry) => {
+                    const dispName = localizeName(entry, entry.id);
+                    return (
+                      <div
+                        key={`${library.name}::${entry.id}`}
+                        draggable
+                        onDragStart={(e) =>
+                          handleLibraryDragStart(e, library, entry)
+                        }
+                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-violet-300 hover:bg-violet-50/50 active:cursor-grabbing"
+                        title={dispName}
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white p-1 text-violet-600 transition-colors group-hover:border-violet-400">
+                          <BlockGlyph typePath="pyflw.subsystems.subsystem.Subsystem" />
+                        </div>
+                        <div className="w-full truncate text-[10px] font-medium text-slate-700">
+                          {dispName}
+                        </div>
+                        <span className="rounded bg-violet-100 px-1 text-[8px] uppercase tracking-wide text-violet-700">
+                          LIB
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

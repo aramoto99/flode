@@ -1,4 +1,4 @@
-__version__ = "0.11.0"  # ADR-0028: Block registry i18n (display_name_i18n / docstring_summary_i18n, Phase 4 #3, 2026-05-08)
+__version__ = "0.11.1"  # ADR-0029: .flwlib.json library file format (Phase 4 #4, 2026-05-08)
 
 from .analysis import (
     BodeResponse,
@@ -18,6 +18,8 @@ from .core.simulator import Simulator
 from .exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
+    LibraryEntryNotFoundError,
+    LibraryFileError,
     ModelLoadError,
     ModelSerializationError,
     PyflwError,
@@ -28,6 +30,13 @@ from .exceptions import (
     UnknownBlockIdError,
     UnknownBlockTypeError,
 )
+from .libraries import (
+    Library,
+    LibraryEntry,
+    export_subsystem_to_library,
+    load_library,
+    validate_library,
+)
 from .subsystems import Inport, Outport, Subsystem
 
 __all__ = [
@@ -36,6 +45,10 @@ __all__ = [
     "BlockSpecError",
     "BodeResponse",
     "Inport",
+    "Library",
+    "LibraryEntry",
+    "LibraryEntryNotFoundError",
+    "LibraryFileError",
     "LinearSystem",
     "ModelLoadError",
     "ModelSerializationError",
@@ -54,8 +67,11 @@ __all__ = [
     "block",
     "bode",
     "eigenvalues",
+    "export_subsystem_to_library",
     "is_stable",
     "linearize",
+    "load_library",
     "nyquist",
     "root_locus",
+    "validate_library",
 ]

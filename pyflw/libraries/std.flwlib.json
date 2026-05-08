@@ -1,0 +1,353 @@
+{
+  "schema_version": "libraries.v1",
+  "name": "std",
+  "display_name": "Standard Library",
+  "description": "Built-in mask Subsystem templates shipped with pyflw.",
+  "version": "0.13.0",
+  "display_name_i18n": {
+    "en": "Standard Library",
+    "ja": "標準ライブラリ"
+  },
+  "description_i18n": {
+    "en": "Built-in mask Subsystem templates shipped with pyflw.",
+    "ja": "pyflw 同梱のマスク Subsystem テンプレート集。"
+  },
+  "entries": [
+    {
+      "id": "pid_controller",
+      "display_name": "PID Controller",
+      "description": "PID controller (Kp, Ki, Kd) with single error input.",
+      "category_suffix": "controllers",
+      "display_name_i18n": {
+        "en": "PID Controller",
+        "ja": "PID コントローラ"
+      },
+      "description_i18n": {
+        "en": "PID controller (Kp, Ki, Kd) with single error input.",
+        "ja": "PID コントローラ (Kp / Ki / Kd、誤差 1 入力)。"
+      },
+      "subsystem": {
+        "id": null,
+        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "params": {
+          "n_inputs": 1,
+          "n_outputs": 1,
+          "mask_params": [
+            {
+              "name": "Kp",
+              "type": "float",
+              "default": 1.0,
+              "description": "Proportional gain"
+            },
+            {
+              "name": "Ki",
+              "type": "float",
+              "default": 0.1,
+              "description": "Integral gain"
+            },
+            {
+              "name": "Kd",
+              "type": "float",
+              "default": 0.0,
+              "description": "Derivative gain"
+            }
+          ],
+          "mask_values": {
+            "Kp": 1.0,
+            "Ki": 0.1,
+            "Kd": 0.0
+          },
+          "blocks": [
+            {
+              "id": "Inport_0",
+              "type": "pyflw.subsystems.ports.Inport",
+              "params": {
+                "port_idx": 0
+              }
+            },
+            {
+              "id": "Gain_P",
+              "type": "pyflw.blocks.mathops.Gain",
+              "params": {
+                "k": "$Kp"
+              }
+            },
+            {
+              "id": "Integrator_0",
+              "type": "pyflw.blocks.continuous.Integrator",
+              "params": {
+                "x0": 0.0
+              }
+            },
+            {
+              "id": "Gain_I",
+              "type": "pyflw.blocks.mathops.Gain",
+              "params": {
+                "k": "$Ki"
+              }
+            },
+            {
+              "id": "Derivative_0",
+              "type": "pyflw.blocks.continuous.Derivative",
+              "params": {
+                "N": 1000.0,
+                "x0": 0.0
+              }
+            },
+            {
+              "id": "Gain_D",
+              "type": "pyflw.blocks.mathops.Gain",
+              "params": {
+                "k": "$Kd"
+              }
+            },
+            {
+              "id": "Sum_0",
+              "type": "pyflw.blocks.mathops.Sum",
+              "params": {
+                "signs": "+++"
+              }
+            },
+            {
+              "id": "Outport_0",
+              "type": "pyflw.subsystems.ports.Outport",
+              "params": {
+                "port_idx": 0
+              }
+            }
+          ],
+          "connections": [
+            {
+              "src": "Inport_0",
+              "src_idx": 0,
+              "dst": "Gain_P",
+              "dst_idx": 0
+            },
+            {
+              "src": "Inport_0",
+              "src_idx": 0,
+              "dst": "Integrator_0",
+              "dst_idx": 0
+            },
+            {
+              "src": "Integrator_0",
+              "src_idx": 0,
+              "dst": "Gain_I",
+              "dst_idx": 0
+            },
+            {
+              "src": "Inport_0",
+              "src_idx": 0,
+              "dst": "Derivative_0",
+              "dst_idx": 0
+            },
+            {
+              "src": "Derivative_0",
+              "src_idx": 0,
+              "dst": "Gain_D",
+              "dst_idx": 0
+            },
+            {
+              "src": "Gain_P",
+              "src_idx": 0,
+              "dst": "Sum_0",
+              "dst_idx": 0
+            },
+            {
+              "src": "Gain_I",
+              "src_idx": 0,
+              "dst": "Sum_0",
+              "dst_idx": 1
+            },
+            {
+              "src": "Gain_D",
+              "src_idx": 0,
+              "dst": "Sum_0",
+              "dst_idx": 2
+            },
+            {
+              "src": "Sum_0",
+              "src_idx": 0,
+              "dst": "Outport_0",
+              "dst_idx": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "first_order_plant",
+      "display_name": "First-Order Plant",
+      "description": "G(s) = K / (tau*s + 1).",
+      "category_suffix": "plants",
+      "display_name_i18n": {
+        "en": "First-Order Plant",
+        "ja": "1 次遅れプラント"
+      },
+      "description_i18n": {
+        "en": "G(s) = K / (tau*s + 1).",
+        "ja": "G(s) = K / (tau*s + 1)。"
+      },
+      "subsystem": {
+        "id": null,
+        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "params": {
+          "n_inputs": 1,
+          "n_outputs": 1,
+          "mask_params": [
+            {
+              "name": "K",
+              "type": "float",
+              "default": 1.0,
+              "description": "DC gain"
+            },
+            {
+              "name": "tau",
+              "type": "float",
+              "default": 1.0,
+              "description": "Time constant (s)"
+            }
+          ],
+          "mask_values": {
+            "K": 1.0,
+            "tau": 1.0
+          },
+          "blocks": [
+            {
+              "id": "Inport_0",
+              "type": "pyflw.subsystems.ports.Inport",
+              "params": {
+                "port_idx": 0
+              }
+            },
+            {
+              "id": "TransferFunction_0",
+              "type": "pyflw.blocks.continuous.TransferFunction",
+              "params": {
+                "numerator": [
+                  "$K"
+                ],
+                "denominator": [
+                  "$tau",
+                  1.0
+                ]
+              }
+            },
+            {
+              "id": "Outport_0",
+              "type": "pyflw.subsystems.ports.Outport",
+              "params": {
+                "port_idx": 0
+              }
+            }
+          ],
+          "connections": [
+            {
+              "src": "Inport_0",
+              "src_idx": 0,
+              "dst": "TransferFunction_0",
+              "dst_idx": 0
+            },
+            {
+              "src": "TransferFunction_0",
+              "src_idx": 0,
+              "dst": "Outport_0",
+              "dst_idx": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "second_order_plant",
+      "display_name": "Second-Order Plant",
+      "description": "G(s) = K / (a*s^2 + b*s + 1).",
+      "category_suffix": "plants",
+      "display_name_i18n": {
+        "en": "Second-Order Plant",
+        "ja": "2 次プラント"
+      },
+      "description_i18n": {
+        "en": "G(s) = K / (a*s^2 + b*s + 1).",
+        "ja": "G(s) = K / (a*s^2 + b*s + 1)。"
+      },
+      "subsystem": {
+        "id": null,
+        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "params": {
+          "n_inputs": 1,
+          "n_outputs": 1,
+          "mask_params": [
+            {
+              "name": "K",
+              "type": "float",
+              "default": 1.0,
+              "description": "DC gain"
+            },
+            {
+              "name": "a",
+              "type": "float",
+              "default": 1.0,
+              "description": "s^2 coefficient (= 1/omega_n^2)"
+            },
+            {
+              "name": "b",
+              "type": "float",
+              "default": 1.0,
+              "description": "s coefficient (= 2*zeta/omega_n)"
+            }
+          ],
+          "mask_values": {
+            "K": 1.0,
+            "a": 1.0,
+            "b": 1.0
+          },
+          "blocks": [
+            {
+              "id": "Inport_0",
+              "type": "pyflw.subsystems.ports.Inport",
+              "params": {
+                "port_idx": 0
+              }
+            },
+            {
+              "id": "TransferFunction_0",
+              "type": "pyflw.blocks.continuous.TransferFunction",
+              "params": {
+                "numerator": [
+                  "$K"
+                ],
+                "denominator": [
+                  "$a",
+                  "$b",
+                  1.0
+                ]
+              }
+            },
+            {
+              "id": "Outport_0",
+              "type": "pyflw.subsystems.ports.Outport",
+              "params": {
+                "port_idx": 0
+              }
+            }
+          ],
+          "connections": [
+            {
+              "src": "Inport_0",
+              "src_idx": 0,
+              "dst": "TransferFunction_0",
+              "dst_idx": 0
+            },
+            {
+              "src": "TransferFunction_0",
+              "src_idx": 0,
+              "dst": "Outport_0",
+              "dst_idx": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

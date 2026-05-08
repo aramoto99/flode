@@ -11,8 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .errors import register_error_handlers
+from .library_registry import build_library_registry
 from .registry import build_block_registry
-from .routes import blocks_router, models_router, simulations_router
+from .routes import (
+    blocks_router,
+    libraries_router,
+    models_router,
+    simulations_router,
+)
 from .runtime import SimulationManager
 from .settings import Settings
 
@@ -42,6 +48,8 @@ def create_app(
             scope_batch_size=settings.scope_batch_size,
             max_concurrent=settings.max_concurrent,
             allow_origins=list(settings.allow_origins),
+            library_paths=[Path(p) for p in settings.library_paths],
+            bundle_builtin_libraries=settings.bundle_builtin_libraries,
         )
     settings.model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -51,6 +59,11 @@ def create_app(
         app.state.simulation_manager = manager
         # ADR-0019 §1.5: Block class registry を起動時に 1 回 walk して app.state にキャッシュ。
         app.state.block_registry = build_block_registry()
+        # ADR-0029: Library registry を起動時に 1 回 build して app.state にキャッシュ。
+        app.state.library_registry = build_library_registry(
+            settings.library_paths,
+            bundle_builtin=settings.bundle_builtin_libraries,
+        )
         try:
             yield
         finally:
@@ -78,6 +91,7 @@ def create_app(
     app.include_router(models_router, prefix="/api/v1")
     app.include_router(simulations_router, prefix="/api/v1")
     app.include_router(blocks_router, prefix="/api/v1")
+    app.include_router(libraries_router, prefix="/api/v1")
     register_error_handlers(app)
 
     # ADR-0012 §(6): frontend ビルド成果物を ``pyflw/server/static/`` から配信。

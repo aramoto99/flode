@@ -121,6 +121,57 @@ export interface BlockRegistryResponse {
   supported_locales?: Locale[];
 }
 
+// ADR-0029 (schema libraries.v1, v0.11.1):
+// `.flwlib.json` で配布される マスク Subsystem 集合の REST 表現。
+// `/api/v1/libraries` 系から取得する (= /api/v1/blocks とは責務分離)。
+
+/** Library 内 1 entry の metadata (subsystem body は別 endpoint で取得)。 */
+export interface LibraryEntryMetadata {
+  id: string;
+  display_name: string;
+  display_name_i18n: Partial<Record<Locale, string>>;
+  description: string;
+  description_i18n: Partial<Record<Locale, string>>;
+  /** ADR-0029 §CAT-A: ``library.<lib_name>.<suffix>`` の suffix 部分。
+   *  空文字なら ``library.<lib_name>`` 直下に出る。 */
+  category_suffix: string;
+}
+
+export interface LibraryMetadata {
+  name: string;
+  display_name: string;
+  display_name_i18n: Partial<Record<Locale, string>>;
+  description: string;
+  description_i18n: Partial<Record<Locale, string>>;
+  version: string;
+  entries: LibraryEntryMetadata[];
+}
+
+export interface LibraryLoadError {
+  path: string;
+  message: string;
+}
+
+export interface LibraryRegistryResponse {
+  libraries: LibraryMetadata[];
+  load_errors: LibraryLoadError[];
+  /** ``"libraries.v1"`` (Phase 4 v0.11.1)。 */
+  schema_version: string;
+  supported_locales: Locale[];
+}
+
+/** ``GET /api/v1/libraries/{lib}/{entry}`` の response。subsystem body 同梱。 */
+export interface LibraryEntryDetail extends LibraryEntryMetadata {
+  /** ``Subsystem.to_dict()`` の出力 (= ``{id, type, params}``、ADR-0029 §PLACE-A)。
+   *  Inline 展開時に ``params`` 配下を ``BlockEntry`` の ``params`` フィールドへ
+   *  そのままコピーする (= byte-identical 維持)。 */
+  subsystem: {
+    id: string | null;
+    type: string;
+    params: Record<string, unknown>;
+  };
+}
+
 export interface ResolvedPortShapes {
   n_inputs: number;
   n_outputs: number;
