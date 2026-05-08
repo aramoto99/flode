@@ -56,3 +56,5 @@ playwright-report/
 pyflw/web/frontend/test-results/
 pyflw/web/frontend/playwright-report/
 pyflw/web/frontend/playwright/.cache/
+
+.claude/settings.local.json

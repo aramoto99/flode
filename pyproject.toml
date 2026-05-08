@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyflw"
-version = "0.16.1"
+version = "0.17.0"
 description = "Block-diagram dynamic system simulator (Simulink-inspired)"
 requires-python = ">=3.11"
 license = "MIT"
@@ -46,6 +46,9 @@ dev = [
     # CI 上でも `to_control_ss` の実テスト (= test_linearize_to_control.py) が
     # importorskip しないよう default インストールする。
     "control>=0.10",
+    # ADR-0037: linearize method='jax' / Simulator.compile() の CI 検証用に dev に
+    # jax[cpu] を含める (= 本番依存ではないので [project] dependencies には入れない)。
+    "jax[cpu]>=0.4,<0.5",
 ]
 gui = [
     "fastapi>=0.110",
@@ -56,6 +59,12 @@ gui = [
 # python-control に依存する。コア (`pyflw.linearize` など) は本 extras なしで動く。
 control = [
     "control>=0.10",
+]
+# ADR-0037: jax-first Codegen + Autodiff (Phase 5b、v0.17.0)。``Simulator.compile()``
+# / ``linearize(method="jax")`` 等で利用。CPU only、minor 互換は明示 pin。GPU は
+# ``pyflw[gpu]`` extras (= v0.17.1)。
+codegen = [
+    "jax[cpu]>=0.4,<0.5",
 ]
 
 [tool.setuptools.packages.find]

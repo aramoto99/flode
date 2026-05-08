@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-09
+
+**Phase 5b コア改修 — jax-first Codegen + Autodiff**。ADR-0037 採択 (jax-first
+統合戦略) を実装。``Simulator.compile()`` API を opt-in で導入し、ADR-0026 の
+線形化に **機械精度自動微分 (`method="jax"`)** を追加する。numba / cupy /
+numba.cuda は棄却、jax 1 本で GPU + Codegen + Autodiff を統合。
+
+### Added
+
+- ``pyflw.compile`` モジュール (ADR-0037 §(2)):
+  - ``CompiledSimulator`` frozen dataclass (= ``Simulator.compile()`` の戻り値)
+  - ``Simulator.compile(backend="jax" | "numpy")`` メソッド
+  - ``CompiledSimulator.linearize()`` (= ``method`` を backend に応じて自動選択)
+  - ``step()`` / ``run()`` は v0.17.1+ で本格実装の予定 (現状 NotImplementedError)
+- ``pyflw.compile.jax_backend`` (ADR-0037 §(3)):
+  - jax-native 評価器 ``_evaluate_jax``、ADR-0014/0015 と同じ 2-pass topo 順 +
+    direct-feedthrough/non-df 区別
+  - ``linearize_via_jacfwd`` (= ``jax.jacfwd`` で (A,B,C,D) 計算)
+  - サポート block: Constant / Step / Sine / Ramp / Clock / Gain / Sum /
+    Integrator (= 線形 LTI MVP)、未サポートは ``BlockSpecError`` で
+    ``method="central"`` への切替を案内
+- ``pyflw.linearize(method="jax")`` (ADR-0026 §「Phase 5+ で再評価」回収):
+  - ADR-0026 の NotImplementedError stub を ``jax.jacfwd`` 経由実装に置換
+  - ``central`` / ``forward`` semantics は完全維持
+  - spring_mass_damper モデルで解析解と機械精度 (atol=1e-12) 一致を CI で pin
+
+### Changed
+
+- ``[project.optional-dependencies] codegen = ["jax[cpu]>=0.4,<0.5"]`` extras 追加
+- ``[project.optional-dependencies] dev`` に ``jax[cpu]`` を追加 (= CI で
+  ``method="jax"`` テストを必須走らせる)
+- ``[tool.mypy] strict = true`` 維持、jax コードも厳格 typing 準拠
+
+### Behavior
+
+- **opt-in 設計** (ADR-0036 §(8) / ADR-0037 §(8) 数値完全不変ガード継承):
+  ``Simulator.compile()`` を呼び出さない限り numpy ホットパスがそのまま動く。
+  ``examples/spring_mass_damper.py`` の出力数値は v0.16.1 から不変
+  (Final x=0.2505, x_dot=0.0031)
+- ``pyflw[codegen]`` 未インストール環境では ``Simulator.compile(backend="jax")``
+  / ``linearize(method="jax")`` が ``ImportError`` で明示失敗 (= silent fallback
+  しない)
+- ``TriggeredSubsystem`` を含むモデルでは ``Simulator.compile()`` が
+  ``BlockSpecError`` で拒否 (= ADR-0036 §(9) MVP scope、Phase 6+ で別 ADR)
+
+### Tests / Examples
+
+- ``tests/test_linearize_jax_consistency.py`` (10 件): central と jax の機械
+  精度一致、解析解との一致、未サポートブロックエラー、``CompiledSimulator``
+  経路の動作確認
+- ``examples/jax_jacfwd_pid.py``: PID + 1 次プラントの閉ループを ``method="jax"``
+  で線形化、固有値計算による安定性判定 demo
+
+### Compat / Risks
+
+- pytest 1015 件 (= v0.16.1 の 1005 件 + 10 件 jax consistency) 全 pass
+- vitest 193 件 / mypy --strict / ruff / sphinx -W すべて clean
+- bundle gzip 不変 (= 純 Python 実装、frontend 影響なし)
+- jax 0.4.x dtype = float64 強制 (`jax_enable_x64=True`)、numpy default と整合
+
+### Phase 6+ への引き渡し (ADR-0037 §Decision §(11))
+
+- ``StateSpace`` / ``TransferFunction`` / ``MimoTransferFunction`` の jax 対応
+- ``DiscreteIntegrator`` / ``UnitDelay`` / ``ZeroOrderHoldDirect`` の jax 対応
+- ``Subsystem`` 内部ブロックの jax tracing
+- ``TriggeredSubsystem`` の jit 化
+- ``cupy`` / ``array-api-strict`` の代替バックエンド
+- 連続 ODE の Diffrax 連携 (= ``CompiledSimulator.run()`` の本格実装)
+- Apple Silicon / ROCm / TPU バックエンド
+
+### Phase 5b の次
+
+ADR-0037 §(8) commit 計画に従い v0.17.1 で:
+- ``pyflw[gpu]`` extras (= ``jax[cuda12]``)
+- GPU benchmark (= ユーザー実機検証)
+- CI Windows skip ロジック整理
+
+その後 v0.17.2 で ``pyflw.array_backend`` 抽象化、最終的に Phase 5 完了
+(ADR-0038 / v0.13.0 判定) へ。
+
 ## [0.16.1] - 2026-05-09
 
 **Phase 5b 中間 — TriggeredSubsystem (edge-driven fire)**。ADR-0036 後半の

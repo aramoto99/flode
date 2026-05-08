@@ -57,12 +57,18 @@ class TestInvalidShapes:
 class TestMethodValidation:
     """``method`` 引数の validation。"""
 
-    def test_jax_not_implemented(self) -> None:
+    def test_jax_method_works_with_supported_blocks(self) -> None:
+        """ADR-0037 (v0.17.0): ``method="jax"`` は ``pyflw[codegen]`` で動く。
+
+        Integrator は ``_SUPPORTED_BLOCK_TYPES`` に含まれるため、本テストでは
+        ``BlockSpecError`` ではなく機械精度結果が返る (中心差分との一致は
+        ``tests/test_linearize_jax_consistency.py`` で別途検証)。
+        """
         sim = Simulator(t_end=1.0, dt=0.01)
         sim.add(Integrator())
         sim.connect(sim.blocks[0], sim.add(Scope()))
-        with pytest.raises(NotImplementedError, match="Phase 5"):
-            linearize(sim, method="jax")
+        ls = linearize(sim, method="jax")
+        assert ls.A.shape == (1, 1)
 
     def test_invalid_method(self) -> None:
         sim = Simulator(t_end=1.0, dt=0.01)

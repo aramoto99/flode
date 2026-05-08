@@ -1,4 +1,4 @@
-__version__ = "0.16.1"  # Phase 5b #1b: ADR-0036 TriggeredSubsystem (edge-driven fire)
+__version__ = "0.17.0"  # Phase 5b #2: ADR-0037 jax compile + jacfwd autodiff
 
 from .analysis import (
     BodeResponse,
