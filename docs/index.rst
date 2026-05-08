@@ -12,6 +12,7 @@ then integrate with ``scipy.solve_ivp``.
    quickstart
    blocks
    decorator
+   analysis
    api
 
 For internal design documents (ADRs, SPEC-0001), see ``.claude/docs/``.

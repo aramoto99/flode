@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-07
+
+ADR-0026: model linearisation. First sub-ADR of **Phase 4** (analysis
++ codegen + GPU + GUI extensions). Adds a numerical-Jacobian
+linearisation API that returns the state-space :math:`(A, B, C, D)`
+matrices around an operating point.
+
+### Added — `pyflw.analysis`
+
+- `pyflw/analysis/__init__.py`, `pyflw/analysis/linearize.py`: new
+  package providing :func:`pyflw.linearize` and the
+  :class:`pyflw.LinearSystem` dataclass. Both are re-exported from the
+  top-level `pyflw` namespace.
+- :func:`pyflw.linearize` `(simulator, *, t=0.0, x=None, u=None,
+  method="central", epsilon=None) -> LinearSystem`. ``method="central"``
+  uses central differences (error :math:`O(h^2)`),
+  ``method="forward"`` uses forward differences (error :math:`O(h)`,
+  half the cost). ``method="jax"`` is reserved for Phase 5+ and raises
+  :class:`NotImplementedError` for now.
+- :class:`pyflw.LinearSystem` (``@dataclass(frozen=True, eq=False)``)
+  with ``A / B / C / D`` matrices, ``state_names``, ``input_names``,
+  ``output_names`` (each port flattened C-order, with
+  ``"{block_id}.x[{i}]" / ".in[{port_idx}][{flat_idx}]" /
+  ".out[{port_idx}][{flat_idx}]"``), ``operating_point``, and
+  :meth:`LinearSystem.to_control_ss` for handing the result to
+  ``python-control``.
+- :meth:`pyflw.Simulator.linearize` thin wrapper.
+- New ``pyflw[control]`` extras (`control >= 0.10`) for
+  ``to_control_ss``. Added to `dev` extras as well so CI runs that
+  test path.
+- `tests/analysis/`: 80 new pytest cases (test-writer reinforced)
+  covering Integrator, StateSpace, TransferFunction,
+  MimoTransferFunction, PI + 1st-order plant feedback (2 continuous
+  states), Subsystem flattening, SM-B (Mux/Demux + Integrator), edge
+  cases (pure-discrete rejection, hybrid warning, invalid shape
+  errors, ``jax`` not-implemented, ``epsilon`` precision gradient,
+  NaN/Inf operating point, Saturation operating-point dependence),
+  the ``to_control_ss`` round-trip, dimension corner cases (zero
+  inputs / zero outputs / 1×1×1), and the ``LinearSystem`` dataclass
+  contract (frozen, ``eq=False``, label uniqueness).
+- `docs/analysis.rst`: Sphinx page introducing `pyflw.linearize` and
+  the `python-control` integration. Linked from `docs/index.rst`.
+
+### Changed
+
+- `pyflw/__init__.py`: now also exports `linearize` and `LinearSystem`.
+- `pyflw/core/simulator.py`: adds ``Simulator.linearize`` method (thin
+  delegating wrapper). No change to the existing `_step` /
+  `_step_vector` / `run` hot paths — `linearize` re-implements a
+  side-effect-free version of the output passes inside
+  `pyflw.analysis.linearize._evaluate`.
+- `pyproject.toml`: ``mypy.overrides`` now also ignores ``control.*``.
+
+### Acceptance criteria (ADR-0026 §(13))
+
+- Integrator: ``A=[[0]], B=[[1]], C=[[1]], D=[[0]]`` to ``atol=1e-12``.
+- StateSpace: round-trip identity to ``rtol=1e-9``.
+- TransferFunction (1st / 2nd order): companion form match to
+  ``rtol=1e-4``.
+- PI controller + 1st-order plant feedback loop: 2 continuous states
+  extracted (Integrator + Plant), A/B/C/D shapes consistent with the
+  system topology.
+- pytest 817 pass (737 baseline + 80 new analysis), mypy --strict
+  clean, ruff clean, sphinx ``-W`` warning-free.
+- `examples/spring_mass_damper.py` numerics unchanged
+  (`Final x=0.2505, x_dot=0.0031`).
+
+### Phase 4 status
+
+ADR-0025 §(1) #1 (A1) is now ``Accepted (v0.10.0)``. Next up are
+A2/A3 (Bode/Nyquist + stability analysis, ADR-0027) and the GUI i18n
+extension chain (C1–C4, ADR-0028 onwards).
+
 ## [0.9.0] - 2026-05-07
 
 **Phase 3 complete.** No code changes since v0.8.1 — this release is the

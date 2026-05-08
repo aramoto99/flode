@@ -13,7 +13,7 @@ import logging
 from collections import defaultdict, deque
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -36,6 +36,9 @@ from .persistence import (
     resolve_block_class,
     serialize_connections,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
+    from ..analysis.linearize import LinearSystem
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
@@ -835,6 +838,41 @@ class Simulator:
         値を保持する。
         """
         self._stop_requested = True
+
+    def linearize(
+        self,
+        *,
+        t: float = 0.0,
+        x: np.ndarray | None = None,
+        u: np.ndarray | None = None,
+        method: Literal["central", "forward", "jax"] = "central",
+        epsilon: float | None = None,
+    ) -> LinearSystem:
+        """動作点 ``(t, x, u)`` 周りでモデルを線形化する (ADR-0026)。
+
+        ``pyflw.linearize(self, ...)`` の薄いラッパ。詳細は
+        :func:`pyflw.analysis.linearize` を参照。
+
+        Args:
+            t: 動作点時刻 [s]。default ``0.0``。
+            x: 連続状態の動作点 (shape ``(n_states,)``)。``None`` で各ブロックの
+                ``x0`` を ``_state_layout()`` 順に concat したもの。
+            u: 外部入力の動作点 (shape ``(n_inputs_total,)``)。``None`` で全ゼロ。
+            method: ``"central"`` (default) / ``"forward"``。``"jax"`` は Phase 5+ 予約。
+            epsilon: 摂動相対 step。``None`` で次元ごと自動 (``sqrt(eps_machine)``)。
+
+        Returns:
+            :class:`pyflw.analysis.LinearSystem`。
+
+        Example:
+            >>> ls = sim.linearize()  # doctest: +SKIP
+            >>> isinstance(ls.A, np.ndarray)  # doctest: +SKIP
+            True
+        """
+        # 循環 import 回避のため遅延 import
+        from ..analysis.linearize import linearize as _linearize
+
+        return _linearize(self, t=t, x=x, u=u, method=method, epsilon=epsilon)
 
     @property
     def is_stopped(self) -> bool:
