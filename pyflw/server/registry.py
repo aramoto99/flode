@@ -157,12 +157,6 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str, str]] = {
         "disc.integrator",
         "#f59e0b",
     ),
-    "pyflw.blocks.discrete.ZeroOrderHold": (
-        "discrete",
-        "ZOH (legacy)",
-        "disc.zoh",
-        "#f59e0b",
-    ),
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": (
         "discrete",
         "ZOH",
@@ -261,9 +255,6 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     },
     "pyflw.blocks.discrete.UnitDelay": {"sample_time": 0.1},
     "pyflw.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
-    # ZeroOrderHold は legacy で DeprecationWarning を発する。
-    # _instantiate_for_introspection でサプレスして registry には残す。
-    "pyflw.blocks.discrete.ZeroOrderHold": {"sample_time": 0.1},
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
     "pyflw.blocks.routing.Mux": {"n": 2},
     "pyflw.blocks.routing.Demux": {"n": 2},
@@ -356,13 +347,7 @@ def _instantiate_for_introspection(cls: type) -> Block | None:
     2. 中央テーブル ``_BUILTIN_DEFAULT_ARGS``
     3. 引数なし ``cls()``
     の順に試す。``BlockSpecError`` / ``TypeError`` / ``ValueError`` は捕捉して None。
-
-    ``DeprecationWarning`` (e.g. ``ZeroOrderHold``) は registry build 時の通知として
-    不要 (= 拡張ユーザー向けの警告であって registry 起動時に毎回出すと UX ノイズ) の
-    ため suppress する。
     """
-    import warnings
-
     type_path = block_type_path(cls)
     factory_args: dict[str, Any] | None = getattr(cls, "_default_factory_args", None)
     if factory_args is None:
@@ -373,9 +358,7 @@ def _instantiate_for_introspection(cls: type) -> Block | None:
     candidates.append({})
     for kwargs in candidates:
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                return cls(**kwargs)  # type: ignore[no-any-return]
+            return cls(**kwargs)  # type: ignore[no-any-return]
         except (BlockSpecError, TypeError, ValueError) as e:
             _logger.debug(
                 "registry: default factory failed for %s with %r: %s",

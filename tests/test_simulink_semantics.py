@@ -22,7 +22,6 @@ from pyflw.blocks import (
     DiscreteTransferFunction,
     Scope,
     UnitDelay,
-    ZeroOrderHold,
     ZeroOrderHoldDirect,
 )
 
@@ -50,28 +49,6 @@ def test_unit_delay_produces_one_sample_delay() -> None:
     # y[k] = u(t_{k-1}) for k≥1 (1-sample delay)
     expected = np.array([99.0, 0.00, 0.01, 0.02, 0.03, 0.04])
     np.testing.assert_allclose(arr, expected, atol=1e-12)
-
-
-def test_zero_order_hold_equals_unit_delay_post_adr0014() -> None:
-    """ADR-0014 §(2)(4): 既存 ZeroOrderHold は UnitDelay と完全同一の semantics。
-
-    ZeroOrderHold は ADR-0016 Phase 3 (v0.5.0) で DeprecationWarning 発出。
-    本テストでは warning が出ることも検証する。
-    """
-    sim = Simulator(t_end=0.05, dt=0.01)
-    clk = sim.add(Clock())
-    ud = sim.add(UnitDelay(sample_time=0.01, x0=99.0, id="ud"))
-    with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
-        zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=99.0, id="zoh"))
-    ud_sc = sim.add(Scope(n_inputs=1, id="ud_sc"))
-    zoh_sc = sim.add(Scope(n_inputs=1, id="zoh_sc"))
-    sim.connect(clk, ud)
-    sim.connect(clk, zoh)
-    sim.connect(ud, ud_sc)
-    sim.connect(zoh, zoh_sc)
-    sim.run()
-
-    np.testing.assert_array_equal(_record_array(ud_sc), _record_array(zoh_sc))
 
 
 def test_zero_order_hold_direct_immediate_reflection() -> None:

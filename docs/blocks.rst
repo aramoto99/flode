@@ -57,13 +57,16 @@ Blocks updated at a fixed sample period. Pass ``sample_time`` in seconds.
 
    pyflw.blocks.UnitDelay
    pyflw.blocks.DiscreteIntegrator
-   pyflw.blocks.ZeroOrderHold
+   pyflw.blocks.ZeroOrderHoldDirect
 
 .. note::
 
-   ``ZeroOrderHold`` in Phase 1 holds the *previous* sample (equivalent to
-   ``UnitDelay``). A ``direct_feedthrough=True`` variant is planned for
-   Phase 2.
+   The legacy ``ZeroOrderHold`` block (state-based, equivalent to
+   ``UnitDelay`` after ADR-0014) was deprecated in v0.5.0 and **removed in
+   v0.13.0** (ADR-0033). For 1-sample delayed sample-and-hold use
+   :class:`pyflw.blocks.UnitDelay`; for Simulink-compatible immediate
+   reflection (``y(t_k) = u(t_k)``) use
+   :class:`pyflw.blocks.ZeroOrderHoldDirect` (ADR-0014 §(3)).
 
 Math
 ----

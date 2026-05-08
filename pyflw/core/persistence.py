@@ -260,13 +260,17 @@ def _builtin_migrate_0_1_to_0_2(data: dict[str, Any]) -> dict[str, Any]:
 def _builtin_migrate_0_2_to_0_3(data: dict[str, Any]) -> dict[str, Any]:
     """ADR-0015 §(4): 0.2 → 0.3。
 
-    全離散ブロック (``UnitDelay``, ``ZeroOrderHold``, ``DiscreteIntegrator``,
-    ``DiscreteStateSpace``, ``DiscreteTransferFunction``) の内部 ``n_states`` が
-    augmentation で 2 倍化したが、JSON 表現では ``x0`` を **scalar (UnitDelay/ZOH/
-    DiscreteIntegrator) または shape-(n,) (DiscreteStateSpace/DiscreteTransferFunction)
-    のまま維持** する設計 (Block 内部の ``__init__`` で ``[x0, x0]`` / ``concat([x0, x0])``
-    に展開する) なので、JSON 側の変換は ``schema_version`` 文字列の更新のみで完結する。
-    Subsystem 内部の離散ブロックも同じ Block class を使うため再帰的処理は不要。
+    全離散ブロック (``UnitDelay``, ``DiscreteIntegrator``, ``DiscreteStateSpace``,
+    ``DiscreteTransferFunction``) の内部 ``n_states`` が augmentation で 2 倍化
+    したが、JSON 表現では ``x0`` を **scalar (UnitDelay/DiscreteIntegrator) または
+    shape-(n,) (DiscreteStateSpace/DiscreteTransferFunction) のまま維持** する設計
+    (Block 内部の ``__init__`` で ``[x0, x0]`` / ``concat([x0, x0])`` に展開する) な
+    ので、JSON 側の変換は ``schema_version`` 文字列の更新のみで完結する。Subsystem
+    内部の離散ブロックも同じ Block class を使うため再帰的処理は不要。
+
+    旧 v0.5.0〜v0.12.0 で含まれていた `ZeroOrderHold` (legacy) は ADR-0033 (v0.13.0)
+    で削除済。schema 0.2/0.3 ファイルに `ZeroOrderHold` type が含まれていれば、
+    ``resolve_block_class`` 段階で ``UnknownBlockTypeError`` が発生する (= load 拒否)。
     """
     out = dict(data)
     out["schema_version"] = "0.3"

@@ -4,21 +4,26 @@
 
 * ``UnitDelay`` — 1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014)
 * ``DiscreteIntegrator`` — 前進 Euler 積分 ``x[k+1] = x[k] + T*gain*u[k]``
-* ``ZeroOrderHold`` — state-based 離散ホールド (ADR-0014 適用後は ``UnitDelay`` と
-  完全に同一の semantics。Phase 3 で deprecate 予定)
 * ``ZeroOrderHoldDirect`` — Simulink ZOH 互換 ``y(t_k) = u(t_k)`` (ADR-0010 §(4) /
   ADR-0014 §(3))
 * ``DiscreteStateSpace`` — 離散 LTI ``x[k+1] = A_d x[k] + B_d u[k]`` (ADR-0006)
 * ``DiscreteTransferFunction`` — 離散 LTI ``H(z) = num(z)/den(z)`` (ADR-0006)
 
 ``Memory`` は ``UnitDelay`` と意味論が同一のため別実装しない。
-``FirstOrderHold`` / 高次離散ブロックは Phase 3 以降。
+``FirstOrderHold`` / 高次離散ブロックは Phase 5+ 以降。
+
+.. note::
+
+   v0.13.0 (ADR-0033) で ``ZeroOrderHold`` (legacy) を削除した。v0.5.0 (ADR-0014
+   §(4)) から `DeprecationWarning` を発出していた 2-state state-based ホールドで、
+   ADR-0014 適用後は ``UnitDelay`` と完全に同一の semantics だった。利用者は
+   ``UnitDelay`` (1 サンプル遅延) または ``ZeroOrderHoldDirect`` (Simulink ZOH
+   互換、即時反映) に移行すること。
 """
 
 from __future__ import annotations
 
 import logging
-import warnings
 
 import numpy as np
 import scipy.signal
@@ -151,60 +156,6 @@ class DiscreteIntegrator(Block):
         # を保つために必須 (state[0] からの計算は invariant `state[0] = state[1]` が
         # 初期境界以外で崩れ、累積が 1 step ずれるため不可)。
         return np.array([x[1], x[1] + ts * self.gain * u[0]])
-
-
-class ZeroOrderHold(Block):
-    """state-based 離散ホールド。``UnitDelay`` と完全同一の semantics (ADR-0014/0015)。
-
-    実装は ``UnitDelay`` と同一の 2-state ブロック (ADR-0015 §(2)):
-    ``output(t, x, u) = x[0]``、``update(t, x, u) = [x[1], u[0]]``。
-
-    .. deprecated:: 0.5
-        Phase 3 で ``DeprecationWarning`` 発出、Phase 4 で削除予定
-        (ADR-0014 §(4)、ADR-0016)。``UnitDelay`` (1 サンプル遅延) または
-        ``ZeroOrderHoldDirect`` (Simulink ZOH 互換、`y(t_k) = u(t_k)` 即時反映) に
-        移行してください。
-
-    Args:
-        sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
-        x0: 初回サンプル前 (``t=0`` 時点) の出力値。内部では state[0]=state[1]=x0
-            に展開する (ADR-0015 §(2)(4))。
-    """
-
-    def __init__(
-        self,
-        *,
-        sample_time: float,
-        x0: float = 0.0,
-        id: str | None = None,
-        name: str | None = None,
-    ) -> None:
-        # ADR-0014 §(4) / ADR-0016: Phase 3 で DeprecationWarning を発出する。
-        # Phase 4 で削除予定。`stacklevel=2` で呼び出し元の行番号が出るようにする。
-        warnings.warn(
-            "ZeroOrderHold is deprecated since pyflw 0.5 and will be removed in a "
-            "future release. Migrate to UnitDelay (for 1-sample delayed sample-and-hold) "
-            "or ZeroOrderHoldDirect (for Simulink-compatible immediate reflection).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(
-            id=id,
-            name=name,
-            n_inputs=1,
-            n_outputs=1,
-            n_states=2,
-            direct_feedthrough=False,
-            sample_time=sample_time,
-        )
-        self.x0 = np.array([float(x0), float(x0)])
-        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
-
-    def output(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.array([x[0]])
-
-    def update(self, t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        return np.array([x[1], u[0]])
 
 
 # ADR-0014 §(3): サンプル時刻判定の許容誤差。整数比カウンタで決まる

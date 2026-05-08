@@ -246,16 +246,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "離散時間累積器 (前進 / 後退 / 台形法を選択可能)。",
         },
     },
-    "pyflw.blocks.discrete.ZeroOrderHold": {
-        "en": {
-            "display_name": "ZOH (legacy)",
-            "docstring_summary": "Legacy zero-order hold (deprecated since v0.5; use UnitDelay or ZeroOrderHoldDirect).",
-        },
-        "ja": {
-            "display_name": "ZOH (旧版)",
-            "docstring_summary": "旧版のゼロ次ホールド (v0.5 で deprecated、UnitDelay か ZeroOrderHoldDirect を推奨)。",
-        },
-    },
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": {
         "en": {
             "display_name": "ZOH",

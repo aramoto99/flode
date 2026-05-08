@@ -10,7 +10,6 @@ from .discrete import (
     DiscreteStateSpace,
     DiscreteTransferFunction,
     UnitDelay,
-    ZeroOrderHold,
     ZeroOrderHoldDirect,
 )
 from .logic import LogicalOperator, RelationalOperator
@@ -52,6 +51,5 @@ __all__ = [
     "TransferFunction",
     "UnitDelay",
     "XYGraph",
-    "ZeroOrderHold",
     "ZeroOrderHoldDirect",
 ]

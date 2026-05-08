@@ -424,7 +424,6 @@ function summarizePrimaryParam(data: BlockNodeData): string | null {
   if (
     t.endsWith(".UnitDelay") ||
     t.endsWith(".DiscreteIntegrator") ||
-    t.endsWith(".ZeroOrderHold") ||
     t.endsWith(".ZeroOrderHoldDirect")
   ) {
     return `Ts=${formatScalar(p.sample_time)}`;

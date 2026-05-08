@@ -50,7 +50,7 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "pyflw.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
 
   // 残り (Constant / Step / Sine / Ramp / Clock / PulseGenerator / Saturation / Abs /
-  // Sign / MinMax / Integrator / Derivative / UnitDelay / ZeroOrderHold(Direct) /
+  // Sign / MinMax / Integrator / Derivative / UnitDelay / ZeroOrderHoldDirect /
   // Logical / Relational / Switch / Scope / Terminator / Subsystem) は default rect。
 };
 

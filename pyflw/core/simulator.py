@@ -382,7 +382,7 @@ class Simulator:
                         _logger.warning(
                             "Block %r inherits sample_time from a mix of continuous "
                             "and discrete upstream blocks; using discrete min=%g "
-                            "(no implicit ZeroOrderHold inserted)",
+                            "(no implicit ZOH inserted)",
                             b.id,
                             distinct[0],
                         )

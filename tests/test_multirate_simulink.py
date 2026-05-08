@@ -1,12 +1,15 @@
 """ADR-0015: multi-rate (sample_time > dt_base) で全離散ブロックが Simulink semantics
 と完全一致することを保証する回帰テスト。
 
-v0.3.0 までの multi-rate off-by-one (UnitDelay/ZeroOrderHold で `1 dt_base` 分のずれ、
+v0.3.0 までの multi-rate off-by-one (UnitDelay で `1 dt_base` 分のずれ、
 DiscreteIntegrator/StateSpace/TF で同様の挙動) は ADR-0015 で根本治療済み。
 
 参照:
-- ADR-0015 §(2)(3) UnitDelay/ZOH の 2-state、DiscreteIntegrator/SS/TF の 2n-state
+- ADR-0015 §(2)(3) UnitDelay の 2-state、DiscreteIntegrator/SS/TF の 2n-state
 - ADR-0015 §(7) 新規 multi-rate Simulink semantics 検証
+- legacy ``ZeroOrderHold`` は v0.13.0 (ADR-0033) で削除済 (= UnitDelay と完全同一
+  挙動だったため別実装を残す価値がなかった)。Simulink ZOH 互換は
+  ``ZeroOrderHoldDirect``。
 """
 
 from __future__ import annotations
@@ -23,7 +26,6 @@ from pyflw.blocks import (
     DiscreteTransferFunction,
     Scope,
     UnitDelay,
-    ZeroOrderHold,
     ZeroOrderHoldDirect,
 )
 
@@ -93,28 +95,6 @@ def test_multirate_unit_delay_constant_input() -> None:
     for i, t in enumerate(times):
         if t >= 0.1 - 1e-9:
             assert arr[i] == pytest.approx(5.0), f"t={t}: expected 5 (u)"
-
-
-def test_multirate_zero_order_hold_equals_unit_delay() -> None:
-    """ZeroOrderHold は UnitDelay と完全同一の挙動を multi-rate でも維持する。
-
-    ZeroOrderHold は ADR-0016 Phase 3 で DeprecationWarning 発出 (移行先は
-    UnitDelay または ZeroOrderHoldDirect)。
-    """
-    sim = Simulator(t_end=0.5, dt=0.01)
-    clk = sim.add(Clock())
-    ud = sim.add(UnitDelay(sample_time=0.1, x0=99.0, id="ud"))
-    with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
-        zoh = sim.add(ZeroOrderHold(sample_time=0.1, x0=99.0, id="zoh"))
-    ud_sc = sim.add(Scope(n_inputs=1, id="ud_sc"))
-    zoh_sc = sim.add(Scope(n_inputs=1, id="zoh_sc"))
-    sim.connect(clk, ud)
-    sim.connect(clk, zoh)
-    sim.connect(ud, ud_sc)
-    sim.connect(zoh, zoh_sc)
-    sim.run()
-
-    np.testing.assert_array_equal(_flat(ud_sc), _flat(zoh_sc))
 
 
 # ---------------------------------------------------------------------------

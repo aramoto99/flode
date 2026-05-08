@@ -60,7 +60,6 @@ from pyflw.blocks import (
     Terminator,
     TransferFunction,
     UnitDelay,
-    ZeroOrderHold,
     ZeroOrderHoldDirect,
 )
 from pyflw.core.block import Block, _normalize_port_shapes
@@ -844,7 +843,6 @@ class TestAllBlocksDefaultPortShapes:
                 ((),),
                 ((),),
             ),
-            (ZeroOrderHold(sample_time=0.1), ((),), ((),)),
             (ZeroOrderHoldDirect(sample_time=0.1), ((),), ((),)),
             (
                 DiscreteStateSpace(

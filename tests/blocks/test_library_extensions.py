@@ -1,8 +1,12 @@
 """Phase 1 ブロックライブラリ拡張のテスト (SPEC-0001 §機能要件 Phase 1 #1)。
 
 選抜実装したブロック: Ramp / Clock / PulseGenerator / Terminator /
-DiscreteIntegrator / ZeroOrderHold / Saturation / Abs / Sign / MinMax /
-Divide / RelationalOperator / LogicalOperator / Switch。
+DiscreteIntegrator / Saturation / Abs / Sign / MinMax / Divide /
+RelationalOperator / LogicalOperator / Switch。
+
+Note: legacy ``ZeroOrderHold`` (= 2-state state-based ホールド) は v0.13.0
+(ADR-0033) で削除済。Simulink ZOH 互換版は ``ZeroOrderHoldDirect`` (ADR-0014
+§(3)、tests/test_simulink_semantics.py)。1 サンプル遅延は ``UnitDelay``。
 """
 
 from __future__ import annotations
@@ -25,11 +29,9 @@ from pyflw.blocks import (
     Saturation,
     Scope,
     Sign,
-    Sine,
     Step,
     Switch,
     Terminator,
-    ZeroOrderHold,
 )
 
 # ---------------------------------------------------------------
@@ -95,7 +97,7 @@ class TestTerminator:
 
 
 # ---------------------------------------------------------------
-# Discrete (DiscreteIntegrator / ZeroOrderHold)
+# Discrete (DiscreteIntegrator)
 # ---------------------------------------------------------------
 
 
@@ -126,69 +128,6 @@ class TestDiscreteIntegrator:
         sim.run()
         # 1 ステップで 0.01 * 3.0 * 2.0 = 0.06 増える
         assert scope.values[2, 0] == pytest.approx(0.12, rel=1e-9)
-
-
-class TestZeroOrderHoldDeprecation:
-    """ADR-0016 Phase 3: ZeroOrderHold の DeprecationWarning 発出を検証。
-
-    Phase 4 で削除予定 (ADR-0014 §(4))。移行先は ``UnitDelay`` または
-    ``ZeroOrderHoldDirect``。
-    """
-
-    def test_init_emits_deprecation_warning(self):
-        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
-            ZeroOrderHold(sample_time=0.01, x0=0.0)
-
-    def test_warning_mentions_migration_path(self):
-        with pytest.warns(DeprecationWarning) as record:
-            ZeroOrderHold(sample_time=0.01)
-        assert len(record) == 1
-        msg = str(record[0].message)
-        assert "UnitDelay" in msg
-        assert "ZeroOrderHoldDirect" in msg
-
-    def test_load_from_json_also_warns(self, tmp_path):
-        """JSON load 経由でインスタンス化されるときも warning が出る。"""
-        from pyflw import Simulator
-
-        path = tmp_path / "zoh.flw.json"
-        with pytest.warns(DeprecationWarning):
-            sim = Simulator(t_end=0.05, dt=0.01)
-            sim.add(ZeroOrderHold(sample_time=0.01, x0=0.0, id="zoh"))
-        sim.save(path)
-
-        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
-            Simulator.load(path)
-
-
-class TestZeroOrderHold:
-    def test_holds_input_between_samples(self):
-        """連続 Sine を ZOH でサンプリング。
-
-        ADR-0014 適用後、本実装は ``UnitDelay`` と完全同一の semantics
-        (1 サンプル遅延)。``values[k]`` for k>=1 は ``sin(2π * times[k-1])``
-        (= 1 サンプル遅延した過去のサンプル値)。``values[0]`` は ``x0``。
-
-        Note: 真の Simulink ZOH 互換挙動 (``y(t_k) = u(t_k)``) を必要とする場合は
-        ``ZeroOrderHoldDirect`` を使うこと (ADR-0014 §(3))。
-        """
-        sim = Simulator(t_end=0.05, dt=0.01)
-        src = sim.add(Sine(amplitude=1.0, frequency=1.0, id="sine"))
-        # ZeroOrderHold は ADR-0016 Phase 3 で DeprecationWarning 発出
-        with pytest.warns(DeprecationWarning, match="ZeroOrderHold is deprecated"):
-            zoh = sim.add(ZeroOrderHold(sample_time=0.01, x0=0.0, id="zoh"))
-        scope = sim.add(Scope(n_inputs=1, id="scope"))
-        sim.connect(src, zoh)
-        sim.connect(zoh, scope)
-        sim.run()
-
-        values = scope.values[:, 0]
-        times = np.array(scope.times)
-        # k=0: x0=0
-        assert values[0] == pytest.approx(0.0)
-        # k>=1: 1 サンプル遅延 (= 前サンプル時刻 times[k-1] での入力値)
-        assert values[1] == pytest.approx(np.sin(2 * np.pi * times[0]), abs=1e-9)
-        assert values[2] == pytest.approx(np.sin(2 * np.pi * times[1]), abs=1e-9)
 
 
 class TestDiscreteIntegratorErrors:

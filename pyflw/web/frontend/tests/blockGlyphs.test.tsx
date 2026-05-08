@@ -33,7 +33,6 @@ const KNOWN_TYPE_PATHS = [
   "pyflw.blocks.continuous.MimoTransferFunction",
   "pyflw.blocks.discrete.UnitDelay",
   "pyflw.blocks.discrete.DiscreteIntegrator",
-  "pyflw.blocks.discrete.ZeroOrderHold",
   "pyflw.blocks.discrete.ZeroOrderHoldDirect",
   "pyflw.blocks.discrete.DiscreteStateSpace",
   "pyflw.blocks.discrete.DiscreteTransferFunction",

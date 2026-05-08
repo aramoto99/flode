@@ -326,12 +326,6 @@ const DiscreteIntegratorGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-const ZeroOrderHoldGlyph = ({ className }: GlyphProps): JSX.Element => (
-  <svg {...G_PROPS} className={className}>
-    <polyline points="3,18 7,18 7,12 11,12 11,8 15,8 15,14 21,14" />
-  </svg>
-);
-
 const ZeroOrderHoldDirectGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <polyline points="3,16 7,16 7,8 13,8 13,14 21,14" />
@@ -591,7 +585,6 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   // discrete
   "pyflw.blocks.discrete.UnitDelay": UnitDelayGlyph,
   "pyflw.blocks.discrete.DiscreteIntegrator": DiscreteIntegratorGlyph,
-  "pyflw.blocks.discrete.ZeroOrderHold": ZeroOrderHoldGlyph,
   "pyflw.blocks.discrete.ZeroOrderHoldDirect": ZeroOrderHoldDirectGlyph,
   "pyflw.blocks.discrete.DiscreteStateSpace": DiscreteStateSpaceGlyph,
   "pyflw.blocks.discrete.DiscreteTransferFunction": DiscreteTransferFunctionGlyph,
