@@ -68,6 +68,9 @@ jobs:
       - name: Mypy (--strict on package)
         run: mypy pyflw
 
+      - name: Verify version sync (3 files, ADR-0032 §6-A)
+        run: python tools/check_version_sync.py
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

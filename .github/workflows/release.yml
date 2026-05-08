@@ -40,21 +40,8 @@ jobs:
           mkdir -p pyflw/server/static
           cp -r pyflw/web/frontend/dist/* pyflw/server/static/
 
-      - name: Verify version sync (pyflw.__version__ vs pyproject)
-        run: |
-          python -c "
-          import sys, tomllib
-          sys.path.insert(0, '.')
-          import pyflw
-          with open('pyproject.toml', 'rb') as f:
-              project_version = tomllib.load(f)['project']['version']
-          if pyflw.__version__ != project_version:
-              raise SystemExit(
-                  f'Version mismatch: pyflw.__version__={pyflw.__version__!r}, '
-                  f'pyproject={project_version!r}'
-              )
-          print(f'Version sync OK: {project_version}')
-          "
+      - name: Verify version sync (3 files, ADR-0032 §6-A)
+        run: python tools/check_version_sync.py
 
       - name: Build wheel and sdist
         run: |
