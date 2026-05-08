@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.6"
+CURRENT_SCHEMA_VERSION = "0.7"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -315,6 +315,22 @@ def _builtin_migrate_0_5_to_0_6(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_6_to_0_7(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0036 §(4): 0.6 → 0.7。
+
+    新規 block type ``pyflw.blocks.discrete.RateTransition`` を導入 (= マルチ
+    レート明示変換)。Phase 5b 後半 (= ADR-0036 v0.16.1) で
+    ``pyflw.subsystems.triggered.TriggeredSubsystem`` も追加予定。
+
+    既存 0.6 ファイルにはこれらの新 type_path は出現しないため、本 migration は
+    ``schema_version`` 文字列の更新のみで完結する。新 type_path が現れない 0.6
+    モデルは意味論変化なしで 0.7 に上がる (= 0.6 ファイルは 100% 互換)。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.7"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
@@ -322,6 +338,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.3", "0.4")] = _builtin_migrate_0_3_to_0_4
     _MIGRATIONS[("0.4", "0.5")] = _builtin_migrate_0_4_to_0_5
     _MIGRATIONS[("0.5", "0.6")] = _builtin_migrate_0_5_to_0_6
+    _MIGRATIONS[("0.6", "0.7")] = _builtin_migrate_0_6_to_0_7
 
 
 _register_builtin_migrations()

@@ -48,12 +48,12 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_6(self) -> None:
-        # ADR-0021: 0.5 → 0.6 bump (mask params)
-        assert CURRENT_SCHEMA_VERSION == "0.6"
+    def test_current_is_0_7(self) -> None:
+        # ADR-0036: 0.6 → 0.7 bump (RateTransition / TriggeredSubsystem 追加)
+        assert CURRENT_SCHEMA_VERSION == "0.7"
 
-    def test_supported_includes_0_6(self) -> None:
-        assert "0.6" in SUPPORTED_SCHEMA_VERSIONS
+    def test_supported_includes_current(self) -> None:
+        assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS
 
 
 class TestMigration0_4_to_0_5:
@@ -102,6 +102,52 @@ class TestMigration0_4_to_0_5:
         path.write_text(json.dumps(legacy), encoding="utf-8")
         sim = Simulator.load(path)
         assert sim.last_loaded_layout is None
+
+
+class TestMigration0_6_to_0_7:
+    """ADR-0036: schema 0.6 → 0.7 (RateTransition / TriggeredSubsystem 追加)。
+
+    既存 0.6 ファイルは新 type_path を含まない限り意味論変化なしで 0.7 に
+    上がる (= 100% 互換)。本クラスでは migration が走り、Simulator.load で
+    既存 0.6 モデルが load 可能であることを確認する。
+    """
+
+    def test_load_legacy_0_6_via_migration(self, tmp_path: Path) -> None:
+        """0.6 ファイル (RateTransition なし) を load → CURRENT (0.7) として動く。"""
+        legacy = {
+            "schema_version": "0.6",
+            "simulator": {
+                "t_end": 0.05,
+                "dt": 0.01,
+                "solver": "RK45",
+                "rtol": 1e-6,
+                "atol": 1e-9,
+                "dt_base": None,
+            },
+            "blocks": [
+                {
+                    "id": "src",
+                    "type": "pyflw.blocks.sources.Constant",
+                    "params": {"value": 5.0},
+                }
+            ],
+            "connections": [],
+        }
+        path = tmp_path / "legacy_0_6.flw.json"
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        sim = Simulator.load(path)
+        assert len(sim.blocks) == 1
+
+    def test_migrate_function_only_bumps_version(self) -> None:
+        """``_builtin_migrate_0_6_to_0_7`` が schema_version 文字列のみ更新する。"""
+        from pyflw.core.persistence import _builtin_migrate_0_6_to_0_7
+
+        before = {"schema_version": "0.6", "blocks": [], "connections": []}
+        after = _builtin_migrate_0_6_to_0_7(before)
+        assert after["schema_version"] == "0.7"
+        # blocks/connections は変更しない (= 既存モデルとの byte-identical 互換)
+        assert after["blocks"] == before["blocks"]
+        assert after["connections"] == before["connections"]
 
 
 # ---------------------------------------------------------------------------

@@ -54,11 +54,13 @@ class TestListModels:
 
 class TestGetModel:
     def test_returns_model_json(self, client, model_dir):
+        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+
         _seed_model(model_dir, "demo")
         response = client.get("/api/v1/models/demo")
         assert response.status_code == 200
         data = response.json()
-        assert data["schema_version"] == "0.6"
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
         assert any(b["id"] == "g" for b in data["blocks"])
 
     def test_404_when_missing(self, client):

@@ -228,13 +228,15 @@ class TestSmBRunEnabled:
 
 class TestSchema04Migration:
     def test_save_uses_current_schema(self, tmp_path) -> None:
-        # ADR-0021: schema bump 0.5 → 0.6 (mask params)
+        # ADR-0036: schema bump 0.6 → 0.7 (RateTransition 追加)
+        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(Constant(value=1.0, id="src"))
         path = tmp_path / "sm_a.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "0.6"
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
 
     def test_load_legacy_0_3_via_migration(self, tmp_path) -> None:
         """0.3 で保存されたファイルが migration 経由で読める (port_shapes 未設定でも SM-A 互換)。"""

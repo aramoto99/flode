@@ -367,13 +367,15 @@ class TestSubsystemPersistence:
         )
 
     def test_schema_version_is_current_when_subsystem_present(self, tmp_path):
+        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+
         sim = Simulator(t_end=0.01, dt=0.01)
         sim.add(_build_gain_subsystem(k=1.0))
         path = tmp_path / "v.flw.json"
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        # save は CURRENT_SCHEMA_VERSION を使う (ADR-0021 で 0.6 に bump)
-        assert data["schema_version"] == "0.6"
+        # save は CURRENT_SCHEMA_VERSION を使う (= ADR-0036 で 0.7)
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
 
     def test_loads_old_schema_0_1_via_migration(self, tmp_path):
         """``schema_version="0.1"`` の旧ファイルが migration 経由で読める。"""
