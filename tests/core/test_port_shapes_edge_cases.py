@@ -15,7 +15,8 @@
   #10 未接続 port (input_sources[i]=None) の shape check が skip される
   #11 空モデル (blocks=[]) の schema 0.4 round-trip
   #12 Subsystem SM-A 互換で port_shapes_in/out なし + save/load round-trip
-  #13 Subsystem に明示的に port_shapes_in/out を渡して構築
+  #13 Subsystem に明示的に port_shapes_in/out を渡して構築 (ADR-0039: 内部 Inport
+      経由で派生確認に変更)
   #14 rank-0 ndarray ↔ scalar の双方向変換
   #15 多入力 SM-A ブロック (Sum, Product) の output_v wrapper
   #16 direct_feedthrough=False ブロック (Integrator, UnitDelay) の output_v wrapper
@@ -107,8 +108,6 @@ class _MatrixPortBlock(Block):
 
     def __init__(self) -> None:
         super().__init__(
-            n_inputs=1,
-            n_outputs=1,
             port_shapes_in=[(3, 4)],
             port_shapes_out=[(3, 4)],
         )
@@ -561,7 +560,7 @@ class TestEmptyModelSchema04RoundTrip:
 class TestSubsystemSmACompatRoundTrip:
     def _make_simple_subsystem(self) -> Subsystem:
         """Constant → Gain → Outport の最小 Subsystem を作る。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         inp = Inport(port_idx=0, id="in0")
         g = Gain(k=3.0, id="g")
         out = Outport(port_idx=0, id="out0")
@@ -605,42 +604,33 @@ class TestSubsystemSmACompatRoundTrip:
 
 class TestSubsystemWithExplicitPortShapes:
     def test_subsystem_with_explicit_scalar_port_shapes_constructs(self) -> None:
-        """port_shapes_in=[()] / port_shapes_out=[()] を明示しても構築できる。"""
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=1,
-            id="sub_explicit",
-            port_shapes_in=[()],
-            port_shapes_out=[()],
-        )
+        """ADR-0039: port_shapes_in/out は派生 property のため、内部 Inport/Outport
+        の port_shape=() から ((),) として派生する。"""
+        sub = Subsystem(id="sub_explicit")
+        sub.add(Inport(port_idx=0, port_shape=()))
+        sub.add(Outport(port_idx=0, port_shape=()))
         assert sub.port_shapes_in == ((),)
         assert sub.port_shapes_out == ((),)
 
     def test_subsystem_with_vector_port_shapes_scaffolding(self) -> None:
-        """SM-B 用の port_shapes_in / port_shapes_out を渡しても構築自体は成功する。
+        """ADR-0039: SM-B の vector port は内部 Inport/Outport の port_shape から派生。
 
-        Phase 3 #4 で run path / 内部整合性チェックが完成するまでは、
-        構築と属性設定だけを検証する (build 呼び出し前の scaffolding)。
+        ``sub.add(Inport(port_idx=0, port_shape=(3,)))`` で port を追加して
+        ``port_shapes_in == ((3,),)`` を確認する。
         """
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=1,
-            id="sub_vector",
-            port_shapes_in=[(3,)],
-            port_shapes_out=[(3,)],
-        )
+        sub = Subsystem(id="sub_vector")
+        sub.add(Inport(port_idx=0, port_shape=(3,)))
+        sub.add(Outport(port_idx=0, port_shape=(3,)))
         assert sub.port_shapes_in == ((3,),)
         assert sub.port_shapes_out == ((3,),)
 
     def test_subsystem_is_sm_b_when_vector_port_shapes_set(self) -> None:
-        """vector port_shapes を持つ Subsystem を含む Simulator は SM-B モードと判定される。"""
+        """ADR-0039: 内部 Inport/Outport の port_shape が vector なら派生 port_shapes
+        は non-default となり、Simulator は SM-B モードと判定する。"""
         sim = Simulator(t_end=0.1, dt=0.01)
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=1,
-            port_shapes_in=[(3,)],
-            port_shapes_out=[(3,)],
-        )
+        sub = Subsystem()
+        sub.add(Inport(port_idx=0, port_shape=(3,)))
+        sub.add(Outport(port_idx=0, port_shape=(3,)))
         sim.add(sub)
         assert sim._is_sm_a_mode() is False
 
@@ -899,10 +889,10 @@ class TestAllBlocksDefaultPortShapes:
         )
 
     def test_subsystem_default_port_shapes(self) -> None:
-        """Subsystem も port_shapes を省略すると全 () の default になる。"""
-        sub = Subsystem(n_inputs=2, n_outputs=1)
-        assert sub.port_shapes_in == ((), ())
-        assert sub.port_shapes_out == ((),)
+        """ADR-0039: 空 Subsystem (内部 Inport/Outport なし) は派生で空 tuple ()。"""
+        sub = Subsystem()
+        assert sub.port_shapes_in == ()
+        assert sub.port_shapes_out == ()
 
     def test_inport_default_port_shapes(self) -> None:
         """Inport (n_inputs=0, n_outputs=1) の default port_shapes。"""

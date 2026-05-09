@@ -1,5 +1,5 @@
 {
-  "schema_version": "libraries.v1",
+  "schema_version": "libraries.v2",
   "name": "std",
   "display_name": "Standard Library",
   "description": "Built-in mask Subsystem templates shipped with pyflw.",
@@ -30,8 +30,6 @@
         "id": null,
         "type": "pyflw.subsystems.subsystem.Subsystem",
         "params": {
-          "n_inputs": 1,
-          "n_outputs": 1,
           "mask_params": [
             {
               "name": "Kp",
@@ -192,8 +190,6 @@
         "id": null,
         "type": "pyflw.subsystems.subsystem.Subsystem",
         "params": {
-          "n_inputs": 1,
-          "n_outputs": 1,
           "mask_params": [
             {
               "name": "K",
@@ -275,8 +271,6 @@
         "id": null,
         "type": "pyflw.subsystems.subsystem.Subsystem",
         "params": {
-          "n_inputs": 1,
-          "n_outputs": 1,
           "mask_params": [
             {
               "name": "K",

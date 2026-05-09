@@ -31,11 +31,51 @@ if TYPE_CHECKING:
 # Schema version
 # ----------------------------------------------------------------------------
 
-CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v1"
-SUPPORTED_LIBRARY_SCHEMA_VERSIONS: tuple[str, ...] = (CURRENT_LIBRARY_SCHEMA_VERSION,)
+CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v2"
+# ADR-0039: ``libraries.v1`` も migration 経由で読み込める (= 自動で v2 に変換)。
+# ``_LIBRARY_MIGRATIONS[(libraries.v1, libraries.v2)]`` が登録済。
+SUPPORTED_LIBRARY_SCHEMA_VERSIONS: tuple[str, ...] = (
+    CURRENT_LIBRARY_SCHEMA_VERSION,
+    "libraries.v1",
+)
 
-# Phase 4 では空。Phase 5+ で v2 を導入したとき (from, to) -> migrate fn を登録する。
-_LIBRARY_MIGRATIONS: dict[tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]] = {}
+
+def _migrate_libraries_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0039: ``libraries.v1`` → ``libraries.v2`` migration。
+
+    各 entry の ``subsystem.params`` (= ``Subsystem.to_dict()`` の出力) は schema
+    0.7 形式のため、Subsystem の ``n_inputs`` / ``n_outputs`` / ``port_shapes_*``
+    フィールドが含まれる。Phase 5b 以降の派生 property 化に伴い、これらを除去
+    する必要がある。``persistence._builtin_migrate_0_7_to_0_8`` 内のヘルパを
+    そのまま流用して、entry ごとに再帰除去する。
+    """
+    from ..core.persistence import _strip_subsystem_port_fields_recursive
+
+    out = dict(data)
+    entries = out.get("entries")
+    if isinstance(entries, list):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            subsystem = entry.get("subsystem")
+            if not isinstance(subsystem, dict):
+                continue
+            # subsystem 自体が Subsystem entry なので、blocks=[subsystem] を
+            # 一時的に作って再帰除去ロジックに通す。
+            _strip_subsystem_port_fields_recursive(
+                [subsystem],
+                parent_path=f"library.entries[{entry.get('id', '?')}]",
+            )
+    out["schema_version"] = "libraries.v2"
+    return out
+
+
+# ADR-0029 §References + ADR-0039: 利用者ゼロ + PyPI 未公開のうちに `libraries.v2`
+# へ bump、Subsystem の派生 property 化に追従。`libraries.v1` は migration 経由で
+# 受け入れる (= 既存 std.flwlib.json を再生成しなくても CI を通せる buffer)。
+_LIBRARY_MIGRATIONS: dict[tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]] = {
+    ("libraries.v1", "libraries.v2"): _migrate_libraries_v1_to_v2,
+}
 
 
 # ----------------------------------------------------------------------------

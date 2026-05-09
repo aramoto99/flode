@@ -1,14 +1,19 @@
 """ADR-0018 §(5) Subsystem の SM-B 境界 + 内部 Inport/Outport の整合性 check。
 
-外側 Subsystem の ``port_shapes_in/out`` と内部 ``Inport(port_shape=...)`` /
-``Outport(port_shape=...)`` の shape が一致しない場合に build 時 ``BlockSpecError``
-で拒否されることを検証する。
+ADR-0039 (v2.0): ``Subsystem.n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+``port_shapes_out`` は内部 ``Inport`` / ``Outport`` から派生する property に
+変更された。「外側宣言と内部 port_shape の不一致 raises」テストは仕様上不可能
+となったため削除し、以下の派生確認テストに置き換えた:
 
-追記 (ADR-0018 テスト補強):
+  - 内部 Inport の port_shape から ``port_shapes_in`` が派生する
+  - port_idx 重複 / 抜けは ``BlockSpecError`` で検出される
+
+追記 (ADR-0018 テスト補強、ADR-0039 で書き換え):
   #A  JSON save/load で Inport(port_shape=(n,)) の port_shape が正しく復元される
-  #B  複数 Inport を持つ Subsystem で各 port_shape の整合性 check が独立に走る
-  #C  Subsystem 内部に Inport が不足する場合 (n_inputs > 0 だが Inport が足りない)
-      の挙動を確認する (既存挙動維持)
+      (= 派生 property は JSON に保存しないが、内部 Inport の port_shape は保存される
+      ので load 後に派生で復元)
+  #B  複数 Inport を持つ Subsystem の派生 ``port_shapes_in`` 確認
+  #C  Subsystem 内部の port_idx 連番違反 (重複 / 抜け) の挙動
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from pyflw.subsystems import Inport, Outport, Subsystem
 class TestSubsystemPortShapeCheck:
     def test_inport_outport_default_scalar_subsystem_default(self) -> None:
         """既存 SM-A モデル: Subsystem も Inport/Outport も default ``()``。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1)
+        sub = Subsystem()
         sub.add(Inport(port_idx=0))
         sub.add(Gain(k=2.0, id="g"))
         sub.add(Outport(port_idx=0))
@@ -40,39 +45,23 @@ class TestSubsystemPortShapeCheck:
         sub.connect("g", "Outport_0")
         sub._build()  # 例外なし
 
-    def test_subsystem_sm_b_in_with_matching_inport(self) -> None:
-        """Subsystem.port_shapes_in=((3,),) + Inport(port_shape=(3,)) で整合。"""
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=0,
-            port_shapes_in=((3,),),
-        )
+    def test_subsystem_sm_b_in_derived_from_inner_inport(self) -> None:
+        """ADR-0039: ``port_shapes_in`` は内部 Inport.port_shape から派生する。"""
+        sub = Subsystem()
         sub.add(Inport(port_idx=0, port_shape=(3,)))
-        sub._build()  # 例外なし
+        # 派生 property: 内部 Inport の port_shape がそのまま外側に見える
+        assert sub.port_shapes_in == ((3,),)
         ip = sub.get_block("Inport_0")
         assert ip.port_shape == (3,)
+        sub._build()  # 例外なし
 
-    def test_subsystem_sm_b_inport_mismatch_raises(self) -> None:
-        """Subsystem.port_shapes_in=((3,),) と Inport.port_shape=() の不一致で error。"""
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=0,
-            port_shapes_in=((3,),),
-        )
-        sub.add(Inport(port_idx=0))  # default port_shape=()
-        with pytest.raises(BlockSpecError, match="port_shapes_in"):
-            sub._build()
-
-    def test_subsystem_outport_mismatch_raises(self) -> None:
-        """Subsystem.port_shapes_out=((2,),) と Outport.port_shape=(3,) の不一致で error。"""
-        sub = Subsystem(
-            n_inputs=0,
-            n_outputs=1,
-            port_shapes_out=((2,),),
-        )
-        sub.add(Outport(port_idx=0, port_shape=(3,)))
-        with pytest.raises(BlockSpecError, match="port_shapes_out"):
-            sub._build()
+    def test_subsystem_sm_b_out_derived_from_inner_outport(self) -> None:
+        """ADR-0039: ``port_shapes_out`` は内部 Outport.port_shape から派生する。"""
+        sub = Subsystem()
+        sub.add(Outport(port_idx=0, port_shape=(2,)))
+        assert sub.port_shapes_out == ((2,),)
+        op = sub.get_block("Outport_0")
+        assert op.port_shape == (2,)
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +74,7 @@ class TestSubsystemSmACompat:
         """ADR-0009 で導入された SM-A Subsystem が ADR-0017/0018 後も動く。"""
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=4.0))
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))
         sub.add(Gain(k=2.0, id="g"))
         sub.add(Outport(port_idx=0))
@@ -143,7 +132,7 @@ class TestSubsystemSmBRoundTrip:
 
         tmp = cast(Path, tmp_path)
         sim = Simulator(t_end=0.05, dt=0.01)
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))
         sub.add(Gain(k=2.0, id="g"))
         sub.add(Outport(port_idx=0))
@@ -164,7 +153,7 @@ class TestSubsystemSmBRoundTrip:
 
         tmp = cast(Path, tmp_path)
         sim = Simulator(t_end=0.05, dt=0.01)
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))
         sub.add(Outport(port_idx=0))
         sub.connect("Inport_0", "Outport_0")
@@ -177,24 +166,15 @@ class TestSubsystemSmBRoundTrip:
         assert "port_shapes_out" not in sub_entry["params"]
 
     def test_sm_b_subsystem_json_roundtrip_preserves_port_shapes(self, tmp_path: object) -> None:
-        """SM-B Subsystem を save→load すると外側 ``port_shapes_in/out`` が復元される
-        (ADR-0018 §(5) MUST 修正、code-reviewer 検出回帰防止)。
-
-        修正前は ``Subsystem.to_dict`` が ``port_shapes_*`` を保存しなかったため、
-        load 後の ``_build`` で内部 Inport の SM-B port_shape と外側の SM-A
-        ``()`` が不一致になり ``BlockSpecError`` で壊れていた。
+        """ADR-0039: ``port_shapes_in/out`` は派生 property のため JSON には保存しない。
+        代わりに内部 Inport / Outport の port_shape が保存され、load 後の派生計算で
+        外側 ``port_shapes_*`` が復元される。
         """
         from pathlib import Path
 
         tmp = cast(Path, tmp_path)
-        # SM-B Subsystem: 外側 (3,) input、内部 Inport(port_shape=(3,))
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=1,
-            id="sub",
-            port_shapes_in=((3,),),
-            port_shapes_out=((3,),),
-        )
+        # ADR-0039: Subsystem() 引数なしで生成、内部 Inport / Outport で port_shape 指定
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, port_shape=(3,)))
         sub.add(Outport(port_idx=0, port_shape=(3,)))
         sub.connect("Inport_0", "Outport_0")
@@ -203,13 +183,13 @@ class TestSubsystemSmBRoundTrip:
         path = tmp / "sm_b_sub.flw.json"
         sim.save(path)
 
-        # JSON に port_shapes_in/out が書き出されている
+        # ADR-0039: JSON には port_shapes_in/out フィールドが含まれない (= 派生 property)
         data = json.loads(path.read_text(encoding="utf-8"))
         sub_entry = next(b for b in data["blocks"] if b["id"] == "sub")
-        assert sub_entry["params"]["port_shapes_in"] == [[3]]
-        assert sub_entry["params"]["port_shapes_out"] == [[3]]
+        assert "port_shapes_in" not in sub_entry["params"]
+        assert "port_shapes_out" not in sub_entry["params"]
 
-        # load して port_shapes_* が復元される
+        # load して派生 port_shapes_* が復元される (内部 Inport.port_shape 経由)
         sim2 = Simulator.load(path)
         sub2 = sim2.get_block("sub")
         assert sub2.port_shapes_in == ((3,),)
@@ -227,6 +207,8 @@ class TestSubsystemSmBRunRejected:
     def test_sm_b_subsystem_run_raises_block_spec_error(self) -> None:
         """SM-B port を持つ ``Subsystem`` を ``run`` すると build 時に明示エラー。
 
+        ADR-0039: ``port_shapes_in`` は派生 property のため、内部 Inport の
+        ``port_shape=(3,)`` から ``((3,),)`` として派生する。SM-B 判定は維持される。
         Subsystem の SM-B 内部実行は ``_step_inner_v`` (Phase 4) を待つ。それまでは
         silent 破損 (SM-A scalar coercion で値が消える) を避けるため
         ``BlockSpecError`` で拒否する (code-reviewer SHOULD 修正)。
@@ -238,12 +220,8 @@ class TestSubsystemSmBRunRejected:
         from pyflw.blocks import Mux
 
         m = sim.add(Mux(n=3, id="m"))
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=0,
-            id="sub",
-            port_shapes_in=((3,),),
-        )
+        sub = Subsystem(id="sub")
+        # ADR-0039: 内部 Inport の port_shape=(3,) から派生で port_shapes_in=((3,),)
         sub.add(Inport(port_idx=0, port_shape=(3,)))
         sim.add(sub)
         sim.connect(c0, m, dst_idx=0)
@@ -287,19 +265,14 @@ class TestInportOutportPortShapeJsonRoundTrip:
     def test_inport_vector_port_shape_restored_after_save_load(self, tmp_path: object) -> None:
         """Inport(port_shape=(3,)) を save → load すると port_shape=(3,) で復元される。
 
-        注意: Subsystem 内部の Inport は Subsystem.to_dict / _from_dict 経由で
-        永続化・復元される。
+        ADR-0039: 外側 ``port_shapes_in`` は派生 property のため JSON には保存しない。
+        内部 Inport の ``port_shape`` は保存され、load 後に派生で外側へ復元される。
         """
         from pathlib import Path
 
         tmp = cast(Path, tmp_path)
         sim = Simulator(t_end=0.05, dt=0.01)
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=0,
-            port_shapes_in=((3,),),
-            id="sub",
-        )
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, port_shape=(3,), id="ip0"))
         sim.add(sub)
 
@@ -312,19 +285,19 @@ class TestInportOutportPortShapeJsonRoundTrip:
         inner_blocks = sub_entry["params"]["blocks"]
         ip_entry = next(b for b in inner_blocks if b["id"] == "ip0")
         assert ip_entry["params"]["port_shape"] == [3]
+        # ADR-0039: 外側 port_shapes_in は JSON に保存しない (= 派生 property)
+        assert "port_shapes_in" not in sub_entry["params"]
 
     def test_inport_vector_port_shape_tuple_after_load(self, tmp_path: object) -> None:
-        """load 後の Inport.port_shape が (3,) の tuple で復元される。"""
+        """load 後の Inport.port_shape が (3,) の tuple で復元される。
+
+        ADR-0039: 派生 ``port_shapes_in`` も内部 Inport.port_shape から自動復元。
+        """
         from pathlib import Path
 
         tmp = cast(Path, tmp_path)
         sim = Simulator(t_end=0.05, dt=0.01)
-        sub = Subsystem(
-            n_inputs=1,
-            n_outputs=0,
-            port_shapes_in=((3,),),
-            id="sub",
-        )
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, port_shape=(3,), id="ip0"))
         sim.add(sub)
         path = tmp / "inport_vector_load.flw.json"
@@ -333,6 +306,8 @@ class TestInportOutportPortShapeJsonRoundTrip:
         sub2 = cast(Subsystem, sim2.get_block("sub"))
         ip2 = cast(Inport, sub2.get_block("ip0"))
         assert ip2.port_shape == (3,)
+        # ADR-0039: 派生 port_shapes_in も復元される
+        assert sub2.port_shapes_in == ((3,),)
 
 
 # ---------------------------------------------------------------------------
@@ -341,50 +316,33 @@ class TestInportOutportPortShapeJsonRoundTrip:
 
 
 class TestMultipleInportPortShapeCheck:
-    def test_two_inports_both_matching(self) -> None:
-        """n_inputs=2 で 2 つの Inport がそれぞれ port_shape に一致する場合 build 成功。"""
-        sub = Subsystem(
-            n_inputs=2,
-            n_outputs=0,
-            port_shapes_in=((), (3,)),  # ip0: scalar, ip1: vector
-        )
-        sub.add(Inport(port_idx=0))  # scalar → match
-        sub.add(Inport(port_idx=1, port_shape=(3,)))  # vector → match
+    """ADR-0039: 「外側 vs 内部の port_shape 不一致 raises」は派生 property 化に伴い
+    廃止。代わりに「複数 Inport の port_shape から外側 ``port_shapes_in`` が正しく
+    派生する」ことを確認する。"""
+
+    def test_two_inports_derived_from_inner(self) -> None:
+        """2 つの Inport (scalar + vector) から派生 port_shapes_in を確認。"""
+        sub = Subsystem()
+        sub.add(Inport(port_idx=0))  # scalar
+        sub.add(Inport(port_idx=1, port_shape=(3,)))  # vector
+        assert sub.port_shapes_in == ((), (3,))
         sub._build()  # 例外なし
 
-    def test_two_inports_first_mismatch_raises(self) -> None:
-        """2 つの Inport のうち port_idx=0 が不一致で BlockSpecError。"""
-        sub = Subsystem(
-            n_inputs=2,
-            n_outputs=0,
-            port_shapes_in=((5,), ()),  # ip0: vector (5,), ip1: scalar
-        )
-        sub.add(Inport(port_idx=0))  # scalar → mismatch
-        sub.add(Inport(port_idx=1))  # scalar → match
-        with pytest.raises(BlockSpecError, match="port_shapes_in"):
-            sub._build()
+    def test_inports_derived_in_port_idx_order(self) -> None:
+        """port_idx 順 (= add 順とは独立) で派生されることを確認。"""
+        sub = Subsystem()
+        # 追加順を逆にする (port_idx=1 を先、port_idx=0 を後)
+        sub.add(Inport(port_idx=1, port_shape=(3,)))
+        sub.add(Inport(port_idx=0))
+        # port_idx 順なので scalar が先、vector が後
+        assert sub.port_shapes_in == ((), (3,))
 
-    def test_two_inports_second_mismatch_raises(self) -> None:
-        """2 つの Inport のうち port_idx=1 が不一致で BlockSpecError。"""
-        sub = Subsystem(
-            n_inputs=2,
-            n_outputs=0,
-            port_shapes_in=((), (3,)),  # ip1: vector
-        )
-        sub.add(Inport(port_idx=0))  # scalar → match
-        sub.add(Inport(port_idx=1))  # scalar → mismatch with (3,)
-        with pytest.raises(BlockSpecError, match="port_shapes_in"):
-            sub._build()
-
-    def test_three_inports_all_matching(self) -> None:
-        """n_inputs=3 で 3 つの Inport がすべて一致する場合 build 成功。"""
-        sub = Subsystem(
-            n_inputs=3,
-            n_outputs=0,
-            port_shapes_in=((), (), ()),
-        )
+    def test_three_inports_all_scalar(self) -> None:
+        """3 つの scalar Inport は派生 port_shapes_in == ((), (), ())。"""
+        sub = Subsystem()
         for i in range(3):
             sub.add(Inport(port_idx=i))
+        assert sub.port_shapes_in == ((), (), ())
         sub._build()  # 例外なし
 
 
@@ -394,22 +352,28 @@ class TestMultipleInportPortShapeCheck:
 
 
 class TestSubsystemMissingInport:
+    """ADR-0039: ``n_inputs`` 宣言が廃止されたため「宣言と実数の不一致 raises」は
+    廃止。代わりに port_idx 連番違反 (重複 / 抜け) は ``BlockSpecError`` で検出。"""
+
     def test_missing_inport_raises_on_build(self) -> None:
-        """n_inputs=2 なのに Inport が 1 つしかない場合、build で BlockSpecError。"""
-        sub = Subsystem(n_inputs=2, n_outputs=0)
-        sub.add(Inport(port_idx=0))  # 1 つだけ
-        with pytest.raises(BlockSpecError, match="n_inputs=2"):
+        """ADR-0039: port_idx 抜け (= [0, 2] で 1 が無い) は BlockSpecError。"""
+        sub = Subsystem()
+        sub.add(Inport(port_idx=0))
+        sub.add(Inport(port_idx=2))  # gap
+        with pytest.raises(BlockSpecError, match=r"do not cover \[0, 2\)"):
             sub._build()
 
-    def test_zero_inports_with_n_inputs_zero_passes(self) -> None:
-        """n_inputs=0 で Inport が 0 個の場合は build 成功。"""
-        sub = Subsystem(n_inputs=0, n_outputs=0)
+    def test_zero_inports_passes(self) -> None:
+        """ADR-0039: 内部 Inport ゼロは派生で n_inputs=0、build 成功。"""
+        sub = Subsystem()
         sub._build()  # 例外なし
+        assert sub.n_inputs == 0
+        assert sub.port_shapes_in == ()
 
     def test_extra_inport_raises_on_build(self) -> None:
-        """n_inputs=1 なのに Inport が 2 つある場合、build で BlockSpecError。"""
-        sub = Subsystem(n_inputs=1, n_outputs=0)
+        """ADR-0039: port_idx 重複は BlockSpecError。"""
+        sub = Subsystem()
         sub.add(Inport(port_idx=0))
-        sub.add(Inport(port_idx=1))  # 余分
-        with pytest.raises(BlockSpecError, match="n_inputs=1"):
+        sub.add(Inport(port_idx=0))  # 重複
+        with pytest.raises(BlockSpecError, match=r"do not cover \[0, 2\)"):
             sub._build()

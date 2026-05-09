@@ -6,7 +6,8 @@
 // あるため、ここでズレが生じたら Python 側の実装に合わせること。
 // (= 各 endsWith の上に Python 実装の根拠コメントを書いておく)
 
-import type { BlockMetadata } from "../types/api";
+import type { BlockEntry, BlockMetadata } from "../types/api";
+import { INPORT_TYPE, OUTPORT_TYPE, TRIGGERED_SUBSYSTEM_TYPE } from "./blockTypes";
 
 export interface ResolvedPortCounts {
   nInputs: number;
@@ -97,16 +98,44 @@ export function resolvePortCounts(
     return { nInputs: Math.max(1, ni), nOutputs: Math.max(1, no) };
   }
 
-  // ----- Subsystem -----
+  // ----- Subsystem (ADR-0039: 派生 property) -----
+  // 内部 Inport / Outport の数から自動算出。TriggeredSubsystem は trigger 入力分
+  // を ``n_inputs`` に +1 (= ADR-0036 §(2) 末尾固定 trigger slot)。
+  if (
+    typePath === TRIGGERED_SUBSYSTEM_TYPE ||
+    typePath.endsWith(".TriggeredSubsystem")
+  ) {
+    const inner = params.blocks;
+    if (Array.isArray(inner)) {
+      const inports = countByType(inner, INPORT_TYPE);
+      const outports = countByType(inner, OUTPORT_TYPE);
+      return { nInputs: inports + 1, nOutputs: outports };
+    }
+    // params.blocks が未取得 (= drag prefetch 直後 等) なら registry default + trigger
+    return { nInputs: defaultIn + 1, nOutputs: defaultOut };
+  }
   if (typePath.endsWith(".Subsystem")) {
-    return {
-      nInputs: readPositiveInt(params.n_inputs, defaultIn),
-      nOutputs: readPositiveInt(params.n_outputs, defaultOut),
-    };
+    const inner = params.blocks;
+    if (Array.isArray(inner)) {
+      const inports = countByType(inner, INPORT_TYPE);
+      const outports = countByType(inner, OUTPORT_TYPE);
+      return { nInputs: inports, nOutputs: outports };
+    }
+    return { nInputs: defaultIn, nOutputs: defaultOut };
   }
 
   // それ以外は registry default
   return { nInputs: defaultIn, nOutputs: defaultOut };
+}
+
+function countByType(blocks: unknown[], typePath: string): number {
+  let n = 0;
+  for (const b of blocks) {
+    if (b && typeof b === "object" && (b as BlockEntry).type === typePath) {
+      n += 1;
+    }
+  }
+  return n;
 }
 
 /**
@@ -129,6 +158,7 @@ export function hasDynamicPorts(typePath: string): boolean {
     ".DiscreteStateSpace",
     ".MimoTransferFunction",
     ".Subsystem",
+    ".TriggeredSubsystem", // ADR-0036/0039: 派生 port count + trigger slot
   ].some((suffix) => typePath.endsWith(suffix));
 }
 

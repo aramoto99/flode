@@ -159,10 +159,18 @@ describe("resolvePortCounts", () => {
     ).toEqual({ nInputs: 4, nOutputs: 0 });
   });
 
-  it("Subsystem: n_inputs and n_outputs", () => {
+  it("Subsystem: n_inputs/n_outputs derived from inner Inport/Outport (ADR-0039)", () => {
     const r = resolvePortCounts(
       "pyflw.subsystems.subsystem.Subsystem",
-      { n_inputs: 3, n_outputs: 2 },
+      {
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "in1", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 1 } },
+          { id: "in2", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 2 } },
+          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          { id: "out1", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 1 } },
+        ],
+      },
       META(1, 1),
     );
     expect(r).toEqual({ nInputs: 3, nOutputs: 2 });

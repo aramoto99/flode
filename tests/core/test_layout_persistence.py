@@ -48,9 +48,10 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_7(self) -> None:
-        # ADR-0036: 0.6 → 0.7 bump (RateTransition / TriggeredSubsystem 追加)
-        assert CURRENT_SCHEMA_VERSION == "0.7"
+    def test_current_is_0_8(self) -> None:
+        # ADR-0039: 0.7 → 0.8 bump (Subsystem n_inputs/n_outputs/port_shapes_*
+        # を派生 property 化、JSON フィールド廃止)
+        assert CURRENT_SCHEMA_VERSION == "0.8"
 
     def test_supported_includes_current(self) -> None:
         assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS
@@ -298,7 +299,7 @@ class TestStaleLayoutEntries:
 
 class TestSubsystemLayoutRoundTrip:
     def _build_subsystem_model(self, layout: dict[str, dict[str, float]] | None) -> Simulator:
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub", layout=layout)
+        sub = Subsystem(id="sub", layout=layout)
         sub.add(Inport(port_idx=0, id="ip0"))
         sub.add(Gain(k=2.0, id="g_inner"))
         sub.add(Outport(port_idx=0, id="op0"))

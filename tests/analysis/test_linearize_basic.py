@@ -312,7 +312,7 @@ class TestLabelsConsistency:
         from pyflw import Inport, Outport, Subsystem
         from pyflw.blocks import Gain
 
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))
         sub.add(Gain(k=2.0, id="g"))
         sub.add(Integrator(id="i"))

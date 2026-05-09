@@ -252,7 +252,10 @@ export function addBlockToEditing(
     let updated = m;
 
     // (1) path 配下に block を追加。Inport / Outport なら port_idx を内部の
-    //     既存同種 count に上書き (= 連番採番、_build 検証と整合)
+    //     既存同種 count に上書き (= 連番採番、_build 検証と整合)。
+    //     ADR-0039: 親 Subsystem の n_inputs / n_outputs は派生 property のため、
+    //     ここで明示的に +1 する処理は不要 (= 内部 Inport を追加するだけで
+    //     `dynamicPorts.resolvePortCounts` が自動派生する)。
     updated = applyAtPath(updated, path, (view) => {
       let inserted = block;
       if (isPort) {
@@ -271,15 +274,14 @@ export function addBlockToEditing(
       };
     });
 
-    // (2) 親 Subsystem (= path の末尾セグメント) の n_inputs / n_outputs を +1
-    //     top-level (path 空) なら親が無いので skip
-    if (isPort && path.length > 0) {
+    // (2) ADR-0036 §(2): TriggeredSubsystem の trigger 接続 (= 末尾固定 slot) は
+    //     内部 Inport 追加で +1 シフトする必要あり (派生 property 化と独立、
+    //     ADR-0039 §Decision §(7) で残すと確定)。
+    //     旧 trigger dst_idx = (旧 internal Inport count) → 新 dst_idx = +1
+    if (isInport && path.length > 0) {
       const parentPath = path.slice(0, -1);
       const parentSubId = path[path.length - 1]!;
       updated = applyAtPath(updated, parentPath, (view) => {
-        // 親ブロックを find() で先に取得して oldNInputs / isTriggered を副作用
-        // なく決定する (= code-reviewer MUST-1)。parentSubId が見つからない時は
-        // 上流が path 不整合なので no-op として view を不変で返す。
         const parentBlock = view.blocks.find((b) => b.id === parentSubId);
         if (!parentBlock) {
           console.warn(
@@ -288,64 +290,31 @@ export function addBlockToEditing(
           );
           return view;
         }
-        const parentParams = parentBlock.params as Record<string, unknown>;
-        const oldNInputs = getNumberParam(parentParams, "n_inputs");
-        const oldNOutputs = getNumberParam(parentParams, "n_outputs");
-        const isTriggered = parentBlock.type === TRIGGERED_SUBSYSTEM_TYPE;
-
-        const newBlocks = view.blocks.map((b) => {
-          if (b.id !== parentSubId) return b;
-          if (isInport) {
-            return {
-              ...b,
-              params: { ...parentParams, n_inputs: oldNInputs + 1 },
-            };
-          }
-          return {
-            ...b,
-            params: { ...parentParams, n_outputs: oldNOutputs + 1 },
-          };
-        });
-
-        // TriggeredSubsystem だけは trigger 入力が末尾 dst_idx = n_inputs - 1 に
-        // 固定 (= ADR-0036 §(2)、triggered.py:135)。Inport 追加で内部 Inport が
-        // 旧 trigger slot を奪う形になるので、trigger 接続を 1 つ後ろにシフトする。
-        let newConnections = view.connections;
-        if (isInport && isTriggered) {
-          if (oldNInputs <= 0) {
-            // TriggeredSubsystem は仕様上 n_inputs >= 1 (= trigger slot 分) が
-            // 保証される。corrupt データで 0 以下が来た場合は trigger slot 自体
-            // が存在しないので shift は意味を持たず、警告だけ出して skip する
-            // (= code-reviewer round 2 SHOULD)。
-            console.warn(
-              `[appStore] TriggeredSubsystem "${parentSubId}" has invalid n_inputs=${oldNInputs}; ` +
-                `trigger slot shift skipped (expected n_inputs >= 1).`,
-            );
-          } else {
-            const oldTriggerIdx = oldNInputs - 1;
-            let triggerFound = false;
-            newConnections = view.connections.map((c) => {
-              if (c.dst === parentSubId && c.dst_idx === oldTriggerIdx) {
-                triggerFound = true;
-                return { ...c, dst_idx: c.dst_idx + 1 };
-              }
-              return c;
-            });
-            if (!triggerFound) {
-              // TriggeredSubsystem の trigger 接続が見つからない (= 利用者が trigger
-              // 入力を未接続のまま Inport を追加した) ケース。n_inputs だけ +1 した
-              // 状態で保存されると `_build` で別途エラーになるので警告を残す
-              // (= code-reviewer SHOULD-2)。
-              console.warn(
-                `[appStore] TriggeredSubsystem "${parentSubId}" has no trigger connection ` +
-                  `at dst_idx=${oldTriggerIdx}. n_inputs incremented but trigger slot may be inconsistent.`,
-              );
-            }
-          }
+        if (parentBlock.type !== TRIGGERED_SUBSYSTEM_TYPE) {
+          return view; // 通常 Subsystem は追従不要 (= 派生 property)
         }
-
+        // 旧 trigger dst_idx を内部 Inport 数 (追加前) から計算する。
+        // 追加後の inner blocks には新 Inport が含まれるので、count - 1 で旧値を得る。
+        const innerBlocks = (parentBlock.params as { blocks?: BlockEntry[] }).blocks ?? [];
+        const oldInportCount =
+          innerBlocks.filter((b) => b.type === INPORT_TYPE).length - 1;
+        const oldTriggerIdx = oldInportCount;
+        let triggerFound = false;
+        const newConnections = view.connections.map((c) => {
+          if (c.dst === parentSubId && c.dst_idx === oldTriggerIdx) {
+            triggerFound = true;
+            return { ...c, dst_idx: c.dst_idx + 1 };
+          }
+          return c;
+        });
+        if (!triggerFound && oldTriggerIdx >= 0) {
+          console.warn(
+            `[appStore] TriggeredSubsystem "${parentSubId}" has no trigger connection ` +
+              `at dst_idx=${oldTriggerIdx}. trigger slot may be inconsistent.`,
+          );
+        }
         return {
-          blocks: newBlocks,
+          blocks: view.blocks,
           connections: newConnections,
           layout: view.layout,
         };
@@ -416,16 +385,12 @@ export function removeBlockFromEditing(blockId: string): void {
       return { blocks, connections, layout };
     });
 
-    // (2) 親 Subsystem の n_inputs / n_outputs を -1、親階層 connections の
-    //     dst_idx == removedPortIdx (Inport) / src_idx == removedPortIdx (Outport)
-    //     を削除、それより大きいものを -1 シフト。TriggeredSubsystem の trigger
-    //     接続も同じロジックで自動的に末尾を保つ (= 旧 dst_idx > removedPortIdx
-    //     のため -1 で新 n_inputs - 1 に着地)。
-    //
-    // port_idx が不明 (= 想定外データ) の場合でも n_inputs / n_outputs の -1 は
-    // 必ず実行する (= code-reviewer MUST-2)。port_idx が分かる時のみ親階層
-    // connections のシフト・削除も行う。
-    if (isPort && path.length > 0) {
+    // (2) 親階層 connections のシフト/削除のみ実行 (= ADR-0039: 親
+    //     n_inputs / n_outputs は派生 property のため明示的な -1 は不要)。
+    //     port_idx 連番再割り当てに伴って親階層の dst_idx (Inport) / src_idx
+    //     (Outport) を追従させる。TriggeredSubsystem の trigger 接続も
+    //     `dst_idx > removedPortIdx` のシフトで自動的に末尾を保つ。
+    if (isPort && path.length > 0 && removedPortIdx !== undefined) {
       const parentPath = path.slice(0, -1);
       const parentSubId = path[path.length - 1]!;
       updated = applyAtPath(updated, parentPath, (view) => {
@@ -437,60 +402,41 @@ export function removeBlockFromEditing(blockId: string): void {
           );
           return view;
         }
-        const parentParams = parentBlock.params as Record<string, unknown>;
-        const newBlocks = view.blocks.map((b) => {
-          if (b.id !== parentSubId) return b;
-          if (isInport) {
-            const cur = getNumberParam(parentParams, "n_inputs");
-            return {
-              ...b,
-              params: { ...parentParams, n_inputs: Math.max(0, cur - 1) },
-            };
-          }
-          const cur = getNumberParam(parentParams, "n_outputs");
-          return {
-            ...b,
-            params: { ...parentParams, n_outputs: Math.max(0, cur - 1) },
-          };
-        });
-        const newConnections =
-          removedPortIdx === undefined
-            ? view.connections
-            : view.connections
-                .filter((c) => {
-                  if (
-                    isInport &&
-                    c.dst === parentSubId &&
-                    c.dst_idx === removedPortIdx
-                  )
-                    return false;
-                  if (
-                    isOutport &&
-                    c.src === parentSubId &&
-                    c.src_idx === removedPortIdx
-                  )
-                    return false;
-                  return true;
-                })
-                .map((c) => {
-                  if (
-                    isInport &&
-                    c.dst === parentSubId &&
-                    c.dst_idx > removedPortIdx
-                  ) {
-                    return { ...c, dst_idx: c.dst_idx - 1 };
-                  }
-                  if (
-                    isOutport &&
-                    c.src === parentSubId &&
-                    c.src_idx > removedPortIdx
-                  ) {
-                    return { ...c, src_idx: c.src_idx - 1 };
-                  }
-                  return c;
-                });
+        const newConnections = view.connections
+          .filter((c) => {
+            if (
+              isInport &&
+              c.dst === parentSubId &&
+              c.dst_idx === removedPortIdx
+            )
+              return false;
+            if (
+              isOutport &&
+              c.src === parentSubId &&
+              c.src_idx === removedPortIdx
+            )
+              return false;
+            return true;
+          })
+          .map((c) => {
+            if (
+              isInport &&
+              c.dst === parentSubId &&
+              c.dst_idx > removedPortIdx
+            ) {
+              return { ...c, dst_idx: c.dst_idx - 1 };
+            }
+            if (
+              isOutport &&
+              c.src === parentSubId &&
+              c.src_idx > removedPortIdx
+            ) {
+              return { ...c, src_idx: c.src_idx - 1 };
+            }
+            return c;
+          });
         return {
-          blocks: newBlocks,
+          blocks: view.blocks,
           connections: newConnections,
           layout: view.layout,
         };

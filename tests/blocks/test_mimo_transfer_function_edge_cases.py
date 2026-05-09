@@ -712,7 +712,7 @@ class TestMimoInSubsystem:
         from pyflw import Subsystem
         from pyflw.subsystems.ports import Inport, Outport
 
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(
             MimoTransferFunction(
@@ -744,7 +744,7 @@ class TestMimoInSubsystem:
         from pyflw import Subsystem
         from pyflw.subsystems.ports import Inport, Outport
 
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub_bp")
+        sub = Subsystem(id="sub_bp")
         sub.add(Inport(port_idx=0, id="in0"))
         sub.add(
             MimoTransferFunction(

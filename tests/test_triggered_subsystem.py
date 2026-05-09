@@ -75,8 +75,6 @@ class TestIsEdgeHelper:
 def _build_simple_triggered(trigger_mode: str = "rising") -> TriggeredSubsystem:
     """1 データ入力 (Gain*2) + 1 trigger 入力 + 1 出力の TriggeredSubsystem。"""
     return TriggeredSubsystem(
-        n_inputs=2,
-        n_outputs=1,
         trigger_mode=trigger_mode,
         blocks=[
             Inport(port_idx=0, id="in_data"),
@@ -107,14 +105,17 @@ class TestConstructor:
     def test_invalid_trigger_mode_raises(self) -> None:
         with pytest.raises(BlockSpecError, match="trigger_mode must be one of"):
             TriggeredSubsystem(
-                n_inputs=2,
-                n_outputs=1,
                 trigger_mode="invalid",
             )
 
-    def test_n_inputs_zero_raises(self) -> None:
-        with pytest.raises(BlockSpecError, match="must be >= 1"):
-            TriggeredSubsystem(n_inputs=0, n_outputs=1)
+    def test_n_inputs_argument_rejected(self) -> None:
+        """ADR-0039: ``n_inputs`` / ``n_outputs`` 引数は v2.0 で廃止 (TypeError)。
+
+        v1 では ``n_inputs=0`` で BlockSpecError("must be >= 1") を返したが、
+        v2 では ``n_inputs`` 引数自体が削除されたため、TypeError で migration
+        を促す。"""
+        with pytest.raises(TypeError, match="were removed in v2.0"):
+            TriggeredSubsystem(n_inputs=0, n_outputs=1)  # type: ignore[call-arg]
 
     def test_initial_prev_trigger_is_nan(self) -> None:
         sub = _build_simple_triggered()
@@ -207,8 +208,6 @@ class TestStateFreeze:
         rising edge でのみ UnitDelay が advance、それ以外では state 凍結。
         """
         sub = TriggeredSubsystem(
-            n_inputs=2,
-            n_outputs=1,
             trigger_mode="rising",
             blocks=[
                 Inport(port_idx=0, id="in_data"),

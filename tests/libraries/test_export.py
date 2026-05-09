@@ -13,7 +13,7 @@ from pyflw.libraries import export_subsystem_to_library
 
 def _build_simple_subsystem() -> Subsystem:
     """1 入力 1 出力の最小 Subsystem (Gain=2.0、マスクなし)。"""
-    sub = Subsystem(n_inputs=1, n_outputs=1)
+    sub = Subsystem()
     inp = sub.add(Inport(port_idx=0))
     g = sub.add(Gain(k=2.0))
     out = sub.add(Outport(port_idx=0))
@@ -101,8 +101,6 @@ def test_export_round_trip_byte_identical(tmp_path: Path) -> None:
     マスク Subsystem の placeholder + mask_values が変わらず保たれることを確認。
     """
     sub = Subsystem(
-        n_inputs=1,
-        n_outputs=1,
         mask_params=[
             {"name": "K", "type": "float", "default": 3.0, "description": ""},
         ],

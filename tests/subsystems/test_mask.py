@@ -189,8 +189,6 @@ class TestSubsystemMask:
     def test_unknown_mask_value_key_raises(self) -> None:
         with pytest.raises(BlockSpecError, match="not declared in mask_params"):
             Subsystem(
-                n_inputs=1,
-                n_outputs=1,
                 id="sub",
                 mask_params=[{"name": "Kp", "type": "float", "default": 1.0}],
                 mask_values={"NoSuch": 5.0},
@@ -343,7 +341,7 @@ class TestMaskJsonRoundTrip:
 
     def test_mask_less_subsystem_remains_byte_identical(self, tmp_path: Path) -> None:
         """mask_params なしの Subsystem は JSON に mask キーを出さない。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))
         sub.add(Gain(k=2.0, id="g"))
         sub.add(Outport(port_idx=0))

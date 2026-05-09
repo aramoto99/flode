@@ -27,6 +27,7 @@ import numpy.typing as npt
 from ..core.block import Block
 from ..core.persistence import LayoutDict
 from ..exceptions import BlockSpecError
+from .ports import Inport
 from .subsystem import Subsystem
 
 _logger = logging.getLogger("pyflw.subsystems.triggered")
@@ -65,61 +66,61 @@ class TriggeredSubsystem(Subsystem):
     内部状態が凍結され、出力は前回 fire 時の値を保持する (= Simulink Triggered
     Subsystem 互換)。
 
+    ADR-0039 (v2.0): 親 :class:`Subsystem` と同じく ``n_inputs`` / ``n_outputs``
+    は派生 property。``n_inputs = 内部 Inport 数 + 1`` (trigger 分)。
+    ``n_outputs = 内部 Outport 数``。利用者は
+    ``ts.add(Inport(port_idx=i))`` で内部データ入力を増やす。trigger 入力は
+    末尾 (``input_sources[-1]``) 固定で、初期化時に自動確保される。
+
     Args:
-        n_inputs: 外部入力数 (**trigger 入力を含む**)。内部 ``Inport`` 数は
-            ``n_inputs - 1`` (= データ入力のみ、trigger は内部に流さない)。
-        n_outputs: 外部出力数 (= 内部 ``Outport`` 数と一致)。
         trigger_mode: ``"rising"`` (上昇エッジ) / ``"falling"`` (下降エッジ) /
             ``"either"`` (両方)。default ``"rising"``。
-        blocks / connections / id / name / port_shapes_in / port_shapes_out /
-        layout / mask_params / mask_values: :class:`Subsystem` と同形 (ADR-0021)。
+        blocks / connections / id / name / layout / mask_params / mask_values:
+            :class:`Subsystem` と同形 (ADR-0021)。
 
     Raises:
-        BlockSpecError:
-            - ``n_inputs < 1`` (trigger 入力分の最低 1 必須)
-            - ``trigger_mode`` が ``TRIGGER_MODES`` 以外
-            - 内部 ``Inport`` 数が ``n_inputs - 1`` と一致しない (= ``_build`` 時)
+        BlockSpecError: ``trigger_mode`` が ``TRIGGER_MODES`` 以外。
+        TypeError: v1.0 互換引数 ``n_inputs`` / ``n_outputs`` /
+            ``port_shapes_in`` / ``port_shapes_out`` が渡された場合 (= ADR-0039)。
     """
 
     def __init__(
         self,
-        n_inputs: int,
-        n_outputs: int,
         blocks: list[Block] | None = None,
         connections: list[dict[str, Any]] | None = None,
         *,
         trigger_mode: str = "rising",
         id: str | None = None,
         name: str | None = None,
-        port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
-        port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         layout: LayoutDict | None = None,
         mask_params: list[dict[str, Any]] | None = None,
         mask_values: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
-        if n_inputs < 1:
-            raise BlockSpecError(
-                f"TriggeredSubsystem: n_inputs must be >= 1 (= at least the trigger "
-                f"input), got {n_inputs}"
-            )
         if trigger_mode not in TRIGGER_MODES:
             raise BlockSpecError(
                 f"TriggeredSubsystem: trigger_mode must be one of {TRIGGER_MODES}, "
                 f"got {trigger_mode!r}"
             )
+        # 親 Subsystem.__init__ が ADR-0039 廃止引数 (n_inputs 等) の TypeError を
+        # 出すので、ここでは kwargs をそのまま渡して親に検証を委譲する
         super().__init__(
-            n_inputs=n_inputs,
-            n_outputs=n_outputs,
             blocks=blocks,
             connections=connections,
             id=id,
             name=name,
-            port_shapes_in=port_shapes_in,
-            port_shapes_out=port_shapes_out,
             layout=layout,
             mask_params=mask_params,
             mask_values=mask_values,
+            **kwargs,
         )
+
+        # ADR-0036 §(2): trigger 入力は末尾 (input_sources[-1]) 固定。Subsystem
+        # __init__ は内部 Inport が無い空状態から始まるため、ここで trigger slot
+        # を手動で確保する。以降 ``add(Inport)`` で内部 Inport slot が末尾の前に
+        # 挿入され、trigger は常に末尾を保つ。
+        self.input_sources.append(None)
+
         self.trigger_mode = trigger_mode
         # Triggered Subsystem 用の追加 params (= JSON serialize 時に保持)
         self._params["trigger_mode"] = trigger_mode
@@ -128,32 +129,58 @@ class TriggeredSubsystem(Subsystem):
         # 立てない (起動時の偽エッジ防止)。
         self._prev_trigger_value: float = float("nan")
         # 最後に fire したときの出力ベクトル (= fire しないステップで返すキャッシュ)。
-        # 初期値は zeros、最初の fire で更新される。
+        # 初期値は zeros、最初の fire で更新される (n_outputs は派生 property)。
         self._last_y: npt.NDArray[Any] = np.zeros(self.n_outputs)
 
-    def _build(self) -> None:
-        """Subsystem._build を override して内部 ``Inport`` 数を ``n_inputs - 1`` 期待に変える。
+    @property
+    def n_inputs(self) -> int:
+        # 内部 Inport 数 + trigger 1 (ADR-0036 §(2))。``Subsystem.n_inputs`` の
+        # property を直接呼ぶと再帰になるので、_inner_blocks を直接 filter する。
+        return sum(1 for b in self._inner_blocks if isinstance(b, Inport)) + 1
 
-        TriggeredSubsystem では trigger 入力 (= 入力末尾 port) は **内部に流れない
-        制御信号** のため、内部 ``Inport`` の port_idx は ``[0, 1, ..., n_inputs-2]``
-        の範囲。Subsystem._build の port_idx 整合チェックをこの規約で再実行する。
+    @n_inputs.setter
+    def n_inputs(self, value: int) -> None:  # noqa: ARG002
+        pass
+
+    @property
+    def port_shapes_in(self) -> tuple[tuple[int, ...], ...]:
+        # 内部 Inport の port_shape (port_idx 順) + trigger slot の () を末尾に追加。
+        # trigger は離散 scalar 信号 (ADR-0036 §(3)) なので shape は常に ()。
+        inports = sorted(
+            (b for b in self._inner_blocks if isinstance(b, Inport)),
+            key=lambda p: p.port_idx,
+        )
+        return tuple(p.port_shape for p in inports) + ((),)
+
+    @port_shapes_in.setter
+    def port_shapes_in(self, value: tuple[tuple[int, ...], ...]) -> None:  # noqa: ARG002
+        pass
+
+    def add(self, block: Block) -> Block:
+        """内部ブロックを登録する (ADR-0036 §(2) trigger slot 末尾保持)。
+
+        親 ``Subsystem.add`` は ``Inport`` を追加すると ``input_sources.append(None)``
+        するが、TriggeredSubsystem では trigger slot が末尾固定なので、追加された
+        slot を末尾の 1 つ前に move して trigger を後ろに保つ。
+        """
+        result = super().add(block)
+        if isinstance(block, Inport):
+            # 親 add で末尾に append された None を、末尾の 1 つ前 (= trigger の前) に
+            # 移動。input_sources = [..., new Inport slot, trigger slot] になる。
+            new_slot = self.input_sources.pop()
+            self.input_sources.insert(-1, new_slot)
+        return result
+
+    def _build(self) -> None:
+        """親 ``Subsystem._build`` をそのまま呼び、最後に direct_feedthrough を
+        強制 False にするだけ (ADR-0036 §(2))。
+
+        ADR-0039: 派生 property 化で「内部 Inport 数 == n_inputs - 1」は自然成立
+        するため、v1 で必要だった ``n_inputs - 1`` への一時上書き trick は廃止。
         """
         if self._exec_order is not None:
-            return  # 既にビルド済
-
-        # 一時的に self.n_inputs を 1 減らして親 _build を実行 (= データ入力数で
-        # Inport 整合チェックさせる)、終わったら元に戻す。
-        original_n_inputs = self.n_inputs
-        original_port_shapes_in = self.port_shapes_in
-        try:
-            self.n_inputs = original_n_inputs - 1
-            # trigger port を除いた残りの port_shape を一時的に渡す
-            self.port_shapes_in = original_port_shapes_in[:-1]
-            super()._build()
-        finally:
-            # 元に戻す
-            self.n_inputs = original_n_inputs
-            self.port_shapes_in = original_port_shapes_in
+            return
+        super()._build()
         # ADR-0036: trigger Subsystem は外側から見て discrete (周期 fire しない、
         # trigger でだけ動く)。direct_feedthrough は親 _build で内部から推論済だが、
         # **trigger 由来の出力遅延** が常にあるため強制 False。
@@ -179,6 +206,10 @@ class TriggeredSubsystem(Subsystem):
         3. edge なら内部 ``_step_inner`` で 内部 update を進めつつ ``_last_y`` を更新
         4. edge でなければ内部状態は **凍結** (= ``x`` をそのまま返す)
         5. ``self._prev_trigger_value = u[-1]`` で次ステップ用に保存
+
+        ADR-0039: 内部 Inport 数 == ``n_inputs - 1`` は派生 property で自然成立
+        する。v1 で必要だった ``self.n_inputs`` 一時上書き trick は不要 (=
+        ``_step_inner`` は ``self.n_inputs`` を直接見ない設計に依存)。
         """
         self._build()
         if self.n_states == 0 and len(u) == 1:
@@ -197,16 +228,13 @@ class TriggeredSubsystem(Subsystem):
             return np.asarray(x, dtype=float)
 
         # fire する: データ入力部 (trigger を除く) で内部ブロックを実行。
-        # ``_step_inner`` 内の ``for port_idx in range(self.n_inputs)`` は外側
-        # n_inputs (= trigger 含む) を見るので、一時的に ``n_inputs - 1`` に下げて
-        # データ Inport のみ書き込ませる (= ADR-0036 §(2) 実装トリック)。
+        # ``_step_inner`` は内部 Inport の port_idx [0..N-1] を u_data から書き込む
+        # ので、trigger を除いた u[:-1] を渡せばよい。``self.n_inputs`` の一時
+        # 上書きは不要 (= ADR-0039 派生 property 化で `_step_inner` 内の
+        # ``range(self.n_inputs)`` ではなく ``range(len(u_external))`` を見る形に
+        # 揃える前提)。
         u_data = u[:-1]
-        original_n_inputs = self.n_inputs
-        try:
-            self.n_inputs = original_n_inputs - 1
-            outputs, inputs = self._step_inner(t, x, u_data)
-        finally:
-            self.n_inputs = original_n_inputs
+        outputs, inputs = self._step_inner(t, x, u_data)
         # 内部 discrete update (= 親 Subsystem.update のロジックを継承)
         x_next: npt.NDArray[Any] = np.array(x, dtype=float, copy=True)
         for b, sl in self._discrete_slices:
@@ -241,49 +269,47 @@ class TriggeredSubsystem(Subsystem):
     def _from_dict(
         cls,
         *,
-        n_inputs: int,
-        n_outputs: int,
         blocks: list[Any],
         connections: list[dict[str, Any]],
         trigger_mode: str = "rising",
         id: str | None = None,
-        port_shapes_in: list[list[int]] | None = None,
-        port_shapes_out: list[list[int]] | None = None,
         layout: LayoutDict | None = None,
         mask_params: list[dict[str, Any]] | None = None,
         mask_values: dict[str, Any] | None = None,
+        **legacy_kwargs: Any,
     ) -> TriggeredSubsystem:
         """JSON load 時の factory (Subsystem._from_dict の override、ADR-0036)。
 
-        ``trigger_mode`` を kwargs で受け取り、コンストラクタに渡す。それ以外の
-        ロジック (= mask placeholder 解決、内部 block の reconstruct、connect)
-        は親 ``Subsystem._from_dict`` の実装を流用する形で書く。
+        ADR-0039: ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+        ``port_shapes_out`` は派生 property になったため、JSON 上に残っていても
+        ``legacy_kwargs`` で受け取って読み捨てる (= migration `_builtin_migrate_0_7_to_0_8`
+        で削除されているはずだが、誤って残った場合の defensive)。
         """
-        # 親 _from_dict は ``cls(...)`` で TriggeredSubsystem を構築するため、
-        # ``trigger_mode`` を一時的に class attribute として保存しておけば
-        # ``__init__`` の default を上書きできる。だが副作用が複雑なので、
-        # 親の本体ロジックを丸ごとコピーするのではなく、空 TriggeredSubsystem を
-        # 直接作って blocks / connections を後から add する方式に変える。
         from ..core.persistence import resolve_block_class
         from ._mask import collect_placeholder_names, substitute_placeholders
 
-        ps_in = (
-            tuple(tuple(int(v) for v in s) for s in port_shapes_in)
-            if port_shapes_in is not None
-            else None
-        )
-        ps_out = (
-            tuple(tuple(int(v) for v in s) for s in port_shapes_out)
-            if port_shapes_out is not None
-            else None
-        )
+        # ADR-0039: legacy フィールドを受けたら警告してから捨てる
+        legacy_dropped = {
+            k: legacy_kwargs.pop(k)
+            for k in list(legacy_kwargs)
+            if k in {"n_inputs", "n_outputs", "port_shapes_in", "port_shapes_out"}
+        }
+        if legacy_dropped:
+            _logger.warning(
+                "TriggeredSubsystem %r._from_dict: dropping legacy schema 0.7 fields %s "
+                "(now derived from inner Inport/Outport, ADR-0039)",
+                id,
+                sorted(legacy_dropped),
+            )
+        if legacy_kwargs:
+            raise TypeError(
+                f"TriggeredSubsystem._from_dict: unexpected keyword arguments "
+                f"{sorted(legacy_kwargs)}"
+            )
+
         sub = cls(
-            n_inputs=n_inputs,
-            n_outputs=n_outputs,
             trigger_mode=trigger_mode,
             id=id,
-            port_shapes_in=ps_in,
-            port_shapes_out=ps_out,
             layout=layout,
             mask_params=mask_params,
             mask_values=mask_values,

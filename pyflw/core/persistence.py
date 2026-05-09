@@ -10,6 +10,7 @@ Phase 2 では ``schema_version = "0.1"`` のみサポート。Subsystem 導入�
 from __future__ import annotations
 
 import importlib
+import logging
 import numbers
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.7"
+CURRENT_SCHEMA_VERSION = "0.8"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -331,6 +332,104 @@ def _builtin_migrate_0_6_to_0_7(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_SUBSYSTEM_TYPES_FOR_MIGRATION: tuple[str, ...] = (
+    "pyflw.subsystems.subsystem.Subsystem",
+    "pyflw.subsystems.triggered.TriggeredSubsystem",
+)
+
+
+def _strip_subsystem_port_fields_recursive(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    parent_path: str = "<root>",
+) -> None:
+    """ADR-0039 0.7 → 0.8 用のヘルパ。
+
+    ``blocks`` 内の Subsystem (含む TriggeredSubsystem) を再帰的にたどって、
+    ``params`` から ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+    ``port_shapes_out`` フィールドを **in-place で削除**する。削除前に内部
+    Inport / Outport 数との一致を確認し、不一致なら ``logger.warning``。
+    内部 Inport 数が真実なので migration 後の値はそちらに従う (= フィールド
+    消失で自動同期)。
+    """
+    logger = logging.getLogger("pyflw.persistence.migrate_0_7_to_0_8")
+    if not blocks:
+        return
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        block_type = entry.get("type")
+        params = entry.get("params")
+        if not isinstance(params, dict):
+            continue
+        if block_type in _SUBSYSTEM_TYPES_FOR_MIGRATION:
+            inner_blocks = params.get("blocks") or []
+            inport_count = sum(
+                1
+                for b in inner_blocks
+                if isinstance(b, dict) and b.get("type") == "pyflw.subsystems.ports.Inport"
+            )
+            outport_count = sum(
+                1
+                for b in inner_blocks
+                if isinstance(b, dict) and b.get("type") == "pyflw.subsystems.ports.Outport"
+            )
+            # TriggeredSubsystem は trigger 入力分 +1 が n_inputs に乗る
+            expected_n_inputs = (
+                inport_count + 1
+                if block_type == "pyflw.subsystems.triggered.TriggeredSubsystem"
+                else inport_count
+            )
+            expected_n_outputs = outport_count
+
+            old_n_inputs = params.pop("n_inputs", None)
+            old_n_outputs = params.pop("n_outputs", None)
+            params.pop("port_shapes_in", None)
+            params.pop("port_shapes_out", None)
+
+            entry_id = entry.get("id", "<no-id>")
+            path = f"{parent_path}/{entry_id}"
+            if old_n_inputs is not None and old_n_inputs != expected_n_inputs:
+                logger.warning(
+                    "Subsystem %s: legacy n_inputs=%s does not match inner Inport "
+                    "count=%s; using inner count after migration (ADR-0039)",
+                    path,
+                    old_n_inputs,
+                    expected_n_inputs,
+                )
+            if old_n_outputs is not None and old_n_outputs != expected_n_outputs:
+                logger.warning(
+                    "Subsystem %s: legacy n_outputs=%s does not match inner Outport "
+                    "count=%s; using inner count after migration (ADR-0039)",
+                    path,
+                    old_n_outputs,
+                    expected_n_outputs,
+                )
+
+            # ネスト Subsystem を再帰的に処理
+            _strip_subsystem_port_fields_recursive(inner_blocks, parent_path=path)
+
+
+def _builtin_migrate_0_7_to_0_8(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0039: 0.7 → 0.8。
+
+    Subsystem の ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+    ``port_shapes_out`` を **派生 property** に格上げ (= JSON フィールドから
+    削除)。本 migration は再帰的に Subsystem entry を走査し、これら 4
+    フィールドを params から除く。値が内部 Inport / Outport 数と不一致なら
+    warning 1 度。
+
+    数値挙動への影響: なし (= フィールド消失だけ、内部 Inport / Outport の数と
+    port_idx 連番は維持される)。
+    """
+    out = dict(data)
+    # blocks フィールド (top-level) と Subsystem 内部 params.blocks の両方に
+    # 同じロジックを再帰適用
+    _strip_subsystem_port_fields_recursive(out.get("blocks"))
+    out["schema_version"] = "0.8"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
@@ -339,6 +438,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.4", "0.5")] = _builtin_migrate_0_4_to_0_5
     _MIGRATIONS[("0.5", "0.6")] = _builtin_migrate_0_5_to_0_6
     _MIGRATIONS[("0.6", "0.7")] = _builtin_migrate_0_6_to_0_7
+    _MIGRATIONS[("0.7", "0.8")] = _builtin_migrate_0_7_to_0_8
 
 
 _register_builtin_migrations()

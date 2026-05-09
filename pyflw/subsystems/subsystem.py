@@ -38,53 +38,64 @@ _logger = logging.getLogger("pyflw.subsystem")
 class Subsystem(Block):
     """Atomic Subsystem: 内部に独自のブロック群と結線を持つ複合ブロック。
 
+    ADR-0039 (v2.0): ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+    ``port_shapes_out`` は **内部 ``Inport`` / ``Outport`` から派生する property**
+    で、コンストラクタには渡せない (TypeError)。利用者は
+    ``sub.add(Inport(port_idx=i, port_shape=...))`` で port を増やす。
+
     Args:
-        n_inputs: 外部入力ポート数。内部に同数の ``Inport(port_idx=i)`` を含むこと。
-        n_outputs: 外部出力ポート数。内部に同数の ``Outport(port_idx=j)`` を含むこと。
         blocks: 内部ブロックのリスト (Inport / Outport を含む)。``None`` の場合は
             空 (``add()`` で追加)。
         connections: 内部結線のリスト ``[(src_id, dst_id, src_idx, dst_idx), ...]``。
             ``None`` の場合は ``connect()`` で追加。
-        port_shapes_in: 各外部入力ポートの shape (ADR-0017 SM-B)。``None`` で全 ``()``
-            (= SM-A scalar)。指定する場合は内部 ``Inport(port_idx=i)`` の port_shape と
-            一致させること。
-        port_shapes_out: 各外部出力ポートの shape (同上、内部 ``Outport`` と一致)。
+        id: ブロック id (省略時は親 ``Simulator`` で auto 採番)。
+        name: 表示名 (省略可)。
+        layout: 内部 GUI レイアウト (ADR-0020、再帰)。
+        mask_params: マスクパラメータ宣言 (ADR-0021)。
+        mask_values: マスク現在値。
     """
 
     def __init__(
         self,
-        n_inputs: int,
-        n_outputs: int,
         blocks: list[Block] | None = None,
         connections: list[dict[str, Any]] | None = None,
         *,
         id: str | None = None,
         name: str | None = None,
-        port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
-        port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         layout: LayoutDict | None = None,
         mask_params: list[dict[str, Any]] | None = None,
         mask_values: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
-        if not isinstance(n_inputs, int) or n_inputs < 0:
-            raise BlockSpecError(
-                f"Subsystem: n_inputs must be a non-negative int, got {n_inputs!r}"
+        # ADR-0039: n_inputs / n_outputs / port_shapes_in / port_shapes_out は
+        # 廃止された引数。明示的に拒否して移行を促す (= silent ignore は禁止)。
+        forbidden = (
+            "n_inputs",
+            "n_outputs",
+            "port_shapes_in",
+            "port_shapes_out",
+        )
+        rejected = [k for k in forbidden if k in kwargs]
+        if rejected:
+            raise TypeError(
+                f"Subsystem: arguments {rejected} were removed in v2.0 (ADR-0039). "
+                f"They are now derived from inner Inport/Outport blocks. "
+                f"Use ``sub.add(Inport(port_idx=i, port_shape=...))`` to add ports. "
+                f"See CHANGELOG [0.14.0] migration guide."
             )
-        if not isinstance(n_outputs, int) or n_outputs < 0:
-            raise BlockSpecError(
-                f"Subsystem: n_outputs must be a non-negative int, got {n_outputs!r}"
-            )
+        if kwargs:
+            raise TypeError(f"Subsystem: unexpected keyword arguments {sorted(kwargs)}")
 
-        # 一旦 direct_feedthrough=False で初期化、内部構築後に再計算
+        # 派生 property に対応するため n_inputs=0 / n_outputs=0 で初期化 (= 内部
+        # Inport / Outport が無い空状態)。port_shapes_in / out も派生 property
+        # なので空 tuple で初期化される。
         super().__init__(
             id=id,
             name=name,
-            n_inputs=n_inputs,
-            n_outputs=n_outputs,
+            n_inputs=0,
+            n_outputs=0,
             n_states=0,
             direct_feedthrough=False,
-            port_shapes_in=port_shapes_in,
-            port_shapes_out=port_shapes_out,
         )
 
         self._inner_blocks: list[Block] = []
@@ -100,21 +111,18 @@ class Subsystem(Block):
         # トポロジカル実行順 (build 時に確定)
         self._exec_order: list[Block] | None = None
 
-        # save/load 用に元の引数を保持
+        # ADR-0039 code-reviewer NITS-1: port_idx → port instance マップは
+        # ``_build()`` 内で populate されるが、型を __init__ で宣言しておくことで
+        # 「どの属性が保証されるか」を読み手に明示する。
+        self._inports_by_idx: dict[int, Inport] = {}
+        self._outports_by_idx: dict[int, Outport] = {}
+
+        # save/load 用 params (= ADR-0039 で n_inputs / n_outputs / port_shapes_*
+        # フィールドは廃止、内部 blocks / connections のみ保存)。
         self._params = {
-            "n_inputs": n_inputs,
-            "n_outputs": n_outputs,
             "blocks": [],  # build 後に populate
             "connections": [],
         }
-        # ADR-0018 §(5) MUST: SM-B Subsystem を save→load しても外側 ``port_shapes_*``
-        # が消えて内部 Inport/Outport との整合性 check (``_build``) が壊れないように、
-        # 非 default 時のみ JSON に出力する (= 純 SM-A モデルは byte-identical を維持)。
-        scalar_shape: tuple[int, ...] = ()
-        if any(s != scalar_shape for s in self.port_shapes_in):
-            self._params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
-        if any(s != scalar_shape for s in self.port_shapes_out):
-            self._params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
 
         # ADR-0020 §Decision (1): Subsystem 内部 GUI レイアウト (再帰)。``None`` /
         # 空 dict のとき ``params.layout`` を JSON に出さず、SM-A モデルの byte-identical
@@ -133,10 +141,63 @@ class Subsystem(Block):
             for c in connections:
                 self.connect(c["src"], c["dst"], c.get("src_idx", 0), c.get("dst_idx", 0))
 
+    # ---------- 派生 property: n_inputs / n_outputs / port_shapes_in / port_shapes_out ----------
+    #
+    # ADR-0039 §Decision §(2): Subsystem の port count / shape は内部 Inport / Outport
+    # から毎回算出する派生 property。setter は silent no-op (= ``Block.__init__`` 内の
+    # ``self.n_inputs = n_inputs`` 直接代入 や migration 経由の代入を吸収)。
+
+    @property
+    def n_inputs(self) -> int:
+        return sum(1 for b in self._inner_blocks if isinstance(b, Inport))
+
+    @n_inputs.setter
+    def n_inputs(self, value: int) -> None:  # noqa: ARG002
+        # 派生値なので外部からの代入は silent ignore (Block.__init__ の代入を吸収)
+        pass
+
+    @property
+    def n_outputs(self) -> int:
+        return sum(1 for b in self._inner_blocks if isinstance(b, Outport))
+
+    @n_outputs.setter
+    def n_outputs(self, value: int) -> None:  # noqa: ARG002
+        pass
+
+    @property
+    def port_shapes_in(self) -> tuple[tuple[int, ...], ...]:
+        # 内部 Inport を port_idx 順で並べて port_shape を集める。port_idx 重複や
+        # 抜けは ``_build`` で検出するため、ここでは見つかった順に並べる。
+        inports = sorted(
+            (b for b in self._inner_blocks if isinstance(b, Inport)),
+            key=lambda p: p.port_idx,
+        )
+        return tuple(p.port_shape for p in inports)
+
+    @port_shapes_in.setter
+    def port_shapes_in(self, value: tuple[tuple[int, ...], ...]) -> None:  # noqa: ARG002
+        pass
+
+    @property
+    def port_shapes_out(self) -> tuple[tuple[int, ...], ...]:
+        outports = sorted(
+            (b for b in self._inner_blocks if isinstance(b, Outport)),
+            key=lambda p: p.port_idx,
+        )
+        return tuple(p.port_shape for p in outports)
+
+    @port_shapes_out.setter
+    def port_shapes_out(self, value: tuple[tuple[int, ...], ...]) -> None:  # noqa: ARG002
+        pass
+
     # ---------- ブロック登録・結線 (Simulator と同形 API) ----------
 
     def add(self, block: Block) -> Block:
         """内部ブロックを登録する。``Simulator.add`` と同形 (ADR-0004)。
+
+        ADR-0039: ``Inport`` を追加すると外側 ``self.input_sources`` (= 親階層
+        からの結線先 slot) を 1 個拡張する。``Outport`` を追加した場合は外側出力
+        側なので ``input_sources`` には影響しない。
 
         既にビルド済み (``_build`` 後) の場合は ``_exec_order`` を ``None`` に戻して
         再ビルドを促す (code-reviewer SHOULD 修正)。
@@ -152,6 +213,10 @@ class Subsystem(Block):
                 )
         self._inner_blocks_by_id[block.id] = block
         self._inner_blocks.append(block)
+        # ADR-0039: Inport が追加されたら外側 input_sources を拡張 (= n_inputs
+        # property に同期させる、Block 契約「input_sources の長さ == n_inputs」を維持)。
+        if isinstance(block, Inport):
+            self.input_sources.append(None)
         # 構造変更があったので次回 _build を強制再実行
         self._exec_order = None
         return block
@@ -226,57 +291,30 @@ class Subsystem(Block):
         self._resolve_mask_placeholders()
 
         # Inport / Outport の一覧
+        # ADR-0039: n_inputs / n_outputs / port_shapes_in / port_shapes_out は
+        # すべて派生 property のため、内部 Inport / Outport との count 一致と
+        # port_shape 整合は **自動的に成立**する。port_idx の重複・抜けのみ検証。
         inports = [b for b in self._inner_blocks if isinstance(b, Inport)]
         outports = [b for b in self._inner_blocks if isinstance(b, Outport)]
-        if len(inports) != self.n_inputs:
-            raise BlockSpecError(
-                f"Subsystem {self.id!r}: declared n_inputs={self.n_inputs} but "
-                f"found {len(inports)} Inport block(s)"
-            )
-        if len(outports) != self.n_outputs:
-            raise BlockSpecError(
-                f"Subsystem {self.id!r}: declared n_outputs={self.n_outputs} but "
-                f"found {len(outports)} Outport block(s)"
-            )
-        # port_idx の重複・抜けチェック
+
+        # port_idx の重複・抜けチェック (= 連番 [0..N-1])
+        n_in = len(inports)
+        n_out = len(outports)
         in_indices = sorted(p.port_idx for p in inports)
-        if in_indices != list(range(self.n_inputs)):
+        if in_indices != list(range(n_in)):
             raise BlockSpecError(
                 f"Subsystem {self.id!r}: Inport port_idx values {in_indices} "
-                f"do not cover [0, {self.n_inputs})"
+                f"do not cover [0, {n_in})"
             )
         out_indices = sorted(p.port_idx for p in outports)
-        if out_indices != list(range(self.n_outputs)):
+        if out_indices != list(range(n_out)):
             raise BlockSpecError(
                 f"Subsystem {self.id!r}: Outport port_idx values {out_indices} "
-                f"do not cover [0, {self.n_outputs})"
+                f"do not cover [0, {n_out})"
             )
 
         self._inports_by_idx = {p.port_idx: p for p in inports}
         self._outports_by_idx = {p.port_idx: p for p in outports}
-
-        # ADR-0018 §(5): 内部 Inport/Outport の port_shape と外側 Subsystem の
-        # port_shapes_in/out が一致するかを build 時に check する。
-        for i, inport in self._inports_by_idx.items():
-            inner_shape = inport.port_shape
-            outer_shape = self.port_shapes_in[i]
-            if inner_shape != outer_shape:
-                raise BlockSpecError(
-                    f"Subsystem {self.id!r}: port_shapes_in[{i}]={outer_shape} "
-                    f"does not match inner Inport(port_idx={i}).port_shape={inner_shape}. "
-                    f"Either pass port_shapes_in to Subsystem(...) or set port_shape on "
-                    f"the Inport, so they agree."
-                )
-        for j, outport in self._outports_by_idx.items():
-            inner_shape = outport.port_shape
-            outer_shape = self.port_shapes_out[j]
-            if inner_shape != outer_shape:
-                raise BlockSpecError(
-                    f"Subsystem {self.id!r}: port_shapes_out[{j}]={outer_shape} "
-                    f"does not match inner Outport(port_idx={j}).port_shape={inner_shape}. "
-                    f"Either pass port_shapes_out to Subsystem(...) or set port_shape on "
-                    f"the Outport, so they agree."
-                )
 
         # ネスト Subsystem の内部 build を先に発火 (direct_feedthrough 推論や n_states
         # の確定が外側から正しく見えるようにする)。code-reviewer MUST #2 修正。
@@ -535,11 +573,21 @@ class Subsystem(Block):
         外部 ``u_external[port_idx]`` を Inport の ``_external_value`` に注入してから
         実行する。
 
+        ADR-0039: ``self._inports_by_idx`` (= 内部 Inport のみ、TriggeredSubsystem の
+        trigger slot は含まない) でループすることで、``u_external`` の長さが
+        ``n_inputs`` と一致しないケース (= TriggeredSubsystem が trigger 入力を
+        除いた ``u_data`` を渡してくる) でも IndexError にならない。
+
         Returns:
             ``(outputs, inputs)``: 各内部ブロックの出力と入力ベクトル。
         """
-        for port_idx in range(self.n_inputs):
-            self._inports_by_idx[port_idx]._external_value = float(u_external[port_idx])
+        for port_idx, inport in self._inports_by_idx.items():
+            # ADR-0017 SM-B: port_shape != () の Inport (= ベクトルポート) は本来
+            # ndarray を ``_external_value`` に注入する必要がある。Phase 5b 時点では
+            # SM-A path (scalar) しか実装されていないため、SM-B Inport は
+            # ``_step_inner`` 経由では未対応 (= ADR-0018 §(5) 既知制限、別途
+            # ``Subsystem.run()`` で BlockSpecError)。
+            inport._external_value = float(u_external[port_idx])
 
         # 内部状態を slice ごとに取り出す
         cont_state = {b: x[sl] for b, sl in self._state_slices}
@@ -618,9 +666,9 @@ class Subsystem(Block):
     def to_dict(self) -> dict[str, Any]:
         """``Block.to_dict`` を override して内部 ``blocks``/``connections`` をネスト。
 
-        ADR-0018 §(5): SM-B Subsystem は ``port_shapes_in`` / ``port_shapes_out``
-        が non-default の時のみ ``params`` に追加される (純 SM-A モデルの JSON は
-        byte-identical を維持するため)。
+        ADR-0039: ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+        ``port_shapes_out`` は **派生 property** のため、JSON には保存しない
+        (= 内部 ``Inport`` / ``Outport`` から復元される SSOT)。
 
         ADR-0020 §Decision (1)(5): 内部 GUI レイアウトを ``params.layout`` に
         再帰的に保存する。``self.layout is None`` または空のときは出力しない (=
@@ -633,15 +681,7 @@ class Subsystem(Block):
         # AlgebraicLoopError) を save 時にも走らせる。不完全な Subsystem は
         # 素直に保存できないので例外がそのまま伝播する設計。
         self._build()
-        params: dict[str, Any] = {
-            "n_inputs": self.n_inputs,
-            "n_outputs": self.n_outputs,
-        }
-        scalar_shape: tuple[int, ...] = ()
-        if any(s != scalar_shape for s in self.port_shapes_in):
-            params["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
-        if any(s != scalar_shape for s in self.port_shapes_out):
-            params["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+        params: dict[str, Any] = {}
         # ADR-0021 §(7): mask_params / mask_values を canonical 順序で出力
         if self.mask_params:
             params["mask_params"] = [dict(p) for p in self.mask_params]
@@ -676,48 +716,47 @@ class Subsystem(Block):
     def _from_dict(
         cls,
         *,
-        n_inputs: int,
-        n_outputs: int,
         blocks: list[Any],
         connections: list[dict[str, Any]],
         id: str | None = None,
-        port_shapes_in: list[list[int]] | None = None,
-        port_shapes_out: list[list[int]] | None = None,
         layout: LayoutDict | None = None,
         mask_params: list[dict[str, Any]] | None = None,
         mask_values: dict[str, Any] | None = None,
+        **legacy_kwargs: Any,
     ) -> Subsystem:
-        """JSON load 時の factory (ADR-0009 §(7) / code-reviewer MUST #3 修正)。
+        """JSON load 時の factory (ADR-0009 §(7) / ADR-0039 で n_inputs/n_outputs 廃止)。
 
         ``blocks`` の各要素は ``dict`` (= JSON から読んだ block entry) または
         ``Block`` インスタンス。``dict`` なら ``resolve_block_class`` で class を解決
         して再構築し、内部に ``add`` する。
 
-        ``port_shapes_in`` / ``port_shapes_out`` (ADR-0018 §(5)): non-default の
-        SM-B Subsystem を save→load する際に外側 port shape を復元する。``None`` の
-        場合は SM-A 互換 (全 ``()``) として扱う。
-
-        ``Simulator.load`` 経由でのみ使われる想定 (= 通常の ``__init__`` 経路は
-        ``blocks`` に Block インスタンスを渡す)。
+        ADR-0039: ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+        ``port_shapes_out`` は派生 property になったため、JSON 上に存在していても
+        ``legacy_kwargs`` で受け取って **読み捨てる** (= migration `_builtin_migrate_0_7_to_0_8`
+        で削除されているはずだが、誤って残った場合の defensive)。
         """
         from ..core.persistence import resolve_block_class
 
-        ps_in: tuple[tuple[int, ...], ...] | None = (
-            tuple(tuple(int(v) for v in s) for s in port_shapes_in)
-            if port_shapes_in is not None
-            else None
-        )
-        ps_out: tuple[tuple[int, ...], ...] | None = (
-            tuple(tuple(int(v) for v in s) for s in port_shapes_out)
-            if port_shapes_out is not None
-            else None
-        )
+        # ADR-0039: legacy フィールドを受けたら警告してから捨てる
+        legacy_dropped = {
+            k: legacy_kwargs.pop(k)
+            for k in list(legacy_kwargs)
+            if k in {"n_inputs", "n_outputs", "port_shapes_in", "port_shapes_out"}
+        }
+        if legacy_dropped:
+            _logger.warning(
+                "Subsystem %r._from_dict: dropping legacy schema 0.7 fields %s "
+                "(now derived from inner Inport/Outport, ADR-0039)",
+                id,
+                sorted(legacy_dropped),
+            )
+        if legacy_kwargs:
+            raise TypeError(
+                f"Subsystem._from_dict: unexpected keyword arguments {sorted(legacy_kwargs)}"
+            )
+
         sub = cls(
-            n_inputs=n_inputs,
-            n_outputs=n_outputs,
             id=id,
-            port_shapes_in=ps_in,
-            port_shapes_out=ps_out,
             layout=layout,
             mask_params=mask_params,
             mask_values=mask_values,

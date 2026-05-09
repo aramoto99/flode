@@ -103,10 +103,19 @@ def test_validate_library_in_memory() -> None:
     assert lib.source_path is None
 
 
-def test_migration_registry_empty() -> None:
-    """Phase 4 v0.11.1 では ``_LIBRARY_MIGRATIONS`` は空 (Phase 5+ 用枠)。"""
-    assert _LIBRARY_MIGRATIONS == {}
-    assert SUPPORTED_LIBRARY_SCHEMA_VERSIONS == ("libraries.v1",)
+def test_migration_registry_has_v1_to_v2() -> None:
+    """ADR-0039: ``libraries.v1`` → ``libraries.v2`` migration が登録されている。
+
+    `libraries.v2` は Subsystem の派生 property 化 (n_inputs/n_outputs/
+    port_shapes_*) に追従するため bump された。`libraries.v1` も migration 経由
+    で受け入れる (= 既存 .flwlib.json の互換性維持)。
+    """
+    assert ("libraries.v1", "libraries.v2") in _LIBRARY_MIGRATIONS
+    assert CURRENT_LIBRARY_SCHEMA_VERSION == "libraries.v2"
+    # ADR-0039 code-reviewer SHOULD-3: v1 も SUPPORTED に含めて
+    # 「migration 経由で受け入れ可能」を明示 (= エラーメッセージの誤解防止)
+    assert "libraries.v2" in SUPPORTED_LIBRARY_SCHEMA_VERSIONS
+    assert "libraries.v1" in SUPPORTED_LIBRARY_SCHEMA_VERSIONS
 
 
 def test_load_std_bundle() -> None:

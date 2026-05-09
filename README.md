@@ -4,9 +4,12 @@ A block-diagram dynamic system simulator for Python, inspired by Simulink. Build
 continuous, discrete, and hybrid models by wiring pre-built blocks, then integrate
 with `scipy.solve_ivp` (default: RK45).
 
-**Stable as of v0.13.0** (2026-05-09, ADR-0038). Public API + JSON schema + REST
-`/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) are frozen under
-SemVer; subsequent breaking changes require v2.0.
+**Stable as of v0.14.0** (2026-05-09, ADR-0039). Public API + JSON schema 0.8 +
+REST `/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) frozen under
+SemVer; subsequent breaking changes require v3.0. v1.0 was released the same
+day but ADR-0039 immediately corrected `Subsystem` port semantics (= internal
+`Inport` / `Outport` are SSOT, outer `n_inputs` / `n_outputs` derived) before
+PyPI publish.
 
 ## Requirements
 

@@ -18,7 +18,7 @@ class TestPlainSubsystem:
 
     def test_inner_state_flattens_to_subsystem(self) -> None:
         # Subsystem 内部: in → Gain(2) → Integrator → out
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         ip = Inport(port_idx=0)
         op = Outport(port_idx=0)
         g = Gain(k=2.0, id="g_inner")
@@ -57,7 +57,7 @@ class TestNestedSubsystem:
 
     def test_two_levels_flatten(self) -> None:
         # inner: in → Integrator → out
-        inner = Subsystem(n_inputs=1, n_outputs=1, id="inner")
+        inner = Subsystem(id="inner")
         inner.add(Inport(port_idx=0))
         inner.add(Integrator(id="i_in"))
         inner.add(Outport(port_idx=0))
@@ -65,7 +65,7 @@ class TestNestedSubsystem:
         inner.connect("i_in", "Outport_0")
 
         # outer: in → Gain → inner → out
-        outer = Subsystem(n_inputs=1, n_outputs=1, id="outer")
+        outer = Subsystem(id="outer")
         outer.add(Inport(port_idx=0))
         outer.add(Gain(k=3.0, id="g_out"))
         outer.add(inner)

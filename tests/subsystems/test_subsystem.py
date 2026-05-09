@@ -53,7 +53,7 @@ def _reset_persistence_state():
 
 def _build_gain_subsystem(k: float, id: str = "sub") -> Subsystem:
     """``y = k * u`` を内部で実装する Subsystem。"""
-    sub = Subsystem(n_inputs=1, n_outputs=1, id=id)
+    sub = Subsystem(id=id)
     sub.add(Inport(port_idx=0, id=f"{id}_in"))
     sub.add(Gain(k=k, id=f"{id}_g"))
     sub.add(Outport(port_idx=0, id=f"{id}_out"))
@@ -91,7 +91,7 @@ class TestSubsystemBasic:
 
     def test_direct_feedthrough_inferred_false_with_integrator(self):
         """内部に Integrator (df=False) がある経路は Subsystem.df=False。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(Integrator(x0=0.0, id="sub_int"))
         sub.add(Outport(port_idx=0, id="sub_out"))
@@ -104,7 +104,7 @@ class TestSubsystemBasic:
 
     def test_continuous_state_integration(self):
         """Integrator を内蔵した Subsystem の連続状態が正しく統合される。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(Integrator(x0=0.0, id="sub_int"))
         sub.add(Outport(port_idx=0, id="sub_out"))
@@ -124,7 +124,7 @@ class TestSubsystemBasic:
 
     def test_discrete_state_through_subsystem(self):
         """UnitDelay を内蔵した Subsystem が離散更新を正しく繰り返す。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(UnitDelay(sample_time=0.01, x0=0.0, id="sub_delay"))
         sub.add(Outport(port_idx=0, id="sub_out"))
@@ -153,7 +153,7 @@ class TestSubsystemBasic:
 class TestSubsystemMultiPort:
     def test_2_in_1_out_sum(self):
         """2 入力を内部 Sum で合算し 1 出力に出す Subsystem。"""
-        sub = Subsystem(n_inputs=2, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in0"))
         sub.add(Inport(port_idx=1, id="sub_in1"))
         sub.add(Sum(signs="++", id="sub_sum"))
@@ -180,28 +180,33 @@ class TestSubsystemMultiPort:
 
 
 class TestSubsystemErrors:
-    def test_inport_count_mismatch(self):
-        """``n_inputs`` と Inport 数が一致しないとエラー。"""
-        sub = Subsystem(n_inputs=2, n_outputs=1, id="sub")
+    def test_inport_idx_duplicate_raises(self):
+        """ADR-0039: ``n_inputs`` は派生 property のため count mismatch は不可能。
+        代わりに port_idx 重複は ``BlockSpecError`` で検出される。"""
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="in0"))
+        sub.add(Inport(port_idx=0, id="in1"))  # 重複
         sub.add(Outport(port_idx=0, id="out0"))
         sim = Simulator()
         sim.add(sub)
-        with pytest.raises(BlockSpecError, match="found 1 Inport"):
+        with pytest.raises(BlockSpecError, match=r"do not cover \[0, 2\)"):
             sim._execution_order()
 
-    def test_outport_count_mismatch(self):
-        sub = Subsystem(n_inputs=1, n_outputs=2, id="sub")
+    def test_outport_idx_duplicate_raises(self):
+        """ADR-0039: ``n_outputs`` は派生 property のため count mismatch は不可能。
+        代わりに Outport port_idx 重複は ``BlockSpecError`` で検出される。"""
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="in0"))
         sub.add(Outport(port_idx=0, id="out0"))
+        sub.add(Outport(port_idx=0, id="out1"))  # 重複
         sim = Simulator()
         sim.add(sub)
-        with pytest.raises(BlockSpecError, match="found 1 Outport"):
+        with pytest.raises(BlockSpecError, match=r"do not cover \[0, 2\)"):
             sim._execution_order()
 
     def test_inport_idx_gap(self):
         """Inport port_idx が連番でないとエラー。"""
-        sub = Subsystem(n_inputs=2, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="in0"))
         sub.add(Inport(port_idx=2, id="in2"))  # gap (1 が無い)
         sub.add(Outport(port_idx=0, id="out0"))
@@ -212,7 +217,7 @@ class TestSubsystemErrors:
 
     def test_inner_algebraic_loop_detected(self):
         """Subsystem 内部の代数ループが ``AlgebraicLoopError`` で検出される。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="in0"))
         sub.add(Gain(k=2.0, id="g1"))
         sub.add(Gain(k=3.0, id="g2"))
@@ -228,7 +233,7 @@ class TestSubsystemErrors:
             sim._execution_order()
 
     def test_duplicate_inner_id_raises(self):
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="dup"))
         with pytest.raises(BlockSpecError, match="already exists"):
             sub.add(Gain(k=1.0, id="dup"))
@@ -240,7 +245,7 @@ class TestSubsystemErrors:
     def test_continuous_discrete_mixed_subsystem_rejected(self):
         """Phase 2 では Subsystem 内部の連続+離散混在を拒否する
         (code-reviewer MUST #1 修正)。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(Integrator(x0=0.0, id="sub_int"))  # 連続
         sub.add(UnitDelay(sample_time=0.01, x0=0.0, id="sub_d"))  # 離散
@@ -260,7 +265,7 @@ class TestSubsystemNested:
     def test_nested_subsystem_runs(self):
         """``Subsystem(Gain) `` を内側に持つ ``Subsystem`` が外側から正しく動く。"""
         # 内側 Subsystem: u → Gain(k=2) → y
-        inner = Subsystem(n_inputs=1, n_outputs=1, id="inner")
+        inner = Subsystem(id="inner")
         inner.add(Inport(port_idx=0, id="inner_in"))
         inner.add(Gain(k=2.0, id="inner_g"))
         inner.add(Outport(port_idx=0, id="inner_out"))
@@ -268,7 +273,7 @@ class TestSubsystemNested:
         inner.connect("inner_g", "inner_out")
 
         # 外側 Subsystem: u → inner → Gain(k=3) → y
-        outer = Subsystem(n_inputs=1, n_outputs=1, id="outer")
+        outer = Subsystem(id="outer")
         outer.add(Inport(port_idx=0, id="outer_in"))
         outer.add(inner)
         outer.add(Gain(k=3.0, id="outer_g"))
@@ -289,14 +294,14 @@ class TestSubsystemNested:
 
     def test_nested_subsystem_direct_feedthrough_inferred_recursively(self):
         """ネスト内側に Integrator がある場合、外側の direct_feedthrough も False。"""
-        inner = Subsystem(n_inputs=1, n_outputs=1, id="inner")
+        inner = Subsystem(id="inner")
         inner.add(Inport(port_idx=0, id="inner_in"))
         inner.add(Integrator(x0=0.0, id="inner_int"))
         inner.add(Outport(port_idx=0, id="inner_out"))
         inner.connect("inner_in", "inner_int")
         inner.connect("inner_int", "inner_out")
 
-        outer = Subsystem(n_inputs=1, n_outputs=1, id="outer")
+        outer = Subsystem(id="outer")
         outer.add(Inport(port_idx=0, id="outer_in"))
         outer.add(inner)
         outer.add(Outport(port_idx=0, id="outer_out"))
@@ -340,7 +345,7 @@ class TestSubsystemPersistence:
         )
 
     def test_round_trip_with_integrator(self, tmp_path):
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
         sub.add(Integrator(x0=0.5, id="sub_int"))
         sub.add(Outport(port_idx=0, id="sub_out"))
@@ -421,7 +426,7 @@ class TestSubsystemSampleTimeInheritance:
     def test_sample_time_inherits_internal_min(self):
         """内部に sample_time=0.01 の UnitDelay があれば Subsystem の
         sample_time も 0.01 (内部最小値継承)。"""
-        sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+        sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="in0"))
         sub.add(UnitDelay(sample_time=0.01, x0=0.0, id="ud"))
         sub.add(Outport(port_idx=0, id="out0"))

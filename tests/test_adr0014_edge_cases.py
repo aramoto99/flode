@@ -325,7 +325,7 @@ def test_subsystem_inner_unit_delay_one_sample_delay() -> None:
     from pyflw.subsystems import Subsystem
     from pyflw.subsystems.ports import Inport, Outport
 
-    sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+    sub = Subsystem(id="sub")
     inp = sub.add(Inport(port_idx=0, id="inp"))
     ud = sub.add(UnitDelay(sample_time=0.01, x0=99.0, id="ud_inner"))
     outp = sub.add(Outport(port_idx=0, id="outp"))
@@ -360,7 +360,7 @@ def test_subsystem_inner_discrete_integrator_resolved_sample_time_not_propagated
     from pyflw.subsystems import Subsystem
     from pyflw.subsystems.ports import Inport, Outport
 
-    sub = Subsystem(n_inputs=1, n_outputs=1, id="sub")
+    sub = Subsystem(id="sub")
     inp = sub.add(Inport(port_idx=0, id="inp"))
     di = sub.add(DiscreteIntegrator(sample_time=0.01, gain=1.0, x0=0.0, id="di_inner"))
     outp = sub.add(Outport(port_idx=0, id="outp"))

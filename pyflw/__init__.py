@@ -1,4 +1,4 @@
-__version__ = "0.13.1"  # patch: GUI Subsystem port auto-resize fix
+__version__ = "0.14.0"  # ADR-0039: Subsystem port derived property + JSON schema 0.8 (BREAKING)
 
 from .analysis import (
     BodeResponse,

@@ -7,6 +7,133 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-09 — BREAKING
+
+ADR-0039 で **Subsystem の port semantics を SSOT 是正**。``n_inputs`` /
+``n_outputs`` / ``port_shapes_in`` / ``port_shapes_out`` を **派生 property**
+に格上げし、Python API と JSON schema から廃止する。利用者ゼロ + PyPI 未公開
+のうちに「内部 Inport / Outport の集合 = 真実」「外側 port count = 派生計算」
+という Simulink semantics 整合の正しい設計に戻す。ADR-0038 で凍結した
+v1.0 Public API は本リリースで部分 supersede (= ADR-0038 §Amendments §(1))。
+
+### Rationale
+
+v0.13.1 patch の "frontend で auto-sync" は対症療法だった。本来は
+``Subsystem.n_inputs`` を property で ``len(self._inports)`` から派生させる
+形が SSOT 原則と一致する。利用者がいない開発段階の今が直すコスト最小。
+詳細は [ADR-0039](.claude/docs/adr/0039-subsystem-port-derived-property-v2.md)。
+
+### Removed (BREAKING)
+
+- ``Subsystem(n_inputs=N, n_outputs=M, port_shapes_in=..., port_shapes_out=...)``
+  コンストラクタ引数が完全廃止。**渡すと `TypeError`**。
+- ``TriggeredSubsystem(n_inputs=N, n_outputs=M, ...)`` も同様。
+- JSON schema 0.7 の ``params.n_inputs`` / ``params.n_outputs`` /
+  ``params.port_shapes_in`` / ``params.port_shapes_out`` フィールドを削除。
+- `libraries.v1` schema は **`libraries.v2` に bump**、subsystem body 内の
+  上記フィールドが削除される。
+
+### Migration guide
+
+```python
+# Before (v1.x)
+sub = Subsystem(n_inputs=2, n_outputs=1, blocks=[
+    Inport(port_idx=0, port_shape=(3,)),
+    Inport(port_idx=1),
+    Outport(port_idx=0),
+])
+
+# After (v2.0)
+sub = Subsystem(blocks=[
+    Inport(port_idx=0, port_shape=(3,)),
+    Inport(port_idx=1),
+    Outport(port_idx=0),
+])
+# n_inputs / n_outputs / port_shapes_in / port_shapes_out は内部 Inport /
+# Outport から自動派生される
+assert sub.n_inputs == 2
+assert sub.n_outputs == 1
+assert sub.port_shapes_in == ((3,), ())
+```
+
+JSON モデルファイル (``.flw.json``) は **schema 0.7 → 0.8 自動 migration**
+で読み捨てられる。利用者の手作業は不要 (= load 時に
+``_builtin_migrate_0_7_to_0_8`` が走る)。
+
+### Changed
+
+- ``CURRENT_SCHEMA_VERSION = "0.8"`` ([pyflw/core/persistence.py:30](pyflw/core/persistence.py#L30))
+- ``CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v2"`` ([pyflw/libraries/_loader.py:34](pyflw/libraries/_loader.py#L34))
+- ``Subsystem.n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+  ``port_shapes_out`` を **property override** (= 内部 Inport / Outport から
+  毎回算出、cache なし)。setter は silent no-op で ``Block.__init__`` の代入
+  を吸収。
+- ``Subsystem.add(Inport)`` で外側 ``self.input_sources`` を 1 個拡張 (=
+  Block 契約「input_sources の長さ == n_inputs」を維持)。
+- ``TriggeredSubsystem.add(Inport)`` で末尾 trigger slot を保持しつつ
+  内部 Inport slot を 1 つ前に挿入。
+- ``Subsystem._build`` の「内部 Inport 数 == n_inputs」count assert を削除
+  (= 派生で自動成立)。port_idx 連番検証は維持。
+- ``Subsystem.to_dict()`` から ``n_inputs`` / ``n_outputs`` /
+  ``port_shapes_in`` / ``port_shapes_out`` キー削除。
+- ``Subsystem._from_dict`` / ``TriggeredSubsystem._from_dict`` で legacy
+  フィールドを ``**legacy_kwargs`` で受け取って警告 + 読み捨て (= migration
+  経由で来ない直接 load 時の defensive)。
+
+### Added
+
+- ``_builtin_migrate_0_7_to_0_8`` ([pyflw/core/persistence.py:323](pyflw/core/persistence.py#L323))
+  schema 0.7 → 0.8 migration。再帰的に Subsystem entry を走査、派生 4
+  フィールドを除去、内部 Inport / Outport 数との不一致は warning。
+- ``_migrate_libraries_v1_to_v2`` ([pyflw/libraries/_loader.py:42](pyflw/libraries/_loader.py#L42))
+  libraries.v1 → v2 migration。subsystem body に対して 0.7 → 0.8 ヘルパを
+  そのまま流用。
+- ``scripts/regenerate_std_library.py`` 一度きりの再生成スクリプト。
+- ``pyflw/libraries/std.flwlib.json`` を `libraries.v2` 形式で再生成 (= 派生
+  フィールド除去、entry id `pid_controller` / `first_order_plant` /
+  `second_order_plant` は不変)。
+- 新規テスト:
+  - ``tests/subsystems/test_port_derived_property.py`` (17 件) — 派生 property
+    + port_idx 連番強制 + TriggeredSubsystem trigger slot
+  - ``tests/test_persistence_migration_0_7_to_0_8.py`` (6 件) — schema
+    migration + nested Subsystem 再帰 + 不一致 warning + TriggeredSubsystem
+    内部 +1 trigger
+  - ``pyflw/web/frontend/tests/dynamicPortsSubsystem.test.ts`` (5 件) —
+    ``resolvePortCounts`` の派生計算
+  - ``pyflw/web/frontend/tests/subsystemPortAutoResize.test.ts`` (8 件、書き
+    換え) — port_idx 自動採番 + 連番再割り当て + 親 connections シフト +
+    TriggeredSubsystem trigger shift
+
+### Frontend
+
+- ``dynamicPorts.resolvePortCounts`` の Subsystem branch を派生計算に変更
+  (= ``params.blocks.filter(b => b.type === INPORT_TYPE).length``)。
+  TriggeredSubsystem は ``+1`` (trigger 分)。
+- ``appStore.ts`` の v0.13.1 で追加した ``params.n_inputs`` / ``n_outputs``
+  同期ロジックを削除 (= 派生計算で自動成立、約 80 行削減)。port_idx 自動
+  採番 / 連番再割り当て / 親 connections シフト / TriggeredSubsystem
+  trigger shift は維持 (= ADR-0039 §Decision §(7))。
+
+### Compat / Risks
+
+- pytest 1036+ 件 all pass (= v0.13.1 baseline 1015 + 新規 23 + 削除分の
+  差し引き)
+- vitest 全件 all pass、bundle gzip サイズ減 (= auto-resize 削減)
+- mypy --strict / ruff / sphinx -W すべて clean
+- ``examples/spring_mass_damper.py`` 数値完全不変 (= Subsystem を含まない
+  ので影響ゼロ、v0.1.0 baseline 維持)
+- ADR-0038 の v1.0 凍結は本リリースで部分 supersede (= ADR-0038 §Amendments)
+- Phase 6 親 ADR の番号は ADR-0040 に繰り下げ (= ADR-0038 §Amendments §(2))
+
+### References
+
+- [ADR-0039: Subsystem port 派生 property + v2.0](.claude/docs/adr/0039-subsystem-port-derived-property-v2.md)
+  (Accepted、2026-05-09)
+- [ADR-0038 §Amendments §(1)(2)](.claude/docs/adr/0038-phase5-closure-and-v1-judgment.md)
+  — v1.0 凍結部分 supersede + 番号繰り下げ
+- ADR-0009 (Subsystem 階層、Inport/Outport の原典)、ADR-0036
+  (TriggeredSubsystem trigger slot)、ADR-0029 (libraries.v1 → v2 予告回収)
+
 ## [0.13.1] - 2026-05-09
 
 GUI bug fix patch。Public API / JSON schema / REST / extras 名は v0.13.0
