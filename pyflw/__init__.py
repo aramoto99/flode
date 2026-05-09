@@ -1,5 +1,5 @@
-# ADR-0039 follow-up (v0.14.1): GET migration / postbuild deploy / version mismatch warn
-__version__ = "0.14.1"
+# ADR-0039 follow-up (v0.14.2): portShapeValidate を Subsystem 派生計算に対応
+__version__ = "0.14.2"
 
 from .analysis import (
     BodeResponse,

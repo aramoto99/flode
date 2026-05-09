@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-05-09 — portShapeValidate hotfix (Subsystem 派生)
+
+### Fixed
+
+- **Subsystem の入力ポートに connect しようとすると `n_inputs=0` で弾かれる
+  バグ** ([pyflw/web/frontend/src/lib/portShapeValidate.ts](pyflw/web/frontend/src/lib/portShapeValidate.ts)):
+  v2.0 で `dynamicPorts.resolvePortCounts` は派生計算に修正したが、connect
+  検証側 (`getDefaultPortShapes`) は registry default を返したままで、Subsystem
+  に内部 Inport を追加しても外側からの接続が `Subsystem_0.in[0] does not exist
+  (n_inputs=0)` で拒否されていた。`getDefaultPortShapes` の Subsystem /
+  TriggeredSubsystem branch を `params.blocks` 派生に切り替え、内部 Inport の
+  ``port_shape`` (port_idx 順) を集めて返すよう修正。TriggeredSubsystem の
+  trigger slot (= 末尾 scalar) も派生に含む。
+
+### Tests
+
+- ``tests/portShapeValidate.test.ts`` に 2 件追加 (= 計 15 件):
+  - 内部 Inport 1 つ持つ Subsystem に connect が通ることを検証
+  - TriggeredSubsystem の internal Inport / trigger slot / out-of-range の各
+    ケース
+
+### Compat / Risks
+
+- pytest 1039 件 / vitest 208 件 (= +2) all pass、mypy / ruff / sphinx clean
+- backend / Python API は無変更、frontend hotfix のみ
+
 ## [0.14.1] - 2026-05-09 — ADR-0039 follow-up + 再発防止
 
 v0.14.0 の Subsystem 派生 property 化を完全に貫徹するための clean-up patch。

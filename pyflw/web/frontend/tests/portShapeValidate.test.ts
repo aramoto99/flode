@@ -134,6 +134,82 @@ describe("validatePortShapeConnection", () => {
     expect(r.reason).toContain("does not exist");
   });
 
+  it("ADR-0039: connecting into a Subsystem with internal Inport succeeds (n_inputs derived)", () => {
+    // 空 Subsystem に internal Inport(port_idx=0) が 1 つある状態で外側から
+    // connect → registry default では n_inputs=0 で弾かれていたが、派生計算
+    // (= getDefaultPortShapes の Subsystem branch) で通るはず
+    const sub: BlockEntry = {
+      id: "sub",
+      type: "pyflw.subsystems.subsystem.Subsystem",
+      params: {
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+        ],
+        connections: [],
+      },
+    };
+    const META_SUB: BlockMetadata = {
+      type_path: "pyflw.subsystems.subsystem.Subsystem",
+      display_name: "Subsystem",
+      category: "subsystems",
+      icon: "container.subsystem",
+      color: "#6366f1",
+      docstring_summary: "",
+      params_spec: [],
+      default_n_inputs: 0,
+      default_n_outputs: 0,
+      port_shapes_in_default: [],
+      port_shapes_out_default: [],
+      tags: ["sm_a", "container"],
+      is_container: true,
+      mask_capable: true,
+    };
+    const subRegistry = indexRegistry([META_GAIN, META_SUB]);
+    const r = validatePortShapeConnection(gain1, 0, sub, 0, subRegistry);
+    expect(r.ok).toBe(true);
+  });
+
+  it("ADR-0036/0039: TriggeredSubsystem accepts trigger slot at the end", () => {
+    // 内部 Inport 1 つ → 外側 n_inputs = 2 (= internal 1 + trigger 1)。
+    // dst_idx=1 (trigger) への接続は scalar trigger なので OK。
+    const tsub: BlockEntry = {
+      id: "tsub",
+      type: "pyflw.subsystems.triggered.TriggeredSubsystem",
+      params: {
+        trigger_mode: "rising",
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+        ],
+        connections: [],
+      },
+    };
+    const META_TSUB: BlockMetadata = {
+      type_path: "pyflw.subsystems.triggered.TriggeredSubsystem",
+      display_name: "Triggered Subsystem",
+      category: "subsystems",
+      icon: "container.triggered",
+      color: "#6366f1",
+      docstring_summary: "",
+      params_spec: [],
+      default_n_inputs: 1,
+      default_n_outputs: 0,
+      port_shapes_in_default: [[]],
+      port_shapes_out_default: [],
+      tags: ["sm_a", "container"],
+      is_container: true,
+      mask_capable: true,
+    };
+    const tsubRegistry = indexRegistry([META_GAIN, META_TSUB]);
+    // dst_idx=0 (internal Inport)
+    expect(validatePortShapeConnection(gain1, 0, tsub, 0, tsubRegistry).ok).toBe(true);
+    // dst_idx=1 (trigger slot、末尾固定)
+    expect(validatePortShapeConnection(gain1, 0, tsub, 1, tsubRegistry).ok).toBe(true);
+    // dst_idx=2 (= n_inputs を超える) は does not exist
+    const oob = validatePortShapeConnection(gain1, 0, tsub, 2, tsubRegistry);
+    expect(oob.ok).toBe(false);
+    expect(oob.reason).toContain("does not exist");
+  });
+
   it("invalid dst port index returns descriptive error", () => {
     const r = validatePortShapeConnection(gain1, 0, gain2, 5, registry);
     expect(r.ok).toBe(false);

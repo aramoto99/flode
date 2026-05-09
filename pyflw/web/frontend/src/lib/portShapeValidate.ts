@@ -2,6 +2,7 @@
 // strict 一致 (broadcasting なし、ADR-0017 §(4))。
 
 import type { BlockEntry, BlockMetadata } from "../types/api";
+import { INPORT_TYPE, OUTPORT_TYPE, TRIGGERED_SUBSYSTEM_TYPE } from "./blockTypes";
 
 export function shapeEquals(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -26,11 +27,24 @@ export function formatShape(shape: number[]): string {
  * BlockEntry には載らない (= JSON 永続化対象外)。GUI は registry のデフォルトを
  * 使用し、param 変更で port 数が変わるブロックでは resolve-port-shapes を呼んで
  * 補正する (ADR-0019 §6.1)。本ヘルパは default を返すだけ。
+ *
+ * ADR-0039: Subsystem / TriggeredSubsystem は ``params.blocks`` 内の Inport /
+ * Outport から派生する。registry default (= 空 Subsystem の port_shapes、
+ * `n_inputs=0` / `n_outputs=0`) では新規 Inport を追加しても connect 検証で
+ * 弾かれるため、本ヘルパで派生計算する。
  */
 export function getDefaultPortShapes(
   block: BlockEntry,
   registry: ReadonlyMap<string, BlockMetadata>,
 ): { in: number[][]; out: number[][] } {
+  // ADR-0039: Subsystem / TriggeredSubsystem は内部 Inport/Outport から派生
+  if (
+    block.type.endsWith(".Subsystem") ||
+    block.type.endsWith(".TriggeredSubsystem")
+  ) {
+    return derivePortShapesFromInner(block);
+  }
+
   const meta = registry.get(block.type);
   if (!meta) {
     return { in: [], out: [] };
@@ -39,6 +53,67 @@ export function getDefaultPortShapes(
     in: meta.port_shapes_in_default,
     out: meta.port_shapes_out_default,
   };
+}
+
+/**
+ * Subsystem / TriggeredSubsystem の port_shapes を ``params.blocks`` 内の
+ * Inport / Outport の port_shape (port_idx 順) から派生計算する。
+ *
+ * TriggeredSubsystem は trigger 入力分 ``[]`` (= scalar) を ``in`` の末尾に
+ * 追加する (ADR-0036 §(2))。
+ */
+function derivePortShapesFromInner(
+  block: BlockEntry,
+): { in: number[][]; out: number[][] } {
+  const params = block.params as Record<string, unknown>;
+  const inner = params.blocks;
+  if (!Array.isArray(inner)) {
+    // params.blocks 不在 (= drag prefetch 直後 等) は空で返す。Subsystem は
+    // 内部に Inport を追加した時点で blocks=[] が必ず存在する。
+    const isTriggered = block.type === TRIGGERED_SUBSYSTEM_TYPE;
+    return { in: isTriggered ? [[]] : [], out: [] };
+  }
+  const inports = inner
+    .filter(
+      (b): b is BlockEntry =>
+        typeof b === "object" && b !== null && (b as BlockEntry).type === INPORT_TYPE,
+    )
+    .map((b) => ({
+      port_idx: readPortIdx(b),
+      port_shape: readPortShape(b),
+    }))
+    .sort((a, b) => a.port_idx - b.port_idx)
+    .map((p) => p.port_shape);
+  const outports = inner
+    .filter(
+      (b): b is BlockEntry =>
+        typeof b === "object" && b !== null && (b as BlockEntry).type === OUTPORT_TYPE,
+    )
+    .map((b) => ({
+      port_idx: readPortIdx(b),
+      port_shape: readPortShape(b),
+    }))
+    .sort((a, b) => a.port_idx - b.port_idx)
+    .map((p) => p.port_shape);
+
+  // TriggeredSubsystem の trigger 入力 (= scalar) を末尾に付加
+  const inShapes =
+    block.type === TRIGGERED_SUBSYSTEM_TYPE ? [...inports, []] : inports;
+
+  return { in: inShapes, out: outports };
+}
+
+function readPortIdx(b: BlockEntry): number {
+  const v = (b.params as Record<string, unknown>).port_idx;
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+function readPortShape(b: BlockEntry): number[] {
+  const v = (b.params as Record<string, unknown>).port_shape;
+  if (Array.isArray(v) && v.every((x) => typeof x === "number")) {
+    return v as number[];
+  }
+  return []; // default = scalar
 }
 
 export interface PortConnectionCheck {
