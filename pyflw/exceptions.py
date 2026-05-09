@@ -72,3 +72,11 @@ class LibraryEntryNotFoundError(PyflwError, KeyError):
 
     ``KeyError`` を継承するため、library / entry を dict 風に扱う code でも互換。
     """
+
+
+class PathTraversalError(PyflwError):
+    """workspace root 外への path 解決を試みたか、不正文字を含む path (ADR-0041)。
+
+    REST `/api/v1/files/*` で利用者が渡す path を ``resolve_workspace_path`` で
+    検証する際に投げられる。HTTP 層では 403 にマップされる。
+    """
