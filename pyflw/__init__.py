@@ -1,4 +1,4 @@
-__version__ = "0.13.0"  # Phase 5 complete (ADR-0038): pyflw stable
+__version__ = "0.13.1"  # patch: GUI Subsystem port auto-resize fix
 
 from .analysis import (
     BodeResponse,

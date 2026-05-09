@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-05-09
+
+GUI bug fix patch。Public API / JSON schema / REST / extras 名は v0.13.0
+から無変更で **凍結維持**。
+
+### Fixed
+
+- **Subsystem ドリルダウン中の Inport / Outport 追加・削除で親ノードの
+  ポート数が同期しないバグ** (`pyflw/web/frontend/src/store/appStore.ts`)。
+  Simulink semantics に合わせて以下を実装:
+  - Inport / Outport drop 時、親 Subsystem の ``n_inputs`` / ``n_outputs``
+    を +1、新ブロックの ``port_idx`` を内部既存同種 count に自動採番
+  - Inport / Outport 削除時、親 ``n_inputs`` / ``n_outputs`` を -1、残った
+    同種 ports の ``port_idx`` を連番再割り当て、親階層 connections の
+    ``dst_idx`` (Inport) / ``src_idx`` (Outport) を追従シフト
+  - **TriggeredSubsystem** の trigger 接続 (= 末尾 ``dst_idx = n_inputs - 1``
+    固定 slot、ADR-0036 §(2)) も Inport 追加・削除に応じて自動シフト
+  - 修正前は内部 Inport 数 != ``n_inputs`` の不整合状態で save され、
+    backend ``Subsystem._build`` が ``BlockSpecError`` を投げる構造だった
+  - 詳細: ``.claude/docs/bug-reports/2026-05-09-subsystem-port-auto-resize.md``
+
+### Added
+
+- ``pyflw/web/frontend/src/lib/blockTypes.ts`` (新規): Subsystem / Inport /
+  Outport / TriggeredSubsystem の ``type_path`` 定数を集約、``getNumberParam``
+  型ガード関数で ``params`` を number として安全に取り出す (= NaN 混入回避)。
+  ``appStore.ts`` と新規テストの両方から import
+
+### Tests
+
+- ``tests/subsystemPortAutoResize.test.ts`` (新規): 9 ケース
+  (Inport/Outport 追加 + 削除 + 中間連番再割り当て + TriggeredSubsystem
+  trigger shift + port_idx 欠落防御 + top-level no-op)
+
+### Compat / Risks
+
+- vitest 202 件 all pass (= v0.13.0 の 193 件 + 新規 9 件)、frontend
+  typecheck clean
+- pytest 1015 件 all pass (= backend 影響ゼロを確認)
+- Backend / REST / JSON schema 0.7 / Python API は無変更で v1.0 凍結維持
+- bundle 増分 ~0.5 KB gzip 程度 (= 新規 ``blockTypes.ts`` 微小)
+
 ## [0.13.0] - 2026-05-09
 
 **Phase 5 complete — pyflw stable**。ADR-0038 (Phase 5 closure + v0.13.0 判定)
