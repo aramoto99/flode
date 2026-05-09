@@ -4,12 +4,13 @@
 // 右: simulation (Run / Stop)
 
 import { useReactFlow } from "@xyflow/react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { updateModel } from "../api/client";
 import { useSimulation } from "../lib/useSimulation";
-import { useAppStore } from "../store/appStore";
+import { updateSimulatorConfig, useAppStore } from "../store/appStore";
 
 export function Toolbar(): JSX.Element {
   const { t } = useTranslation();
@@ -82,7 +83,8 @@ export function Toolbar(): JSX.Element {
 
       <div className="flex-1" />
 
-      {/* Group: Simulation */}
+      {/* Group: Simulation — Simulink 風に Run の **直前** に Stop time を置く。 */}
+      <StopTimeInput disabled={!hasModel} />
       <ToolButton
         title={t("toolbar.run")}
         disabled={!hasModel || isRunning}
@@ -100,6 +102,65 @@ export function Toolbar(): JSX.Element {
         <StopIcon />
       </ToolButton>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// StopTimeInput: Simulink ツールバー右側にある Stop Time フィールド相当。
+// ``editingModel.simulator.t_end`` を直接購読 + 編集する数値入力。
+// 不正値 (空 / NaN / 負) は store に書かず draft のみ更新 → 確定 (blur or Enter)
+// 時に弾く。autosave (= dirty フラグ) は applyEditingModel 内で立つ。
+// ---------------------------------------------------------------------------
+interface StopTimeInputProps {
+  disabled: boolean;
+}
+
+function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
+  const { t } = useTranslation();
+  const tEnd = useAppStore((s) => s.editingModel?.simulator.t_end);
+  const [draft, setDraft] = useState<string>("");
+
+  // store の値が変わったら draft を同期 (= 別タブで開いたモデル切替時 etc.)
+  useEffect(() => {
+    setDraft(tEnd === undefined ? "" : String(tEnd));
+  }, [tEnd]);
+
+  const commit = (): void => {
+    const v = Number(draft);
+    if (!Number.isFinite(v) || v <= 0) {
+      // 不正値は draft をリセット
+      setDraft(tEnd === undefined ? "" : String(tEnd));
+      return;
+    }
+    if (v !== tEnd) updateSimulatorConfig({ t_end: v });
+  };
+
+  return (
+    <label
+      title={t("toolbar.stop_time_tooltip")}
+      className="ml-1 mr-1 flex items-center gap-1 text-[11px] text-slate-700"
+    >
+      <span className="font-medium">{t("toolbar.stop_time")}</span>
+      {/* min/step は意図的に省略: 0 を含む不正値はソフトウェア側 (commit) で
+          弾く方針に統一 (HTML 属性と JS 検証を同居させると 0 のスピナー値が
+          下限通過時にリセットされて UX が混乱するため)。 */}
+      <input
+        type="number"
+        step="any"
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="h-6 w-16 rounded border border-slate-300 px-1.5 text-right font-mono text-[11px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+        data-testid="toolbar-stop-time"
+        aria-label={t("toolbar.stop_time")}
+      />
+    </label>
   );
 }
 

@@ -23,6 +23,7 @@ import type {
   LayoutDict,
   MaskValuesDict,
   SimulationStatus,
+  SimulatorConfig,
   StreamMessage,
 } from "../types/api";
 
@@ -467,6 +468,20 @@ export function updateBlockPosition(
       };
     }),
   );
+}
+
+/**
+ * v0.16.0: モデル全体の simulator config (= t_end / dt / solver / rtol / atol /
+ * dt_base) を patch する。Subsystem 内部のドリルダウンに関わらず、トップレベル
+ * モデルの ``simulator`` フィールドを更新する (= simulator は単一スコープ)。
+ *
+ * autosave に乗せるため ``applyEditingModel`` 経由で書き込む。
+ */
+export function updateSimulatorConfig(patch: Partial<SimulatorConfig>): void {
+  useAppStore.getState().applyEditingModel((m) => ({
+    ...m,
+    simulator: { ...m.simulator, ...patch },
+  }));
 }
 
 export function updateBlockSize(

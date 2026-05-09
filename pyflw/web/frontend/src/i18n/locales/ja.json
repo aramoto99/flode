@@ -3,6 +3,7 @@
   "menu.edit": "編集",
   "menu.view": "表示",
   "menu.simulation": "シミュレーション",
+  "menu.simulation.model_settings": "モデル設定…",
   "menu.help": "ヘルプ",
   "menu.file.new": "新規",
   "menu.file.open": "開く…",
@@ -24,6 +25,8 @@
   "toolbar.fit": "全体表示",
   "toolbar.run": "シミュレーション実行 (F9 / Ctrl+T)",
   "toolbar.stop": "停止 (Shift+F9 / Ctrl+Shift+T)",
+  "toolbar.stop_time": "終了時刻",
+  "toolbar.stop_time_tooltip": "シミュレーション終了時刻 (秒)",
 
   "palette.search": "ブロックを検索…",
   "palette.loading": "パレットを読み込み中...",
@@ -121,5 +124,21 @@
   "palette.library_prefix": "ライブラリ",
 
   "toast.region": "通知",
-  "toast.dismiss": "通知を閉じる"
+  "toast.dismiss": "通知を閉じる",
+
+  "model_settings.title": "モデル設定",
+  "model_settings.description": "ソルバと積分のパラメータ。「終了時刻」はツールバー側で編集します。",
+  "model_settings.solver": "ソルバ",
+  "model_settings.solver_hint": "scipy solve_ivp の method (RK45 = Dormand-Prince、既定)。",
+  "model_settings.dt": "出力 / 基本ステップ (秒)",
+  "model_settings.dt_hint": "Scope 出力のサンプリング周期 + 離散スケジューリング基準。",
+  "model_settings.rtol": "相対許容誤差",
+  "model_settings.atol": "絶対許容誤差",
+  "model_settings.dt_base": "dt_base 明示指定",
+  "model_settings.dt_base_auto": "自動",
+  "model_settings.dt_base_hint": "基本ステップを明示指定。「自動」(= null) なら dt と離散 sample_time から自動推定。",
+  "model_settings.no_model": "モデルを開くと設定を編集できます。",
+  "model_settings.invalid_number": "「{{name}}」は正の数値で入力してください。",
+  "model_settings.button.save": "保存",
+  "model_settings.button.cancel": "キャンセル"
 }

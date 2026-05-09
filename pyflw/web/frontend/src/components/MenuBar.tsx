@@ -26,12 +26,14 @@ import {
   OpenModelDialog,
   RenameDialog,
 } from "./Modal";
+import { ModelSettingsModal } from "./ModelSettingsModal";
 
 type DialogKind =
   | { kind: "open" }
   | { kind: "save-as" }
   | { kind: "rename" }
   | { kind: "delete" }
+  | { kind: "model-settings" }
   | null;
 
 // ADR-0036 (v0.7) + ADR-0039 (v2.0、schema 0.8): 新規モデル作成時の初期
@@ -232,9 +234,20 @@ export function MenuBar(): JSX.Element {
       destructive: true,
     },
   ];
-  // Edit / Simulation / Help は placeholder (Phase 4+ で項目追加予定)
+  // Edit / Help は placeholder (Phase 4+ で項目追加予定)
   const placeholder: MenuItemSpec[] = [
     { label: t("menu.placeholder.empty"), disabled: true },
+  ];
+  // Simulation メニュー: v0.16.0 で Model Settings 追加。
+  const simulationItems: MenuItemSpec[] = [
+    {
+      label: t("menu.simulation.model_settings"),
+      onClick: () => {
+        setOpenMenu(null);
+        setDialog({ kind: "model-settings" });
+      },
+      disabled: !hasModel,
+    },
   ];
   // ADR-0024 §(4): View メニューに Language の見出し行 + English / 日本語 を置く。
   // 見出しはクリック不可 (= disabled) で、項目をグルーピングする視覚 hint。
@@ -294,7 +307,7 @@ export function MenuBar(): JSX.Element {
           setOpenMenu((m) => (m === "Simulation" ? null : "Simulation"))
         }
         onHover={() => openMenu && setOpenMenu("Simulation")}
-        items={placeholder}
+        items={simulationItems}
         currentLang={lang}
       />
       <Menu
@@ -347,6 +360,9 @@ export function MenuBar(): JSX.Element {
           onConfirm={() => performDelete.mutate()}
           onClose={() => setDialog(null)}
         />
+      )}
+      {dialog?.kind === "model-settings" && (
+        <ModelSettingsModal onClose={() => setDialog(null)} />
       )}
     </div>
   );

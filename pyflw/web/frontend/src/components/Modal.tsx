@@ -12,7 +12,7 @@ interface ModalShellProps {
   width?: string;
 }
 
-function ModalShell({ title, onClose, children, width = "w-[420px]" }: ModalShellProps): JSX.Element {
+export function ModalShell({ title, onClose, children, width = "w-[420px]" }: ModalShellProps): JSX.Element {
   const { t } = useTranslation();
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {

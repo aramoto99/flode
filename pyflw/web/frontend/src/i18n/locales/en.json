@@ -3,6 +3,7 @@
   "menu.edit": "Edit",
   "menu.view": "View",
   "menu.simulation": "Simulation",
+  "menu.simulation.model_settings": "Model Settings…",
   "menu.help": "Help",
   "menu.file.new": "New",
   "menu.file.open": "Open…",
@@ -24,6 +25,8 @@
   "toolbar.fit": "Fit to View",
   "toolbar.run": "Run Simulation (F9 / Ctrl+T)",
   "toolbar.stop": "Stop Simulation (Shift+F9 / Ctrl+Shift+T)",
+  "toolbar.stop_time": "Stop time",
+  "toolbar.stop_time_tooltip": "Simulation stop time (s)",
 
   "palette.search": "Search blocks…",
   "palette.loading": "Loading palette...",
@@ -121,5 +124,21 @@
   "palette.library_prefix": "Library",
 
   "toast.region": "Notifications",
-  "toast.dismiss": "Dismiss notification"
+  "toast.dismiss": "Dismiss notification",
+
+  "model_settings.title": "Model Settings",
+  "model_settings.description": "Solver and integration parameters. Stop time is on the toolbar.",
+  "model_settings.solver": "Solver",
+  "model_settings.solver_hint": "scipy solve_ivp method (RK45 = Dormand-Prince, default).",
+  "model_settings.dt": "Output / base step (s)",
+  "model_settings.dt_hint": "Sampling step for scope output and discrete scheduling base.",
+  "model_settings.rtol": "Relative tolerance",
+  "model_settings.atol": "Absolute tolerance",
+  "model_settings.dt_base": "dt_base override",
+  "model_settings.dt_base_auto": "Auto",
+  "model_settings.dt_base_hint": "Explicit base step. With Auto checked (= null), the solver derives it from dt and discrete sample times.",
+  "model_settings.no_model": "Open a model to edit settings.",
+  "model_settings.invalid_number": "\"{{name}}\" must be a positive number.",
+  "model_settings.button.save": "Save",
+  "model_settings.button.cancel": "Cancel"
 }
