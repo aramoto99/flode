@@ -141,12 +141,15 @@ function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
       className="ml-1 mr-1 flex items-center gap-1 text-[11px] text-slate-700"
     >
       <span className="font-medium">{t("toolbar.stop_time")}</span>
-      {/* min/step は意図的に省略: 0 を含む不正値はソフトウェア側 (commit) で
-          弾く方針に統一 (HTML 属性と JS 検証を同居させると 0 のスピナー値が
-          下限通過時にリセットされて UX が混乱するため)。 */}
+      {/* type="text" + inputMode="decimal" にしているのは:
+          1) Simulink ツールバーの Stop Time にスピナー (上下矢印) は無いため
+          2) ``type="number"`` のスピナーは UX を分断する (= マウスで誤操作で
+             値が変わる、矩形がブラウザごとに違う見た目)
+          3) commit ソフトウェア検証 (Number(draft)) で十分
+          ModelSettingsModal の NumberInput とも揃える。 */}
       <input
-        type="number"
-        step="any"
+        type="text"
+        inputMode="decimal"
         value={draft}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
