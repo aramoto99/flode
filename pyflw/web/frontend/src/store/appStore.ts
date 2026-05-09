@@ -497,6 +497,38 @@ export function updateBlockSize(
   );
 }
 
+/**
+ * v0.15.0: ブロックの左右反転フラグをトグルする (Simulink の "Flip Block" 相当)。
+ * ``layout[blockId].flipped`` を反転、純粋な GUI metadata で backend 計算には
+ * 影響しない。``layout`` entry が無ければ作る。
+ */
+export function toggleBlockFlipped(blockId: string): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const prev = view.layout[blockId];
+      const newFlipped = !(prev?.flipped ?? false);
+      const next = {
+        ...view.layout,
+        [blockId]: {
+          x: prev?.x ?? 0,
+          y: prev?.y ?? 0,
+          ...(prev?.w !== undefined ? { w: prev.w } : {}),
+          ...(prev?.h !== undefined ? { h: prev.h } : {}),
+          // ``true`` のときだけ書き込む = false に戻したら field を消す (= JSON
+          // byte-identical 維持、normalize_layout も同じ方針)。
+          ...(newFlipped ? { flipped: true } : {}),
+        },
+      };
+      return {
+        blocks: view.blocks,
+        connections: view.connections,
+        layout: next,
+      };
+    }),
+  );
+}
+
 export function updateBlocksLayout(layout: LayoutDict): void {
   const path = currentPath();
   useAppStore.getState().applyEditingModel((m) =>

@@ -80,6 +80,27 @@ describe("modelToDiagram", () => {
     expect(nodes[0]?.position).toEqual({ x: 0, y: 0 });
     expect(nodes[1]?.position).toEqual({ x: 120, y: 0 });
   });
+
+  // v0.15.0: layout[id].flipped を data.flipped に転写し、BlockNodeView が
+  // Position.Left ↔ Right を反転できるようにする。
+  it("populates data.flipped from layout entry", () => {
+    const model: FlwModel = {
+      ...baseModel,
+      layout: {
+        src: { x: 0, y: 0, flipped: true },
+        g: { x: 100, y: 0 },
+      },
+    };
+    const { nodes } = modelToDiagram(model);
+    expect(nodes[0]?.data.flipped).toBe(true);
+    expect(nodes[1]?.data.flipped).toBe(false);
+  });
+
+  it("defaults data.flipped to false when layout entry has no flipped key", () => {
+    const { nodes } = modelToDiagram(baseModel);
+    expect(nodes[0]?.data.flipped).toBe(false);
+    expect(nodes[1]?.data.flipped).toBe(false);
+  });
 });
 
 describe("nodesToLayout", () => {

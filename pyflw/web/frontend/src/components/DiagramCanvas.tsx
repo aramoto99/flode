@@ -88,6 +88,12 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const editingPath = useAppStore((s) => s.editingPath);
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
+  // Simulink 互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
+  // 1 回目クリック時の source ノード ID を保持。2 回目の別ノード Ctrl+click で
+  // A.out[0] -> B.in[0] の edge を作成、null にリセット。
+  const [autoConnectSource, setAutoConnectSource] = useState<string | null>(
+    null,
+  );
   const [quickAdd, setQuickAdd] = useState<{
     screenX: number;
     screenY: number;
@@ -114,12 +120,14 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     } | null = null;
 
     const onMouseDown = (e: MouseEvent): void => {
-      // 右クリック (button=2) または Ctrl+左クリック (button=0 + ctrlKey) で複製ドラッグ。
-      // Simulink は両方のキーバインドを公式対応している。Mac の場合 metaKey でも反応する
-      // ようにしておく。
+      // Simulink 仕様 (= ユーザー指摘):
+      // - ``Ctrl + 右クリックドラッグ``: ノード複製
+      // - 単純な右クリック (Ctrl なし) ドラッグ: 同様にノード複製 (= alternative
+      //   shortcut、Simulink でも両方使える)
+      // - ``Ctrl + 左クリック`` (= ドラッグでなく単発クリック): 2 ノード間の
+      //   auto-connect (= 別経路 ``onCanvasClick`` 等で処理、本ハンドラの対象外)
       const isRightDrag = e.button === 2;
-      const isCtrlLeftDrag = e.button === 0 && (e.ctrlKey || e.metaKey);
-      if (!isRightDrag && !isCtrlLeftDrag) return;
+      if (!isRightDrag) return;
       const target = e.target as HTMLElement | null;
       const nodeEl = target?.closest(".react-flow__node") as HTMLElement | null;
       if (!nodeEl) return;
@@ -196,26 +204,11 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       }
     };
 
-    // React Flow v12 はノード drag を ``pointerdown`` で開始する。``mousedown`` だけ
-     // captureしてもそちらが先に走って original ノードがドラッグに参加してしまうので、
-    // ``pointerdown`` も同じ捕捉ロジックで横取りする (= isCtrlLeftDrag の時に重要)。
-    const onPointerDown = (e: PointerEvent): void => {
-      // PointerEvent の button は MouseEvent と互換 (0=left, 2=right) なので
-      // 同じ判定式で足りる。Ctrl+左の場合のみここで処理 (= 右クリックはブラウザによって
-      // pointerdown が来ない / mousedown と二重に来るケースがあるため、右は mousedown
-      // 側に任せる)。
-      if (!(e.button === 0 && (e.ctrlKey || e.metaKey))) return;
-      // PointerEvent extends MouseEvent (DOM 仕様) なのでキャスト不要。
-      onMouseDown(e);
-    };
-
-    wrapper.addEventListener("pointerdown", onPointerDown, true);
     wrapper.addEventListener("mousedown", onMouseDown, true);
     wrapper.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
-      wrapper.removeEventListener("pointerdown", onPointerDown, true);
       wrapper.removeEventListener("mousedown", onMouseDown, true);
       wrapper.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mousemove", onMouseMove);
@@ -309,6 +302,11 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         updateBlockPosition(ch.id, { x: ch.position.x, y: ch.position.y });
       } else if (ch.type === "remove") {
         removeBlockFromEditing(ch.id);
+        // 削除されたブロックが selection に残っていると ParameterPanel が
+        // 「not found」状態になる → 同期して selection からも除く
+        const state = useAppStore.getState();
+        if (state.selectedNodeId === ch.id) state.selectNode(null);
+        if (autoConnectSource === ch.id) setAutoConnectSource(null);
       } else if (ch.type === "select") {
         const draft = ensureSelectedDraft();
         if (ch.selected) {
@@ -566,11 +564,36 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         panOnDrag={PAN_BUTTONS}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
-        multiSelectionKeyCode={["Shift", "Meta", "Control"]}
+        // Simulink 仕様: ``Shift`` で multi-select、``Ctrl/Meta`` は auto-connect
+        // (= 2 ノード間に edge を引く 2-step 操作) に振る。
+        multiSelectionKeyCode={["Shift"]}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onNodeClick={(_event, node: BlockNode) => selectNode(node.id)}
+        onNodeClick={(event, node: BlockNode) => {
+          // Ctrl / Meta + 左クリック: 2-step auto-connect
+          // - 1 回目: ノードを source として記録
+          // - 2 回目 (別ノード): A.out[0] -> B.in[0] に edge を作成
+          if (event.ctrlKey || event.metaKey) {
+            if (autoConnectSource === null) {
+              setAutoConnectSource(node.id);
+              selectNode(node.id);
+            } else if (autoConnectSource !== node.id) {
+              addConnectionToEditing({
+                src: autoConnectSource,
+                src_idx: 0,
+                dst: node.id,
+                dst_idx: 0,
+              });
+              setAutoConnectSource(null);
+              selectNode(node.id);
+            }
+            return;
+          }
+          // 通常: 選択 + auto-connect 中断
+          setAutoConnectSource(null);
+          selectNode(node.id);
+        }}
         onNodeDoubleClick={onNodeDoubleClick}
         // Simulink 流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)
         // ノードに繋がっているエッジをすべて切り離す。これによりブロックを「リンク
@@ -588,7 +611,11 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
             }
           }
         }}
-        onPaneClick={() => selectNode(null)}
+        onPaneClick={() => {
+          // pane クリックは選択解除 + auto-connect 中断
+          setAutoConnectSource(null);
+          selectNode(null);
+        }}
         onPaneContextMenu={(e) => e.preventDefault()}
         onNodeContextMenu={(e) => e.preventDefault()}
         deleteKeyCode={["Backspace", "Delete"]}

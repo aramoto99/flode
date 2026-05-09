@@ -37,7 +37,8 @@ SUPPORTED_SCHEMA_VERSIONS = (CURRENT_SCHEMA_VERSION,)
 
 # ADR-0020 §(1): layout entry の型。block_id → {"x": float, "y": float}。
 # `LayoutDict` = レイアウト全体 (top-level または Subsystem 内部の `params.layout`)。
-LayoutDict = dict[str, dict[str, float]]
+# v0.15.0: optional ``"flipped": bool`` を許容 (= Simulink の Flip Block 相当)。
+LayoutDict = dict[str, dict[str, float | bool]]
 
 
 # allowlist: ロード時にここで列挙した module prefix のいずれかに属する class のみ
@@ -212,7 +213,7 @@ def normalize_layout(layout: object) -> LayoutDict | None:
             y = float(value["y"])
         except (TypeError, ValueError) as e:
             raise ModelLoadError(f"layout[{key!r}] has non-numeric x/y: {value!r}") from e
-        entry: dict[str, float] = {"x": x, "y": y}
+        entry: dict[str, float | bool] = {"x": x, "y": y}
         for size_key in ("w", "h"):
             if size_key in value:
                 try:
@@ -223,6 +224,10 @@ def normalize_layout(layout: object) -> LayoutDict | None:
                     ) from e
                 if sv > 0:
                     entry[size_key] = sv
+        # v0.15.0: GUI 左右反転フラグ。bool 以外は無視 (= 古い model でも安全に
+        # ロード)、True のときのみ JSON に保存 (= byte-identical を維持)。
+        if value.get("flipped") is True:
+            entry["flipped"] = True
         out[key] = entry
     return out
 

@@ -41,7 +41,12 @@ export function BlockNodeView({
   const nIn = (data.nInputs as number | undefined) ?? 1;
   const nOut = (data.nOutputs as number | undefined) ?? 1;
   const color = (data.color as string | undefined) ?? "#475569";
-  const isContainer = (data.isContainer as boolean | undefined) ?? false;
+  // v0.15.0: Simulink "Flip Block" 相当の左右反転。SVG ShapeOutline のみ
+  // scaleX(-1) で鏡像化 (= 三角形 ▶→◀)。Handle は flipPosition で position prop
+  // 反転 (= chevron 向きと data-handlepos が反転して edge anchor が追従)。
+  // ShapeContent (テキスト) は反転せず、flipped を渡して justify を切り替えて
+  // 「底辺寄り」を維持。z-order は SVG → ShapeContent → Handles で drag 可能。
+  const flipped = (data.flipped as boolean | undefined) ?? false;
   // Simulink 風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
   // 二重表示を回避)。``diagramConverter`` が edges から populate する。
   const connectedInputs = new Set<number>(
@@ -51,11 +56,6 @@ export function BlockNodeView({
     (data.connectedOutputs as number[] | undefined) ?? [],
   );
   const baseShape = getBlockShape(data.blockType);
-  // bar shape (Mux / Demux 等の細い縦バー) では、chevron ``>`` がバー本体に半分
-  // 重なって視認性が悪い。chevron `<span>` 自体の transform を上書きして、
-  // input は バーの左外側、output は右外側に押し出す (Handle 中心 = バー境界線
-  // という anchor 位置は変えないので drag 機能は維持)。
-  const isBarShape = baseShape.kind === "bar";
   // diagramConverter で layout.w/h + port 数に応じて伸ばした実寸を流し込んでいる。
   // なければ base サイズ (テスト等で BlockNodeView 単独呼びの fallback)。
   const dynamicWidth = (data.shapeWidth as number | undefined) ?? baseShape.width;
@@ -78,7 +78,9 @@ export function BlockNodeView({
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, nIn, nOut, updateNodeInternals]);
+    // v0.15.0: ``flipped`` 変化でも handle position が反転 (Position.Left ↔
+    // Right) するため、React Flow の内部キャッシュを再 measure する必要あり。
+  }, [id, nIn, nOut, flipped, updateNodeInternals]);
 
   // ノード bounding box は shape のみで構成し、ID ラベルは ``absolute top: 100%`` で
   // ノードの外側に escape させる。これにより:
@@ -121,15 +123,27 @@ export function BlockNodeView({
           setLiveSize(null);
         }}
       />
+      {/* v0.15.0 Flip Block:
+          - SVG ShapeOutline のみ scaleX(-1) で鏡像化 (= 三角形 ▶→◀)
+          - Handle は flipPosition で position prop 反転 (= data-handlepos
+            "left"↔"right" → React Flow の edge anchor が反転後の位置に追従、
+            chevron も chevronStyleFor が反転 position を受けて `>`→`<`)
+          - ShapeContent は反転させず flipped を受けて justify を切り替え
+          z-order は元の SVG → ShapeContent → Handles を維持 (= ShapeContent が
+          Handle を覆って drag を吸収するバグを回避)。 */}
       <div
         className="relative h-full w-full"
         style={{ width: shape.width, height: shape.height }}
       >
-        <ShapeOutline
-          shape={shape}
-          selected={selected ?? false}
-          isContainer={isContainer}
-        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: flipped ? "scaleX(-1)" : undefined,
+          }}
+        >
+          <ShapeOutline shape={shape} selected={selected ?? false} />
+        </div>
         <ShapeContent
           shape={shape}
           typePath={data.blockType}
@@ -137,38 +151,37 @@ export function BlockNodeView({
           color={color}
           param={param}
           paramsRaw={(data.params as Record<string, unknown>) ?? {}}
+          flipped={flipped}
         />
         {Array.from({ length: nIn }, (_, i) => {
           const pos = inputHandlePosition(shape, i, nIn);
+          const finalPos = flipped ? flipPosition(pos.position) : pos.position;
           const showChevron = !connectedInputs.has(i);
           return (
             <Handle
               key={`in-${i}`}
               type="target"
-              position={pos.position}
+              position={finalPos}
               id={String(i)}
               style={arrowHandleStyle(pos.topPct)}
             >
-              {showChevron && (
-                <span style={chevronStyleFor(pos.position, isBarShape)} />
-              )}
+              {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
           );
         })}
         {Array.from({ length: nOut }, (_, i) => {
           const pos = outputHandlePosition(shape, i, nOut);
+          const finalPos = flipped ? flipPosition(pos.position) : pos.position;
           const showChevron = !connectedOutputs.has(i);
           return (
             <Handle
               key={`out-${i}`}
               type="source"
-              position={pos.position}
+              position={finalPos}
               id={String(i)}
               style={arrowHandleStyle(pos.topPct)}
             >
-              {showChevron && (
-                <span style={chevronStyleFor(pos.position, isBarShape)} />
-              )}
+              {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
           );
         })}
@@ -191,11 +204,9 @@ export function BlockNodeView({
 function ShapeOutline({
   shape,
   selected,
-  isContainer,
 }: {
   shape: BlockShape;
   selected: boolean;
-  isContainer: boolean;
 }): JSX.Element {
   const { width: w, height: h, kind } = shape;
   // Simulink 風: 細黒線 + 白背景 + フラット (drop-shadow なし)。selected は薄青、
@@ -263,30 +274,9 @@ function ShapeOutline({
         />
       )}
       {(kind === "rect" || kind === "rect-wide") && (
-        // Simulink 風: 角丸なし。Subsystem (isContainer) は二重枠 + 太い外枠で
-        // 「ドリルダウン可能な container」を視覚化する。
-        <>
-          <rect
-            x={1}
-            y={1}
-            width={w - 2}
-            height={h - 2}
-            {...commonProps}
-            strokeWidth={isContainer ? strokeWidth + 0.75 : strokeWidth}
-          />
-          {isContainer && (
-            <rect
-              x={4}
-              y={4}
-              width={w - 8}
-              height={h - 8}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={strokeWidth * 0.7}
-              opacity={0.55}
-            />
-          )}
-        </>
+        // Simulink 風: 角丸なし。Subsystem も他のブロックと同じ単枠
+        // (= ユーザー要望、二重枠は廃止)。
+        <rect x={1} y={1} width={w - 2} height={h - 2} {...commonProps} />
       )}
     </svg>
   );
@@ -303,6 +293,7 @@ function ShapeContent({
   color,
   param,
   paramsRaw,
+  flipped = false,
 }: {
   shape: BlockShape;
   typePath: string;
@@ -310,14 +301,21 @@ function ShapeContent({
   color: string;
   param: string | null;
   paramsRaw: Record<string, unknown>;
+  flipped?: boolean;
 }): JSX.Element {
   const { kind } = shape;
 
-  // 三角形 (Gain): 中央に param (k=...) を表示。glyph アイコンは不要 (= 三角形が
-  // すでに識別情報)。
+  // 三角形 (Gain): 底辺側に param (k=...) を表示。flipped=false なら底辺=左→
+  // 左寄せ + pl-2.5、flipped=true なら底辺=右→右寄せ + pr-2.5。テキスト自身は
+  // どちらでも左→右で読める向きのまま (= scaleX 反転しない)。
   if (kind === "triangle-r") {
+    const align = flipped
+      ? "justify-end pr-2.5 pl-3"
+      : "justify-start pl-2.5 pr-3";
     return (
-      <div className="absolute inset-0 flex items-center justify-start pl-2.5 pr-3 text-[10px] font-mono font-semibold tabular-nums text-slate-800">
+      <div
+        className={`absolute inset-0 flex items-center text-[10px] font-mono font-semibold tabular-nums text-slate-800 ${align}`}
+      >
         <span className="truncate">{param ?? "k"}</span>
       </div>
     );
@@ -584,29 +582,38 @@ const CHEVRON_STYLE: React.CSSProperties = {
 };
 
 /**
- * bar shape (Mux / Demux 等) の場合は chevron を Handle 中心からさらに **外側** に
- * 押し出して、黒バーに重ならないようにする。input (Position.Left) は左へ、
- * output (Position.Right) は右へ約 1 chevron 分 offset。
- *
- * 通常 shape (= bar 以外) はデフォルトの ``CHEVRON_STYLE`` (= Handle 中心に重ね描き)。
+ * 全 shape 共通: chevron ``>`` を Handle 中心 (= ブロック境界線上) からさらに
+ * 1 chevron 分 (= 6px) **外側** に押し出す。input (Position.Left) は左へ、output
+ * (Position.Right) は右へ。これによりブロック種別 (rect / bar / circle / triangle
+ * 等) に関わらず chevron 位置が統一され、Simulink の見た目に揃う。
  */
+/**
+ * v0.15.0: 左右反転 (= ``data.flipped``) 用に Position を反転する。
+ * Position.Left ↔ Position.Right、Top/Bottom は不変。
+ */
+function flipPosition(p: Position): Position {
+  if (p === Position.Left) return Position.Right;
+  if (p === Position.Right) return Position.Left;
+  return p;
+}
+
 function chevronStyleFor(
   position: Position,
-  isBarShape: boolean,
+  flipped: boolean,
 ): React.CSSProperties {
-  if (!isBarShape) return CHEVRON_STYLE;
-  // ``translate`` の X 成分を ``-150%`` (左) / ``+50%`` (右) に振ることで chevron
-  // 中心が Handle 中心からそれぞれ chevron 1 個分 (= 6px) ずれる = バーの外側。
+  // 反転時はブロックの信号フローが右→左になるので chevron も ``>`` → ``<``。
+  // borderTop+borderRight の corner を rotate(45deg) で ``>`` に、(-135deg) で ``<`` に。
+  const rot = flipped ? "rotate(-135deg)" : "rotate(45deg)";
   if (position === Position.Left) {
     return {
       ...CHEVRON_STYLE,
-      transform: "translate(-150%, -50%) rotate(45deg)",
+      transform: `translate(-150%, -50%) ${rot}`,
     };
   }
   if (position === Position.Right) {
     return {
       ...CHEVRON_STYLE,
-      transform: "translate(50%, -50%) rotate(45deg)",
+      transform: `translate(50%, -50%) ${rot}`,
     };
   }
   return CHEVRON_STYLE;

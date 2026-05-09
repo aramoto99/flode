@@ -39,6 +39,9 @@ export interface BlockNodeData extends Record<string, unknown> {
   // 二重表示を回避)。``modelToDiagram`` が edges を走査して populate する。
   connectedInputs?: number[];
   connectedOutputs?: number[];
+  // v0.15.0: ブロック左右反転フラグ (Simulink "Flip Block" 相当)。layout entry の
+  // ``flipped`` から流す。BlockNodeView で port position を反転 + visual scaleX(-1)。
+  flipped?: boolean;
 }
 
 export type BlockNode = Node<BlockNodeData>;
@@ -116,6 +119,7 @@ export function modelToDiagram(
         shapeHeight: shape.height,
         connectedInputs: Array.from(connectedInBy.get(b.id) ?? []),
         connectedOutputs: Array.from(connectedOutBy.get(b.id) ?? []),
+        flipped: layoutEntry?.flipped ?? false,
       },
       type: "blockNode",
       width: shape.width,

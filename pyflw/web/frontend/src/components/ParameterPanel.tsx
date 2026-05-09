@@ -8,13 +8,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
-import { findBlockAtPath } from "../lib/pathResolver";
+import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
 import {
   isPrimitiveParam,
   parseNumericInput,
 } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
+  toggleBlockFlipped,
   updateBlockParams,
   updateSubsystemMaskValues,
   useAppStore,
@@ -40,23 +41,17 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
     }
   }, [editingModel, editingPath, selectedNodeId]);
 
-  if (!selectedNodeId) {
+  // ノード未選択 / 削除済みノードが selection に残っているケース (= drilldown
+  // 経路外、別モデル切替後の stale 等) はどちらも同じ「空 panel」表示にする。
+  // 「Block X not found in current scope」エラーを出すのは UX 悪い (Simulink も
+  // ブロック削除で Inspector が静かに空になる)。
+  if (!selectedNodeId || !block) {
     return (
       <div
         data-testid="parameter-panel-empty"
         className="border-l border-gray-200 bg-white p-3 text-xs text-gray-500"
       >
         {t("inspector.empty")}
-      </div>
-    );
-  }
-  if (!block) {
-    return (
-      <div
-        data-testid="parameter-panel-not-found"
-        className="border-l border-gray-200 bg-white p-3 text-xs text-red-600"
-      >
-        {t("inspector.not_found", { id: selectedNodeId })}
       </div>
     );
   }
@@ -92,6 +87,19 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     () => indexRegistry(registryData?.blocks ?? []),
     [registryData],
   );
+  // v0.15.0: ``flipped`` 状態は ``editingModel.layout[block.id].flipped`` にある。
+  // store を直接購読して、checkbox に反映する。
+  const editingModel = useAppStore((s) => s.editingModel);
+  const editingPath = useAppStore((s) => s.editingPath);
+  const flippedNow = useMemo(() => {
+    if (!editingModel) return false;
+    try {
+      const view = resolveBlocksAtPath(editingModel, editingPath);
+      return Boolean(view.layout[block.id]?.flipped);
+    } catch {
+      return false;
+    }
+  }, [editingModel, editingPath, block.id]);
 
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +175,20 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
           {shortType}
         </span>
       </div>
+
+      {/* v0.15.0: Simulink 互換の Flip Block (左右反転) ボタン。layout.flipped を
+          toggle するだけ、backend 影響なし。 */}
+      <label className="flex items-center justify-between text-slate-700">
+        <span className="font-medium">{t("inspector.flip_horizontal")}</span>
+        <input
+          type="checkbox"
+          data-testid="flip-block-button"
+          checked={flippedNow}
+          onChange={() => toggleBlockFlipped(block.id)}
+          title={t("inspector.flip_horizontal_tooltip")}
+          className="h-3.5 w-3.5 cursor-pointer accent-blue-600"
+        />
+      </label>
 
       {editableEntries.length === 0 && (
         <div className="text-slate-500">

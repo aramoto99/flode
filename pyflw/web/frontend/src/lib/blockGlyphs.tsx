@@ -27,18 +27,21 @@ interface GlyphProps {
 // Sources
 // =============================================================================
 
+// v0.15.0: 実機キャンバスは値そのもの (例 ``1.0``) を表示 → glyph はライブラリ
+// default の ``1`` を大きく見せる (= drop 直後の挙動と一致)。
 const ConstantGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <line x1="4" y1="12" x2="20" y2="12" />
     <text
       x="12"
-      y="9"
+      y="16"
       textAnchor="middle"
-      fontSize="6"
+      fontSize="11"
+      fontFamily="ui-monospace,monospace"
+      fontWeight="600"
       fill="currentColor"
       stroke="none"
     >
-      const
+      1
     </text>
   </svg>
 );
@@ -112,25 +115,57 @@ const SaturationGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.15.0: 実機キャンバスはテキスト ``|u|`` 表示 → glyph も同じテキストに統一。
 const AbsGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polyline points="4,18 12,6 20,18" />
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="11"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      |u|
+    </text>
   </svg>
 );
 
+// v0.15.0: 実機キャンバスはテキスト ``sign`` 表示 → glyph も同じ。
 const SignGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <line x1="3" y1="18" x2="11" y2="18" />
-    <line x1="11" y1="18" x2="11" y2="6" />
-    <line x1="11" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="12" x2="21" y2="12" strokeWidth="0.6" opacity="0.3" />
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      sign
+    </text>
   </svg>
 );
 
+// v0.15.0: 実機キャンバスは ``min`` / ``max`` テキスト → glyph は ``min`` (default)
+// を表示しておく (ライブラリでは default state = ``min`` のため)。
 const MinMaxGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polyline points="4,8 8,4 12,8" />
-    <polyline points="12,16 16,20 20,16" />
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      min
+    </text>
   </svg>
 );
 
@@ -146,19 +181,31 @@ const DivideGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Continuous
 // =============================================================================
 
+// v0.15.0: 実機キャンバスは ``1/s`` 分数表示 → glyph も同じ。
 const IntegratorGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
       x="12"
-      y="16"
+      y="11"
       textAnchor="middle"
-      fontSize="14"
-      fontWeight="500"
-      fontFamily="serif"
+      fontSize="7"
+      fontFamily="ui-monospace,monospace"
       fill="currentColor"
       stroke="none"
     >
-      ∫
+      1
+    </text>
+    <line x1="6" y1="13" x2="18" y2="13" strokeWidth="1" />
+    <text
+      x="12"
+      y="20"
+      textAnchor="middle"
+      fontSize="7"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      s
     </text>
   </svg>
 );
@@ -432,10 +479,22 @@ const RelationalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.15.0: 実機キャンバスは operator テキスト ``AND`` / ``OR`` / ``NOT`` 等。
+// ライブラリの default は ``AND`` なので glyph も同じ。
 const LogicalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* AND ゲート風 */}
-    <path d="M5 5 L 13 5 A 7 7 0 0 1 13 19 L 5 19 Z" />
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="8"
+      fontFamily="ui-monospace,monospace"
+      fontWeight="600"
+      fill="currentColor"
+      stroke="none"
+    >
+      AND
+    </text>
   </svg>
 );
 
@@ -443,34 +502,43 @@ const LogicalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Routing
 // =============================================================================
 
+// v0.15.0: 実機キャンバスは ``u2 ≥ T`` 等のテキスト → glyph も同じ。
 const SwitchGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <line x1="3" y1="6" x2="9" y2="6" />
-    <line x1="3" y1="18" x2="9" y2="18" />
-    <line x1="9" y1="6" x2="17" y2="10" />
-    <line x1="15" y1="12" x2="21" y2="12" />
-    <circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none" />
-    <circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none" />
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="7"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      u2≥T
+    </text>
   </svg>
 );
 
+// v0.15.0: 実機キャンバスは縦長 black bar (= width 6 px) なので、ライブラリ glyph
+// もそれに合わせて細い縦バー + 線で「Mux はバーに集約、Demux はバーから分配」を
+// 表現する。
 const MuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="9" y="3" width="3" height="18" fill="currentColor" stroke="none" rx="1" />
-    <line x1="3" y1="6" x2="9" y2="9" />
-    <line x1="3" y1="12" x2="9" y2="12" />
-    <line x1="3" y1="18" x2="9" y2="15" />
-    <line x1="12" y1="12" x2="21" y2="12" />
+    <rect x="11" y="3" width="2" height="18" fill="currentColor" stroke="none" />
+    <line x1="3" y1="7" x2="11" y2="9" />
+    <line x1="3" y1="12" x2="11" y2="12" />
+    <line x1="3" y1="17" x2="11" y2="15" />
+    <line x1="13" y1="12" x2="21" y2="12" />
   </svg>
 );
 
 const DemuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="12" y="3" width="3" height="18" fill="currentColor" stroke="none" rx="1" />
-    <line x1="3" y1="12" x2="12" y2="12" />
-    <line x1="15" y1="9" x2="21" y2="6" />
-    <line x1="15" y1="12" x2="21" y2="12" />
-    <line x1="15" y1="15" x2="21" y2="18" />
+    <rect x="11" y="3" width="2" height="18" fill="currentColor" stroke="none" />
+    <line x1="3" y1="12" x2="11" y2="12" />
+    <line x1="13" y1="9" x2="21" y2="7" />
+    <line x1="13" y1="12" x2="21" y2="12" />
+    <line x1="13" y1="15" x2="21" y2="17" />
   </svg>
 );
 
@@ -529,21 +597,20 @@ const XYGraphGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Subsystems
 // =============================================================================
 
+// v0.15.0: 実機キャンバスは単枠 (= 二重枠廃止) → glyph も単 rect で揃える。
 const SubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="3" y="5" width="18" height="14" rx="1.5" />
-    <rect x="7" y="9" width="10" height="6" rx="0.8" opacity="0.6" />
+    <rect x="3" y="5" width="18" height="14" />
   </svg>
 );
 
-// ADR-0036: TriggeredSubsystem glyph — Subsystem rect + 雷 (= trigger 信号を示唆)。
+// ADR-0036: TriggeredSubsystem glyph — 単枠 + 雷 (= trigger 信号を示唆)。
 const TriggeredSubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="3" y="5" width="18" height="14" rx="1.5" />
-    <rect x="7" y="9" width="10" height="6" rx="0.8" opacity="0.4" />
-    {/* 雷マーク (= trigger 入力を象徴) */}
+    <rect x="3" y="7" width="18" height="14" />
+    {/* 雷マーク (= trigger 入力を象徴、上に少しはみ出す) */}
     <polyline
-      points="13,3 11,8 14,8 12,13"
+      points="13,2 11,7 14,7 12,12"
       fill="currentColor"
       stroke="currentColor"
       strokeWidth="0.5"

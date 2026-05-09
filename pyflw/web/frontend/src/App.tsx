@@ -87,13 +87,9 @@ export default function App(): JSX.Element {
                   <DiagramCanvas modelId={selectedModelId} />
                 </div>
                 <SimulationControls modelId={selectedModelId} />
-                <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
-                  {Object.entries(scopes).length === 0 ? (
-                    <div className="px-1 text-[11px] text-slate-500">
-                      {t("app.scope.no_output")}
-                    </div>
-                  ) : (
-                    Object.entries(scopes).map(([scopeId, buffer]) => {
+                {Object.entries(scopes).length > 0 && (
+                  <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
+                    {Object.entries(scopes).map(([scopeId, buffer]) => {
                       const blockType = blockTypeById.get(scopeId) ?? "";
                       // Display は block face に live 表示 → bottom panel には出さない
                       if (blockType.endsWith(".Display")) return null;
@@ -113,9 +109,9 @@ export default function App(): JSX.Element {
                           buffer={buffer}
                         />
                       );
-                    })
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
               </>
             ) : (
               <EmptyState />

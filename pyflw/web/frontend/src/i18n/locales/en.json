@@ -95,6 +95,8 @@
   "inspector.empty": "Click a block in the diagram to edit its parameters.",
   "inspector.not_found": "Block {{id}} not found in current scope.",
   "inspector.no_editable": "No editable parameters on this block.",
+  "inspector.flip_horizontal": "Flip horizontally",
+  "inspector.flip_horizontal_tooltip": "Swap input / output port sides.",
   "inspector.read_only_summary": "Other parameters ({{count}}, read-only)",
   "inspector.invalid_number": "Invalid number for \"{{name}}\"",
   "inspector.autosave_hint": "Edits auto-save (debounce 500 ms · Ctrl+S to flush).",
