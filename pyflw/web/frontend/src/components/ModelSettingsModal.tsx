@@ -124,24 +124,32 @@ export function ModelSettingsModal({
   if (!editingModel) {
     return (
       <ModalShell title={t("model_settings.title")} onClose={onClose}>
-        <div className="p-4 text-xs text-slate-600">
+        <div className="p-6 text-sm text-slate-600">
           {t("model_settings.no_model")}
         </div>
       </ModalShell>
     );
   }
 
+  // 入力共通: 高さ・余白・フォントサイズを統一して安定感を出す。
+  const baseInput =
+    "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-[13px] text-slate-800 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
+
   return (
     <ModalShell
       title={t("model_settings.title")}
       onClose={onClose}
-      width="w-[480px]"
+      width="w-[520px]"
     >
-      <div className="flex flex-col gap-3 p-4">
-        <p className="text-[11px] text-slate-500">
+      {/* description: 上部にバナー風セクション */}
+      <div className="border-b border-slate-200 bg-slate-50 px-6 py-3">
+        <p className="text-[12px] leading-relaxed text-slate-600">
           {t("model_settings.description")}
         </p>
+      </div>
 
+      {/* main: label 上 / 入力 中 / hint 下 の縦レイアウト */}
+      <div className="flex flex-col gap-5 px-6 py-5">
         <Field
           htmlFor="model-settings-solver"
           label={t("model_settings.solver")}
@@ -152,7 +160,7 @@ export function ModelSettingsModal({
             value={solver}
             onChange={(e) => setSolver(e.target.value)}
             data-testid="model-settings-solver"
-            className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+            className={baseInput}
           >
             {SOLVER_OPTIONS.map((s) => (
               <option key={s} value={s}>
@@ -175,49 +183,53 @@ export function ModelSettingsModal({
           />
         </Field>
 
-        <Field htmlFor="model-settings-rtol" label={t("model_settings.rtol")}>
-          <NumberInput
-            id="model-settings-rtol"
-            value={rtolStr}
-            onChange={setRtolStr}
-            testId="model-settings-rtol"
-          />
-        </Field>
-
-        <Field htmlFor="model-settings-atol" label={t("model_settings.atol")}>
-          <NumberInput
-            id="model-settings-atol"
-            value={atolStr}
-            onChange={setAtolStr}
-            testId="model-settings-atol"
-          />
-        </Field>
+        {/* rtol / atol は対になる科学的許容誤差なので 2 列にして節約 */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field htmlFor="model-settings-rtol" label={t("model_settings.rtol")}>
+            <NumberInput
+              id="model-settings-rtol"
+              value={rtolStr}
+              onChange={setRtolStr}
+              testId="model-settings-rtol"
+            />
+          </Field>
+          <Field htmlFor="model-settings-atol" label={t("model_settings.atol")}>
+            <NumberInput
+              id="model-settings-atol"
+              value={atolStr}
+              onChange={setAtolStr}
+              testId="model-settings-atol"
+            />
+          </Field>
+        </div>
 
         <Field
           htmlFor="model-settings-dt-base-auto"
           label={t("model_settings.dt_base")}
           hint={t("model_settings.dt_base_hint")}
         >
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-xs text-slate-700">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-[13px] text-slate-700">
               <input
                 id="model-settings-dt-base-auto"
                 type="checkbox"
                 checked={!dtBaseExplicit}
                 onChange={() => setDtBaseExplicit((v) => !v)}
                 data-testid="model-settings-dt-base-auto"
-                className="h-3.5 w-3.5 cursor-pointer accent-blue-600"
+                className="h-4 w-4 cursor-pointer accent-blue-600"
               />
               <span>{t("model_settings.dt_base_auto")}</span>
             </label>
             {dtBaseExplicit && (
-              <NumberInput
-                id="model-settings-dt-base"
-                value={dtBaseStr}
-                onChange={setDtBaseStr}
-                testId="model-settings-dt-base"
-                ariaLabel={t("model_settings.dt_base")}
-              />
+              <div className="flex-1">
+                <NumberInput
+                  id="model-settings-dt-base"
+                  value={dtBaseStr}
+                  onChange={setDtBaseStr}
+                  testId="model-settings-dt-base"
+                  ariaLabel={t("model_settings.dt_base")}
+                />
+              </div>
             )}
           </div>
         </Field>
@@ -225,18 +237,19 @@ export function ModelSettingsModal({
         {error && (
           <div
             role="alert"
-            className="rounded border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700"
+            className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-700"
           >
             {error}
           </div>
         )}
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-2.5">
+      {/* footer: bg-slate-50 でセクション区切り、ボタンを一回り大きく */}
+      <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3">
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+          className="rounded-md px-4 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200"
         >
           {t("model_settings.button.cancel")}
         </button>
@@ -244,7 +257,7 @@ export function ModelSettingsModal({
           type="button"
           onClick={save}
           data-testid="model-settings-save"
-          className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
         >
           {t("model_settings.button.save")}
         </button>
@@ -263,12 +276,17 @@ interface FieldProps {
 
 function Field({ label, hint, htmlFor, children }: FieldProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-700">
-        <label htmlFor={htmlFor}>{label}</label>
-        {children}
-      </div>
-      {hint && <p className="text-[10px] leading-snug text-slate-500">{hint}</p>}
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor={htmlFor}
+        className="text-[13px] font-semibold text-slate-800"
+      >
+        {label}
+      </label>
+      {children}
+      {hint && (
+        <p className="text-[11px] leading-relaxed text-slate-500">{hint}</p>
+      )}
     </div>
   );
 }
@@ -297,7 +315,7 @@ function NumberInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       data-testid={testId}
-      className="h-6 w-28 rounded border border-slate-300 px-1.5 text-right font-mono text-[11px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none"
+      className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-[13px] tabular-nums text-slate-800 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
     />
   );
 }
