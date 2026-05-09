@@ -46,6 +46,9 @@ def create_app(
     else:
         settings = Settings(
             model_dir=Path(settings.model_dir),
+            workspace_root=(
+                Path(settings.workspace_root) if settings.workspace_root is not None else None
+            ),
             scope_batch_size=settings.scope_batch_size,
             max_concurrent=settings.max_concurrent,
             allow_origins=list(settings.allow_origins),

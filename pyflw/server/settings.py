@@ -1,4 +1,4 @@
-"""サーバ設定 (ADR-0011 §(6))。"""
+"""サーバ設定 (ADR-0011 §(6) / ADR-0041 §3)。"""
 
 from __future__ import annotations
 
@@ -11,8 +11,14 @@ class Settings:
     """``create_app`` に渡す設定。
 
     Attributes:
-        model_dir: ``.flw.json`` を置くディレクトリ。サーバ起動時に存在しなければ
-            ``mkdir -p`` 相当で作成する。
+        model_dir: ``.flw.json`` を置くディレクトリ (legacy、ADR-0011 §(6))。
+            サーバ起動時に存在しなければ ``mkdir -p`` 相当で作成する。**ADR-0041
+            v3.0 で削除予定** — v2.x の間は legacy ``/api/v1/models/*`` route が
+            参照する。新規コードは ``workspace_root`` を見ること。
+        workspace_root: File API ``/api/v1/files/*`` のルートディレクトリ
+            (ADR-0041 §3、v0.15.0 新設)。``None`` の場合 File API は workspace 未
+            設定として扱う (= legacy ``--model-dir`` モード)。``--workspace=PATH``
+            CLI 引数または ``Settings(workspace_root=...)`` 直接指定で設定。
         scope_batch_size: WebSocket での Scope データ送信のバッチサイズ
             (default 100、ADR-0011 §(2))。
         max_concurrent: 同時実行可能なシミュレーション数 (default 4)。
@@ -27,6 +33,7 @@ class Settings:
     """
 
     model_dir: Path
+    workspace_root: Path | None = None
     scope_batch_size: int = 100
     max_concurrent: int = 4
     allow_origins: list[str] = field(default_factory=list)
