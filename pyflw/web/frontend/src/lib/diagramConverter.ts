@@ -4,11 +4,28 @@
 // ``data.label`` 以外を描画しないため空白になる。registry metadata から色 / port 数 /
 // is_container を吸い上げてカスタムノード ``BlockNodeView`` で描画する。
 
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
 import { getBlockShape } from "./blockShapes";
 import { resolvePortCounts } from "./dynamicPorts";
 import type { BlockMetadata, FlwModel, LayoutDict, LayoutEntry } from "../types/api";
+
+// Simulink 互換: 連結線の終点に矢印 head を付けて「信号の流れ」を視覚化する。
+// stroke は 1.5 で接地感を増す。``DiagramCanvas`` の ``defaultEdgeOptions``
+// (= 新規 connect 時) からも import して同じ値を使う (= single source of truth、
+// 値の drift 防止)。
+export const SIMULINK_EDGE_STROKE = "#1e293b"; // slate-800
+export const SIMULINK_EDGE_STYLE = {
+  stroke: SIMULINK_EDGE_STROKE,
+  strokeWidth: 1.5,
+};
+export const SIMULINK_MARKER_END = {
+  type: MarkerType.ArrowClosed,
+  color: SIMULINK_EDGE_STROKE,
+  width: 8,
+  height: 8,
+};
+export const SIMULINK_EDGE_TYPE = "step";
 
 export interface BlockNodeData extends Record<string, unknown> {
   blockType: string;
@@ -18,6 +35,10 @@ export interface BlockNodeData extends Record<string, unknown> {
   nInputs?: number;
   nOutputs?: number;
   isContainer?: boolean;
+  // Simulink 風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
+  // 二重表示を回避)。``modelToDiagram`` が edges を走査して populate する。
+  connectedInputs?: number[];
+  connectedOutputs?: number[];
 }
 
 export type BlockNode = Node<BlockNodeData>;
@@ -43,6 +64,18 @@ export function modelToDiagram(
   edges: Edge[];
 } {
   const layout = model.layout ?? {};
+
+  // Simulink 風: 接続済み port (= edge の端点) には chevron ``>`` を表示しない
+  // ため、各 block の接続済み input / output port_idx 集合を先に収集する。
+  const connectedInBy = new Map<string, Set<number>>();
+  const connectedOutBy = new Map<string, Set<number>>();
+  for (const c of model.connections) {
+    if (!connectedOutBy.has(c.src)) connectedOutBy.set(c.src, new Set());
+    connectedOutBy.get(c.src)!.add(c.src_idx);
+    if (!connectedInBy.has(c.dst)) connectedInBy.set(c.dst, new Set());
+    connectedInBy.get(c.dst)!.add(c.dst_idx);
+  }
+
   const nodes: BlockNode[] = model.blocks.map((b, idx) => {
     const pos = layout[b.id] ?? gridFallback(idx);
     const meta = registry?.get(b.type);
@@ -81,6 +114,8 @@ export function modelToDiagram(
         // 必須 (= layout.w でリサイズされた値を BlockNodeView に伝える)。
         shapeWidth: shape.width,
         shapeHeight: shape.height,
+        connectedInputs: Array.from(connectedInBy.get(b.id) ?? []),
+        connectedOutputs: Array.from(connectedOutBy.get(b.id) ?? []),
       },
       type: "blockNode",
       width: shape.width,
@@ -93,6 +128,11 @@ export function modelToDiagram(
     target: c.dst,
     sourceHandle: String(c.src_idx),
     targetHandle: String(c.dst_idx),
+    // Simulink 風: 90° 折れ線 (= step、smoothstep の角丸なし版)、黒系細線、
+    // 終点矢印 head で「信号の流れ」を視覚化
+    type: SIMULINK_EDGE_TYPE,
+    style: SIMULINK_EDGE_STYLE,
+    markerEnd: SIMULINK_MARKER_END,
   }));
   return { nodes, edges };
 }

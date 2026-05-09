@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-09 — GUI Simulink 化 (見た目 + 各ブロック表示 + enum select)
+
+ユーザーフィードバック (= 「Simulink っぽくしてくれ」) を受けて、GUI の見た目と
+各ブロックの表示を Simulink 互換に揃える minor リリース。Public API / JSON
+schema / backend ロジックは無変更で v2.0.x からの後方互換あり。
+
+### Visual changes (Simulink 互換)
+
+- **連結線**: bezier (滑らかな曲線) → **`step` (90° 折れ)**、stroke を黒系細線
+  (`#1e293b`、1.5px) に統一、終端に **矢印 head** (= `MarkerType.ArrowClosed`、
+  8×8) を付加して「信号の流れ」を視覚化
+- **ブロック輪郭**: 各 shape kind ごとの色 (青/紫/スレート) → **黒線統一**
+  (`#1e293b`、1px、selected 時 1.5px 青)、`drop-shadow` 削除でフラット化、
+  rect / bar の **角丸を全廃**
+- **ブロック背景**: 白統一 (= Simulink 標準)
+- **Subsystem / TriggeredSubsystem**: **二重枠** (= 内側 +3px に細線追加) で
+  container と一目で分かる、base size 96×56
+- **Mux / Demux**: width 18 → **6 px** の細い black bar (Simulink 互換)、
+  chevron は黒バーに重ならないようバーの **外側に offset**
+- **Port (handle)**: 円 → **線画 chevron `>`** (= 信号の流れ方向、未接続のみ
+  表示、接続済は edge の矢印 head が代わりに方向を示す)
+
+### Block-specific 表示
+
+| Block | Before | After |
+|---|---|---|
+| Constant | `const` テキスト | **値そのもの** (`1.0`、`70` 等) |
+| Inport / Outport | `in` / `out` | **ポート番号** (`port_idx + 1`) |
+| Integrator | `∫` | **`1/s`** (分数表示) |
+| UnitDelay | テキスト | **`1/z`** |
+| DiscreteIntegrator | テキスト | **`Ts/(z-1)`** |
+| Derivative | `du/dt` | **`s`** |
+| TransferFunction | `num(s) / den(s)` static | **実際の多項式** (`2s+1` / `s^2+s+3`) |
+| DiscreteTransferFunction | 同 | **z 多項式** |
+| StateSpace 系 | `ẋ=Ax+Bu` | **行列サイズ** (`A: 2×2`) 付き |
+| MimoTransferFunction | static | **代表多項式** + `[..., ...]` 略記 |
+| Abs | V 字 icon | **`|u|`** テキスト |
+| MinMax | 山形 icon | **`min`** / **`max`** テキスト (= `param.operator`) |
+| Switch | スイッチ機構図 | **`u2 ≥ T`** 等 (= `param.criterion`) |
+| Sign | 段差 icon | **`sign`** テキスト |
+| Logical / Relational Operator | アイコン | **`AND`** / **`>=`** 等 (= `param.operator`) |
+| Saturation / Step / Sine / Ramp / Pulse | 左 glyph 小 + 右 param 値 | **glyph 中央大配置** (= Simulink は icon only) |
+
+### Added
+
+- **`pyflw/web/frontend/src/lib/blockFormatting.ts`** (新規): 数値 / 多項式 /
+  伝達関数 / 行列サイズの整形ユーティリティ。テスト容易な pure function 群
+- **enum_values 機構** ([pyflw/server/registry.py:ParamSpec](pyflw/server/registry.py)
+  + 各 block class の `_param_enums` class attribute):
+  - `MinMax.operator` (= `min` / `max`)
+  - `Switch.criterion` (= `>=` / `>` / `!=`)
+  - `LogicalOperator.operator` (= `NOT` / `AND` / `OR` / `XOR` / `NAND` / `NOR`)
+  - `RelationalOperator.operator` (= `<` / `<=` / `==` / `!=` / `>=` / `>`)
+- **ParameterPanel が enum_values を `<select>`** で render
+  ([components/ParameterPanel.tsx](pyflw/web/frontend/src/components/ParameterPanel.tsx)):
+  許容値が限定された string param は自由入力でなくドロップダウンで選択 → UX
+  改善 + 不正値混入防止
+
+### Fixed (= GUI 改修中に発見した bug)
+
+- **MinMax の表示が `paramsRaw.function` を読み違えていた** → 正しく `operator`
+- **Switch の表示が `paramsRaw.criteria` を読み違えていた** → 正しく `criterion`
+- **`edges.map` で `type: "smoothstep"` 強制上書き** していたため diagramConverter
+  の `type: "step"` が無視されていた → 上書き撤廃、既存 edge も step 折れ線に
+- **Mux / Demux の base 幅 (= 18px) > NodeResizer.minWidth (= 40px)** で resize
+  ができない bug → shape kind ごとに minWidth を最適化 (bar=4、circle=28、
+  triangle=32、trapezoid=36、rect-wide=56、rect=40)
+
+### Tests / Compat
+
+- pytest 1039 件 / vitest 208 件 all pass
+- mypy --strict / ruff / sphinx -W すべて clean
+- `examples/spring_mass_damper.py` 数値完全不変 (= Final x=0.2505)
+- backend / Python API / JSON schema 0.8 / REST `/api/v1/*` は無変更
+  (= v2.0 凍結維持、minor bump で互換性 OK)
+
+### 後続予定
+
+GUI 編集機能の Simulink 互換改善 (= 分岐点 waypoint 編集、edge 中点からの
+右クリック分岐) は **ADR-0040 / v0.16.0** で別途設計。Public API レベルの
+変更なし、純 frontend GUI の機能追加として進める。
+
 ## [0.14.2] - 2026-05-09 — portShapeValidate hotfix (Subsystem 派生)
 
 ### Fixed

@@ -73,6 +73,10 @@ export interface BlockParamSpec {
   has_default: boolean;
   default: unknown;
   description: string;
+  // ADR-0039 follow-up (v2.0.3): block class が ``_param_enums`` で
+  // 許容値を宣言している場合、ParameterPanel が ``<select>`` で render する。
+  // null / 未指定 (= キー不在) のとき従来 ``<input>``。
+  enum_values?: string[];
 }
 
 // ADR-0028: Block 表示名・docstring summary の i18n (ja/en) 翻訳対応。

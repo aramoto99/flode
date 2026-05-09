@@ -39,13 +39,21 @@ _logger = logging.getLogger("pyflw.registry")
 
 @dataclass
 class ParamSpec:
-    """Block ``__init__`` の単一パラメータの仕様 (registry response の要素)。"""
+    """Block ``__init__`` の単一パラメータの仕様 (registry response の要素)。
+
+    ``enum_values`` (v0.15.0 / ADR-0039 follow-up): ``str`` 型 param のうち、
+    block class が ``_param_enums = {param_name: tuple[str, ...]}`` を class
+    attribute として宣言している場合、その許容値を一覧で frontend に流す。
+    frontend は ``<select>`` プルダウンで render する (= 自由入力でなく enum
+    選択にして UX 改善 + 不正値混入防止)。``None`` のとき従来の ``<input>``。
+    """
 
     name: str
     type: str
     default: Any | None = None
     has_default: bool = False
     description: str = ""
+    enum_values: list[str] | None = None
 
 
 @dataclass
@@ -317,6 +325,10 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
     factory_args: dict[str, Any] = (
         getattr(cls, "_default_factory_args", None) or _BUILTIN_DEFAULT_ARGS.get(type_path) or {}
     )
+    # ADR-0039 follow-up (v0.15.0): block class が ``_param_enums`` を class attribute
+    # として宣言していれば、それを ParamSpec.enum_values に流し込む。frontend
+    # ParameterPanel は enum_values あれば ``<select>`` で render する。
+    param_enums: dict[str, tuple[str, ...]] = getattr(cls, "_param_enums", {}) or {}
     out: list[ParamSpec] = []
     for name, param in sig.parameters.items():
         if name in ("self", "id", "name"):
@@ -350,12 +362,16 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
                     cls.__name__,
                     name,
                 )
+        enum_values: list[str] | None = None
+        if name in param_enums:
+            enum_values = list(param_enums[name])
         out.append(
             ParamSpec(
                 name=name,
                 type=_format_annotation(param.annotation),
                 has_default=has_default,
                 default=default,
+                enum_values=enum_values,
             )
         )
     return out
@@ -561,6 +577,9 @@ def metadata_to_dict(
                 "has_default": p.has_default,
                 "default": p.default,
                 "description": p.description,
+                # ADR-0039 follow-up (v0.15.0): enum 候補が指定されている param のみ
+                # 流す。``None`` のときキー自体を出さず、payload を膨らませない。
+                **({"enum_values": p.enum_values} if p.enum_values is not None else {}),
             }
             for p in meta.params_spec
         ],

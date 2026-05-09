@@ -31,9 +31,13 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "pyflw.blocks.mathops.Product": { kind: "circle", width: 44, height: 44 },
   "pyflw.blocks.mathops.Divide":  { kind: "circle", width: 44, height: 44 },
 
-  // -------- 縦長バー --------
-  "pyflw.blocks.routing.Mux":   { kind: "bar", width: 18, height: 64 },
-  "pyflw.blocks.routing.Demux": { kind: "bar", width: 18, height: 64 },
+  // -------- 縦長バー (Simulink 風: 細い black bar) --------
+  "pyflw.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },
+  "pyflw.blocks.routing.Demux": { kind: "bar", width: 6, height: 56 },
+
+  // -------- Subsystem (Simulink 風: 二重枠の少し大きめ rect) --------
+  "pyflw.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
+  "pyflw.subsystems.triggered.TriggeredSubsystem": { kind: "rect", width: 96, height: 56 },
 
   // -------- 台形 --------
   "pyflw.subsystems.ports.Inport":  { kind: "trapezoid-r", width: 64, height: 38 },

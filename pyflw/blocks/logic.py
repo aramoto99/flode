@@ -24,6 +24,8 @@ class RelationalOperator(Block):
     """
 
     _ALLOWED_OPS = ("<", "<=", "==", "!=", ">=", ">")
+    # ADR-0039 follow-up (v0.15.0): GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"operator": _ALLOWED_OPS}
 
     def __init__(
         self,
@@ -68,6 +70,8 @@ class LogicalOperator(Block):
 
     _BINARY_OPS = ("AND", "OR", "XOR", "NAND", "NOR")
     _UNARY_OPS = ("NOT",)
+    # ADR-0039 follow-up (v0.15.0): GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"operator": _UNARY_OPS + _BINARY_OPS}
 
     def __init__(
         self,

@@ -40,6 +40,8 @@ class Switch(Block):
     """
 
     _ALLOWED_CRITERIA = (">=", ">", "!=")
+    # ADR-0039 follow-up (v0.15.0): GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"criterion": _ALLOWED_CRITERIA}
 
     def __init__(
         self,

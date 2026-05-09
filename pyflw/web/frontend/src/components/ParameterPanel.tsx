@@ -117,6 +117,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     [readOnlyEntries],
   );
   const shortType = block.type.split(".").at(-1) ?? block.type;
+  // ADR-0039 follow-up (v0.15.0 / code-reviewer SHOULD): registry の block meta は
+  // ループ外で 1 度だけ取得 (= ループ内毎回 lookup を避ける + 意図を明確化)。
+  const blockMeta = registryMap.get(block.type);
 
   const commit = (k: string, raw: string, originalType: string): void => {
     let newValue: unknown;
@@ -173,6 +176,10 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
 
       {editableEntries.map(([k, v]) => {
         const valueType = typeof v;
+        // ADR-0039 follow-up (v0.15.0): registry の enum_values を見て、許容値が
+        // 限定された string param は ``<select>`` で render する (= MinMax の
+        // operator、Switch の criterion、Logical/Relational の operator 等)。
+        const enumValues = blockMeta?.params_spec.find((p) => p.name === k)?.enum_values;
         return (
           <label key={k} className="flex flex-col gap-0.5">
             <span className="flex items-center justify-between text-slate-700">
@@ -181,7 +188,23 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                 {valueType}
               </span>
             </span>
-            {valueType === "boolean" ? (
+            {enumValues && enumValues.length > 0 ? (
+              <select
+                data-testid={`param-input-${k}`}
+                value={draft[k] ?? String(v)}
+                onChange={(e) => {
+                  setDraft((prev) => ({ ...prev, [k]: e.target.value }));
+                  commit(k, e.target.value, "string");
+                }}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {enumValues.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : valueType === "boolean" ? (
               <select
                 data-testid={`param-input-${k}`}
                 value={draft[k] ?? "false"}

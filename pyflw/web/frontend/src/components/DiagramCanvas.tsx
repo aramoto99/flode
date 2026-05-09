@@ -21,7 +21,13 @@ import { useTranslation } from "react-i18next";
 
 import { getLibraryEntry, getModel, listBlockMetadata } from "../api/client";
 import { pushToast } from "../store/toastStore";
-import { modelToDiagram, type BlockNode } from "../lib/diagramConverter";
+import {
+  modelToDiagram,
+  SIMULINK_EDGE_STYLE,
+  SIMULINK_EDGE_TYPE,
+  SIMULINK_MARKER_END,
+  type BlockNode,
+} from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
 import {
@@ -530,7 +536,8 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         nodes={decoratedNodes}
         edges={edges.map((e) => ({
           ...e,
-          type: "smoothstep",
+          // diagramConverter で設定した type ("step") を尊重 (= Simulink 風 90°
+          // 折れ線)。``smoothstep`` で上書きしていた v0.x 時代の挙動を撤廃。
           animated: false,
           // controlled mode では ``selected`` を prop に流し込まないと .selected
           // クラスが付かず、CSS のハイライトが効かない (= ユーザーから選択不可に見える)。
@@ -542,7 +549,15 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         nodeTypes={NODE_TYPES}
         fitView
         nodesDraggable
-        defaultEdgeOptions={{ type: "smoothstep" }}
+        defaultEdgeOptions={{
+          // Simulink 風: 90° 折れ線 (step) + 黒系細線 + 終点矢印 head。
+          // 値は ``diagramConverter`` から re-export される定数を使い、新規 connect
+          // edge と既存 edge の見た目を single source of truth で揃える
+          // (= code-reviewer SHOULD-1 対応)。
+          type: SIMULINK_EDGE_TYPE,
+          style: SIMULINK_EDGE_STYLE,
+          markerEnd: SIMULINK_MARKER_END,
+        }}
         proOptions={{ hideAttribution: true }}
         // 左クリックドラッグ = 空エリアで矩形選択 / ノード上でそのノード移動
         // (Simulink + 一般的な editor 慣習)。``panOnDrag = [1, 2]`` で中 / 右ボタン

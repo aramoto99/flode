@@ -13,6 +13,13 @@ import {
 } from "@xyflow/react";
 import { useEffect, useState } from "react";
 
+import {
+  formatMatrixSize,
+  formatNumber,
+  formatPolynomial,
+  formatTransferFunction,
+  switchOpForCriterion,
+} from "../lib/blockFormatting";
 import { BlockGlyph } from "../lib/blockGlyphs";
 import {
   getBlockShape,
@@ -35,7 +42,20 @@ export function BlockNodeView({
   const nOut = (data.nOutputs as number | undefined) ?? 1;
   const color = (data.color as string | undefined) ?? "#475569";
   const isContainer = (data.isContainer as boolean | undefined) ?? false;
+  // Simulink 風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
+  // 二重表示を回避)。``diagramConverter`` が edges から populate する。
+  const connectedInputs = new Set<number>(
+    (data.connectedInputs as number[] | undefined) ?? [],
+  );
+  const connectedOutputs = new Set<number>(
+    (data.connectedOutputs as number[] | undefined) ?? [],
+  );
   const baseShape = getBlockShape(data.blockType);
+  // bar shape (Mux / Demux 等の細い縦バー) では、chevron ``>`` がバー本体に半分
+  // 重なって視認性が悪い。chevron `<span>` 自体の transform を上書きして、
+  // input は バーの左外側、output は右外側に押し出す (Handle 中心 = バー境界線
+  // という anchor 位置は変えないので drag 機能は維持)。
+  const isBarShape = baseShape.kind === "bar";
   // diagramConverter で layout.w/h + port 数に応じて伸ばした実寸を流し込んでいる。
   // なければ base サイズ (テスト等で BlockNodeView 単独呼びの fallback)。
   const dynamicWidth = (data.shapeWidth as number | undefined) ?? baseShape.width;
@@ -82,8 +102,8 @@ export function BlockNodeView({
           ラッパーをリアルタイムに追従させる (= 横方向リサイズの抜け対策)。 */}
       <NodeResizer
         isVisible={selected ?? false}
-        minWidth={40}
-        minHeight={28}
+        minWidth={minWidthForKind(baseShape.kind)}
+        minHeight={minHeightForKind(baseShape.kind)}
         lineStyle={{ borderColor: "transparent" }}
         handleStyle={{
           width: 4,
@@ -107,7 +127,6 @@ export function BlockNodeView({
       >
         <ShapeOutline
           shape={shape}
-          color={color}
           selected={selected ?? false}
           isContainer={isContainer}
         />
@@ -117,41 +136,40 @@ export function BlockNodeView({
           blockId={id}
           color={color}
           param={param}
+          paramsRaw={(data.params as Record<string, unknown>) ?? {}}
         />
         {Array.from({ length: nIn }, (_, i) => {
           const pos = inputHandlePosition(shape, i, nIn);
+          const showChevron = !connectedInputs.has(i);
           return (
             <Handle
               key={`in-${i}`}
               type="target"
               position={pos.position}
               id={String(i)}
-              style={{
-                top: `${pos.topPct}%`,
-                background: "#475569",
-                width: 7,
-                height: 7,
-                border: "1.5px solid white",
-              }}
-            />
+              style={arrowHandleStyle(pos.topPct)}
+            >
+              {showChevron && (
+                <span style={chevronStyleFor(pos.position, isBarShape)} />
+              )}
+            </Handle>
           );
         })}
         {Array.from({ length: nOut }, (_, i) => {
           const pos = outputHandlePosition(shape, i, nOut);
+          const showChevron = !connectedOutputs.has(i);
           return (
             <Handle
               key={`out-${i}`}
               type="source"
               position={pos.position}
               id={String(i)}
-              style={{
-                top: `${pos.topPct}%`,
-                background: "#475569",
-                width: 7,
-                height: 7,
-                border: "1.5px solid white",
-              }}
-            />
+              style={arrowHandleStyle(pos.topPct)}
+            >
+              {showChevron && (
+                <span style={chevronStyleFor(pos.position, isBarShape)} />
+              )}
+            </Handle>
           );
         })}
       </div>
@@ -172,29 +190,25 @@ export function BlockNodeView({
 
 function ShapeOutline({
   shape,
-  color,
   selected,
   isContainer,
 }: {
   shape: BlockShape;
-  color: string;
   selected: boolean;
   isContainer: boolean;
 }): JSX.Element {
   const { width: w, height: h, kind } = shape;
-  const stroke = selected ? "#2563eb" : isContainer ? "#a78bfa" : "#475569";
+  // Simulink 風: 細黒線 + 白背景 + フラット (drop-shadow なし)。selected は薄青、
+  // container だけ僅かに色を変える程度で、通常時は完全モノトーン。
+  const stroke = selected ? "#2563eb" : "#1e293b";
+  // Simulink 風: 通常も Subsystem も白背景、container 識別は二重枠で行う
   const fill = "white";
-  const strokeWidth = selected ? 2 : isContainer ? 1.6 : 1.4;
-
-  const dropShadow = selected
-    ? "drop-shadow(0 1px 3px rgba(37,99,235,0.35))"
-    : "drop-shadow(0 1px 2px rgba(15,23,42,0.08))";
+  const strokeWidth = selected ? 1.5 : 1;
 
   const commonProps = {
     fill,
     stroke,
     strokeWidth,
-    style: { filter: dropShadow },
   };
 
   return (
@@ -226,15 +240,14 @@ function ShapeOutline({
         )
       )}
       {kind === "bar" && (
+        // Simulink 風: 角丸なし、塗り潰しは細い黒バー
         <rect
           x={1}
           y={1}
           width={w - 2}
           height={h - 2}
-          rx={2}
           {...commonProps}
-          fill={color}
-          opacity={0.85}
+          fill="#1e293b"
         />
       )}
       {kind === "trapezoid-r" && (
@@ -250,14 +263,30 @@ function ShapeOutline({
         />
       )}
       {(kind === "rect" || kind === "rect-wide") && (
-        <rect
-          x={1}
-          y={1}
-          width={w - 2}
-          height={h - 2}
-          rx={3}
-          {...commonProps}
-        />
+        // Simulink 風: 角丸なし。Subsystem (isContainer) は二重枠 + 太い外枠で
+        // 「ドリルダウン可能な container」を視覚化する。
+        <>
+          <rect
+            x={1}
+            y={1}
+            width={w - 2}
+            height={h - 2}
+            {...commonProps}
+            strokeWidth={isContainer ? strokeWidth + 0.75 : strokeWidth}
+          />
+          {isContainer && (
+            <rect
+              x={4}
+              y={4}
+              width={w - 8}
+              height={h - 8}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth * 0.7}
+              opacity={0.55}
+            />
+          )}
+        </>
       )}
     </svg>
   );
@@ -273,12 +302,14 @@ function ShapeContent({
   blockId,
   color,
   param,
+  paramsRaw,
 }: {
   shape: BlockShape;
   typePath: string;
   blockId: string;
   color: string;
   param: string | null;
+  paramsRaw: Record<string, unknown>;
 }): JSX.Element {
   const { kind } = shape;
 
@@ -309,22 +340,66 @@ function ShapeContent({
     return <></>;
   }
 
-  // 台形 (Inport / Outport): 中央に "in" / "out" 風のラベル。
+  // 台形 (Inport / Outport): Simulink 風にポート番号 (= port_idx + 1) を表示。
   if (kind === "trapezoid-r" || kind === "trapezoid-l") {
-    const label = typePath.endsWith(".Inport") ? "in" : "out";
+    const portIdx =
+      typeof (paramsRaw as Record<string, unknown>).port_idx === "number"
+        ? ((paramsRaw as Record<string, unknown>).port_idx as number)
+        : 0;
     return (
-      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-slate-700">
-        <span>{label}</span>
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold text-slate-800">
+        <span>{portIdx + 1}</span>
       </div>
     );
   }
 
-  // rect-wide (TransferFunction 等): glyph を中央いっぱいに。param は出さない (式が param)。
-  // ただし Display ブロックだけは特別: WebSocket scope_batch から流れてきた最新値を
-  // ブロック本体に大きく表示する。
+  // rect-wide (TransferFunction 等): Simulink 風に **実際の式** を 2 行表示する。
+  // Display は live 値、TransferFunction / DiscreteTransferFunction は num/den 多項式、
+  // StateSpace 系は (A,B,C,D) 行列サイズ、それ以外は glyph を維持。
   if (kind === "rect-wide") {
     if (typePath.endsWith(".Display")) {
       return <DisplayLiveValue blockId={blockId} />;
+    }
+    if (
+      typePath.endsWith(".TransferFunction") ||
+      typePath.endsWith(".DiscreteTransferFunction")
+    ) {
+      const variable = typePath.endsWith(".DiscreteTransferFunction") ? "z" : "s";
+      const params = paramsRaw as Record<string, unknown>;
+      const tf = formatTransferFunction(params.numerator, params.denominator, variable);
+      return <TransferFunctionFraction num={tf.num} den={tf.den} />;
+    }
+    if (typePath.endsWith(".MimoTransferFunction")) {
+      const params = paramsRaw as Record<string, unknown>;
+      // numerators は 3D (= [outputs][inputs][order])、行列形式で先頭要素のみ表示
+      const num = Array.isArray(params.numerators)
+        ? Array.isArray((params.numerators as unknown[])[0]) &&
+          Array.isArray(((params.numerators as unknown[][])[0])[0])
+          ? formatPolynomial(
+              ((params.numerators as unknown[][][])[0])[0],
+              "s",
+            )
+          : "..."
+        : "?";
+      const den = formatPolynomial(params.denominator, "s");
+      return <TransferFunctionFraction num={`[${num}, ...]`} den={den} />;
+    }
+    if (
+      typePath.endsWith(".StateSpace") ||
+      typePath.endsWith(".DiscreteStateSpace")
+    ) {
+      const params = paramsRaw as Record<string, unknown>;
+      const sizeA = formatMatrixSize(params.A);
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center font-mono text-[10px] leading-tight text-slate-800">
+          <span>x' = Ax+Bu</span>
+          <span className="text-[8px] text-slate-500">A: {sizeA}</span>
+        </div>
+      );
+    }
+    if (typePath.endsWith(".DiscreteIntegrator")) {
+      // Ts/(z-1) (Forward Euler の標準形)
+      return <TransferFunctionFraction num="Ts" den="z-1" />;
     }
     return (
       <div
@@ -338,29 +413,223 @@ function ShapeContent({
     );
   }
 
-  // rect (default):
-  //   - param がある (Constant の値、Gain の k 等) → 左に glyph 小 + 右に値
-  //   - param がない (Abs, Sign, MinMax, Clock, Integrator 等) → glyph を大きく中央配置
-  if (param !== null && param !== "") {
+  // Subsystem / TriggeredSubsystem: 二重枠で identification 済なので中央は空。
+  // block id は外側下部のラベルに任せる (Simulink 互換、glyph 過剰を避ける)。
+  if (
+    typePath.endsWith(".Subsystem") ||
+    typePath.endsWith(".TriggeredSubsystem")
+  ) {
+    return <></>;
+  }
+
+  // rect (default): Simulink 風の専用 render を type ごとに優先する
+  //   - Constant: 値そのものを大きく表示 (= "1.0", "70" 等)
+  //   - Integrator: ``1/s``
+  //   - UnitDelay: ``1/z``
+  //   - ZeroOrderHoldDirect: 階段保持アイコン (= 既存 glyph)
+  //   - Derivative: ``s`` (= du/dt)
+  //   - param がある (Step, Sine, ...) → 左 glyph 小 + 右 param
+  //   - param がない (Abs, Sign, ...) → glyph 大、中央
+  if (typePath.endsWith(".Constant")) {
+    const value = (paramsRaw as Record<string, unknown>).value;
     return (
-      <div className="absolute inset-0 flex items-center gap-1 px-1.5">
-        <div className="h-4 w-4 shrink-0" style={{ color }}>
-          <BlockGlyph typePath={typePath} />
-        </div>
-        <div className="min-w-0 flex-1 truncate text-right font-mono text-[9.5px] tabular-nums text-slate-700">
-          {param}
-        </div>
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold tabular-nums text-slate-800">
+        <span className="truncate px-1">{formatNumber(value)}</span>
       </div>
     );
   }
+  if (typePath.endsWith(".Integrator")) {
+    return <TransferFunctionFraction num="1" den="s" />;
+  }
+  if (typePath.endsWith(".UnitDelay")) {
+    return <TransferFunctionFraction num="1" den="z" />;
+  }
+  if (typePath.endsWith(".Derivative")) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[14px] font-medium italic text-slate-800">
+        <span>s</span>
+      </div>
+    );
+  }
+  // Abs: Simulink 風に ``|u|`` テキスト
+  if (typePath.endsWith(".Abs")) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium italic text-slate-800">
+        <span>|u|</span>
+      </div>
+    );
+  }
+  // MinMax: param.operator ("min" / "max") をそのままテキスト表示
+  // (= pyflw 側の MinMax の param 名は ``operator`` であって ``function`` ではない)
+  if (typePath.endsWith(".MinMax")) {
+    const op = (paramsRaw as Record<string, unknown>).operator;
+    const label = op === "max" ? "max" : "min";
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
+        <span>{label}</span>
+      </div>
+    );
+  }
+  // Switch: criterion を Simulink 風の比較式 (例 ``u2 ≥ T``) に整形
+  if (typePath.endsWith(".Switch")) {
+    const criterion = (paramsRaw as Record<string, unknown>).criterion;
+    const op = switchOpForCriterion(criterion);
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-medium text-slate-800">
+        <span>{op}</span>
+      </div>
+    );
+  }
+  // Sign: Simulink 風に ``sign`` テキスト
+  if (typePath.endsWith(".Sign")) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+        <span>sign</span>
+      </div>
+    );
+  }
+  // Logical / Relational: param.operator をそのまま中央表示
+  if (
+    typePath.endsWith(".LogicalOperator") ||
+    typePath.endsWith(".RelationalOperator")
+  ) {
+    const op = (paramsRaw as Record<string, unknown>).operator;
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-slate-800">
+        <span>{typeof op === "string" ? op : "?"}</span>
+      </div>
+    );
+  }
+
+  // それ以外の rect: Simulink 風に **glyph を中央大きく** 配置 (param 値の併記は
+  // しない、Simulink も icon only)。param 値はパラメータパネルで見る。
   return (
     <div
       className="absolute inset-0 flex items-center justify-center px-1.5"
       style={{ color }}
     >
-      <div className="h-7 w-7">
+      <div className="h-[70%] w-[80%]">
         <BlockGlyph typePath={typePath} />
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NodeResizer の最小サイズを shape kind ごとに調整する。default (40×28) では
+// bar (Mux/Demux: base 18×64) が「base 幅 < min 幅」で強制拡大されてリサイズ
+// 不可になっていた (ユーザー報告)。各 shape の自然な最小値に合わせる。
+// ---------------------------------------------------------------------------
+
+function minWidthForKind(kind: BlockShape["kind"]): number {
+  switch (kind) {
+    case "bar":
+      return 4; // Mux/Demux は Simulink 風の細い black bar、最低限の視認性のみ確保
+    case "circle":
+      return 28;
+    case "triangle-r":
+      return 32;
+    case "trapezoid-r":
+    case "trapezoid-l":
+      return 36;
+    case "rect-wide":
+      return 56;
+    default:
+      return 40; // 一般 rect の従来値
+  }
+}
+
+function minHeightForKind(kind: BlockShape["kind"]): number {
+  switch (kind) {
+    case "bar":
+      return 24; // 縦長前提だが極端に小さくはしない
+    case "circle":
+      return 28;
+    default:
+      return 28;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Handle / Chevron styling: React Flow デフォルト挙動を尊重 (transform 上書き
+// すると anchor 認識が壊れて drag できなくなる)。Handle 中心 = ブロック境界線上
+// で chevron も同じ位置。矢印 head のサイズは 8×8 で refX 補正分の隙間を最小化
+// する妥協ラインとして残す。完全ゼロを目指すには Custom Edge Component で path
+// 終端を内側に手動調整する必要があるが、規模が大きいので将来検討。
+// ---------------------------------------------------------------------------
+
+function arrowHandleStyle(topPct: number): React.CSSProperties {
+  return {
+    top: `${topPct}%`,
+    background: "transparent",
+    width: 12,
+    height: 12,
+    border: "none",
+    borderRadius: 0,
+  };
+}
+
+const CHEVRON_STYLE: React.CSSProperties = {
+  position: "absolute",
+  top: "50%",
+  left: "50%",
+  width: 6,
+  height: 6,
+  borderTop: "1.75px solid #475569",
+  borderRight: "1.75px solid #475569",
+  // ``translate`` で中央寄せしてから ``rotate`` で 45deg 倒す = 上 + 右辺が
+  // 「左下→右中央→左上」の chevron になる (= ``>``)。
+  transform: "translate(-50%, -50%) rotate(45deg)",
+  pointerEvents: "none",
+};
+
+/**
+ * bar shape (Mux / Demux 等) の場合は chevron を Handle 中心からさらに **外側** に
+ * 押し出して、黒バーに重ならないようにする。input (Position.Left) は左へ、
+ * output (Position.Right) は右へ約 1 chevron 分 offset。
+ *
+ * 通常 shape (= bar 以外) はデフォルトの ``CHEVRON_STYLE`` (= Handle 中心に重ね描き)。
+ */
+function chevronStyleFor(
+  position: Position,
+  isBarShape: boolean,
+): React.CSSProperties {
+  if (!isBarShape) return CHEVRON_STYLE;
+  // ``translate`` の X 成分を ``-150%`` (左) / ``+50%`` (右) に振ることで chevron
+  // 中心が Handle 中心からそれぞれ chevron 1 個分 (= 6px) ずれる = バーの外側。
+  if (position === Position.Left) {
+    return {
+      ...CHEVRON_STYLE,
+      transform: "translate(-150%, -50%) rotate(45deg)",
+    };
+  }
+  if (position === Position.Right) {
+    return {
+      ...CHEVRON_STYLE,
+      transform: "translate(50%, -50%) rotate(45deg)",
+    };
+  }
+  return CHEVRON_STYLE;
+}
+
+// ---------------------------------------------------------------------------
+// Simulink 風: 分数形式で num / den を 2 行表示する小さな helper component。
+// TransferFunction / DiscreteTransferFunction / Integrator (1/s) / UnitDelay
+// (1/z) / DiscreteIntegrator (Ts/(z-1)) で共通利用する。
+// ---------------------------------------------------------------------------
+
+function TransferFunctionFraction({
+  num,
+  den,
+}: {
+  num: string;
+  den: string;
+}): JSX.Element {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center px-1 font-mono text-[11px] leading-tight text-slate-800">
+      <span className="truncate">{num}</span>
+      <div className="my-[1px] h-[1px] w-[80%] bg-slate-800" />
+      <span className="truncate">{den}</span>
     </div>
   );
 }
@@ -408,9 +677,15 @@ function outputHandlePosition(
 // ---------------------------------------------------------------------------
 
 function summarizePrimaryParam(data: BlockNodeData): string | null {
+  // NOTE (v0.15.0 / code-reviewer SHOULD): v0.15.0 で ShapeContent は ``paramsRaw``
+  // を直接参照する個別 branch (= Constant 値 / Switch / Logical / Relational /
+  // UnitDelay / DiscreteIntegrator / ZeroOrderHoldDirect 等) で render する形に
+  // 移行した。本関数の戻り値は現在 **Gain (= k=...) と Sum (= signs)** にしか
+  // 使われていない (= triangle-r / circle 専用)。残りの分岐は dead code 候補。
+  // 将来 (v0.16.0+) で整理する想定で、いまは残しておく (drag/drop 経由の互換性)。
   const t = data.blockType;
   const p = data.params;
-  if (t.endsWith(".Constant")) return formatScalar(p.value);
+  if (t.endsWith(".Constant")) return formatScalar(p.value); // ← dead: ShapeContent.Constant が直接 render
   if (t.endsWith(".Gain")) return `k=${formatScalar(p.k)}`;
   if (t.endsWith(".Sum")) return typeof p.signs === "string" ? p.signs : null;
   if (t.endsWith(".Step")) {
@@ -426,6 +701,8 @@ function summarizePrimaryParam(data: BlockNodeData): string | null {
     t.endsWith(".DiscreteIntegrator") ||
     t.endsWith(".ZeroOrderHoldDirect")
   ) {
+    // ← dead: UnitDelay / DiscreteIntegrator は ShapeContent で TransferFunctionFraction、
+    //   ZeroOrderHoldDirect は glyph 中央配置に移行
     return `Ts=${formatScalar(p.sample_time)}`;
   }
   if (t.endsWith(".RateTransition")) {
@@ -436,10 +713,12 @@ function summarizePrimaryParam(data: BlockNodeData): string | null {
     return `n=${formatScalar(p.n)}`;
   }
   if (t.endsWith(".Switch")) {
+    // ← dead: ShapeContent.Switch が switchOpForCriterion で直接 render
     const c = typeof p.criterion === "string" ? p.criterion : ">=";
     return `${c}${formatScalar(p.threshold)}`;
   }
   if (t.endsWith(".RelationalOperator") || t.endsWith(".LogicalOperator")) {
+    // ← dead: ShapeContent が paramsRaw.operator を直接 render
     return typeof p.operator === "string" ? p.operator : null;
   }
   return null;

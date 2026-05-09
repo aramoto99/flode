@@ -1,5 +1,5 @@
-# ADR-0039 follow-up (v0.14.2): portShapeValidate を Subsystem 派生計算に対応
-__version__ = "0.14.2"
+# GUI Simulink 化 (v0.15.0): 各ブロックを Simulink 互換表示 + chevron port + step edge
+__version__ = "0.15.0"
 
 from .analysis import (
     BodeResponse,

@@ -145,6 +145,8 @@ class MinMax(Block):
     """
 
     _ALLOWED_OPS = ("min", "max")
+    # ADR-0039 follow-up (v0.15.0): GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"operator": _ALLOWED_OPS}
 
     def __init__(
         self,
