@@ -99,6 +99,13 @@ body {
 body.pyflw-copying .react-flow__node {
   transition: none;
 }
+/* v0.16.0: 複数選択ドラッグ中、React Flow は ``.dragging`` class をカーソル直下の
+ * 1 ノードにしか付けないため、それ以外の選択ノードに transition が効いてカーソル
+ * 追従が遅れて見える。``onNodeDragStart`` / ``onSelectionDragStart`` で body に
+ * クラスを付け、ドラッグ中は **全ノード** の transition を一律切る。 */
+body.pyflw-dragging .react-flow__node {
+  transition: none;
+}
 .react-flow__node:not(.dragging):hover {
   filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.08));
 }

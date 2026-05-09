@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Background,
   Controls,
-  MiniMap,
   ReactFlow,
   SelectionMode,
   useReactFlow,
@@ -42,6 +41,7 @@ import {
   removeBlockFromEditing,
   removeConnectionFromEditing,
   updateBlockPosition,
+  updateBlockPositions,
   useAppStore,
 } from "../store/appStore";
 import type { FlwModel } from "../types/api";
@@ -279,9 +279,12 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   // ---------- ハンドラ ----------
 
   const onNodesChange = (changes: NodeChange[]): void => {
-    // 選択変更はバッチで反映 (= 1 ドラッグ中の rubber-band で多数の select イベントが
-    // 来るので、最後の状態をまとめて store に書く)。
+    // 選択変更 + position 変更ともに **バッチで 1 回の store 書き込み** に集約する。
+    // 個別 set だと複数選択ドラッグ中に「一部 node は新座標 / 一部は旧座標」の中間
+    // re-render が発生し、その間に再計算された edge path が古い座標で描画されて
+    // ブロックとエッジの追従が連動しないように見える (v0.16.0 ユーザー指摘)。
     let nextSelected: string[] | null = null;
+    const positionUpdates: { id: string; x: number; y: number }[] = [];
     const flushSelection = (): void => {
       if (nextSelected !== null) {
         setSelectedNodeIds(nextSelected);
@@ -293,13 +296,16 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     };
 
     for (const ch of changes) {
-      // React Flow controlled mode (= nodes prop 駆動) では、ドラッグ中の position も
-      // props に書き戻さないと、parent の他の理由で起きた再 render で props の元位置に
-      // スナップバックされ、カーソルから逃げて見える。``ch.dragging`` の真偽を問わず
-      // position 変更は即 store に反映する (auto-save は 500ms debounce で 1 回に
-      // まとめられるのでサーバ負荷は変わらない)。
       if (ch.type === "position" && ch.position) {
-        updateBlockPosition(ch.id, { x: ch.position.x, y: ch.position.y });
+        // controlled mode では ``ch.dragging`` の真偽を問わず position を即 store に
+        // 書き戻さないと、props の元位置にスナップバックする。auto-save の debounce
+        // (500ms) でサーバ負荷は変わらない。複数 nodes の更新は positionUpdates に
+        // 集約し、ループ後に 1 回の applyEditingModel で書き込む。
+        positionUpdates.push({
+          id: ch.id,
+          x: ch.position.x,
+          y: ch.position.y,
+        });
       } else if (ch.type === "remove") {
         removeBlockFromEditing(ch.id);
         // 削除されたブロックが selection に残っていると ParameterPanel が
@@ -317,6 +323,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         }
       }
     }
+    if (positionUpdates.length > 0) updateBlockPositions(positionUpdates);
     flushSelection();
   };
 
@@ -598,7 +605,10 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         // Simulink 流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)
         // ノードに繋がっているエッジをすべて切り離す。これによりブロックを「リンク
         // から外して動かす」操作が 1 ストロークで完結する。
+        // また v0.16.0: ドラッグ中は body に ``pyflw-dragging`` を付け、CSS で全
+        // ノードの transition を切る (= 複数選択ドラッグでも追従遅延が起きない)。
         onNodeDragStart={(event, node) => {
+          document.body.classList.add("pyflw-dragging");
           if (!event.shiftKey || !editingModel) return;
           const ids = new Set(
             useAppStore.getState().selectedNodeIds.length > 0
@@ -611,6 +621,15 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
             }
           }
         }}
+        onNodeDragStop={() => {
+          document.body.classList.remove("pyflw-dragging");
+        }}
+        onSelectionDragStart={() => {
+          document.body.classList.add("pyflw-dragging");
+        }}
+        onSelectionDragStop={() => {
+          document.body.classList.remove("pyflw-dragging");
+        }}
         onPaneClick={() => {
           // pane クリックは選択解除 + auto-connect 中断
           setAutoConnectSource(null);
@@ -621,13 +640,6 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         deleteKeyCode={["Backspace", "Delete"]}
       >
         <Background gap={18} size={1} color="#cbd5e1" />
-        <MiniMap
-          pannable
-          zoomable
-          className="!bg-white !shadow-md"
-          maskColor="rgb(241 245 249 / 0.7)"
-          nodeColor={(n) => (n.data?.color as string) ?? "#94a3b8"}
-        />
         <Controls className="!shadow-md" />
       </ReactFlow>
       {quickAdd && (

@@ -471,6 +471,37 @@ export function updateBlockPosition(
 }
 
 /**
+ * v0.16.0: 複数 block の position 更新をまとめて 1 回の ``applyEditingModel`` で
+ * 適用する batch 版。複数選択ドラッグで React Flow が 1 frame に渡してくる
+ * 複数の position changes を、個別 set による中間 re-render 連発で処理すると、
+ * edge 計算が「一部 node は新座標 / 一部は旧座標」の中間状態で走り、edge が
+ * ブロックに追随しないように見える (= 追従の連動ズレ)。本関数は 1 回の set で
+ * 全 position を更新し、edge 計算も 1 回の整合した状態で行わせる。
+ *
+ * @param updates 各 block の id と新しい position の配列。空配列なら no-op。
+ */
+export function updateBlockPositions(
+  updates: readonly { id: string; x: number; y: number }[],
+): void {
+  if (updates.length === 0) return;
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      const next: LayoutDict = { ...view.layout };
+      for (const u of updates) {
+        const prev = next[u.id];
+        next[u.id] = { ...prev, x: u.x, y: u.y };
+      }
+      return {
+        blocks: view.blocks,
+        connections: view.connections,
+        layout: next,
+      };
+    }),
+  );
+}
+
+/**
  * v0.16.0: モデル全体の simulator config (= t_end / dt / solver / rtol / atol /
  * dt_base) を patch する。Subsystem 内部のドリルダウンに関わらず、トップレベル
  * モデルの ``simulator`` フィールドを更新する (= simulator は単一スコープ)。
