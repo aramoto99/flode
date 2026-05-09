@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from ...core.identifiers import validate_model_id
+from ...core.persistence import migrate_to_current
 from ...exceptions import BlockSpecError, ModelLoadError
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -43,7 +44,12 @@ def list_models(request: Request) -> dict[str, Any]:
 
 @router.get("/{model_id}")
 def get_model(request: Request, model_id: str) -> dict[str, Any]:
-    """モデル本体 (JSON) を返す。"""
+    """モデル本体 (JSON) を返す。
+
+    ADR-0039 (v0.14.1): 旧 schema 形式のファイル (= 0.6 / 0.7 等) は
+    ``migrate_to_current`` で最新 schema にマイグレートしてから返す。これに
+    より frontend は常に最新形式 (= 派生 property 化済) のデータを受け取れる。
+    """
     path = _model_path(_model_dir(request), model_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found")
@@ -51,6 +57,13 @@ def get_model(request: Request, model_id: str) -> dict[str, Any]:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise ModelLoadError(f"Cannot read {path}: {e}") from e
+    try:
+        data = migrate_to_current(data)
+    except ModelLoadError as e:
+        # ``ModelLoadError`` は ``SchemaVersionError`` (サポート外 schema) と
+        # ``schema_version`` キー欠落 / 型不正の双方を包含する。利用者向け 400 で
+        # 原因を返す (= グローバルハンドラ任せにしない、code-reviewer MUST 修正)。
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return data
 
 

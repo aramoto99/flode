@@ -1,11 +1,12 @@
 {
   "name": "pyflw-frontend",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.14.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/deploy-to-server-static.mjs",
+    "build:no-deploy": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

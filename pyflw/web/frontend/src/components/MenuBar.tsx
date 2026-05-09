@@ -34,9 +34,14 @@ type DialogKind =
   | { kind: "delete" }
   | null;
 
+// ADR-0036 (v0.7) + ADR-0039 (v2.0、schema 0.8): 新規モデル作成時の初期
+// schema_version。backend の ``CURRENT_SCHEMA_VERSION`` と揃える (= ズレが
+// あっても backend `migrate_to_current` で自動補正されるが、無駄な変換を避ける)。
+const CURRENT_SCHEMA_VERSION = "0.8";
+
 function emptyModel(name: string): FlwModel {
   return {
-    schema_version: "0.6",
+    schema_version: CURRENT_SCHEMA_VERSION,
     metadata: { name, tool: "pyflw GUI" },
     simulator: {
       t_end: 10.0,

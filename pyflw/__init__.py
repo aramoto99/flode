@@ -1,4 +1,5 @@
-__version__ = "0.14.0"  # ADR-0039: Subsystem port derived property + JSON schema 0.8 (BREAKING)
+# ADR-0039 follow-up (v0.14.1): GET migration / postbuild deploy / version mismatch warn
+__version__ = "0.14.1"
 
 from .analysis import (
     BodeResponse,

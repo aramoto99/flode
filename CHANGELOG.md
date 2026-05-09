@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-05-09 — ADR-0039 follow-up + 再発防止
+
+v0.14.0 の Subsystem 派生 property 化を完全に貫徹するための clean-up patch。
+v1.0/v0.13.1/v2.0 の 3 連続 release で frontend bundle deploy をスキップし
+続けた事故 (= ブラウザに ``pyflw v0.17.0`` が表示) の再発防止策も同梱。
+
+### Fixed
+
+- **GET ``/api/v1/models/{id}`` で migration が走らないバグ**
+  ([pyflw/server/routes/models.py:46-65](pyflw/server/routes/models.py#L46))。schema
+  0.6 / 0.7 形式のファイルがそのまま frontend に流れ、v2.0 派生 property 化と
+  整合しないデータで描画されていた。``migrate_to_current`` を経由するように
+  修正、test 1 件追加 (``TestGetModelMigration``)
+- **MenuBar.tsx の hard-coded ``schema_version: "0.6"``**
+  ([components/MenuBar.tsx](pyflw/web/frontend/src/components/MenuBar.tsx)) を
+  最新 ``"0.8"`` (= ``CURRENT_SCHEMA_VERSION`` と整合) に更新。新規モデル作成
+  時の無駄な migration を回避
+- **``_BUILTIN_DEFAULT_ARGS`` の Subsystem / TriggeredSubsystem ゴミエントリ
+  削除** ([pyflw/server/registry.py:281-286](pyflw/server/registry.py#L281))。
+  v2.0 で廃止された ``n_inputs=1, n_outputs=1`` を default 引数として登録
+  していたため ``_instantiate_for_introspection`` で TypeError → 第 2 試行
+  という無駄な経路を経由していた。エントリ自体を削除して直接 ``cls()`` で
+  空 Subsystem 生成
+
+### Added (再発防止)
+
+- **postbuild deploy script** (``pyflw/web/frontend/scripts/deploy-to-server-static.mjs``):
+  ``npm run build`` 一発で ``dist/`` から ``pyflw/server/static/`` へ自動 copy
+  + 古いハッシュ bundle 一掃 + ``.app-version`` マーカー書き出し。``npm run
+  build:no-deploy`` で従来挙動 (deploy なし) も保持。
+- **起動時 frontend bundle version mismatch warning**
+  ([pyflw/server/app.py:_check_frontend_bundle_version](pyflw/server/app.py)):
+  ``pyflw-server`` 起動時に ``pyflw/server/static/.app-version`` を読んで
+  backend ``pyflw.__version__`` と比較、ズレていれば WARNING ログ。bundle が
+  古いまま release した事故を早期検知。
+
+### Changed
+
+- backend / frontend version bump 2.0.0 → 2.0.1
+- ``.claude/pending_updates.md`` に「frontend を含む release では bundle
+  deploy を verify chain に必須化」エントリ追加 (``/reflect`` で正式採否判定)
+
+### Tests
+
+- ``tests/server/test_models_api.py::TestGetModelMigration`` 1 件 — schema
+  0.7 形式ファイルを直置きして GET → 最新 schema (= 0.8) で migration 結果が
+  返ることを検証
+
+### Compat / Risks
+
+- pytest **1037** all pass (= v0.14.0 の 1036 + 新規 1 件)
+- vitest 206 件 / typecheck / mypy --strict / ruff / ruff format / sphinx -W
+  すべて clean
+- ``examples/spring_mass_damper.py`` 数値完全不変 (Final x=0.2505)
+- 旧 schema ファイル (= 0.5 / 0.6 / 0.7) を持つ既存ユーザーは GET 経由で
+  自動 migration、修正前の対症療法 (= ブラウザリロード等) は不要
+- **既知の drift リスク**: ``MenuBar.tsx`` の ``CURRENT_SCHEMA_VERSION`` は
+  hard-coded のため、次回 schema 0.9 を bump する時に backend と同時に
+  frontend も更新する必要がある。中期的には ``GET /api/v1/info`` 等で
+  backend から取得する設計を検討 (= ADR-0040 候補)
+
 ## [0.14.0] - 2026-05-09 — BREAKING
 
 ADR-0039 で **Subsystem の port semantics を SSOT 是正**。``n_inputs`` /

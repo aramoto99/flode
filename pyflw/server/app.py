@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -100,6 +101,48 @@ def create_app(
     # フォールバックする。API ルートは先に登録済みなので static は最後にする。
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir() and any(static_dir.iterdir()):
+        # ADR-0039 v0.14.1 §再発防止: 配信される frontend bundle の version と
+        # backend の ``pyflw.__version__`` を起動時に突き合わせ、ズレていれば
+        # warning を出す。これで「コードは新しいが bundle が古い」事故を早期検知。
+        # mount より先に呼ぶ — WARNING が mount エラーログに埋もれないため。
+        _check_frontend_bundle_version(static_dir, _pyflw_version)
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
 
     return app
+
+
+def _check_frontend_bundle_version(static_dir: Path, backend_version: str) -> None:
+    """配信される frontend bundle の version を backend と比較する。
+
+    deploy script (= ``pyflw/web/frontend/scripts/deploy-to-server-static.mjs``)
+    が ``pyflw/server/static/.app-version`` に build 時の ``package.json#version``
+    を書き残す。本関数はそれを読んで backend ``pyflw.__version__`` と比較する。
+
+    bundle 内の ``__APP_VERSION__`` は vite の ``define`` で静的置換され、minify で
+    変数名が消えるため文字列の grep では拾えない。そのため別ファイルで明示する。
+
+    マーカー file が無い (= release CI 経由の wheel install / 古い deploy script)
+    時は silent skip (= 過剰な warning は出さない)。
+
+    Args:
+        static_dir: ``pyflw/server/static`` ディレクトリ。
+        backend_version: ``pyflw.__version__`` (= source of truth)。
+    """
+    logger = logging.getLogger("pyflw.server.app")
+    marker = static_dir / ".app-version"
+    if not marker.is_file():
+        return
+    try:
+        bundle_version = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    if not bundle_version:
+        return
+    if bundle_version != backend_version:
+        logger.warning(
+            "frontend bundle version mismatch: backend=%s but bundle reports %s. "
+            "Run 'npm run build' inside pyflw/web/frontend to refresh the bundle "
+            "(ADR-0039 v0.14.1 §再発防止).",
+            backend_version,
+            bundle_version,
+        )

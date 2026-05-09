@@ -52,6 +52,101 @@ class TestListModels:
         assert response.json() == {"models": ["alpha", "beta"]}
 
 
+class TestGetModelMigration:
+    """ADR-0039 v0.14.1: GET endpoint が古い schema を最新に migrate して返す。"""
+
+    def test_old_schema_07_is_migrated_to_current_on_get(self, client, model_dir):
+        """schema 0.7 形式のファイルを直に置いて GET し、最新 schema が返ることを確認。
+
+        v2.0 で派生 property 化された Subsystem の n_inputs / n_outputs フィールドが
+        migration 時に除去される (= ADR-0039 §Decision §(3)、`_builtin_migrate_0_7_to_0_8`)。
+        """
+        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+
+        model_dir.mkdir(parents=True, exist_ok=True)
+        # 古い 0.7 形式のモデル (= Subsystem に n_inputs / n_outputs フィールド)
+        old = {
+            "schema_version": "0.7",
+            "metadata": {"name": "old", "tool": "pytest"},
+            "simulator": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
+            "blocks": [
+                {
+                    "id": "sub",
+                    "type": "pyflw.subsystems.subsystem.Subsystem",
+                    "params": {
+                        "n_inputs": 1,
+                        "n_outputs": 1,
+                        "blocks": [
+                            {
+                                "id": "in0",
+                                "type": "pyflw.subsystems.ports.Inport",
+                                "params": {"port_idx": 0},
+                            },
+                            {
+                                "id": "out0",
+                                "type": "pyflw.subsystems.ports.Outport",
+                                "params": {"port_idx": 0},
+                            },
+                        ],
+                        "connections": [],
+                    },
+                },
+            ],
+            "connections": [],
+        }
+        (model_dir / "old.flw.json").write_text(json.dumps(old), encoding="utf-8")
+
+        response = client.get("/api/v1/models/old")
+        assert response.status_code == 200
+        body = response.json()
+        # GET レスポンスは最新 schema (= 0.8) になっている
+        assert body["schema_version"] == CURRENT_SCHEMA_VERSION
+        # Subsystem の派生フィールドは除去されている
+        sub_params = body["blocks"][0]["params"]
+        assert "n_inputs" not in sub_params
+        assert "n_outputs" not in sub_params
+        # 内部 blocks は保持
+        assert len(sub_params["blocks"]) == 2
+
+    def test_old_schema_06_is_migrated_to_current_on_get(self, client, model_dir):
+        """schema 0.6 のシンプルなモデル (Subsystem なし) も GET で 0.8 化されること。
+
+        0.6 → 0.7 / 0.7 → 0.8 の 2 段 migration が GET 経路で確実に走ることを
+        担保する (code-reviewer SHOULD-3 対応)。
+        """
+        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+
+        model_dir.mkdir(parents=True, exist_ok=True)
+        old = {
+            "schema_version": "0.6",
+            "metadata": {"name": "v06", "tool": "pytest"},
+            "simulator": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
+            "blocks": [
+                {"id": "src", "type": "pyflw.blocks.sources.Constant", "params": {"value": 1.0}}
+            ],
+            "connections": [],
+        }
+        (model_dir / "v06.flw.json").write_text(json.dumps(old), encoding="utf-8")
+
+        response = client.get("/api/v1/models/v06")
+        assert response.status_code == 200
+        assert response.json()["schema_version"] == CURRENT_SCHEMA_VERSION
+
+    def test_unsupported_schema_returns_400(self, client, model_dir):
+        """未対応 schema は 400 で返る (= グローバルハンドラ任せにしない、MUST-1)。"""
+        model_dir.mkdir(parents=True, exist_ok=True)
+        bad = {
+            "schema_version": "999.0",
+            "simulator": {"t_end": 1, "dt": 0.01, "solver": "RK45"},
+            "blocks": [],
+            "connections": [],
+        }
+        (model_dir / "bad.flw.json").write_text(json.dumps(bad), encoding="utf-8")
+
+        response = client.get("/api/v1/models/bad")
+        assert response.status_code == 400
+
+
 class TestGetModel:
     def test_returns_model_json(self, client, model_dir):
         from pyflw.core.persistence import CURRENT_SCHEMA_VERSION

@@ -278,12 +278,10 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     "pyflw.blocks.routing.Demux": {"n": 2},
     "pyflw.subsystems.ports.Inport": {"port_idx": 0},
     "pyflw.subsystems.ports.Outport": {"port_idx": 0},
-    "pyflw.subsystems.subsystem.Subsystem": {"n_inputs": 1, "n_outputs": 1},
-    # ADR-0036: TriggeredSubsystem は trigger 入力分の最低 1 入力 + 出力 1 が必要
-    "pyflw.subsystems.triggered.TriggeredSubsystem": {
-        "n_inputs": 1,
-        "n_outputs": 1,
-    },
+    # ADR-0039 (v2.0): Subsystem / TriggeredSubsystem の n_inputs / n_outputs は
+    # 派生 property に格上げ (= コンストラクタ引数廃止)。``_default_factory_args``
+    # も不要 — 第 1 試行の TypeError → 第 2 試行 ``cls()`` という無駄な経路を避ける
+    # ため、エントリ自体を削除する。
 }
 
 
