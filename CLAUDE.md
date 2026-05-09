@@ -69,6 +69,16 @@
 
 短くてよいが、承認判断に必要な情報が揃うこと。
 
+### Bash 複合コマンドと permission matcher の制約
+
+`Bash(grep *)` 等を allow に追加していても、複合コマンドの分割で ask に落ちるケースがある:
+
+- **引用符内の `|` / `\|`**（regex の選択演算子）は permission matcher に
+  真の pipe と誤認され、コマンドが断片化して allowlist にマッチしなくなる
+- 複数パターン grep は `grep -e P1 -e P2 -e P3` の形に分けて書く
+- そもそもファイル内検索は **Grep tool**、ファイル読込は **Read tool**（`offset`/`limit`）で
+  完結させる方が、この split 問題に巻き込まれない
+
 ---
 
 ## Andon（`.claude/` の KAIZEN トリガー）
