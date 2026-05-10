@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-05-10 — Stop Time = `"inf"` (無限実行) + Scope ring buffer
+
+ADR-0042 採択。Simulink 互換で Toolbar の Stop Time フィールドに `"inf"`
+(case-insensitive) を入力すると、Stop ボタンを押すまで実行する unbounded run
+を実現する。長時間実行で OOM しないよう Scope buffer はデフォルトで ring 化。
+**完全後方互換** (= 既存 `.flw.json` は無改変で読める、schema 0.8 維持)。
+詳細は ADR-0042 / ADR-0023 §Amendments を参照。
+
+### Added
+
+- **`Simulator(t_end="inf")` / `t_end=math.inf`** を受け入れ。``Simulator.run``
+  はこのとき ``while True`` ループに切り替わり、停止は **Stop ボタン**
+  (``request_stop()``) または ``on_step_callback`` が ``False`` を返したときのみ
+- **`Scope.buffer_mode` パラメータ** (= `"ring"` default / `"bounded"` /
+  `"unbounded"`) と `buffer_capacity` (default `100_000`):
+  - `"ring"`: 最古サンプルから FIFO drop、無限実行で OOM 防止
+  - `"bounded"`: 上限到達で `BufferOverflowWarning` を 1 回発し、以降は drop
+    (= 初期サンプル保持)
+  - `"unbounded"`: 上限なし。**`Simulator.t_end=inf` と組み合わせると build 時に
+    `BlockSpecError` で reject** (= OOM 必至のため)
+- **`pyflw.core.persistence.parse_t_end` / `serialize_t_end`** 関数 (public)
+- **frontend Toolbar Stop Time** で `"inf"` を入力可能。`+inf` / `infinity` / `∞`
+  は意図的に reject (= backend と完全一致)
+- **frontend StatusBar / SimulationControls**: unbounded 実行時は progress bar を
+  非表示にし、`実行中 t={current} (∞、停止ボタンで終了)` ラベルを表示
+- **frontend `scopeBuffer.ts`**: `MAX_SAMPLES = 100_000` で ring 化 (`Float64Array`
+  の `copyWithin` による in-place shift)
+- **WS `progress` / REST `GET /api/v1/simulations/{id}` の `t_end` フィールド**:
+  `number | "inf"` Union (= JS `JSON.stringify(Infinity)==="null"` の罠回避)
+
+### Changed
+
+- `Simulator.t_end` 型が `float` から `float | str` (受入) → 内部表現は `float`
+  (= 有限値または `math.inf`) に正規化
+- ``Simulator.save`` は `math.isinf(t_end)` のとき `"inf"` 文字列で永続化 (=
+  RFC 8259 違反の `"Infinity"` を回避)
+- ADR-0023 §Decision §(2) の「シミュレーション完了後の trim は見送る」前提を、
+  ring buffer 動作で部分 amend (= 完了後でなく実行中に capacity 上限で drop)
+
+### Migration
+
+なし。既存 `.flw.json` (`"t_end": <number>`) は無改変で読める。schema は 0.8
+のまま、`Simulator` API も追加のみで既存コード回帰なし。
+
+### Verification
+
+- backend pytest: **1219 passed / 2 skipped** (= 1187 prior + 32 new across
+  `test_persistence_t_end.py`, `test_simulator_unbounded.py`,
+  `test_scope_buffer_modes.py`, `TestUnboundedTEnd`)
+- frontend vitest: **281 passed** (= 271 prior + 7 timeUtil + 3 ring tests)
+- typecheck + production build: clean
+- `examples/spring_mass_damper.py`: Final x=0.2505, x_dot=0.0031 (数値完全不変)
+
 ## [0.21.0] - 2026-05-10 — JupyterLab 流ローカルファイル直接編集 + legacy API 削除 (BREAKING)
 
 ADR-0041 (JupyterLab 流ローカルファイル直接編集) の本格移行に伴う major
