@@ -21,7 +21,7 @@ release。v2.x で並行サポートしていた legacy ``/api/v1/models/*`` RES
   contents API 互換) に移行する。
 - **`POST /api/v1/simulations` の `model_id` body を削除** — `model_path`
   (workspace 相対 path) または `model` (inline FlwModel dict) のみ受け付ける。
-- **`pyflw serve --model-dir DIR` を削除**、**`--workspace DIR` を必須化** —
+- **`pyflw-server --model-dir DIR` を削除**、**`--workspace DIR` を必須化** —
   workspace は path traversal 防御 (= `pyflw/server/security/paths.py`) を
   通したのち file 操作の root として使われる。
 - **`Settings.model_dir` フィールドを削除**、`workspace_root: Path` が必須化。
@@ -35,7 +35,7 @@ flat な model directory を保持していた利用者向けに **1 リリー�
 migration サブコマンドを提供する:
 
 ```bash
-pyflw serve --migrate-models-to=./workspace --legacy-models-dir=./old_models
+pyflw-server --migrate-models-to=./workspace --legacy-models-dir=./old_models
 ```
 
 - `*.flw.json` を非破壊コピー (`shutil.copy2` で mtime 保持)
@@ -43,7 +43,7 @@ pyflw serve --migrate-models-to=./workspace --legacy-models-dir=./old_models
 - 結果は JSON report (`copied` / `skipped` / `errors`) で stdout 出力
 - exit code: 0 = 全 OK / 1 = 一部 skip / 2 = エラーあり
 
-migration 後は通常の `pyflw serve --workspace=./workspace` で起動する。
+migration 後は通常の `pyflw-server --workspace=./workspace` で起動する。
 
 ### Added
 
@@ -53,7 +53,7 @@ migration 後は通常の `pyflw serve --workspace=./workspace` で起動する�
   検証)
 - `pyflw/server/migrations/__init__.py` — `migrate_models_to(src, dst, *,
   force=False) -> MigrationReport`
-- `pyflw serve --migrate-models-to / --legacy-models-dir / --force` CLI
+- `pyflw-server --migrate-models-to / --legacy-models-dir / --force` CLI
 
 ### Removed
 
@@ -73,10 +73,10 @@ migration 後は通常の `pyflw serve --workspace=./workspace` で起動する�
 
 ### v0.20.12 → v0.21.0 移行手順
 
-1. legacy `--model-dir DIR` で運用していた場合: `pyflw serve
+1. legacy `--model-dir DIR` で運用していた場合: `pyflw-server
    --migrate-models-to=./workspace --legacy-models-dir=./DIR` で workspace に
    コピー
-2. 起動コマンドを `pyflw serve --workspace=./workspace` に置換
+2. 起動コマンドを `pyflw-server --workspace=./workspace` に置換
 3. 自作 REST クライアントを使っていた場合: `/api/v1/models/*` の呼び出しを
    `/api/v1/files/*` 経路に置換 (= JupyterLab contents API 互換)
 4. backend に直接依存していた場合: `Settings(workspace_root=Path("..."))` で
