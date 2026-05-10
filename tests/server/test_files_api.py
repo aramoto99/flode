@@ -399,6 +399,164 @@ class TestMkdir:
         assert r.status_code == 403
 
 
+# ADR-0043 §論点 1-A / §論点 8-A: workspace_info endpoint
+class TestWorkspaceInfo:
+    def test_returns_absolute_path_and_hash(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        r = client.get("/api/v1/files/workspace_info")
+        assert r.status_code == 200
+        data = r.json()
+        assert "absolute_path" in data
+        assert "hash" in data
+        assert isinstance(data["hash"], str)
+        assert len(data["hash"]) == 16
+        assert data["absolute_path"] == str(workspace.resolve())
+
+    def test_hash_is_stable(self, client: TestClient) -> None:
+        r1 = client.get("/api/v1/files/workspace_info").json()
+        r2 = client.get("/api/v1/files/workspace_info").json()
+        assert r1["hash"] == r2["hash"]
+
+
+# ADR-0043 §論点 5: search endpoint
+class TestSearchFiles:
+    def _seed_search_corpus(self, workspace: Path) -> None:
+        (workspace / "models").mkdir()
+        (workspace / "models" / "pid_controller.flw.json").write_text(
+            '{"name": "pid"}', encoding="utf-8"
+        )
+        (workspace / "models" / "lqr_controller.flw.json").write_text(
+            '{"name": "lqr"}', encoding="utf-8"
+        )
+        (workspace / "demo.flw.json").write_text(
+            '{"description": "demo model with PID inside"}', encoding="utf-8"
+        )
+        (workspace / "notes.txt").write_text(
+            "First line\nSecond line with PID reference\nThird line",
+            encoding="utf-8",
+        )
+
+    def test_path_search_finds_matches(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        self._seed_search_corpus(workspace)
+        r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "path"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["kind"] == "path"
+        paths = [r["path"] for r in data["results"]]
+        assert any("pid_controller" in p for p in paths)
+        for entry in data["results"]:
+            assert "score" in entry
+            assert 50.0 <= entry["score"] <= 100.0
+
+    def test_content_search_finds_matches(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        self._seed_search_corpus(workspace)
+        r = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["kind"] == "content"
+        paths = [(r["path"], r["line_no"]) for r in data["results"]]
+        assert any("demo.flw.json" == p for p, _ in paths)
+        assert any("notes.txt" == p and ln == 2 for p, ln in paths)
+        for entry in data["results"]:
+            assert "line_no" in entry
+            assert "line_content" in entry
+            assert len(entry["line_content"]) <= 200
+
+    def test_content_search_case_insensitive(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        self._seed_search_corpus(workspace)
+        r1 = client.get("/api/v1/files/search", params={"q": "pid", "kind": "content"})
+        r2 = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
+        assert len(r1.json()["results"]) == len(r2.json()["results"])
+
+    def test_empty_query_400(self, client: TestClient) -> None:
+        r = client.get("/api/v1/files/search", params={"q": "", "kind": "path"})
+        assert r.status_code == 400
+
+    def test_whitespace_only_query_400(self, client: TestClient) -> None:
+        r = client.get("/api/v1/files/search", params={"q": "   ", "kind": "path"})
+        assert r.status_code == 400
+
+    def test_invalid_kind_400(self, client: TestClient) -> None:
+        r = client.get(
+            "/api/v1/files/search", params={"q": "pid", "kind": "regex"}
+        )
+        assert r.status_code == 400
+
+    def test_invalid_limit_400(self, client: TestClient) -> None:
+        r = client.get(
+            "/api/v1/files/search", params={"q": "pid", "kind": "path", "limit": 0}
+        )
+        assert r.status_code == 400
+        r = client.get(
+            "/api/v1/files/search",
+            params={"q": "pid", "kind": "path", "limit": 9999},
+        )
+        assert r.status_code == 400
+
+    def test_truncated_flag(self, client: TestClient, workspace: Path) -> None:
+        for i in range(6):
+            (workspace / f"file{i}.flw.json").write_text("{}", encoding="utf-8")
+        r = client.get(
+            "/api/v1/files/search",
+            params={"q": "file", "kind": "path", "limit": 3},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["results"]) <= 3
+        assert data["truncated"] is True
+
+    def test_excludes_hard_coded_dirs(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        (workspace / "__pycache__").mkdir()
+        (workspace / "__pycache__" / "pid_cached.txt").write_text(
+            "PID", encoding="utf-8"
+        )
+        (workspace / "regular_pid.flw.json").write_text("{}", encoding="utf-8")
+        r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "path"})
+        paths = [r["path"] for r in r.json()["results"]]
+        assert any("regular_pid" in p for p in paths)
+        assert not any("__pycache__" in p for p in paths)
+
+    def test_respects_gitignore(self, client: TestClient, workspace: Path) -> None:
+        (workspace / ".gitignore").write_text("*.log\nignored_dir/\n", encoding="utf-8")
+        (workspace / "real.flw.json").write_text("{}", encoding="utf-8")
+        (workspace / "skipped.log").write_text("PID inside", encoding="utf-8")
+        (workspace / "ignored_dir").mkdir()
+        (workspace / "ignored_dir" / "hidden.flw.json").write_text(
+            "{}", encoding="utf-8"
+        )
+
+        r = client.get("/api/v1/files/search", params={"q": "skipped", "kind": "path"})
+        assert all("skipped.log" not in r["path"] for r in r.json()["results"])
+        r = client.get("/api/v1/files/search", params={"q": "hidden", "kind": "path"})
+        assert all("hidden" not in r["path"] for r in r.json()["results"])
+        r = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
+        assert all("skipped.log" != r["path"] for r in r.json()["results"])
+
+    def test_default_kind_is_path(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        (workspace / "test.flw.json").write_text("{}", encoding="utf-8")
+        r = client.get("/api/v1/files/search", params={"q": "test"})
+        assert r.status_code == 200
+        assert r.json()["kind"] == "path"
+
+    def test_path_traversal_in_q_does_not_escape(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        (workspace / "real.flw.json").write_text("{}", encoding="utf-8")
+        r = client.get("/api/v1/files/search", params={"q": "../etc", "kind": "path"})
+        assert r.status_code == 200
+
+
 # v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` モード削除に伴い
 # ``workspace_root=None`` (= 503 経路) のテストは無効化。``Settings`` で
 # ``workspace_root`` は必須キーワードになっているため、不正な状態自体が作れない。

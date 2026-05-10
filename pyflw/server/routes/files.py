@@ -22,17 +22,31 @@ Path traversal 防御は ``pyflw.server.security.resolve_workspace_path`` (ADR-0
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import logging
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pathspec
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
+from rapidfuzz import fuzz
 
 from ...exceptions import PathTraversalError
 from ..security import resolve_workspace_path
+
+# ADR-0043 §論点 5-A: 検索時に hard-coded で除外するディレクトリ。
+# .gitignore と無関係に常に除外 (= 巨大なノイズ源)。
+_HARD_CODED_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {".git", ".venv", "venv", "__pycache__", "node_modules", ".pytest_cache",
+     "dist", "build", ".mypy_cache", ".ruff_cache"}
+)
+# 検索結果のデフォルト上限 (ADR-0043 §論点 5-A): UI レスポンス性確保のため。
+_DEFAULT_SEARCH_LIMIT = 100
+_MAX_SEARCH_LIMIT = 1000
 
 _logger = logging.getLogger("pyflw.server.routes.files")
 
@@ -144,6 +158,27 @@ class RenameBody(BaseModel):
 # ---------------------------------------------------------------------------
 # GET /tree
 # ---------------------------------------------------------------------------
+
+
+@router.get("/workspace_info")
+def get_workspace_info(request: Request) -> dict[str, Any]:
+    """workspace root の絶対 path と短縮 hash を返す (ADR-0043 §論点 1-A / §論点 8-A)。
+
+    frontend は ``hash`` を localStorage キーの suffix にし、別 workspace で
+    起動した場合は復元せず clean state にする。``absolute_path`` は人間可読な
+    表示用 (= status bar 等)。
+
+    hash は ``sha256(str(workspace_root.resolve())).hexdigest()[:16]`` で固定。
+    16 文字 (= 64 bit) あれば衝突確率が無視できる程度に低く、URL / localStorage
+    キーに収まる長さ。
+
+    Returns:
+        ``{absolute_path: str, hash: str}``。
+    """
+    workspace_root = _workspace_root(request)
+    abs_path = str(workspace_root.resolve())
+    digest = hashlib.sha256(abs_path.encode("utf-8")).hexdigest()[:16]
+    return {"absolute_path": abs_path, "hash": digest}
 
 
 @router.get("/tree")
@@ -468,3 +503,164 @@ def mkdir(request: Request, path: str) -> Response:
         ) from e
 
     return Response(status_code=201)
+
+
+# ---------------------------------------------------------------------------
+# GET /search (ADR-0043 §論点 5)
+# ---------------------------------------------------------------------------
+
+
+def _load_gitignore(workspace_root: Path) -> pathspec.PathSpec | None:
+    """workspace root 直下の ``.gitignore`` を読んで PathSpec を返す。
+
+    存在しない / 読めない場合は ``None`` (= filter なし)。``.gitignore`` が
+    workspace root にあるとき限定で参照、サブディレクトリの個別 ``.gitignore``
+    は本実装では読まない (= MVP として root のみ尊重、ニーズが顕在化したら
+    pathspec.PathSpec.from_gitignore_file 拡張)。
+    """
+    gitignore = workspace_root / ".gitignore"
+    if not gitignore.is_file():
+        return None
+    try:
+        text = gitignore.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        _logger.debug("Cannot read .gitignore: %s", e)
+        return None
+    lines = text.splitlines()
+    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+
+
+def _iter_workspace_files(
+    workspace_root: Path,
+    gitignore_spec: pathspec.PathSpec | None,
+) -> Iterator[tuple[Path, str]]:
+    """workspace 配下のファイルを再帰列挙し、``(absolute_path, relative_posix)`` を yield する。
+
+    - ``_HARD_CODED_EXCLUDE_DIRS`` のディレクトリは pruning (= 配下に潜らない)
+    - ``gitignore_spec`` でマッチした path も除外
+    - シンボリックリンクは辿らない (= 無限ループ防止)
+    - ``OSError`` は debug log で skip
+
+    Yields:
+        ``(file_path, relative_posix)`` の tuple。``relative_posix`` は workspace
+        root 相対の forward-slash 文字列 (= UI 表示・REST 戻り値に使う統一形式)。
+    """
+    workspace_resolved = workspace_root.resolve()
+    # ``os.walk`` 風の iterative DFS、symlink はフォロー禁止
+    stack: list[Path] = [workspace_resolved]
+    while stack:
+        directory = stack.pop()
+        try:
+            entries = list(directory.iterdir())
+        except OSError as e:
+            _logger.debug("Skipping unreadable directory %s: %s", directory, e)
+            continue
+        # ファイル / ディレクトリを分けて処理 (= ディレクトリは prune 判定後に stack 追加)
+        for entry in entries:
+            try:
+                # ``is_symlink`` を先にチェック (= シンボリックリンクは無条件 skip)
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir():
+                    if entry.name in _HARD_CODED_EXCLUDE_DIRS:
+                        continue
+                    rel = entry.relative_to(workspace_resolved).as_posix() + "/"
+                    if gitignore_spec is not None and gitignore_spec.match_file(rel):
+                        continue
+                    stack.append(entry)
+                elif entry.is_file():
+                    rel = entry.relative_to(workspace_resolved).as_posix()
+                    if gitignore_spec is not None and gitignore_spec.match_file(rel):
+                        continue
+                    yield entry, rel
+            except OSError as e:
+                _logger.debug("Skipping entry %s: %s", entry, e)
+
+
+@router.get("/search")
+def search_files(
+    request: Request,
+    q: str,
+    kind: str = "path",
+    limit: int = _DEFAULT_SEARCH_LIMIT,
+) -> dict[str, Any]:
+    """ワークスペース内のファイルを検索する (ADR-0043 §論点 5-A)。
+
+    ``kind=path``: file path に対する fuzzy match (rapidfuzz WRatio、score ≥ 50)。
+    ``kind=content``: ファイル内容の substring (case-insensitive) line grep。
+
+    ``.git/`` / ``.venv/`` / ``__pycache__/`` / ``node_modules/`` 等を hard-code
+    除外、workspace root 直下の ``.gitignore`` も尊重。シンボリックリンクは辿らない。
+    結果は ``limit`` 件で打ち切り、``truncated`` flag に反映。
+
+    Args:
+        q: 検索クエリ (空文字 / 空白のみは 400)。
+        kind: ``"path"`` または ``"content"``。それ以外は 400。
+        limit: 最大結果数 (default 100、上限 1000)。
+
+    Returns:
+        ``{
+            kind: str,
+            results: [
+                {path, line_no?, line_content?, score?},
+                ...
+            ],
+            truncated: bool,
+        }``。``line_no`` / ``line_content`` は ``kind=content`` のみ。
+        ``score`` は ``kind=path`` のみ (= 0-100 の rapidfuzz WRatio スコア)。
+    """
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Empty query")
+    if kind not in ("path", "content"):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid kind: {kind!r} (must be 'path' or 'content')"
+        )
+    if limit < 1 or limit > _MAX_SEARCH_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid limit: {limit} (must be 1..{_MAX_SEARCH_LIMIT})",
+        )
+
+    workspace_root = _workspace_root(request)
+    gitignore_spec = _load_gitignore(workspace_root)
+    results: list[dict[str, Any]] = []
+    truncated = False
+
+    if kind == "path":
+        # rapidfuzz の WRatio はファイル名 vs クエリで「全体的な近さ」を 0-100 で返す。
+        # スコア ≥ 50 をしきい値とし、降順ソートで limit 件返す。
+        scored: list[tuple[float, str]] = []
+        for _file_path, rel in _iter_workspace_files(workspace_root, gitignore_spec):
+            score = fuzz.WRatio(q, rel)
+            if score >= 50:
+                scored.append((score, rel))
+        scored.sort(key=lambda x: -x[0])
+        for score, rel in scored[:limit]:
+            results.append({"path": rel, "score": float(score)})
+        truncated = len(scored) > limit
+    else:  # kind == "content"
+        # substring case-insensitive line grep。バイナリ判定は単純化のため非テキスト
+        # ファイル (= UTF-8 decode 失敗) は skip。
+        q_lower = q.lower()
+        for file_path, rel in _iter_workspace_files(workspace_root, gitignore_spec):
+            if len(results) >= limit:
+                truncated = True
+                break
+            try:
+                text = file_path.read_text(encoding="utf-8", errors="strict")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for line_no, line in enumerate(text.splitlines(), start=1):
+                if q_lower in line.lower():
+                    results.append(
+                        {
+                            "path": rel,
+                            "line_no": line_no,
+                            "line_content": line[:200],  # 1 行 200 文字で打ち切り
+                        }
+                    )
+                    if len(results) >= limit:
+                        truncated = True
+                        break
+
+    return {"kind": kind, "results": results, "truncated": truncated}

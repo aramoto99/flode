@@ -54,6 +54,9 @@ gui = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "websockets>=12",
+    # ADR-0043: workspace 検索 (path fuzzy + content substring)、`.gitignore` 尊重
+    "rapidfuzz>=3.6",
+    "pathspec>=0.12",
 ]
 # ADR-0026: 解析機能の opt-in extras。``LinearSystem.to_control_ss()`` 等で
 # python-control に依存する。コア (`pyflw.linearize` など) は本 extras なしで動く。
