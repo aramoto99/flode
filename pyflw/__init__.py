@@ -1,7 +1,8 @@
-# v0.20.5 (機能追加): 既存配線から分岐配線を引く機能。Ctrl+クリック edge →
-# Ctrl+クリック ブロックで「edge.src → block.in[0]」の枝分かれ edge を生成。
-# Simulink 互換、Display 等のシンク系ブロックを既存配線から接続できる。
-__version__ = "0.20.5"
+# v0.20.6 (機能追加): Simulink 流の「配線をクリック → ドラッグ → ブロックに
+# ドロップ」で分岐配線を作る機能。Custom Edge (BranchableEdge) で edge 上の
+# pointerdown を捕捉、window mousemove で追従線を描画、mouseup の hit testing
+# で着地点ブロックの input port[0] へ枝分かれ edge を追加。
+__version__ = "0.20.6"
 
 from .analysis import (
     BodeResponse,

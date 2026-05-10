@@ -25,7 +25,10 @@ export const SIMULINK_MARKER_END = {
   width: 8,
   height: 8,
 };
-export const SIMULINK_EDGE_TYPE = "step";
+// v0.20.6: built-in "step" → custom "branchable" に変更。見た目は同じ (= 直角
+// ステップ折れ線 + 矢印 head) を BranchableEdge 内で再現しつつ、edge mousedown
+// で「既存配線から分岐」drag を発火できるようにする。
+export const SIMULINK_EDGE_TYPE = "branchable";
 
 export interface BlockNodeData extends Record<string, unknown> {
   blockType: string;

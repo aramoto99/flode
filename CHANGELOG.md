@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.6] - 2026-05-10 — Simulink 流ドラッグ&ドロップで配線から分岐
+
+ユーザー指摘 (= 「エッジの任意の点をクリックしてそのままドラッグアンドドロップで
+ほかのブロックに接続できるようにしてほしい、Simulink と同じ振る舞いに」) への
+対応。v0.20.5 では Ctrl+クリック方式しか提供しておらず Simulink 互換ではなかった。
+
+### Added
+
+- **Simulink 流のドラッグ分岐配線** (= 既存配線をクリック → そのまま drag →
+  別ブロックに drop で枝分かれ edge を追加):
+  - **Custom Edge ``BranchableEdge``** 新規: React Flow built-in ``"step"``
+    edge と同じ見た目 (= 直角ステップ折れ線 + 矢印 head) を ``getSmoothStepPath``
+    で再現しつつ、上に **invisible で太い (= 20px) overlay path** を重ねて
+    ``onPointerDown`` を捕捉、cursor は crosshair
+  - **DiagramCanvas に branch drag state + window pointer handler**:
+    - mousedown で edge 起点を記録 (= src + src_idx)
+    - mousemove でカーソル位置追跡、画面全体に SVG overlay で破線追従線描画
+    - mouseup で ``document.elementFromPoint`` → ``data-id`` を持つ React Flow
+      ノードを探索 → input port[0] (= dst_idx=0) に edge 追加
+    - **ESC キー** または ブロック以外で離す → cancel
+- ``SIMULINK_EDGE_TYPE`` を built-in ``"step"`` から custom ``"branchable"`` に
+  変更 (見た目は不変)
+- Help > Keyboard shortcuts ダイアログ ``Connection`` セクションに「Drag from
+  edge → Drop on block」エントリを追加 (= 主要 UX として宣伝)
+- i18n key 1 件追加 (en/ja): ``modal.shortcuts.desc.drag_branch``
+
+### 利用例 (= Display ブロックを既存配線につなぐ、Simulink 流儀)
+
+1. キャンバスに ``Constant → Gain → Integrator`` を配置 + 配線済
+2. キャンバス側方の Display ブロックを drag-drop で配置
+3. **``Gain → Integrator`` の配線上の任意点をクリック → そのままドラッグ →
+   Display にドロップ** → ``Gain → Display`` の分岐配線が成立 (Simulink 互換)
+
+v0.20.5 の Ctrl+クリック方式も併存 (= 利用者が好きな方を使える)。
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし、ドラッグ分岐は手動検証)
+- TypeScript strict mode clean
+- production build clean (= 196 KB gzip 帯維持)
+- ``examples/spring_mass_damper.py`` 数値完全不変
+
+### v0.20.5 → v0.20.6 移行
+
+利用者は何もする必要なし。サーバ再起動で自動反映。
+
 ## [0.20.5] - 2026-05-10 — 既存配線から分岐 (= Branch wire from edge)
 
 ユーザー指摘 (= 「Display ブロックなどをエッジに接続する機能が入っていない、

@@ -535,6 +535,13 @@ export function KeyboardShortcutsDialog({
           }),
         },
         {
+          keys: "Drag from edge → Drop on block",
+          description: t("modal.shortcuts.desc.drag_branch", {
+            defaultValue:
+              "Branch from any point on a wire to block.in[0] (Simulink-style)",
+          }),
+        },
+        {
           keys: "Ctrl+Click edge → Ctrl+Click block",
           description: t("modal.shortcuts.desc.branch_connect", {
             defaultValue: "Branch from existing wire to block.in[0]",

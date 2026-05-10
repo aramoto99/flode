@@ -34,6 +34,11 @@ import {
   validatePortShapeConnection,
 } from "../lib/portShapeValidate";
 import { BlockNodeView } from "./BlockNodeView";
+import {
+  BranchableEdge,
+  type BranchStartParams,
+  setBranchStartHandler,
+} from "./BranchableEdge";
 import { QuickAdd } from "./QuickAdd";
 import {
   addBlockToEditing,
@@ -57,6 +62,10 @@ interface DiagramCanvasProps {
 // 識別子の object 参照を毎回同じにすることで React Flow の警告を回避する
 // (`useMemo` がコンポーネント外で使えないため module-level 定数で代用)。
 const NODE_TYPES = { blockNode: BlockNodeView } as const;
+
+// v0.20.6: edge type "branchable" は BranchableEdge を使う。Simulink の「既存
+// 配線から分岐」drag を edge mousedown で発火できるようにする。
+const EDGE_TYPES = { branchable: BranchableEdge } as const;
 
 // 中ボタン (button=1) と右ボタン (button=2) で pan、左クリック (button=0) は
 // 「空エリアドラッグ → 矩形選択 / ノード上ドラッグ → ノード移動」(Simulink + 一般的な
@@ -105,6 +114,22 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   type AutoConnectSrc = string | { src: string; src_idx: number };
   const [autoConnectSource, setAutoConnectSource] =
     useState<AutoConnectSrc | null>(null);
+
+  // v0.20.6: Simulink 互換 「既存配線 mousedown → drag → ブロック drop で分岐
+  // 配線」を実装する state。``BranchableEdge`` の overlay path で pointerdown
+  // が発火すると ``setBranchDrag`` が呼ばれ、以降 window mousemove で current
+  // 位置を追跡、mouseup で hit testing して接続成立 or cancel。
+  interface BranchDragState {
+    src: string;
+    src_idx: number;
+    /** mousedown 時の screen 座標 (= 線の始点) */
+    startScreenX: number;
+    startScreenY: number;
+    /** 現在のカーソル screen 座標 (= 線の終点、drag に追従) */
+    currentScreenX: number;
+    currentScreenY: number;
+  }
+  const [branchDrag, setBranchDrag] = useState<BranchDragState | null>(null);
   const [quickAdd, setQuickAdd] = useState<{
     screenX: number;
     screenY: number;
@@ -248,6 +273,78 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const showToast = (msg: string): void => {
     pushToast({ severity: "warning", message: msg });
   };
+
+  // v0.20.6: BranchableEdge の onPointerDown 通知を購読 + window レベルで
+  // mousemove / mouseup / Esc を捕捉して分岐配線を成立させる。
+  useEffect(() => {
+    const handleStart = (params: BranchStartParams): void => {
+      setBranchDrag({
+        src: params.src,
+        src_idx: params.src_idx,
+        startScreenX: params.startScreenX,
+        startScreenY: params.startScreenY,
+        currentScreenX: params.startScreenX,
+        currentScreenY: params.startScreenY,
+      });
+    };
+    setBranchStartHandler(handleStart);
+    return () => setBranchStartHandler(null);
+  }, []);
+
+  useEffect(() => {
+    if (!branchDrag) return;
+
+    const handleMove = (e: PointerEvent): void => {
+      setBranchDrag((prev) =>
+        prev === null
+          ? null
+          : { ...prev, currentScreenX: e.clientX, currentScreenY: e.clientY },
+      );
+    };
+
+    const handleUp = (e: PointerEvent): void => {
+      // hit testing: ドロップ位置の DOM から最も近い `data-id` (= ノード ID)
+      // を持つ React Flow node 要素を辿る。input port[0] (= dst_idx=0) に接続
+      // するセマンティクスは Ctrl+ 接続と同じ (= ADR-0041 §論点 5-A 範囲外、
+      // pyflw GUI 既定挙動)。
+      const dropElem = document.elementFromPoint(e.clientX, e.clientY);
+      let cursor: HTMLElement | null = dropElem as HTMLElement | null;
+      let dropNodeId: string | null = null;
+      while (cursor !== null) {
+        const id = cursor.getAttribute?.("data-id");
+        if (id !== null && id !== undefined && cursor.classList?.contains("react-flow__node")) {
+          dropNodeId = id;
+          break;
+        }
+        cursor = cursor.parentElement;
+      }
+
+      if (dropNodeId !== null && dropNodeId !== branchDrag.src) {
+        addConnectionToEditing({
+          src: branchDrag.src,
+          src_idx: branchDrag.src_idx,
+          dst: dropNodeId,
+          dst_idx: 0,
+        });
+      }
+      setBranchDrag(null);
+    };
+
+    const handleKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        setBranchDrag(null);
+      }
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [branchDrag]);
 
   // legacy mode の loading / error 判定 (modelId が null の File API mode では skip)
   if (modelId !== null) {
@@ -566,6 +663,7 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
           // ので入れない。色 / 太さは index.css で集中管理。
         }))}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         fitView
         nodesDraggable
         defaultEdgeOptions={{
@@ -690,6 +788,26 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         <Background gap={18} size={1} color="#cbd5e1" />
         <Controls className="!shadow-md" />
       </ReactFlow>
+      {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
+          start から current への直線で十分 (= Simulink でも drag 中は仮の
+          直線のみ、確定後に React Flow が step edge を描画)。 */}
+      {branchDrag && (
+        <svg
+          className="pointer-events-none fixed inset-0 z-50"
+          width="100%"
+          height="100%"
+        >
+          <line
+            x1={branchDrag.startScreenX}
+            y1={branchDrag.startScreenY}
+            x2={branchDrag.currentScreenX}
+            y2={branchDrag.currentScreenY}
+            stroke="#1e293b"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+          />
+        </svg>
+      )}
       {quickAdd && (
         <QuickAdd
           screenX={quickAdd.screenX}
