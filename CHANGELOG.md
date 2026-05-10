@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.5] - 2026-05-10 — 既存配線から分岐 (= Branch wire from edge)
+
+ユーザー指摘 (= 「Display ブロックなどをエッジに接続する機能が入っていない、
+わざわざブロックの根本から接続しろというのか」) への対応。v0.20.4 ではポート
+hit area 拡大で「ブロック起点の drag connection」改善のみで、Simulink 流の
+**既存配線から分岐**機能は実装していなかった。
+
+### Added
+
+- **既存配線から分岐配線を引く機能** (= 既存の 2-step Ctrl+クリック auto-
+  connect を edge 起点に拡張):
+  - **Ctrl+Click edge → Ctrl+Click block**: 既存 edge の src + src_idx を 1
+    回目選択として記録、次のブロック Ctrl+Click で ``edge.src → block.in[0]``
+    の枝分かれ edge を追加
+  - 視覚フィードバック: edge が Ctrl+Click で選択状態になる (= 1 回目を選んだ
+    ことが分かる)
+  - 同じノード自身を 2 回 Ctrl+Click すると cancel
+- **``onEdgeClick``** ハンドラを ``DiagramCanvas`` に新規追加 (= 通常クリックで
+  auto-connect 中断、Ctrl+クリックで分岐モード開始)
+- **``autoConnectSource``** state を ``string | { src; src_idx } | null`` に
+  拡張 (= ノード単独 / edge 由来の両モード保持)
+- **Help > Keyboard shortcuts** ダイアログに新セクション ``Connection`` 追加
+  (= auto_connect / branch_connect の 2 行で利用方法を案内)
+- i18n keys 4 件追加 (en/ja): ``modal.shortcuts.section.connect`` /
+  ``.desc.auto_connect`` / ``.desc.branch_connect``
+
+### 利用例
+
+シンク系ブロック (Display / Scope) を既存配線につなぐとき:
+1. ``Constant → Gain → Integrator`` の信号線 (例えば Gain → Integrator の edge)
+   を **Ctrl+Click**
+2. キャンバスに新規 Display ブロックを置いて **Ctrl+Click**
+3. → ``Gain → Integrator`` と並んで ``Gain → Display`` の分岐配線が成立
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テストに回帰なし、分岐接続は手動検証のみ)
+- TypeScript strict mode clean
+- production build clean (= 196 KB gzip 帯維持)
+- ``examples/spring_mass_damper.py`` 数値完全不変
+
+### v0.20.4 → v0.20.5 移行
+
+利用者は何もする必要なし。サーバ再起動で自動反映。
+
 ## [0.20.4] - 2026-05-10 — Workspace 折りたたみ + ポート hit area 拡大
 
 ユーザーフィードバック 3 件への対応:

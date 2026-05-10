@@ -95,11 +95,16 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
   // Simulink 互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
-  // 1 回目クリック時の source ノード ID を保持。2 回目の別ノード Ctrl+click で
-  // A.out[0] -> B.in[0] の edge を作成、null にリセット。
-  const [autoConnectSource, setAutoConnectSource] = useState<string | null>(
-    null,
-  );
+  // 1 回目クリック時の source を保持。2 回目の別ノード Ctrl+click で edge を作成、
+  // null にリセット。
+  //
+  // v0.20.5: edge を起点にする「分岐配線」をサポート。``string`` の場合は従来通り
+  // ノード ID + src_idx=0、``{src, src_idx}`` オブジェクトの場合は既存 edge を
+  // Ctrl+クリックして得た source 情報 (= 既存配線から枝分かれ、Display 等
+  // シンク系ブロックへの典型的接続パターン)。
+  type AutoConnectSrc = string | { src: string; src_idx: number };
+  const [autoConnectSource, setAutoConnectSource] =
+    useState<AutoConnectSrc | null>(null);
   const [quickAdd, setQuickAdd] = useState<{
     screenX: number;
     screenY: number;
@@ -590,25 +595,59 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
           // Ctrl / Meta + 左クリック: 2-step auto-connect
           // - 1 回目: ノードを source として記録
           // - 2 回目 (別ノード): A.out[0] -> B.in[0] に edge を作成
+          // v0.20.5: source が edge 由来 (= {src, src_idx} オブジェクト) の
+          //   場合も対応。既存配線から分岐して B.in[0] へ接続。
           if (event.ctrlKey || event.metaKey) {
             if (autoConnectSource === null) {
               setAutoConnectSource(node.id);
               selectNode(node.id);
-            } else if (autoConnectSource !== node.id) {
-              addConnectionToEditing({
-                src: autoConnectSource,
-                src_idx: 0,
-                dst: node.id,
-                dst_idx: 0,
-              });
-              setAutoConnectSource(null);
-              selectNode(node.id);
+              return;
             }
+            // 同じノード自身を 2 回 Ctrl+ click: cancel
+            const srcId =
+              typeof autoConnectSource === "string"
+                ? autoConnectSource
+                : autoConnectSource.src;
+            if (srcId === node.id) {
+              setAutoConnectSource(null);
+              return;
+            }
+            const srcIdx =
+              typeof autoConnectSource === "string"
+                ? 0
+                : autoConnectSource.src_idx;
+            addConnectionToEditing({
+              src: srcId,
+              src_idx: srcIdx,
+              dst: node.id,
+              dst_idx: 0,
+            });
+            setAutoConnectSource(null);
+            selectNode(node.id);
             return;
           }
           // 通常: 選択 + auto-connect 中断
           setAutoConnectSource(null);
           selectNode(node.id);
+        }}
+        // v0.20.5: Edge を Ctrl+クリック → 「分岐配線」モード開始。
+        // 既存 edge の src + src_idx を auto-connect source に記録、次に Ctrl+
+        // クリックされたブロックの input port[0] へ枝分かれする edge を追加。
+        // Simulink 互換 (= 信号線から複数ブロックへ分岐) パターンの実装。
+        onEdgeClick={(event, edge) => {
+          if (event.ctrlKey || event.metaKey) {
+            event.stopPropagation();
+            const srcIdx =
+              edge.sourceHandle !== null && edge.sourceHandle !== undefined
+                ? parseInt(edge.sourceHandle, 10) || 0
+                : 0;
+            setAutoConnectSource({ src: edge.source, src_idx: srcIdx });
+            // 視覚フィードバックとして edge を選択状態に
+            setSelectedEdgeIds([edge.id]);
+            return;
+          }
+          // 通常クリック: 選択 + auto-connect 中断
+          setAutoConnectSource(null);
         }}
         onNodeDoubleClick={onNodeDoubleClick}
         // Simulink 流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)

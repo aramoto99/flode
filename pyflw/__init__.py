@@ -1,7 +1,7 @@
-# v0.20.4 (UX 改善): Workspace パネル折りたたみ機能 + ポート Handle hit area
-# 拡大 (12×12 → 24×24) で chevron `>` まで cursor crosshair 反映、Display 等
-# への drag connection 成立改善。
-__version__ = "0.20.4"
+# v0.20.5 (機能追加): 既存配線から分岐配線を引く機能。Ctrl+クリック edge →
+# Ctrl+クリック ブロックで「edge.src → block.in[0]」の枝分かれ edge を生成。
+# Simulink 互換、Display 等のシンク系ブロックを既存配線から接続できる。
+__version__ = "0.20.5"
 
 from .analysis import (
     BodeResponse,

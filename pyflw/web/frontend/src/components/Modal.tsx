@@ -524,6 +524,25 @@ export function KeyboardShortcutsDialog({
       ],
     },
     {
+      title: t("modal.shortcuts.section.connect", {
+        defaultValue: "Connection",
+      }),
+      rows: [
+        {
+          keys: "Ctrl+Click block → Ctrl+Click block",
+          description: t("modal.shortcuts.desc.auto_connect", {
+            defaultValue: "Connect block A.out[0] → block B.in[0]",
+          }),
+        },
+        {
+          keys: "Ctrl+Click edge → Ctrl+Click block",
+          description: t("modal.shortcuts.desc.branch_connect", {
+            defaultValue: "Branch from existing wire to block.in[0]",
+          }),
+        },
+      ],
+    },
+    {
       title: t("modal.shortcuts.section.simulation"),
       rows: [
         { keys: "Ctrl+T / F9", description: t("modal.shortcuts.desc.run") },
