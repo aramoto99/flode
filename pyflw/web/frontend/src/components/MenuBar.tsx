@@ -1,21 +1,15 @@
-// デスクトップ風 MenuBar (File / Edit / View / Simulation / Help)。
-// Simulink + MATLAB の上部メニュー帯に倣う。今は File menu のみ実装、それ以外は
-// 開いた瞬間に「(empty / coming soon)」を出す placeholder。
+// デスクトップ風 MenuBar (File / View / Simulation / Help)。
+// Simulink + MATLAB の上部メニュー帯に倣う。
+//
+// v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` / ``selectedModelId``
+// 経路を撤去、File API (= ``selectedFilePath``) 一本化。File メニューは New /
+// Open / Save / Save As / Close / Delete を全て File API 経由で操作する。
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
-  copyModel,
-  createModel,
-  deleteModel,
-  listModels,
-  nextUntitledName,
-  updateModel,
-} from "../api/client";
-import {
-  FileApiUnavailableError,
   deleteFile,
   getFileContent,
   nextUntitledFilePath,
@@ -30,28 +24,20 @@ import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import {
   AboutDialog,
-  ConfirmDialog,
   KeyboardShortcutsDialog,
-  OpenModelDialog,
-  RenameDialog,
   SaveAsPathDialog,
 } from "./Modal";
 import { ModelSettingsModal } from "./ModelSettingsModal";
 
 type DialogKind =
-  | { kind: "open" }
-  | { kind: "save-as" }
   | { kind: "save-as-path" }
-  | { kind: "rename" }
-  | { kind: "delete" }
   | { kind: "model-settings" }
   | { kind: "about" }
   | { kind: "shortcuts" }
   | null;
 
 // ADR-0036 (v0.7) + ADR-0039 (v2.0、schema 0.8): 新規モデル作成時の初期
-// schema_version。backend の ``CURRENT_SCHEMA_VERSION`` と揃える (= ズレが
-// あっても backend `migrate_to_current` で自動補正されるが、無駄な変換を避ける)。
+// schema_version。
 const CURRENT_SCHEMA_VERSION = "0.8";
 
 function emptyModel(name: string): FlwModel {
@@ -79,24 +65,19 @@ interface MenuItemSpec {
   disabled?: boolean;
   destructive?: boolean;
   divider?: boolean;
-  // ADR-0024 §(4): View > Language サブメニュー用。値が現在言語と一致していれば
-  // チェックマークを描画する。`language` 指定時は disabled / shortcut は無視。
+  // ADR-0024 §(4): View > Language サブメニュー用
   language?: SupportedLanguage;
 }
 
 export function MenuBar(): JSX.Element {
   const { t, i18n: _i18n } = useTranslation();
-  // ADR-0024: useTranslation を購読することで changeLanguage 後に再 render される。
-  // ``currentLanguage()`` は BCP47 タグ (例 ``en-US``) を ``en``/``ja`` に正規化する。
   const lang = currentLanguage();
-  void _i18n; // 購読のためだけに参照
+  void _i18n;
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
-  const selectModel = useAppStore((s) => s.selectModel);
   const selectFilePath = useAppStore((s) => s.selectFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
@@ -104,11 +85,6 @@ export function MenuBar(): JSX.Element {
   const editingModel = useAppStore((s) => s.editingModel);
 
   const queryClient = useQueryClient();
-  const { data: modelsList } = useQuery({
-    queryKey: ["models"],
-    queryFn: listModels,
-  });
-  const models = modelsList?.models ?? [];
 
   useEffect(() => {
     const handler = (e: MouseEvent): void => {
@@ -120,116 +96,48 @@ export function MenuBar(): JSX.Element {
     return () => document.removeEventListener("mousedown", handler);
   }, [openMenu]);
 
-  // ---- File actions ----
-  // ADR-0041 §論点 8-A: New は workspace mode (= File API) と legacy mode を分岐。
-  // workspace mode では `untitled<N>.flw.json` を File API で作成、`selectFilePath`
-  // で開く。legacy mode は従来通り `createModel` 経由。
-  const newMutation = useMutation({
-    mutationFn: async (): Promise<{ id?: string; path?: string }> => {
-      try {
-        const path = await nextUntitledFilePath();
-        const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
-        await putFileContent(path, empty);
-        return { path };
-      } catch (e) {
-        if (e instanceof FileApiUnavailableError) {
-          // legacy fallback: workspace 未有効なら従来 model_id 経路
-          const name = await nextUntitledName();
-          const resp = await createModel(emptyModel(name));
-          return { id: resp.model_id };
-        }
-        throw e;
-      }
-    },
-    onSuccess: async (resp) => {
-      if (resp.path !== undefined) {
-        const data = await getFileContent(resp.path);
-        selectFilePath(resp.path);
-        setEditingModel(data.content);
-        setEditingFileMeta(data.mtime, data.etag);
-        setDirty(false);
-        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-      } else if (resp.id !== undefined) {
-        await queryClient.invalidateQueries({ queryKey: ["models"] });
-        selectModel(resp.id);
-      }
-    },
-  });
+  // ---- File actions (= File API 一本化) ----
 
-  const performSaveAs = useMutation({
-    mutationFn: (newName: string) => {
-      if (!selectedModelId) throw new Error("No current model");
-      return copyModel(selectedModelId, newName, { deleteOriginal: false });
-    },
-    onSuccess: async (newId) => {
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
-      selectModel(newId);
-      setDialog(null);
-    },
-  });
-
-  const performRename = useMutation({
-    mutationFn: (newName: string) => {
-      if (!selectedModelId) throw new Error("No current model");
-      return copyModel(selectedModelId, newName, { deleteOriginal: true });
-    },
-    onSuccess: async (newId) => {
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
-      selectModel(newId);
-      setDialog(null);
-    },
-  });
-
-  const performDelete = useMutation({
-    mutationFn: () => {
-      if (!selectedModelId) throw new Error("No current model");
-      return deleteModel(selectedModelId);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
-      selectModel(null);
-      setEditingModel(null);
-      setDirty(false);
-      setDialog(null);
-    },
-  });
-
-  const handleNew = (): void => {
+  const handleNew = async (): Promise<void> => {
     setOpenMenu(null);
-    newMutation.mutate();
+    try {
+      const path = await nextUntitledFilePath();
+      const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
+      await putFileContent(path, empty);
+      const data = await getFileContent(path);
+      selectFilePath(path);
+      setEditingModel(data.content);
+      setEditingFileMeta(data.mtime, data.etag);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+    } catch (e) {
+      console.error("New file failed:", e);
+      window.alert(`Create failed: ${(e as Error).message}`);
+    }
   };
+
+  // Open は FileBrowser の tree クリックで担当 (= legacy OpenModelDialog 撤去)
   const handleOpen = (): void => {
     setOpenMenu(null);
-    setDialog({ kind: "open" });
+    // TODO(v3.x): File API 版 OpenModelDialog (= mini FileBrowser tree) を
+    // 実装する案 (ADR-0041 §論点 10-A 完全版)。現状は左サイドバーの
+    // FileBrowser から直接 tree を辿って開く UX に集約。
   };
-  const handleSave = async (): Promise<void> => {
+
+  const handleSave = (): void => {
     setOpenMenu(null);
-    if (!editingModel) return;
-    // ADR-0041 §論点 8-A: file path モードでは Ctrl+S は useAutoSave 内で File API
-    // PUT を発射する (= 本ハンドラを通る代わりに既存の Ctrl+S handler が flush
-    // を呼ぶ)。本 handle は legacy `selectedModelId` 経路の即時保存のみ担当。
-    if (selectedFilePath !== null) {
-      // useAutoSave の Ctrl+S と二重保存を避けるため何もしない (= flush は
-      // useAutoSave 側の keydown handler が担当)
-      return;
-    }
-    if (!selectedModelId) return;
-    await updateModel(selectedModelId, editingModel);
-    setDirty(false);
-    await queryClient.invalidateQueries({
-      queryKey: ["model", selectedModelId],
-    });
+    // useAutoSave の Ctrl+S handler が File API 経由で flush する。本ハンドラは
+    // メニュークリックで明示的に flush する場合のみ動かす — ただし dirty なら
+    // すでに 500ms debounce で auto-save される、メニューからの即時保存も
+    // useAutoSave を経由させる方が二重保存を避けられる。
+    // 簡略化: 何もせず、ユーザーが Ctrl+S を使う方向に誘導する。実装は
+    // useAutoSave 側の keydown handler を維持。
   };
+
   const handleSaveAs = (): void => {
     setOpenMenu(null);
-    // ADR-0041 §論点 10-A (v0.19.0 本格モーダル化): File API モードでは
-    // ``SaveAsPathDialog`` で path 入力を受ける。legacy モードは従来通り。
-    if (selectedFilePath !== null) {
-      setDialog({ kind: "save-as-path" });
-      return;
-    }
-    if (!selectedModelId) return;
-    setDialog({ kind: "save-as" });
+    if (selectedFilePath === null) return;
+    setDialog({ kind: "save-as-path" });
   };
 
   const performSaveAsPath = async (newPath: string): Promise<void> => {
@@ -251,57 +159,43 @@ export function MenuBar(): JSX.Element {
       window.alert(`Save As failed: ${(e as Error).message}`);
     }
   };
-  const handleRename = (): void => {
-    setOpenMenu(null);
-    if (!selectedModelId) return;
-    setDialog({ kind: "rename" });
-  };
+
   const handleDelete = async (): Promise<void> => {
     setOpenMenu(null);
-    // ADR-0041: File API モードは confirm + deleteFile + selectFilePath(null)
-    if (selectedFilePath !== null) {
-      const ok = window.confirm(
-        t("filebrowser.confirm_delete", "Delete {{path}}?", {
-          path: selectedFilePath,
-        }),
-      );
-      if (!ok) return;
-      try {
-        await deleteFile(selectedFilePath);
-        selectFilePath(null);
-        setEditingModel(null);
-        setDirty(false);
-        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-      } catch (e) {
-        console.error("Delete failed:", e);
-        window.alert(`Delete failed: ${(e as Error).message}`);
-      }
-      return;
+    if (selectedFilePath === null) return;
+    const ok = window.confirm(
+      t("filebrowser.confirm_delete", "Delete {{path}}?", {
+        path: selectedFilePath,
+      }),
+    );
+    if (!ok) return;
+    try {
+      await deleteFile(selectedFilePath);
+      selectFilePath(null);
+      setEditingModel(null);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+    } catch (e) {
+      console.error("Delete failed:", e);
+      window.alert(`Delete failed: ${(e as Error).message}`);
     }
-    if (!selectedModelId) return;
-    setDialog({ kind: "delete" });
   };
+
   const handleClose = (): void => {
     setOpenMenu(null);
-    // ADR-0041 §論点 8-A: file path 経路 / legacy 経路どちらかを閉じる
-    if (selectedFilePath !== null) {
-      selectFilePath(null);
-    } else {
-      selectModel(null);
-    }
+    selectFilePath(null);
     setEditingModel(null);
     setDirty(false);
   };
 
-  // ---- keyboard shortcuts: Ctrl+N / Ctrl+O ----
+  // ---- keyboard shortcuts: Ctrl+N ----
+  // Ctrl+O は legacy Open dialog 用だったが v0.21.0 で削除済 → 現状は無効。
+  // Ctrl+S は useAutoSave 側で扱う。
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        handleNew();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        handleOpen();
+        void handleNew();
       }
     };
     window.addEventListener("keydown", handler);
@@ -309,16 +203,12 @@ export function MenuBar(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const hasModel = selectedModelId !== null || selectedFilePath !== null;
-  // ADR-0041 §論点 8-A: legacy `selectedModelId` 経路でしか動かない操作 (Save As /
-  // Rename / Delete) は File API モードでは disable。v0.18.0 で path-based の同
-  // 機能を実装する。
-  const hasLegacyModel = selectedModelId !== null;
+  const hasModel = selectedFilePath !== null;
 
   // ---- Menu definitions ----
   const fileItems: MenuItemSpec[] = [
-    { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: handleNew },
-    { label: t("menu.file.open"), shortcut: "Ctrl+O", onClick: handleOpen },
+    { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: () => void handleNew() },
+    { label: t("menu.file.open"), shortcut: "Ctrl+O", onClick: handleOpen, disabled: true },
     { label: "", divider: true },
     {
       label: t("menu.file.save"),
@@ -327,17 +217,17 @@ export function MenuBar(): JSX.Element {
       disabled: !hasModel,
     },
     { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasModel },
-    { label: t("menu.file.rename"), onClick: handleRename, disabled: !hasLegacyModel },
     { label: "", divider: true },
     { label: t("menu.file.close"), onClick: handleClose, disabled: !hasModel },
     {
       label: t("menu.file.delete"),
-      onClick: handleDelete,
+      onClick: () => void handleDelete(),
       disabled: !hasModel,
       destructive: true,
     },
   ];
-  // v0.20.0: Help メニュー実装
+
+  // v0.20.0: Help メニュー
   const helpItems: MenuItemSpec[] = [
     {
       label: t("menu.help.about", { defaultValue: "About pyflw" }),
@@ -365,7 +255,8 @@ export function MenuBar(): JSX.Element {
       },
     },
   ];
-  // Simulation メニュー: v0.16.0 で Model Settings 追加。
+
+  // Simulation メニュー
   const simulationItems: MenuItemSpec[] = [
     {
       label: t("menu.simulation.model_settings"),
@@ -376,8 +267,8 @@ export function MenuBar(): JSX.Element {
       disabled: !hasModel,
     },
   ];
-  // ADR-0024 §(4): View メニューに Language の見出し行 + English / 日本語 を置く。
-  // 見出しはクリック不可 (= disabled) で、項目をグルーピングする視覚 hint。
+
+  // ADR-0024 §(4): View > Language
   const viewItems: MenuItemSpec[] = [
     { label: t("menu.view.language"), disabled: true },
     {
@@ -439,27 +330,6 @@ export function MenuBar(): JSX.Element {
       />
 
       {/* dialogs */}
-      {dialog?.kind === "open" && (
-        <OpenModelDialog
-          models={models}
-          currentId={selectedModelId}
-          onOpen={(id) => {
-            selectModel(id);
-            setDialog(null);
-          }}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "save-as" && selectedModelId && (
-        <RenameDialog
-          title={t("menu.file.save_as")}
-          defaultValue={`${selectedModelId}_copy`}
-          forbiddenIds={models}
-          primaryLabel={t("modal.button.save_as")}
-          onConfirm={(newName) => performSaveAs.mutate(newName)}
-          onClose={() => setDialog(null)}
-        />
-      )}
       {dialog?.kind === "save-as-path" && selectedFilePath && (
         <SaveAsPathDialog
           defaultValue={selectedFilePath.replace(
@@ -468,26 +338,6 @@ export function MenuBar(): JSX.Element {
           )}
           primaryLabel={t("modal.button.save_as")}
           onConfirm={(newPath) => void performSaveAsPath(newPath)}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "rename" && selectedModelId && (
-        <RenameDialog
-          title={t("menu.file.rename")}
-          defaultValue={selectedModelId}
-          forbiddenIds={models.filter((m) => m !== selectedModelId)}
-          primaryLabel={t("modal.button.rename")}
-          onConfirm={(newName) => performRename.mutate(newName)}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "delete" && selectedModelId && (
-        <ConfirmDialog
-          title={t("modal.delete.title")}
-          message={t("modal.delete.message", { name: selectedModelId })}
-          primaryLabel={t("modal.button.delete")}
-          destructive
-          onConfirm={() => performDelete.mutate()}
           onClose={() => setDialog(null)}
         />
       )}

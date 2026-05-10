@@ -39,7 +39,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   useAppStore.setState({
     selectedFilePath: null,
-    selectedModelId: null,
     editingModel: null,
     editingFileMtime: null,
     editingFileEtag: null,

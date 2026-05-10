@@ -1,14 +1,13 @@
 // ADR-0019 §(5): editingModel の dirty を 500 ms debounce で PUT する hook。
 // Ctrl+S / beforeunload で即時 PUT も併用。
 //
-// ADR-0041 §論点 8-A: ``selectedFilePath`` がセットされていれば File API
-// (PUT /api/v1/files/content) 経路、それ以外は legacy (PUT /api/v1/models/{id})
-// 経路。1 セッション 1 経路前提 (= store で相互排他化)。
+// v0.21.0 (ADR-0041 §論点 4-A): legacy ``selectedModelId`` / ``/api/v1/models/*``
+// 経路は削除済。``selectedFilePath`` 配下の File API (PUT /api/v1/files/content)
+// 一本化。
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-import { updateModel } from "../api/client";
 import { putFileContent } from "../api/filesApi";
 import { useAppStore } from "../store/appStore";
 
@@ -22,7 +21,6 @@ export function useAutoSave(): void {
   const editingModel = useAppStore((s) => s.editingModel);
   const dirty = useAppStore((s) => s.dirty);
   const setDirty = useAppStore((s) => s.setDirty);
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const queryClient = useQueryClient();
@@ -35,33 +33,24 @@ export function useAutoSave(): void {
     const state = useAppStore.getState();
     const model = state.editingModel;
     if (!model) return;
+    if (state.selectedFilePath === null) return;
     if (inFlightRef.current) {
       reSendRef.current = true;
       return;
     }
     inFlightRef.current = true;
     try {
-      if (state.selectedFilePath !== null) {
-        // File API 経路 (ADR-0041 §論点 8-A)。``expectedEtag`` は楽観ロック用、
-        // null なら単に上書きで OK (= v0.17.0 では external change detection は
-        // 別 ADR 送り、論点 11-A の polling は v0.18.0 で実装)。
-        const resp = await putFileContent(
-          state.selectedFilePath,
-          model,
-          state.editingFileEtag ?? undefined,
-        );
-        // 保存後の最新 etag / mtime を反映 (= 次回 PUT で楽観ロックが正しく動く)
-        setEditingFileMeta(resp.mtime, resp.etag);
-        setDirty(false);
-        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-      } else if (state.selectedModelId !== null) {
-        // legacy 経路 (ADR-0011)
-        await updateModel(state.selectedModelId, model);
-        setDirty(false);
-        await queryClient.invalidateQueries({
-          queryKey: ["model", state.selectedModelId],
-        });
-      }
+      // ``expectedEtag`` は楽観ロック用 (= ADR-0041 §論点 11-A)。null なら単に
+      // 上書きで OK。
+      const resp = await putFileContent(
+        state.selectedFilePath,
+        model,
+        state.editingFileEtag ?? undefined,
+      );
+      // 保存後の最新 etag / mtime を反映 (= 次回 PUT で楽観ロックが正しく動く)
+      setEditingFileMeta(resp.mtime, resp.etag);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("auto-save failed:", e);
       // dirty を維持 (ユーザーは編集継続できる)
@@ -83,8 +72,7 @@ export function useAutoSave(): void {
   // dirty 変化で debounce タイマー再設定
   useEffect(() => {
     if (!dirty || !editingModel) return;
-    // 何かしら開いていないと flush しない (legacy / file 経路どちらか)
-    if (selectedModelId === null && selectedFilePath === null) return;
+    if (selectedFilePath === null) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       void flush();
@@ -94,7 +82,7 @@ export function useAutoSave(): void {
     };
     // flush は ref に閉じているので deps から省略
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, editingModel, selectedModelId, selectedFilePath]);
+  }, [dirty, editingModel, selectedFilePath]);
 
   // Ctrl+S で即時 PUT
   useEffect(() => {

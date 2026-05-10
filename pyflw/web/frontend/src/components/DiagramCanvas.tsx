@@ -18,7 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { getLibraryEntry, getModel, listBlockMetadata } from "../api/client";
+import { getLibraryEntry, listBlockMetadata } from "../api/client";
 import { pushToast } from "../store/toastStore";
 import {
   modelToDiagram,
@@ -51,13 +51,6 @@ import {
 } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 
-interface DiagramCanvasProps {
-  /** legacy ``selectedModelId`` 経路の model id。``selectedFilePath`` (= File API
-   *  経路、ADR-0041 §論点 8-A) では null を渡し、内部で legacy query を skip。
-   *  editingModel は FileBrowser onClick が事前にセット済前提。 */
-  modelId: string | null;
-}
-
 // React Flow に渡すカスタムノード type 表 (modelToDiagram で type: "blockNode" を返す)。
 // 識別子の object 参照を毎回同じにすることで React Flow の警告を回避する
 // (`useMemo` がコンポーネント外で使えないため module-level 定数で代用)。
@@ -72,16 +65,13 @@ const EDGE_TYPES = { branchable: BranchableEdge } as const;
 // editor 慣習)。配列参照を毎 render で新しくしないために module-level 定数。
 const PAN_BUTTONS = [1, 2];
 
-export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
+/**
+ * v0.21.0: legacy ``modelId`` prop を撤去し、``editingModel`` を store から
+ * 直接読む形に変更 (= FileBrowser onClick が ``editingModel`` を populate 済の
+ * 前提、ADR-0041 §論点 8-A)。
+ */
+export function DiagramCanvas(): JSX.Element {
   const { t } = useTranslation();
-  // サーバ最新モデルを fetch (= editingModel の初期値)。
-  // ``modelId == null`` (= File API モード) では legacy query を skip。FileBrowser
-  // onClick が editingModel を直接セット済 (ADR-0041 §論点 8-A)。
-  const { data: serverModel, isLoading, error } = useQuery({
-    queryKey: ["model", modelId ?? "__none__"],
-    queryFn: () => getModel(modelId!),
-    enabled: modelId !== null,
-  });
   const { data: registry } = useQuery({
     queryKey: ["blocks-registry"],
     queryFn: listBlockMetadata,
@@ -93,13 +83,11 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   );
 
   const editingModel = useAppStore((s) => s.editingModel);
-  const setEditingModel = useAppStore((s) => s.setEditingModel);
   const selectedNodeIds = useAppStore((s) => s.selectedNodeIds);
   const selectNode = useAppStore((s) => s.selectNode);
   const setSelectedNodeIds = useAppStore((s) => s.setSelectedNodeIds);
   const selectedEdgeIds = useAppStore((s) => s.selectedEdgeIds);
   const setSelectedEdgeIds = useAppStore((s) => s.setSelectedEdgeIds);
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
   const editingPath = useAppStore((s) => s.editingPath);
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
@@ -254,18 +242,9 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     };
   }, [reactFlow]);
 
-  // モデル切替 / 初期 fetch 完了で editingModel を初期化 (legacy 経路のみ)
-  useEffect(() => {
-    if (modelId !== null && serverModel && selectedModelId === modelId) {
-      // 既に同 model を編集中ならサーバ更新を上書きしない (auto-save 中の race
-      // 対策: PUT 直後に再 fetch されると編集が消える)
-      const current = useAppStore.getState().editingModel;
-      if (!current || useAppStore.getState().selectedModelId !== modelId) {
-        setEditingModel(serverModel);
-        useAppStore.getState().setDirty(false);
-      }
-    }
-  }, [serverModel, modelId, selectedModelId, setEditingModel]);
+  // v0.21.0: legacy ``serverModel`` 初期化 effect を削除。``editingModel`` は
+  // FileBrowser onClick が File API 経由で populate するため、ここでの初期化
+  // は不要。
 
   // ADR-0030: 旧ローカル toast (`useState<string|null>` + `setTimeout`) はグローバル
   // `<ToastContainer>` (App ルート mount) に置き換え済み。port 形状エラー / connect 失敗 /
@@ -346,20 +325,10 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     };
   }, [branchDrag]);
 
-  // legacy mode の loading / error 判定 (modelId が null の File API mode では skip)
-  if (modelId !== null) {
-    if (isLoading) {
-      return <div className="p-4 text-sm text-gray-500">{t("diagram.loading")}</div>;
-    }
-    if (error) {
-      return (
-        <div className="p-4 text-sm text-red-600">
-          {t("diagram.load_failed", { message: (error as Error).message })}
-        </div>
-      );
-    }
-  }
-  const model = editingModel ?? serverModel ?? null;
+  // v0.21.0: legacy loading/error 判定削除 (= editingModel は FileBrowser
+  // onClick で populate される、loading 表示は FileBrowser 側 / no_model
+  // 表示で対応)。
+  const model = editingModel;
   if (!model) {
     return <div className="p-4 text-sm text-gray-500">{t("diagram.no_model")}</div>;
   }
@@ -532,14 +501,15 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
       // 非同期 fetch → 解決後に inline 展開 (= drop 瞬間に subsystem 定義をモデル
       // にコピー、ADR-0029 §PLACE-A)。fetch 中は何も配置しない (= drag 操作と認識的
       // 親和)。失敗時は toast。
-      // SHOULD: 非同期完了時にユーザーが別モデルへ切り替えていたら drop は無視する
-      // (= 古い座標で別モデルにブロックが追加されるのを防ぐ)。
-      const dropModelId = modelId;
+      // SHOULD: 非同期完了時にユーザーが別ファイルへ切り替えていたら drop は無視する
+      // (= 古い座標で別モデルにブロックが追加されるのを防ぐ)。v0.21.0:
+      // ``selectedFilePath`` を snapshot して比較。
+      const dropFilePath = useAppStore.getState().selectedFilePath;
       void getLibraryEntry(ref.library, ref.entry)
         .then((detail) => {
           const state = useAppStore.getState();
-          if (state.selectedModelId !== dropModelId) {
-            // ユーザーが drop 中に別モデルに切り替えた → drop を破棄
+          if (state.selectedFilePath !== dropFilePath) {
+            // ユーザーが drop 中に別ファイルに切り替えた → drop を破棄
             return;
           }
           const m = state.editingModel;

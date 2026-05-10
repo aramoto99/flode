@@ -23,7 +23,6 @@ import { useAppStore } from "./store/appStore";
 
 export default function App(): JSX.Element {
   const { t } = useTranslation();
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const scopes = useAppStore((s) => s.scopes);
   const editingModel = useAppStore((s) => s.editingModel);
@@ -31,11 +30,10 @@ export default function App(): JSX.Element {
   // v0.20.4: Workspace 折りたたみで grid-rows を切替 (= collapsed 時 header 24px
   // のみ、それ以外は 40% 表示)
   const workspaceCollapsed = useAppStore((s) => s.workspaceCollapsed);
-  // ADR-0041 §論点 8-A: ``selectedFilePath`` か ``selectedModelId`` のどちらかが
-  // セットされていればモデルが開かれている扱い。1 セッション 1 経路の前提
-  // なので両者は ``selectFilePath`` / ``selectModel`` 内で相互排他。
-  const hasOpenedModel = selectedModelId !== null || selectedFilePath !== null;
-  const displayName = selectedFilePath ?? selectedModelId ?? "untitled";
+  // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
+  // ADR-0041 §論点 4-A)
+  const hasOpenedModel = selectedFilePath !== null;
+  const displayName = selectedFilePath ?? "untitled";
 
   // ADR-0019 §(5): debounce auto-save / Ctrl+S / beforeunload
   useAutoSave();
@@ -110,14 +108,11 @@ export default function App(): JSX.Element {
               <>
                 <Breadcrumb />
                 <div className="flex-1 border-b border-slate-300 bg-white">
-                  <DiagramCanvas modelId={selectedModelId} />
+                  <DiagramCanvas />
                 </div>
-                {/* ADR-0041 §論点 5-A (v0.18.0): legacy `selectedModelId` /
-                    File API `selectedFilePath` どちらのモードでも表示。
-                    ``useSimulation`` 内部で経路を分岐する。 */}
-                <SimulationControls
-                  modelId={selectedModelId ?? selectedFilePath ?? ""}
-                />
+                {/* v0.21.0: SimulationControls は ``selectedFilePath`` 一本化、
+                    ``useSimulation`` 内部で File API 経路で実行する。 */}
+                <SimulationControls modelId={selectedFilePath ?? ""} />
                 {Object.entries(scopes).length > 0 && (
                   <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
                     {Object.entries(scopes).map(([scopeId, buffer]) => {
@@ -153,7 +148,7 @@ export default function App(): JSX.Element {
           <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-slate-300 bg-white">
             <PanelHeader>{t("panel.inspector")}</PanelHeader>
             {hasOpenedModel ? (
-              <ParameterPanel modelId={selectedModelId ?? selectedFilePath ?? ""} />
+              <ParameterPanel modelId={selectedFilePath ?? ""} />
             ) : (
               <div className="p-3 text-[11px] text-slate-400">
                 {t("app.inspector.locked")}

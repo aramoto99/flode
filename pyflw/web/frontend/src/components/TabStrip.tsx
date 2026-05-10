@@ -1,5 +1,6 @@
 // VS Code 風タブストリップ。Phase 3 では「現在開いているモデル 1 件のタブ」のみ表示。
 // 複数モデル並列オープンは Phase 4+ 送り (= 同じ UI で拡張可能な箱だけ用意)。
+// v0.21.0 (ADR-0041 §論点 4-A): legacy ``selectedModelId`` 削除済、file path 一本化。
 
 import { useTranslation } from "react-i18next";
 
@@ -7,26 +8,19 @@ import { useAppStore } from "../store/appStore";
 
 export function TabStrip(): JSX.Element {
   const { t } = useTranslation();
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const dirty = useAppStore((s) => s.dirty);
-  const selectModel = useAppStore((s) => s.selectModel);
   const selectFilePath = useAppStore((s) => s.selectFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setDirty = useAppStore((s) => s.setDirty);
 
-  // ADR-0041 §論点 8-A: file path 優先で basename 表示、無ければ legacy id 表示
-  const fullDisplay = selectedFilePath ?? selectedModelId;
+  const fullDisplay = selectedFilePath;
   const tabLabel = selectedFilePath
     ? selectedFilePath.split("/").pop() || selectedFilePath
-    : selectedModelId;
+    : null;
 
   const handleClose = (): void => {
-    if (selectedFilePath !== null) {
-      selectFilePath(null);
-    } else {
-      selectModel(null);
-    }
+    selectFilePath(null);
     setEditingModel(null);
     setDirty(false);
   };

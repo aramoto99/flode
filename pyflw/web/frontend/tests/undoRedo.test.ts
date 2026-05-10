@@ -40,7 +40,6 @@ beforeEach(() => {
     editingModel: emptyModel(),
     history: { past: [], future: [] },
     dirty: false,
-    selectedModelId: null,
     selectedFilePath: null,
   });
 });
@@ -212,19 +211,12 @@ describe("mergeKey collapses consecutive operations (v0.20.1)", () => {
   });
 });
 
-describe("selectFilePath / selectModel clears history", () => {
+describe("selectFilePath clears history", () => {
   it("selectFilePath clears history (= 別ファイルと混ぜない)", () => {
     const state = useAppStore.getState();
     state.applyEditingModel(setDt(0.001));
     expect(useAppStore.getState().history.past.length).toBeGreaterThan(0);
     state.selectFilePath("foo.flw.json");
-    expect(useAppStore.getState().history.past).toHaveLength(0);
-  });
-
-  it("selectModel clears history", () => {
-    const state = useAppStore.getState();
-    state.applyEditingModel(setDt(0.001));
-    state.selectModel("test");
     expect(useAppStore.getState().history.past).toHaveLength(0);
   });
 });

@@ -64,7 +64,6 @@ beforeEach(() => {
   // store のリセット (= 前テストの state を持ち込まない)
   useAppStore.setState({
     selectedFilePath: null,
-    selectedModelId: null,
     editingModel: null,
     editingFileMtime: null,
     editingFileEtag: null,

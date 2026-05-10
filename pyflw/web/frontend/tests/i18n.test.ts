@@ -69,9 +69,6 @@ describe("interpolation", () => {
     expect(
       i18n.t("modal.delete.message", { name: "untitled1" }),
     ).toBe('Permanently delete "untitled1.flw.json"?');
-    expect(
-      i18n.t("modal.rename.conflict", { name: "foo" }),
-    ).toBe('A model named "foo" already exists.');
   });
 
   it("substitutes {{name}} placeholders in ja", async () => {

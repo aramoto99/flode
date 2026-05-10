@@ -328,9 +328,8 @@ export function FileBrowser(): JSX.Element {
             void performOpen(target);
           }}
           onSaveAndOpen={async () => {
-            // 現在の編集を File API モードなら保存してから開く。legacy モード
-            // (= selectedModelId) は別 hook で管理されているため、ここでは
-            // selectedFilePath の場合のみ自動保存する。
+            // 現在の編集を File API で保存してから開く (v0.21.0 で legacy
+            // ``selectedModelId`` 経路は削除済、selectedFilePath 一本化)。
             const target = pendingOpenPath;
             const state = useAppStore.getState();
             const path = state.selectedFilePath;

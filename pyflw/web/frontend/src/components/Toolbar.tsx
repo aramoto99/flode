@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { updateModel } from "../api/client";
 import { putFileContent } from "../api/filesApi";
 import { useSimulation } from "../lib/useSimulation";
 import { updateSimulatorConfig, useAppStore } from "../store/appStore";
@@ -18,7 +17,8 @@ export function Toolbar(): JSX.Element {
   const reactFlow = useReactFlow();
   const queryClient = useQueryClient();
 
-  const selectedModelId = useAppStore((s) => s.selectedModelId);
+  // v0.21.0 (ADR-0041 §論点 4-A): legacy ``selectedModelId`` 経路は削除済。
+  // 保存先は常に ``selectedFilePath`` 配下の File API。
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const editingFileEtag = useAppStore((s) => s.editingFileEtag);
   const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
@@ -29,34 +29,22 @@ export function Toolbar(): JSX.Element {
 
   const { run, stop } = useSimulation();
 
-  // ADR-0041 §論点 5-A: File API モード / legacy モードで保存先を分岐。
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!editingModel) throw new Error("no model");
-      if (selectedFilePath !== null) {
-        const resp = await putFileContent(
-          selectedFilePath,
-          editingModel,
-          editingFileEtag ?? undefined,
-        );
-        setEditingFileMeta(resp.mtime, resp.etag);
-        setDirty(false);
-        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-        return;
-      }
-      if (selectedModelId !== null) {
-        await updateModel(selectedModelId, editingModel);
-        setDirty(false);
-        await queryClient.invalidateQueries({
-          queryKey: ["model", selectedModelId],
-        });
-        return;
-      }
-      throw new Error("no model selected");
+      if (selectedFilePath === null) throw new Error("no file selected");
+      const resp = await putFileContent(
+        selectedFilePath,
+        editingModel,
+        editingFileEtag ?? undefined,
+      );
+      setEditingFileMeta(resp.mtime, resp.etag);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     },
   });
 
-  const hasModel = selectedModelId !== null || selectedFilePath !== null;
+  const hasModel = selectedFilePath !== null;
   const isRunning = status === "running";
 
   // v0.20.0: Undo / Redo

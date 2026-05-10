@@ -74,18 +74,10 @@ export interface ClipboardPayload {
 }
 
 interface AppState {
-  selectedModelId: string | null;
-  selectModel: (modelId: string | null) => void;
-
-  // ADR-0041 §論点 8-A: workspace 相対 POSIX path で選択中ファイルを表現する
-  // 新方式。legacy ``selectedModelId`` と当面 coexist (= 旧 /api/v1/models 経路の
-  // ユーザー向け、v3.0 で完全削除)。new セッションでは ``selectedFilePath`` を
-  // 優先、null なら未選択。
+  // v0.21.0: legacy ``selectedModelId`` を完全削除済 (ADR-0041 §論点 4-A)。
+  // ``selectedFilePath`` のみが「選択中の編集対象」を表す。
   selectedFilePath: string | null;
-  /**
-   * file path ベースで開く。``null`` で閉じる。``selectedModelId`` も同時に
-   * クリアして 1 セッション 1 経路に揃える。
-   */
+  /** file path ベースで開く。``null`` で閉じる。 */
   selectFilePath: (path: string | null) => void;
   // ADR-0041 §論点 11-A: 楽観ロック / 外部変更検知に使う state。`selectFilePath`
   // で `editingModel` がロードされたタイミングで一緒にセットされる。
@@ -183,35 +175,10 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  selectedModelId: null,
-  selectModel: (modelId) =>
-    set({
-      selectedModelId: modelId,
-      selectedFilePath: null,
-      editingFileMtime: null,
-      editingFileEtag: null,
-      selectedNodeIds: [],
-      selectedNodeId: null,
-      selectedEdgeIds: [],
-      clipboard: null,
-      simulationId: null,
-      status: "idle",
-      scopes: {},
-      // モデル切り替えで編集状態をクリア (新モデルは ModelLoader で再 fetch)
-      editingModel: null,
-      dirty: false,
-      editingPath: [],
-      // v0.20.0: 履歴は別ファイルと混ぜない (= 完全クリア)
-      history: { past: [], future: [] },
-      lastMergeKey: null,
-    }),
-
   selectedFilePath: null,
   selectFilePath: (path) =>
     set({
       selectedFilePath: path,
-      // selectedModelId と相互排他 (= 1 セッション 1 経路、編集状態の二重ソース回避)
-      selectedModelId: null,
       editingFileMtime: null,
       editingFileEtag: null,
       selectedNodeIds: [],
@@ -224,6 +191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingModel: null,
       dirty: false,
       editingPath: [],
+      // v0.20.0: 履歴は別ファイルと混ぜない (= 完全クリア)
       history: { past: [], future: [] },
       lastMergeKey: null,
     }),

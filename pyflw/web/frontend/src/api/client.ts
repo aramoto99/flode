@@ -1,11 +1,15 @@
-// REST API クライアント (ADR-0011 §(1)、ADR-0019 §(1)、ADR-0029)。
+// REST API クライアント (ADR-0011 §(1)、ADR-0019 §(1)、ADR-0029、ADR-0041 §5)。
+//
+// v0.21.0: legacy ``/api/v1/models/*`` 系 (= listModels / getModel / updateModel /
+// createModel / deleteModel / copyModel / nextUntitledName / startSimulation の
+// model_id body 経路) を全削除。File API (= filesApi.ts) と
+// startSimulationByPath / startSimulationInline のみが残る。
 import type {
   BlockMetadata,
   BlockRegistryResponse,
   FlwModel,
   LibraryEntryDetail,
   LibraryRegistryResponse,
-  ModelList,
   ResolvedPortShapes,
   SimulationState,
 } from "../types/api";
@@ -31,33 +35,6 @@ async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function listModels(): Promise<ModelList> {
-  return _fetch<ModelList>("/models");
-}
-
-export async function getModel(modelId: string): Promise<FlwModel> {
-  return _fetch<FlwModel>(`/models/${encodeURIComponent(modelId)}`);
-}
-
-export async function updateModel(
-  modelId: string,
-  payload: FlwModel,
-): Promise<{ model_id: string }> {
-  return _fetch(`/models/${encodeURIComponent(modelId)}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function startSimulation(
-  modelId: string,
-): Promise<{ simulation_id: string; model_id: string }> {
-  return _fetch("/simulations", {
-    method: "POST",
-    body: JSON.stringify({ model_id: modelId }),
-  });
-}
-
 /**
  * ADR-0041 §論点 5-A: workspace 相対 path でシミュレーション開始。
  * backend が `resolve_workspace_path` で path traversal 防御を通したのち、
@@ -78,7 +55,7 @@ export async function startSimulationByPath(
  * そのまま渡すため、ファイル化されていないモデルを試走するときに使う。
  */
 export async function startSimulationInline(
-  model: import("../types/api").FlwModel,
+  model: FlwModel,
 ): Promise<{ simulation_id: string; model_id: string }> {
   return _fetch("/simulations", {
     method: "POST",
@@ -135,61 +112,4 @@ export async function getLibraryEntry(
   return _fetch<LibraryEntryDetail>(
     `/libraries/${encodeURIComponent(libraryName)}/${encodeURIComponent(entryId)}`,
   );
-}
-
-// ADR-0019 §(7): Create new model
-export async function createModel(
-  payload: FlwModel,
-): Promise<{ model_id: string }> {
-  return _fetch("/models", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function deleteModel(modelId: string): Promise<void> {
-  await _fetch(`/models/${encodeURIComponent(modelId)}`, {
-    method: "DELETE",
-  });
-}
-
-/**
- * "Save As" / Rename: 現在の model を新しい id にコピーする。
- * サーバ側に専用 endpoint がないので 3 ステップ (read → write to new → optionally delete old)。
- *
- * @param oldId 元 model id
- * @param newId 新 model id
- * @param deleteOriginal true なら元ファイルを削除 (= rename)、false なら残す (= save-as)
- * @returns 新規作成された model id (server が衝突回避で suffix を付けた場合があるためそれを返す)
- */
-export async function copyModel(
-  oldId: string,
-  newId: string,
-  { deleteOriginal }: { deleteOriginal: boolean },
-): Promise<string> {
-  const data = await getModel(oldId);
-  const payload: FlwModel = {
-    ...data,
-    metadata: { ...(data.metadata ?? {}), name: newId },
-  };
-  // POST で衝突回避 + 新規作成 (= 既存 file には書き込まない)
-  const resp = await createModel(payload);
-  if (deleteOriginal && resp.model_id !== oldId) {
-    await deleteModel(oldId);
-  }
-  return resp.model_id;
-}
-
-/**
- * Untitled モデルの auto-name を計算する (現存 model 一覧と衝突しない最小の suffix)。
- * Simulink ``untitled1.slx`` 風 (アンダースコアなし)。
- */
-export async function nextUntitledName(): Promise<string> {
-  const list = await listModels();
-  const taken = new Set(list.models);
-  for (let i = 1; i < 10000; i++) {
-    const candidate = `untitled${i}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  throw new Error("Cannot allocate untitled<N>: too many models");
 }
