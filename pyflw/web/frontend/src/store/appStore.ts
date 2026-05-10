@@ -25,6 +25,7 @@ import type {
   SimulationStatus,
   SimulatorConfig,
   StreamMessage,
+  TEnd,
 } from "../types/api";
 
 // ADR-0023 §Decision §(3): ScopeBuffer は ``../lib/scopeBuffer`` に SoA 実装を抽出。
@@ -155,10 +156,11 @@ interface AppState {
   // シミュレーション関連
   simulationId: string | null;
   status: SimulationStatus | "idle";
-  progress: { current_t: number; t_end: number } | null;
+  // ADR-0042 §論点 3-A: ``t_end`` は ``number | "inf"`` Union (= unbounded run)。
+  progress: { current_t: number; t_end: TEnd } | null;
   startedSimulation: (simId: string) => void;
   setStatus: (status: SimulationStatus | "idle") => void;
-  setProgress: (current_t: number, t_end: number) => void;
+  setProgress: (current_t: number, t_end: TEnd) => void;
   resetSimulation: () => void;
 
   // Scope データ (scope_id -> 時系列)

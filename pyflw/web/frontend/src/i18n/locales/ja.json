@@ -53,6 +53,7 @@
 
   "statusbar.idle": "待機中",
   "statusbar.running": "実行中 {{pct}}% (t={{t}})",
+  "statusbar.running_unbounded": "実行中 t={{t}} (∞、停止ボタンで終了)",
   "statusbar.completed": "完了",
   "statusbar.stopped": "停止",
   "statusbar.failed": "失敗",

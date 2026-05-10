@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { resolveBlocksAtPath } from "../lib/pathResolver";
+import { parseTEnd } from "../lib/timeUtil";
 import { useAppStore } from "../store/appStore";
 
 export function StatusBar(): JSX.Element {
@@ -36,9 +37,18 @@ export function StatusBar(): JSX.Element {
 
   const simStatusLabel = ((): string => {
     if (status === "running" && progress) {
+      // ADR-0042 §論点 3-A: ``progress.t_end`` は ``number | "inf"`` Union。
+      // unbounded 時は progress bar の % 計算が無意味 (= 0% 固定) なので
+      // 専用ラベルで「Stop ボタンを押すまで実行中」を示す。
+      const parsed = parseTEnd(progress.t_end);
+      if (parsed.isUnbounded) {
+        return t("statusbar.running_unbounded", {
+          t: progress.current_t.toFixed(2),
+        });
+      }
       const pct = Math.min(
         100,
-        Math.round((progress.current_t / progress.t_end) * 100),
+        Math.round((progress.current_t / parsed.value) * 100),
       );
       return t("statusbar.running", {
         pct,

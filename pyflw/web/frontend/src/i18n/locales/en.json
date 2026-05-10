@@ -53,6 +53,7 @@
 
   "statusbar.idle": "Idle",
   "statusbar.running": "Running {{pct}}% (t={{t}})",
+  "statusbar.running_unbounded": "Running t={{t}} (∞, press Stop)",
   "statusbar.completed": "Completed",
   "statusbar.stopped": "Stopped",
   "statusbar.failed": "Failed",

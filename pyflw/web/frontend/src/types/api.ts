@@ -13,8 +13,14 @@ export interface ConnectionEntry {
   dst_idx: number;
 }
 
+// ADR-0042 §論点 3-A: ``t_end`` は ``number | "inf"`` の Union。
+// ``"inf"`` は unbounded run (Stop Time = ∞) を表す sentinel。frontend 内の
+// 計算では ``parseTEnd`` ヘルパー (= ``timeUtil.ts``) で ``Number.POSITIVE_INFINITY``
+// に正規化してから扱う。
+export type TEnd = number | "inf";
+
 export interface SimulatorConfig {
-  t_end: number;
+  t_end: TEnd;
   dt: number;
   solver: string;
   rtol: number;
@@ -66,7 +72,8 @@ export interface SimulationState {
   model_id: string;
   status: SimulationStatus;
   current_t: number;
-  t_end: number;
+  // ADR-0042 §論点 3-A: backend が ``"inf"`` 文字列で配信する Union。
+  t_end: TEnd;
   started_at: number;
   finished_at: number | null;
   error: string | null;
@@ -193,7 +200,8 @@ export interface ResolvedPortShapes {
 // 終端メッセージ (completed / stopped / failed) には ``duration_sec`` も含まれるが、
 // Phase 2 では UI に表示しないため store に保存していない (Phase 3 で表示予定)。
 export type StreamMessage =
-  | { type: "progress"; current_t: number; t_end: number }
+  // ADR-0042 §論点 3-A: ``t_end`` は ``number | "inf"`` Union。
+  | { type: "progress"; current_t: number; t_end: TEnd }
   | {
       type: "scope_batch";
       scope_id: string;

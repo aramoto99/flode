@@ -1,8 +1,12 @@
 // シミュレーション進捗バー。Run/Stop は Toolbar の icon button に集約済み。
 // ここでは「実行中なら status + progress を細い帯で表示」のみに絞る (= 隠せる UI)。
+// ADR-0042 §論点 3-A: ``progress.t_end`` は ``number | "inf"`` Union。
+// unbounded 時は progress bar を 100% (= 無限なので bar を満たして「永続実行」を
+// 視覚的に示す) ではなく **bar 非表示** + 経過時間 t={current} (∞) のみ表示する。
 
 import { useTranslation } from "react-i18next";
 
+import { parseTEnd } from "../lib/timeUtil";
 import { useAppStore } from "../store/appStore";
 
 export function SimulationControls(_props: {
@@ -14,8 +18,11 @@ export function SimulationControls(_props: {
 
   if (status === "idle") return null;
 
+  const parsedTEnd = progress ? parseTEnd(progress.t_end) : null;
   const ratio =
-    progress && progress.t_end > 0 ? progress.current_t / progress.t_end : 0;
+    progress && parsedTEnd && !parsedTEnd.isUnbounded && parsedTEnd.value > 0
+      ? progress.current_t / parsedTEnd.value
+      : 0;
 
   const statusColor =
     status === "running"
@@ -31,6 +38,11 @@ export function SimulationControls(_props: {
   // を防ぐ)。
   const statusLabel: string = ((): string => {
     if (status === "running") {
+      if (parsedTEnd?.isUnbounded) {
+        return t("statusbar.running_unbounded", {
+          t: progress?.current_t.toFixed(2) ?? "0",
+        });
+      }
       return t("statusbar.running", {
         pct: Math.round(ratio * 100),
         t: progress?.current_t.toFixed(2) ?? "0",
@@ -49,16 +61,22 @@ export function SimulationControls(_props: {
         aria-hidden
       />
       <span className="font-medium tracking-wide">{statusLabel}</span>
-      {progress && (
+      {progress && parsedTEnd && (
         <>
-          <div className="ml-2 h-1.5 flex-1 overflow-hidden border border-slate-300 bg-white">
-            <div
-              className="h-full bg-blue-500 transition-all"
-              style={{ width: `${Math.min(100, ratio * 100).toFixed(1)}%` }}
-            />
-          </div>
-          <span className="font-mono text-[10px] tabular-nums text-slate-600">
-            t={progress.current_t.toFixed(3)} / {progress.t_end.toFixed(3)}
+          {!parsedTEnd.isUnbounded && (
+            <div className="ml-2 h-1.5 flex-1 overflow-hidden border border-slate-300 bg-white">
+              <div
+                className="h-full bg-blue-500 transition-all"
+                style={{ width: `${Math.min(100, ratio * 100).toFixed(1)}%` }}
+              />
+            </div>
+          )}
+          <span
+            className={`font-mono text-[10px] tabular-nums text-slate-600 ${parsedTEnd.isUnbounded ? "ml-auto" : ""}`}
+          >
+            {parsedTEnd.isUnbounded
+              ? `t=${progress.current_t.toFixed(3)} / ∞`
+              : `t=${progress.current_t.toFixed(3)} / ${parsedTEnd.value.toFixed(3)}`}
           </span>
         </>
       )}

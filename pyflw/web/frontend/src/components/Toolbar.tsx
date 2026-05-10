@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { putFileContent } from "../api/filesApi";
+import { parseToolbarTEnd } from "../lib/timeUtil";
 import { useSimulation } from "../lib/useSimulation";
 import { updateSimulatorConfig, useAppStore } from "../store/appStore";
 
@@ -131,9 +132,10 @@ export function Toolbar(): JSX.Element {
 
 // ---------------------------------------------------------------------------
 // StopTimeInput: Simulink ツールバー右側にある Stop Time フィールド相当。
-// ``editingModel.simulator.t_end`` を直接購読 + 編集する数値入力。
-// 不正値 (空 / NaN / 負) は store に書かず draft のみ更新 → 確定 (blur or Enter)
-// 時に弾く。autosave (= dirty フラグ) は applyEditingModel 内で立つ。
+// ``editingModel.simulator.t_end`` を直接購読 + 編集する入力フィールド。
+// ADR-0042 §論点 5-A: ``"inf"`` (case-insensitive) を受け入れて Stop ボタンまで
+// 走らせる unbounded run を実現する。不正値 (空 / NaN / 負 / 未対応 string) は
+// store に書かず draft をリセット。autosave は applyEditingModel 内で立つ。
 // ---------------------------------------------------------------------------
 interface StopTimeInputProps {
   disabled: boolean;
@@ -146,17 +148,21 @@ function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
 
   // store の値が変わったら draft を同期 (= 別タブで開いたモデル切替時 etc.)
   useEffect(() => {
-    setDraft(tEnd === undefined ? "" : String(tEnd));
+    if (tEnd === undefined) {
+      setDraft("");
+    } else {
+      setDraft(String(tEnd));
+    }
   }, [tEnd]);
 
   const commit = (): void => {
-    const v = Number(draft);
-    if (!Number.isFinite(v) || v <= 0) {
-      // 不正値は draft をリセット
+    const parsed = parseToolbarTEnd(draft);
+    if (parsed === null) {
+      // 不正値は draft をリセット (= 旧値を表示し直す)
       setDraft(tEnd === undefined ? "" : String(tEnd));
       return;
     }
-    if (v !== tEnd) updateSimulatorConfig({ t_end: v });
+    if (parsed !== tEnd) updateSimulatorConfig({ t_end: parsed });
   };
 
   return (
