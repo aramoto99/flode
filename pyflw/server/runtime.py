@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from ..core.persistence import serialize_t_end
 from ..core.simulator import Simulator
 from ..exceptions import PyflwError, SimulationStillRunningError
 
@@ -26,13 +27,17 @@ _logger = logging.getLogger("pyflw.server.runtime")
 
 @dataclasses.dataclass
 class SimulationState:
-    """シミュレーションの公開状態 (REST ``GET /simulations/{id}`` 用)。"""
+    """シミュレーションの公開状態 (REST ``GET /simulations/{id}`` 用)。
+
+    ADR-0042 §論点 3-A: ``t_end`` は ``float`` (有限値) または ``"inf"`` 文字列
+    リテラル (= unbounded、``Stop Time = inf``) を取る Union。
+    """
 
     simulation_id: str
     model_id: str
     status: str  # "running" / "completed" / "failed" / "stopped"
     current_t: float
-    t_end: float
+    t_end: float | str
     started_at: float
     finished_at: float | None = None
     error: str | None = None
@@ -61,7 +66,9 @@ class _SimulationRecord:
             model_id=model_id,
             status="running",
             current_t=0.0,
-            t_end=simulator.t_end,
+            # ADR-0042 §論点 3-A: ``math.inf`` は wire 上 ``"inf"`` 文字列で
+            # 配信する (= JS 側 JSON.stringify(Infinity)==="null" の罠回避)。
+            t_end=serialize_t_end(simulator.t_end),
             started_at=time.time(),
         )
         self.future: Future[None] | None = None
@@ -157,8 +164,17 @@ class SimulationManager:
             if n_total - cursor >= rec.scope_batch_size:
                 self._dispatch_scope_batch(rec, scope, cursor, n_total)
                 rec._scope_cursors[scope.id] = n_total
-        # progress イベント (バッチサイズに関わらず毎ステップ送る)
-        self._dispatch(rec, {"type": "progress", "current_t": t, "t_end": t_end})
+        # progress イベント (バッチサイズに関わらず毎ステップ送る)。
+        # ADR-0042 §論点 3-A: ``t_end`` は ``serialize_t_end`` 経由で
+        # ``math.inf → "inf"`` 文字列にする (= wire 形式統一)。
+        self._dispatch(
+            rec,
+            {
+                "type": "progress",
+                "current_t": t,
+                "t_end": serialize_t_end(t_end),
+            },
+        )
         return True
 
     def _flush_remaining_scopes(self, rec: _SimulationRecord) -> None:

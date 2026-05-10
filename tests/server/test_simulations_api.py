@@ -296,3 +296,70 @@ class TestScopeBatchStreaming:
         assert scope_batches[0]["scope_id"] == "scope"
         assert "times" in scope_batches[0]
         assert "values" in scope_batches[0]
+
+
+class TestUnboundedTEnd:
+    """ADR-0042 §論点 3-A: ``t_end="inf"`` で WS / REST の wire 形式が ``"inf"``。"""
+
+    def _save_inf_model(self, workspace: Path) -> str:
+        sim = Simulator(t_end="inf", dt=0.01)
+        sim.add(Constant(value=1.0, id="src"))
+        sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect("src", "scope")
+        sim.save(workspace / "unbounded.flw.json")
+        return "unbounded.flw.json"
+
+    def test_rest_state_t_end_is_inf_string(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        path = self._save_inf_model(workspace)
+        response = client.post("/api/v1/simulations", json={"model_path": path})
+        sim_id = response.json()["simulation_id"]
+
+        # state を即取得 (= まだ走り続けている)
+        time.sleep(0.05)
+        state_resp = client.get(f"/api/v1/simulations/{sim_id}")
+        assert state_resp.status_code == 200
+        state = state_resp.json()
+        # ADR-0042 §論点 3-A: REST で ``t_end`` は ``"inf"`` 文字列で配信
+        assert state["t_end"] == "inf"
+
+        # 後始末: 停止して bg thread を終わらせる
+        client.post(f"/api/v1/simulations/{sim_id}/stop")
+        _wait_for_status(client, sim_id, {"stopped", "completed"}, timeout=5.0)
+
+    def test_ws_progress_t_end_is_inf_string(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        path = self._save_inf_model(workspace)
+        response = client.post("/api/v1/simulations", json={"model_path": path})
+        sim_id = response.json()["simulation_id"]
+
+        progress_t_ends: list = []
+        with client.websocket_connect(f"/api/v1/simulations/{sim_id}/stream") as ws:
+            # 数件 progress を受信したら stop を送る
+            for _ in range(20):
+                msg = ws.receive_json()
+                if msg["type"] == "progress":
+                    progress_t_ends.append(msg["t_end"])
+                    if len(progress_t_ends) >= 3:
+                        ws.send_json({"type": "stop"})
+                if msg["type"] in ("completed", "stopped", "failed"):
+                    break
+
+        assert len(progress_t_ends) >= 1
+        # 全 progress message で t_end == "inf" 文字列
+        assert all(t == "inf" for t in progress_t_ends), progress_t_ends
+
+    def test_finite_t_end_still_serializes_as_number(
+        self, client: TestClient, workspace: Path
+    ) -> None:
+        # 既存挙動: 有限 t_end は ``float`` で配信される (= 後方互換)
+        path = _seed_simple_model(workspace, "demo")
+        response = client.post("/api/v1/simulations", json={"model_path": path})
+        sim_id = response.json()["simulation_id"]
+
+        state = _wait_for_status(client, sim_id, {"completed"})
+        # state.t_end は数値 (= 0.05)
+        assert isinstance(state["t_end"], int | float)
+        assert state["t_end"] == pytest.approx(0.05)
