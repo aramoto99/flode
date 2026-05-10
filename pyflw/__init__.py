@@ -1,8 +1,8 @@
-# v0.20.7 (UI ポリッシュ): 接続済み edge から markerEnd (= 矢印 head) を削除。
-# React Flow は矢印 head を node 境界の外側に描画するため edge と node の
-# 隙間が大きく見えていた問題を解消、edge は node 境界に直接到達する Simulink
-# 流の見た目に。
-__version__ = "0.20.7"
+# v0.20.8 (UI 修正): edge と block の隙間を完全解消。Handle (24×24) の transform
+# を override して center を node 境界に明示固定。React Flow デフォルトの
+# transform は Handle を node 完全外側に押し出すため Handle width=24 だと
+# edge anchor が node 境界 +12 px 外側になっていた。
+__version__ = "0.20.8"
 
 from .analysis import (
     BodeResponse,

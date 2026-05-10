@@ -163,7 +163,7 @@ export function BlockNodeView({
               type="target"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct)}
+              style={arrowHandleStyle(pos.topPct, finalPos)}
             >
               {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
@@ -179,7 +179,7 @@ export function BlockNodeView({
               type="source"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct)}
+              style={arrowHandleStyle(pos.topPct, finalPos)}
             >
               {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
@@ -556,12 +556,26 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
 // 終端を内側に手動調整する必要があるが、規模が大きいので将来検討。
 // ---------------------------------------------------------------------------
 
-function arrowHandleStyle(topPct: number): React.CSSProperties {
+function arrowHandleStyle(
+  topPct: number,
+  position: Position,
+): React.CSSProperties {
   // v0.20.4: Handle を 24×24 に拡大して chevron ``>`` (= Handle 中心から外側
-  // +6〜+12 px の位置) を hit area に含める。利用者がブロック境界外の
-  // chevron 上にカーソルを乗せても connect cursor (= React Flow の
-  // ``cursor: crosshair``) が効き、drag connection start / drop が成立する。
-  // Handle 中心 = ブロック境界線上は変えないので edge anchor 位置は不変。
+  // +6〜+12 px の位置) を hit area に含める。
+  //
+  // v0.20.8: ``transform`` を override して Handle 中心を **node 境界に明示
+  // 固定** する (= edge anchor 位置を node 境界線にロック、ブロックと edge
+  // の隙間ゼロ)。React Flow デフォルトの transform は Handle を node の完全
+  // 外側に押し出すため、Handle width 拡大すると edge 起点が node から離れて
+  // 見える問題を解消。Handle の半分は node 内に重なるが、port エリア (=
+  // node 端) でクリックすると connection drag を開始するのは Simulink でも
+  // 同じ慣習。
+  const transform =
+    position === Position.Right
+      ? "translate(-50%, -50%)"
+      : position === Position.Left
+        ? "translate(50%, -50%)"
+        : "translate(-50%, -50%)";
   return {
     top: `${topPct}%`,
     background: "transparent",
@@ -569,6 +583,7 @@ function arrowHandleStyle(topPct: number): React.CSSProperties {
     height: 24,
     border: "none",
     borderRadius: 0,
+    transform,
   };
 }
 

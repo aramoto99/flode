@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.8] - 2026-05-10 — edge と block の隙間を完全解消 (Handle transform override)
+
+v0.20.7 で markerEnd を削除したが、まだ ~12 px の隙間が残るというユーザー指摘
+への追加対応。根本原因は v0.20.4 で Handle を 24×24 に拡大した際、React Flow
+の **デフォルト transform が Handle を node の完全外側に押し出す** ため Handle
+center (= edge anchor) が node 境界の +12 px 外側になっていた。
+
+### Fixed
+
+- ``arrowHandleStyle`` に ``position: Position`` 引数を追加し、``transform`` を
+  override:
+  - ``Position.Right``: ``translate(-50%, -50%)`` で Handle center を node 右辺に
+    ロック
+  - ``Position.Left``: ``translate(50%, -50%)`` で Handle center を node 左辺に
+    ロック
+- これにより Handle の半分 (= 12 px) は node 内側に重なるが、edge anchor は
+  node 境界線にぴったり一致 → 隙間ゼロ
+- node 端 (= port エリア) でクリックすると connection drag を開始するのは
+  Simulink でも同じ慣習なので問題なし
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean
+- ``examples/spring_mass_damper.py`` 数値完全不変
+
+### v0.20.7 → v0.20.8 移行
+
+利用者は何もする必要なし。サーバ再起動で自動反映。
+
 ## [0.20.7] - 2026-05-10 — edge と block の隙間を解消 (markerEnd 削除)
 
 ユーザー指摘 (= 「ブロックとエッジの隙間が大きい、接続してしまえばエッジの
