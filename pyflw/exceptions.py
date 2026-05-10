@@ -80,3 +80,12 @@ class PathTraversalError(PyflwError):
     REST `/api/v1/files/*` で利用者が渡す path を ``resolve_workspace_path`` で
     検証する際に投げられる。HTTP 層では 403 にマップされる。
     """
+
+
+class BufferOverflowWarning(UserWarning):
+    """``Scope.buffer_mode = "bounded"`` で capacity に達した直後に 1 回だけ発火 (ADR-0042 §2)。
+
+    ``ring`` mode では古い sample が黙って drop されるが、``bounded`` mode は
+    「ユーザーが明示的に上限を超えたら警告ほしい」用途。``unbounded`` mode は
+    ``buffer_capacity`` を持たないので警告対象外。
+    """

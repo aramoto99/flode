@@ -672,6 +672,16 @@ class Simulator:
         # 有限値の場合は従来通り ``int(round(t_end / dt_base))`` で打ち切り。
         is_unbounded = math.isinf(self.t_end)
         if is_unbounded:
+            # ADR-0042 §論点 2-A: unbounded run で Scope(buffer_mode="unbounded")
+            # を使うと OOM 必至なので build 時に reject。
+            for b in self.blocks:
+                buffer_mode = getattr(b, "buffer_mode", None)
+                if buffer_mode == "unbounded":
+                    raise BlockSpecError(
+                        f"Scope {b.id!r}: buffer_mode='unbounded' is not allowed "
+                        f"when t_end=inf (would OOM). Use buffer_mode='ring' "
+                        f"(default) or 'bounded'."
+                    )
             n_steps: int | None = None
         else:
             n_steps = int(round(self.t_end / dt_base))

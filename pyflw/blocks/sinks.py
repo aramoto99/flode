@@ -1,15 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import warnings
+from collections import deque
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import numpy.typing as npt
 
 from ..core.block import Block
-from ..exceptions import BlockSpecError
+from ..exceptions import BlockSpecError, BufferOverflowWarning
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+
+
+# ADR-0042 §論点 2-A: ring/bounded のデフォルト容量。100,000 サンプル × n_inputs
+# float64 で ~800 KB / signal、Scope 5 個 × 8 signals でも ~32 MB と妥当。
+_DEFAULT_SCOPE_CAPACITY = 100_000
+
+ScopeBufferMode = Literal["ring", "bounded", "unbounded"]
 
 
 class Scope(Block):
@@ -21,6 +30,15 @@ class Scope(Block):
     Args:
         n_inputs: 記録する信号数 (= 入力ポート数)。
         labels: 各信号のラベル (省略時は ``in0``, ``in1`` ...)。``plot`` で凡例に使う。
+        buffer_mode: バッファ動作 (ADR-0042 §論点 2-A):
+            - ``"ring"`` (default): ``buffer_capacity`` 到達後は最古サンプルから
+              FIFO drop。``Stop Time = inf`` の長時間実行で OOM 防止。
+            - ``"bounded"``: capacity 到達で `BufferOverflowWarning` を 1 回発し、
+              以降は record を黙って捨てる (= 直近サンプル保持を諦め、初期実行を保つ)。
+            - ``"unbounded"``: 上限なし、無限に成長。**``Simulator.t_end = inf`` と
+              組み合わせると build 時に `BlockSpecError` で reject される**。
+        buffer_capacity: ``ring`` / ``bounded`` の容量 (sample 数)。default
+            ``100_000`` (ADR-0042 §論点 2-A)。``unbounded`` では未使用。
     """
 
     def __init__(
@@ -28,26 +46,68 @@ class Scope(Block):
         n_inputs: int = 1,
         labels: list[str] | None = None,
         *,
+        buffer_mode: ScopeBufferMode = "ring",
+        buffer_capacity: int = _DEFAULT_SCOPE_CAPACITY,
         id: str | None = None,
         name: str | None = None,
     ):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
-        self.times: list[float] = []
-        self._values: list[npt.NDArray[Any]] = []
+        if buffer_mode not in ("ring", "bounded", "unbounded"):
+            raise BlockSpecError(
+                f"Scope: buffer_mode must be 'ring' / 'bounded' / 'unbounded', "
+                f"got {buffer_mode!r}"
+            )
+        if buffer_mode != "unbounded" and buffer_capacity < 1:
+            raise BlockSpecError(
+                f"Scope: buffer_capacity must be >= 1, got {buffer_capacity!r}"
+            )
+        self.buffer_mode: ScopeBufferMode = buffer_mode
+        self.buffer_capacity: int = int(buffer_capacity)
+        # ring/bounded は deque/list で実装、unbounded は list (= 既存挙動)
+        self.times: list[float] | deque[float]
+        self._values: list[npt.NDArray[Any]] | deque[npt.NDArray[Any]]
+        self._init_buffers()
+        # bounded で warning 発火済かどうか (= 1 回だけ)
+        self._overflow_warned: bool = False
         self._params = {
             "n_inputs": int(n_inputs),
             "labels": self.labels,
+            "buffer_mode": self.buffer_mode,
+            "buffer_capacity": self.buffer_capacity,
         }
+
+    def _init_buffers(self) -> None:
+        """buffer_mode に応じて times / _values を初期化する。"""
+        if self.buffer_mode == "ring":
+            self.times = deque(maxlen=self.buffer_capacity)
+            self._values = deque(maxlen=self.buffer_capacity)
+        else:
+            # bounded / unbounded は list で持つ (= bounded は capacity 到達後
+            # append を skip、unbounded は無制限に append、いずれも numpy 変換が
+            # 既存と同じ list[ndarray] パスで効く)
+            self.times = []
+            self._values = []
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
 
     def reset(self) -> None:
-        self.times = []
-        self._values = []
+        self._init_buffers()
+        self._overflow_warned = False
 
     def record(self, t: float, u: npt.NDArray[Any]) -> None:
+        if self.buffer_mode == "bounded" and len(self.times) >= self.buffer_capacity:
+            if not self._overflow_warned:
+                warnings.warn(
+                    f"Scope {self.id!r}: buffer_capacity={self.buffer_capacity} "
+                    f"reached, dropping further samples (buffer_mode='bounded'). "
+                    f"Use buffer_mode='ring' to keep the latest samples instead.",
+                    BufferOverflowWarning,
+                    stacklevel=2,
+                )
+                self._overflow_warned = True
+            return
         self.times.append(float(t))
         self._values.append(np.asarray(u, dtype=float).copy())
 
@@ -55,7 +115,8 @@ class Scope(Block):
     def values(self) -> npt.NDArray[Any]:
         if not self._values:
             return np.empty((0, self.n_inputs))
-        return np.array(self._values)
+        # deque は np.array() に直接渡せる (= shape は (n_samples, n_inputs))
+        return np.array(list(self._values))
 
     def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
         import matplotlib.pyplot as plt

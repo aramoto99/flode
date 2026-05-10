@@ -177,8 +177,15 @@ class SimulationManager:
     def _dispatch_scope_batch(
         self, rec: _SimulationRecord, scope: Any, start: int, end: int
     ) -> None:
-        times = list(scope.times[start:end])
-        values_arr = np.asarray(scope.values[start:end])
+        # ADR-0042 §論点 2-A: ``Scope.buffer_mode='ring'`` で ``scope.times`` が
+        # ``deque`` の場合、slice 直接適用は非対応。一度 list / np.asarray に
+        # 変換してから slice することで両モード対応する。
+        # NOTE: ring wrap 後に最古サンプルが drop されると ``cursor`` が
+        # stale になる edge case があるが、Step 5 (WS scope_overflow message
+        # 配信) で本格対応する。本ステップでは finite t_end 既存挙動の
+        # 完全互換のみを保証する。
+        times = list(scope.times)[start:end]
+        values_arr = np.asarray(scope.values)[start:end]
         msg = {
             "type": "scope_batch",
             "scope_id": scope.id,
