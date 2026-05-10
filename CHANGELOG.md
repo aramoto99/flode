@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-10 — File API + ワークスペース対応 (ADR-0041 §1〜§5)
+
+SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集 (JupyterLab 流儀)」の **backend
+段階** を ADR-0041 §論点 1〜5 に基づき実装。frontend FileBrowser
+(= ADR-0041 §論点 7-A) は次の minor リリース、`/api/v1/models/*` 削除と
+``--model-dir`` 削除は v3.0 (= ADR-0041 §論点 4-A、§論点 12-A 段階移行)。
+
+**v0.16.0 は後方互換 minor**: 既存 endpoint 削除なし、Public API 凍結
+(ADR-0038) を破壊せず、新 endpoint 追加 + deprecation 予告のみ。`pyflw-server`
+の既定 workspace は **CWD** に変更 (= JupyterLab 既定と整合)。
+
+### Added
+
+- **REST File API** (`/api/v1/files/*`、6 endpoint、ADR-0041 §論点 1-A、
+  JupyterLab `jupyter_server.contents` 互換):
+  - `GET /api/v1/files/tree?path=<rel>` ディレクトリ列挙 (1 階層)
+  - `GET /api/v1/files/content?path=<rel>` parsed JSON 内容 + mtime + etag
+  - `PUT /api/v1/files/content?path=<rel>` 書き込み (etag 楽観ロック対応)
+  - `POST /api/v1/files/rename` body `{from, to}` でリネーム / 移動
+  - `DELETE /api/v1/files?path=<rel>` ファイル / 空ディレクトリ削除
+  - `POST /api/v1/files/mkdir?path=<rel>` ディレクトリ作成 (`mkdir -p`)
+- **CLI `--workspace=PATH`** 引数 (= File API のルートディレクトリ、default は
+  `Path.cwd()`、ADR-0041 §論点 3-A)
+- **`POST /api/v1/simulations`** で 3 形式 body 対応 (ADR-0041 §論点 5-A):
+  - `{"model_id": str}` (= legacy、deprecated、後述)
+  - `{"model_path": str}` (= workspace 相対 path)
+  - `{"model": dict}` (= インライン dict、未保存 editingModel の試行実行)
+- **Path traversal 防御モジュール** `pyflw.server.security.resolve_workspace_path`
+  (= 7 step 検証、ADR-0041 §論点 2-A): null byte / control char / backslash /
+  絶対 path / Windows ドライブ / `..` 単体 / Windows 予約名 (CON/PRN/AUX/NUL/
+  COM0-9/LPT0-9) / trailing space-dot / containment escape を集中検証
+- **`Simulator.from_dict(data)`** public API (= JSON dict から Simulator 構築、
+  インライン実行で利用、ADR-0041 §論点 5-A)。`Simulator.load(path)` は
+  `from_dict` 呼び出しに簡素化
+- **`Settings.workspace_root: Path | None`** field (= File API の有効化判定)
+
+### Deprecated
+
+- **`/api/v1/models/*` 5 endpoint** (= ADR-0041 §論点 4-A): 全 response に RFC
+  8594 `Deprecation: true` / `Sunset: Sat, 01 Aug 2026 00:00:00 GMT` /
+  `Link: </api/v1/files>; rel="successor-version"` HTTP header を付与。**v3.0
+  で削除予定**。File API への移行を推奨
+- **`pyflw-server --model-dir=PATH`** (= ADR-0041 §論点 3-A): CLI 引数単体使用
+  時に `DeprecationWarning` 発火。**v3.0 で削除予定**、`--workspace=PATH` に
+  移行
+- **`POST /api/v1/simulations` body `model_id` field** (= ADR-0041 §論点 5-A):
+  使用時に `DeprecationWarning`、**v3.0 で削除予定**。`model_path` (=
+  workspace 相対) または `model` (= インライン dict) に移行
+
+### Changed
+
+- **`pyflw-server` 既定 workspace = CWD** (= 旧 `--model-dir=./models` 既定から
+  変更、ADR-0041 §論点 3-A)。明示的な `--workspace=./models` または
+  `--model-dir=./models` で旧挙動を維持可能 (legacy は deprecation warning
+  発火)
+- **`SimulationManager.start()`** signature: `model_path: Path` →
+  `simulator: Simulator` (= ロード責務を route handler に移譲、ADR-0041 §5
+  実装の副産物)。本変更は内部 API、外部 Public API には影響なし
+
+### Internal / Tests
+
+- **新規テスト 143 件** (= path traversal 68 + CLI 19 + File API 46 + 拡張
+  simulations 17 + deprecation header 5)、合計 **pytest 1145 件 pass**
+  + 2 skipped (= POSIX symlink テストが Windows で skip)
+- **数値完全不変ガード**: `examples/spring_mass_damper.py` Final x=0.2505,
+  x_dot=0.0031 (Phase 1 v0.1.0 baseline) を維持
+- **mypy --strict / ruff lint clean**
+
+### 移行ガイド (= v2.x → v3.0 で必要な変更の予告)
+
+| 旧 (v2.x、warning 付きで動作) | 新 (v3.0 で必須) |
+|---|---|
+| `pyflw-server --model-dir=./models` | `pyflw-server --workspace=./project` |
+| `POST /api/v1/simulations {model_id: "x"}` | `POST /api/v1/simulations {model_path: "x.flw.json"}` |
+| `GET /api/v1/models/x` | `GET /api/v1/files/content?path=x.flw.json` |
+| `PUT /api/v1/models/x` | `PUT /api/v1/files/content?path=x.flw.json` |
+| `DELETE /api/v1/models/x` | `DELETE /api/v1/files?path=x.flw.json` |
+| `GET /api/v1/models` (list) | `GET /api/v1/files/tree` |
+
+frontend FileBrowser UI (= `selectedFilePath` state、左サイドバー tree、
+context menu、dirty 確認モーダル、reload polling) は次の v2.x minor リリース
+で実装予定 (ADR-0041 §論点 7〜11)。
+
 ## [0.15.0] - 2026-05-09 — GUI Simulink 化 (見た目 + 各ブロック表示 + enum select)
 
 ユーザーフィードバック (= 「Simulink っぽくしてくれ」) を受けて、GUI の見た目と

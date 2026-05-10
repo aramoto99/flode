@@ -1,5 +1,6 @@
-# GUI Simulink 化 (v0.15.0): 各ブロックを Simulink 互換表示 + chevron port + step edge
-__version__ = "0.15.0"
+# v0.16.0 (ADR-0041): File API + --workspace CLI + /api/v1/simulations 拡張、
+# /api/v1/models/* deprecation 予告 (v3.0 で削除)。
+__version__ = "0.16.0"
 
 from .analysis import (
     BodeResponse,

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +21,7 @@ from .routes import (
     models_router,
     simulations_router,
 )
+from .routes.models import DEPRECATION_HEADERS as _MODELS_DEPRECATION_HEADERS
 from .runtime import SimulationManager
 from .settings import Settings
 
@@ -99,6 +100,20 @@ def create_app(
     app.include_router(libraries_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
     register_error_handlers(app)
+
+    # ADR-0041 §論点 4-A: ``/api/v1/models/*`` を v3.0 で削除予告する RFC 8594
+    # deprecation header を全 response (= 200 / 4xx 両方) に付与。``Depends``
+    # 経由では HTTPException の 4xx に propagate しないため middleware で対処。
+    @app.middleware("http")
+    async def _deprecate_models_routes(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        if request.url.path.startswith("/api/v1/models"):
+            for k, v in _MODELS_DEPRECATION_HEADERS.items():
+                response.headers[k] = v
+        return response
 
     # ADR-0012 §(6): frontend ビルド成果物を ``pyflw/server/static/`` から配信。
     # ディレクトリが存在しない (= ``npm run build`` 未実行 / dev mode) 場合は

@@ -1,7 +1,11 @@
-"""モデル CRUD エンドポイント (ADR-0011 §(1))。
+"""モデル CRUD エンドポイント (ADR-0011 §(1)、ADR-0041 §4 で v3.0 削除予告)。
 
 モデルストレージはファイルベース (``.flw.json``)。サーバ起動時に渡された
 ``model_dir`` の配下にあるファイルを直接読み書きする。
+
+ADR-0041 §論点 4-A により v0.16.0+ で **deprecated**、v3.0 で削除予定。
+全 response に ``Deprecation`` / ``Sunset`` / ``Link`` HTTP header を付与
+(RFC 8594) して利用者に File API (``/api/v1/files/*``) への移行を促す。
 """
 
 from __future__ import annotations
@@ -15,6 +19,21 @@ from fastapi import APIRouter, HTTPException, Request
 from ...core.identifiers import validate_model_id
 from ...core.persistence import migrate_to_current
 from ...exceptions import BlockSpecError, ModelLoadError
+
+# ADR-0041 §論点 4-A: v3.0 release の暫定日 (= 2026-08-01、約 3 ヶ月の deprecation
+# cycle)。実 release で前後する場合は本 module を更新。
+DEPRECATION_HEADERS: dict[str, str] = {
+    "Deprecation": "true",
+    "Sunset": "Sat, 01 Aug 2026 00:00:00 GMT",
+    "Link": '</api/v1/files>; rel="successor-version"',
+}
+"""``/api/v1/models/*`` 全 response に付与する RFC 8594 deprecation header。
+
+``app.py`` で middleware が path prefix を見て一括注入する (= router-level
+``Depends`` だと FastAPI の HTTPException ハンドラが生成する 4xx response
+には propagate されないため middleware で対処、ADR-0041 §論点 4-A)。
+"""
+
 
 router = APIRouter(prefix="/models", tags=["models"])
 

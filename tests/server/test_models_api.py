@@ -52,6 +52,47 @@ class TestListModels:
         assert response.json() == {"models": ["alpha", "beta"]}
 
 
+class TestDeprecationHeaders:
+    """ADR-0041 §論点 4-A: 全 ``/api/v1/models/*`` response に RFC 8594
+    Deprecation / Sunset / Link header が付与される。"""
+
+    def test_list_models_has_deprecation_headers(self, client):
+        response = client.get("/api/v1/models")
+        assert response.status_code == 200
+        assert response.headers["deprecation"] == "true"
+        assert "Sunset" in {k.title() for k in response.headers}
+        assert "successor-version" in response.headers["link"]
+        assert "/api/v1/files" in response.headers["link"]
+
+    def test_get_model_404_has_deprecation_headers(self, client):
+        # 404 経路でも header が propagate される (= dependency 注入が
+        # HTTPException 経由でも有効、ADR-0041 §論点 4-A)
+        response = client.get("/api/v1/models/ghost")
+        assert response.status_code == 404
+        assert response.headers["deprecation"] == "true"
+
+    def test_get_model_200_has_deprecation_headers(self, client, model_dir):
+        _seed_model(model_dir, "demo")
+        response = client.get("/api/v1/models/demo")
+        assert response.status_code == 200
+        assert response.headers["deprecation"] == "true"
+
+    def test_create_model_has_deprecation_headers(self, client):
+        response = client.post(
+            "/api/v1/models",
+            json={"schema_version": "0.8", "metadata": {"name": "x"}},
+        )
+        # POST は 200 (既存に衝突しない場合)
+        assert response.status_code in (200, 400)
+        assert response.headers["deprecation"] == "true"
+
+    def test_delete_model_has_deprecation_headers(self, client, model_dir):
+        _seed_model(model_dir, "to_delete")
+        response = client.delete("/api/v1/models/to_delete")
+        assert response.status_code == 200
+        assert response.headers["deprecation"] == "true"
+
+
 class TestGetModelMigration:
     """ADR-0039 v0.14.1: GET endpoint が古い schema を最新に migrate して返す。"""
 
