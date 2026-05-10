@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-05-10 — undo/redo 履歴粒度を粗くする hotfix
+
+ユーザー指摘 (= 「ブロック移動の履歴の粒度が細かい」) に応えた patch リリース。
+v0.20.0 の Undo / Redo は ``applyEditingModel`` 呼び出しごとに履歴 push するため、
+React Flow が 1px ずつ ``onNodesChange`` を発火する**ブロックドラッグで履歴が
+即座に 50 件埋まる** 問題があった。Ctrl+Z 1 回で 1px しか戻らず実用的でない。
+
+### Fixed
+
+- **``applyEditingModel(fn, options)`` に ``mergeKey`` を追加**: 直前と同じ
+  ``mergeKey`` の連続呼び出しは history に追加 push せず、editingModel だけ
+  更新する (= 最初の 1 entry だけ残る)。別 ``mergeKey`` または ``undefined``
+  で「新しい操作」と判定して新規 push
+- **連続呼び出し系 action に mergeKey 指定**:
+  - ``updateBlockPosition`` → ``move:{id}`` (1 ブロックドラッグ)
+  - ``updateBlockPositions`` → ``move-multi:{ids}`` (複数選択ドラッグ、ID 集合
+    が同じ間は merge)
+  - ``updateBlockSize`` → ``resize:{id}`` (NodeResizer ドラッグ)
+  - ``updateSimulatorConfig`` → ``sim-config:{fields}`` (= Toolbar StopTime
+    number input typing)
+  - ``updateBlockParams`` → ``params:{id}`` (= ParameterPanel 連続編集)
+  - ``updateSubsystemMaskValues`` → ``mask:{id}``
+- **undo / redo 後は ``lastMergeKey = null``**: 巻き戻し直後の編集は merge せず
+  必ず新規 entry (= 利用者が undo してから別操作を始める想定の自然な挙動)
+- **``setEditingModel`` / ``selectFilePath`` / ``selectModel`` で
+  ``lastMergeKey`` クリア**: ファイル切替後の最初の編集は新規 entry に
+
+### Internal / Tests
+
+- vitest **+5 件追加** (= ``undoRedo.test.ts`` の merge セクション、合計
+  **272 件 pass**):
+  - 同一 mergeKey の連続 → 1 entry のみ
+  - 別 mergeKey で別 entry
+  - mergeKey なしは従来通り常に新規 entry
+  - ドラッグ後 Ctrl+Z 1 回で操作前に戻る
+  - undo / redo 後は merge をリセット
+- TypeScript strict mode clean、bundle gzip 帯維持
+
+### v0.20.0 → v0.20.1 移行
+
+利用者は何もする必要なし (= API 変更なし、純粋な UX 改善)。
+
 ## [0.20.0] - 2026-05-10 — Undo / Redo + Edit / Help メニュー (UX ポリッシュ)
 
 ユーザーフィードバック (= 「Undo / Redo が機能していない」「Edit メニュー / Help

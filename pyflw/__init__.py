@@ -1,7 +1,7 @@
-# v0.20.0 (UX 改善): Undo / Redo を本実装 (= history stack、最大 50)、Edit メニュー
-# 追加 (Undo/Redo/Cut/Copy/Paste/Select All/Delete)、Help メニュー追加 (About /
-# Documentation / Keyboard shortcuts)。Toolbar の Undo/Redo ボタン有効化。
-__version__ = "0.20.0"
+# v0.20.1 (hotfix): undo/redo の履歴粒度を「1 操作 = 1 entry」に集約
+# (= mergeKey 戦略)。ブロックドラッグ / リサイズ / number input typing は
+# 連続呼び出しを 1 履歴に統合、Ctrl+Z 1 回で操作前の状態に戻る。
+__version__ = "0.20.1"
 
 from .analysis import (
     BodeResponse,

@@ -154,6 +154,64 @@ describe("setEditingModel clears history", () => {
   });
 });
 
+describe("mergeKey collapses consecutive operations (v0.20.1)", () => {
+  it("same mergeKey only pushes once (= drag emulate)", () => {
+    const state = useAppStore.getState();
+    // 同じ mergeKey="move:b1" で 10 回連続呼び出し (= ドラッグの 1px ずつ)
+    for (let i = 0; i < 10; i++) {
+      state.applyEditingModel(setDt(0.001 + i * 0.0001), {
+        mergeKey: "move:b1",
+      });
+    }
+    // past には 1 entry だけ (= ドラッグ前の状態)
+    expect(useAppStore.getState().history.past).toHaveLength(1);
+    // editingModel は最後の値
+    expect(useAppStore.getState().editingModel?.simulator.dt).toBeCloseTo(
+      0.001 + 9 * 0.0001,
+    );
+  });
+
+  it("different mergeKey starts new history entry", () => {
+    const state = useAppStore.getState();
+    state.applyEditingModel(setDt(0.1), { mergeKey: "move:b1" });
+    state.applyEditingModel(setDt(0.2), { mergeKey: "move:b2" }); // 別 block
+    state.applyEditingModel(setDt(0.3), { mergeKey: "move:b1" }); // また b1 (= 別 entry)
+    expect(useAppStore.getState().history.past).toHaveLength(3);
+  });
+
+  it("no mergeKey always starts new entry (= existing behavior)", () => {
+    const state = useAppStore.getState();
+    state.applyEditingModel(setDt(0.1));
+    state.applyEditingModel(setDt(0.2));
+    state.applyEditingModel(setDt(0.3));
+    expect(useAppStore.getState().history.past).toHaveLength(3);
+  });
+
+  it("undo a merged drag restores pre-drag state in one step", () => {
+    const state = useAppStore.getState();
+    const before = state.editingModel?.simulator.dt;
+    // 5 回の連続 move
+    for (let i = 0; i < 5; i++) {
+      state.applyEditingModel(setDt(0.5 + i * 0.01), { mergeKey: "move:b1" });
+    }
+    // Ctrl+Z 1 回で元位置に戻る (= 5 回ではなく 1 回で)
+    state.undo();
+    expect(useAppStore.getState().editingModel?.simulator.dt).toBe(before);
+  });
+
+  it("undo / redo resets lastMergeKey (= 直後の編集は新規 entry)", () => {
+    const state = useAppStore.getState();
+    state.applyEditingModel(setDt(0.1), { mergeKey: "move:b1" });
+    state.undo();
+    // undo 直後に同じ mergeKey で編集 → 新規 entry になる (= merge しない)
+    state.applyEditingModel(setDt(0.2), { mergeKey: "move:b1" });
+    expect(useAppStore.getState().history.past).toHaveLength(1);
+    // 続けて同じ key で merge OK
+    state.applyEditingModel(setDt(0.3), { mergeKey: "move:b1" });
+    expect(useAppStore.getState().history.past).toHaveLength(1);
+  });
+});
+
 describe("selectFilePath / selectModel clears history", () => {
   it("selectFilePath clears history (= 別ファイルと混ぜない)", () => {
     const state = useAppStore.getState();

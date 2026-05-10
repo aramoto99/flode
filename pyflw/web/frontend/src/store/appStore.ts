@@ -91,8 +91,21 @@ interface AppState {
   // null のときは「読み取りモード」(従来の Phase 2 と同じ TanStack Query キャッシュ)。
   editingModel: FlwModel | null;
   setEditingModel: (model: FlwModel | null) => void;
+  /**
+   * editingModel を更新する。
+   *
+   * @param fn 現在の model から次の model を返す純粋関数。``current`` を返すと
+   *   no-op (= history に push しない)。
+   * @param options.mergeKey 連続操作を 1 履歴エントリに集約するための key。
+   *   v0.20.1: ブロックドラッグの ``onNodesChange`` のように 1 操作で多数の
+   *   ``applyEditingModel`` 呼び出しが発生する場合、同じ ``mergeKey`` の連続
+   *   呼び出しは history に追加 push しない (= 直前 push の上書き効果)。
+   *   別 ``mergeKey`` または ``undefined`` で新しい操作と判定。例:
+   *   ``move:{id}`` (1 ブロック移動)、``resize:{id}`` (リサイズ)。
+   */
   applyEditingModel: (
     fn: (current: FlwModel) => FlwModel,
+    options?: { mergeKey?: string },
   ) => void;
 
   // v0.20.0: Undo / Redo 履歴 (= editingModel の past / future スタック)。
@@ -100,6 +113,9 @@ interface AppState {
   // クリアする。``setEditingModel`` (= ファイル load) で完全クリア。
   // 最大 ``HISTORY_MAX`` 件、それを超える古い履歴は drop。
   history: { past: FlwModel[]; future: FlwModel[] };
+  /** v0.20.1: 直前の applyEditingModel で指定された mergeKey (= 連続操作集約用)。
+   *  別 key または undefined で「新しい操作」と判定して新規 push する。 */
+  lastMergeKey: string | null;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -158,6 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingPath: [],
       // v0.20.0: 履歴は別ファイルと混ぜない (= 完全クリア)
       history: { past: [], future: [] },
+      lastMergeKey: null,
     }),
 
   selectedFilePath: null,
@@ -179,6 +196,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       dirty: false,
       editingPath: [],
       history: { past: [], future: [] },
+      lastMergeKey: null,
     }),
 
   editingFileMtime: null,
@@ -227,30 +245,49 @@ export const useAppStore = create<AppState>((set, get) => ({
   editingModel: null,
   // ファイル load 時に呼ばれる (= history を完全クリア、別履歴と混ぜない)
   setEditingModel: (model) =>
-    set({ editingModel: model, history: { past: [], future: [] } }),
-  applyEditingModel: (fn) => {
+    set({
+      editingModel: model,
+      history: { past: [], future: [] },
+      lastMergeKey: null,
+    }),
+  applyEditingModel: (fn, options) => {
     const current = get().editingModel;
     if (!current) return;
     const next = fn(current);
     if (next === current) return; // no-op (= history を膨らませない)
     set((state) => {
-      const past = [...state.history.past, deepCloneModel(current)];
-      // 上限超えたら古い履歴を drop
-      const trimmed =
-        past.length > HISTORY_MAX
-          ? past.slice(past.length - HISTORY_MAX)
-          : past;
+      const mergeKey = options?.mergeKey;
+      // v0.20.1: 直前と同じ ``mergeKey`` なら history に追加 push しない。
+      // 例: 1 ブロックを連続ドラッグすると 1px ごとに本関数が呼ばれるが、
+      // mergeKey="move:{id}" を毎回指定すると history は最初の 1 エントリだけ
+      // 残り、Ctrl+Z 1 回でドラッグ前の位置に戻る。
+      const shouldMerge =
+        mergeKey !== undefined &&
+        state.lastMergeKey === mergeKey &&
+        state.history.past.length > 0;
+      let past: FlwModel[];
+      if (shouldMerge) {
+        past = state.history.past; // 既存を維持 (= 上書きしない、最古を保持)
+      } else {
+        past = [...state.history.past, deepCloneModel(current)];
+        // 上限超えたら古い履歴を drop
+        if (past.length > HISTORY_MAX) {
+          past = past.slice(past.length - HISTORY_MAX);
+        }
+      }
       return {
         editingModel: next,
         dirty: true,
         // 新しい変更が入った時点で future (= redo 候補) は破棄
-        history: { past: trimmed, future: [] },
+        history: { past, future: [] },
+        lastMergeKey: mergeKey ?? null,
       };
     });
   },
 
   // v0.20.0: undo / redo
   history: { past: [], future: [] },
+  lastMergeKey: null,
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
   undo: () => {
@@ -266,6 +303,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       // undo 自体は編集アクションなので dirty 化 (= 次の auto-save で書き出す)
       dirty: true,
+      // undo / redo 後は merge を継続させない (= 直後の編集は新規 entry)
+      lastMergeKey: null,
     });
   },
   redo: () => {
@@ -280,6 +319,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         future: future.slice(1),
       },
       dirty: true,
+      lastMergeKey: null,
     });
   },
 
@@ -572,20 +612,23 @@ export function updateBlockPosition(
   position: { x: number; y: number },
 ): void {
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => {
-      // 既存 entry の w/h を保持しつつ x/y のみ更新
-      const prev = view.layout[blockId];
-      const next = {
-        ...view.layout,
-        [blockId]: { ...prev, x: position.x, y: position.y },
-      };
-      return {
-        blocks: view.blocks,
-        connections: view.connections,
-        layout: next,
-      };
-    }),
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyAtPath(m, path, (view) => {
+        // 既存 entry の w/h を保持しつつ x/y のみ更新
+        const prev = view.layout[blockId];
+        const next = {
+          ...view.layout,
+          [blockId]: { ...prev, x: position.x, y: position.y },
+        };
+        return {
+          blocks: view.blocks,
+          connections: view.connections,
+          layout: next,
+        };
+      }),
+    // v0.20.1: 連続ドラッグの 1px ごとの呼び出しを 1 履歴エントリに集約
+    { mergeKey: `move:${blockId}` },
   );
 }
 
@@ -604,19 +647,25 @@ export function updateBlockPositions(
 ): void {
   if (updates.length === 0) return;
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => {
-      const next: LayoutDict = { ...view.layout };
-      for (const u of updates) {
-        const prev = next[u.id];
-        next[u.id] = { ...prev, x: u.x, y: u.y };
-      }
-      return {
-        blocks: view.blocks,
-        connections: view.connections,
-        layout: next,
-      };
-    }),
+  // v0.20.1: 同じ block 群の連続ドラッグを 1 履歴に集約。merge key は ids を
+  // ソートして連結 (= 同じ集合を選択して動かしている間はずっと同じ key)。
+  const ids = updates.map((u) => u.id).slice().sort();
+  const mergeKey = `move-multi:${ids.join(",")}`;
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyAtPath(m, path, (view) => {
+        const next: LayoutDict = { ...view.layout };
+        for (const u of updates) {
+          const prev = next[u.id];
+          next[u.id] = { ...prev, x: u.x, y: u.y };
+        }
+        return {
+          blocks: view.blocks,
+          connections: view.connections,
+          layout: next,
+        };
+      }),
+    { mergeKey },
   );
 }
 
@@ -628,10 +677,16 @@ export function updateBlockPositions(
  * autosave に乗せるため ``applyEditingModel`` 経由で書き込む。
  */
 export function updateSimulatorConfig(patch: Partial<SimulatorConfig>): void {
-  useAppStore.getState().applyEditingModel((m) => ({
-    ...m,
-    simulator: { ...m.simulator, ...patch },
-  }));
+  // v0.20.1: 同じフィールドの連続入力 (= number input の typing) を 1 履歴に集約。
+  // 異なるフィールドの編集は別 entry になる (= mergeKey が変わる)。
+  const fieldKeys = Object.keys(patch).slice().sort().join(",");
+  useAppStore.getState().applyEditingModel(
+    (m) => ({
+      ...m,
+      simulator: { ...m.simulator, ...patch },
+    }),
+    { mergeKey: `sim-config:${fieldKeys}` },
+  );
 }
 
 export function updateBlockSize(
@@ -639,26 +694,29 @@ export function updateBlockSize(
   size: { w: number; h: number },
 ): void {
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => {
-      const prev = view.layout[blockId];
-      // 位置情報がまだ無い場合は (0,0) で fallback (= NodeResizer 作動時に必ず position は
-      // 別途 onNodesChange でも書かれているので、ほぼ起きないケース)
-      const next = {
-        ...view.layout,
-        [blockId]: {
-          x: prev?.x ?? 0,
-          y: prev?.y ?? 0,
-          w: size.w,
-          h: size.h,
-        },
-      };
-      return {
-        blocks: view.blocks,
-        connections: view.connections,
-        layout: next,
-      };
-    }),
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyAtPath(m, path, (view) => {
+        const prev = view.layout[blockId];
+        // 位置情報がまだ無い場合は (0,0) で fallback (= NodeResizer 作動時に必ず position は
+        // 別途 onNodesChange でも書かれているので、ほぼ起きないケース)
+        const next = {
+          ...view.layout,
+          [blockId]: {
+            x: prev?.x ?? 0,
+            y: prev?.y ?? 0,
+            w: size.w,
+            h: size.h,
+          },
+        };
+        return {
+          blocks: view.blocks,
+          connections: view.connections,
+          layout: next,
+        };
+      }),
+    // v0.20.1: 連続リサイズドラッグを 1 履歴に集約
+    { mergeKey: `resize:${blockId}` },
   );
 }
 
@@ -751,31 +809,35 @@ export function updateBlockParams(
   registry?: ReadonlyMap<string, BlockMetadata>,
 ): void {
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => {
-      const target = view.blocks.find((b) => b.id === blockId);
-      if (!target) return view;
-      const newBlocks = view.blocks.map((b) =>
-        b.id === blockId ? { ...b, params } : b,
-      );
-      // param 変更により port 数が減った場合、index out-of-range の edge を剪定する。
-      const meta = registry?.get(target.type);
-      const before = resolvePortCounts(target.type, target.params, meta);
-      const after = resolvePortCounts(target.type, params, meta);
-      let newConnections = view.connections;
-      if (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs) {
-        newConnections = view.connections.filter((c) => {
-          if (c.dst === blockId && c.dst_idx >= after.nInputs) return false;
-          if (c.src === blockId && c.src_idx >= after.nOutputs) return false;
-          return true;
-        });
-      }
-      return {
-        blocks: newBlocks,
-        connections: newConnections,
-        layout: view.layout,
-      };
-    }),
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyAtPath(m, path, (view) => {
+        const target = view.blocks.find((b) => b.id === blockId);
+        if (!target) return view;
+        const newBlocks = view.blocks.map((b) =>
+          b.id === blockId ? { ...b, params } : b,
+        );
+        // param 変更により port 数が減った場合、index out-of-range の edge を剪定する。
+        const meta = registry?.get(target.type);
+        const before = resolvePortCounts(target.type, target.params, meta);
+        const after = resolvePortCounts(target.type, params, meta);
+        let newConnections = view.connections;
+        if (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs) {
+          newConnections = view.connections.filter((c) => {
+            if (c.dst === blockId && c.dst_idx >= after.nInputs) return false;
+            if (c.src === blockId && c.src_idx >= after.nOutputs) return false;
+            return true;
+          });
+        }
+        return {
+          blocks: newBlocks,
+          connections: newConnections,
+          layout: view.layout,
+        };
+      }),
+    // v0.20.1: 同じブロックの param 連続編集 (= ParameterPanel の number input
+    // を typing する間) を 1 履歴に集約。別ブロック / 別アクションで分離。
+    { mergeKey: `params:${blockId}` },
   );
 }
 
@@ -918,17 +980,20 @@ export function updateSubsystemMaskValues(
   maskValues: MaskValuesDict,
 ): void {
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => ({
-      blocks: view.blocks.map((b) => {
-        if (b.id !== subsystemId) return b;
-        return {
-          ...b,
-          params: { ...b.params, mask_values: maskValues },
-        };
-      }),
-      connections: view.connections,
-      layout: view.layout,
-    })),
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyAtPath(m, path, (view) => ({
+        blocks: view.blocks.map((b) => {
+          if (b.id !== subsystemId) return b;
+          return {
+            ...b,
+            params: { ...b.params, mask_values: maskValues },
+          };
+        }),
+        connections: view.connections,
+        layout: view.layout,
+      })),
+    // v0.20.1: 同じ subsystem の mask 連続編集を 1 履歴に集約
+    { mergeKey: `mask:${subsystemId}` },
   );
 }
