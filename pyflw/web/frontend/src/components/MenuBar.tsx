@@ -26,13 +26,7 @@ import {
   setLanguage,
   type SupportedLanguage,
 } from "../i18n";
-import {
-  copySelectionToClipboard,
-  pasteClipboard,
-  removeBlockFromEditing,
-  selectAllInScope,
-  useAppStore,
-} from "../store/appStore";
+import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import {
   AboutDialog,
@@ -343,100 +337,6 @@ export function MenuBar(): JSX.Element {
       destructive: true,
     },
   ];
-  // v0.20.0: Edit メニュー実装 (= 既存ショートカットを menu からも呼べるように)
-  const undoFn = useAppStore((s) => s.undo);
-  const redoFn = useAppStore((s) => s.redo);
-  const canUndo = useAppStore((s) => s.history.past.length > 0);
-  const canRedo = useAppStore((s) => s.history.future.length > 0);
-  const selectedNodeIds = useAppStore((s) => s.selectedNodeIds);
-  const hasSelection = selectedNodeIds.length > 0;
-
-  const handleCut = (): void => {
-    setOpenMenu(null);
-    if (!hasSelection) return;
-    copySelectionToClipboard();
-    const ids = useAppStore.getState().selectedNodeIds;
-    for (const id of ids) {
-      removeBlockFromEditing(id);
-    }
-    useAppStore.getState().selectNode(null);
-  };
-  const handleCopy = (): void => {
-    setOpenMenu(null);
-    copySelectionToClipboard();
-  };
-  const handlePaste = (): void => {
-    setOpenMenu(null);
-    pasteClipboard();
-  };
-  const handleSelectAll = (): void => {
-    setOpenMenu(null);
-    selectAllInScope();
-  };
-  const handleDeleteSelection = (): void => {
-    setOpenMenu(null);
-    if (!hasSelection) return;
-    const ids = useAppStore.getState().selectedNodeIds;
-    for (const id of ids) {
-      removeBlockFromEditing(id);
-    }
-    useAppStore.getState().selectNode(null);
-  };
-
-  const editItems: MenuItemSpec[] = [
-    {
-      label: t("menu.edit.undo", { defaultValue: "Undo" }),
-      shortcut: "Ctrl+Z",
-      onClick: () => {
-        setOpenMenu(null);
-        undoFn();
-      },
-      disabled: !hasModel || !canUndo,
-    },
-    {
-      label: t("menu.edit.redo", { defaultValue: "Redo" }),
-      shortcut: "Ctrl+Shift+Z",
-      onClick: () => {
-        setOpenMenu(null);
-        redoFn();
-      },
-      disabled: !hasModel || !canRedo,
-    },
-    { label: "", divider: true },
-    {
-      label: t("menu.edit.cut", { defaultValue: "Cut" }),
-      shortcut: "Ctrl+X",
-      onClick: handleCut,
-      disabled: !hasSelection,
-    },
-    {
-      label: t("menu.edit.copy", { defaultValue: "Copy" }),
-      shortcut: "Ctrl+C",
-      onClick: handleCopy,
-      disabled: !hasSelection,
-    },
-    {
-      label: t("menu.edit.paste", { defaultValue: "Paste" }),
-      shortcut: "Ctrl+V",
-      onClick: handlePaste,
-      disabled: !hasModel,
-    },
-    { label: "", divider: true },
-    {
-      label: t("menu.edit.select_all", { defaultValue: "Select All" }),
-      shortcut: "Ctrl+A",
-      onClick: handleSelectAll,
-      disabled: !hasModel,
-    },
-    {
-      label: t("menu.edit.delete", { defaultValue: "Delete" }),
-      shortcut: "Del",
-      onClick: handleDeleteSelection,
-      disabled: !hasSelection,
-      destructive: true,
-    },
-  ];
-
   // v0.20.0: Help メニュー実装
   const helpItems: MenuItemSpec[] = [
     {
@@ -509,14 +409,6 @@ export function MenuBar(): JSX.Element {
         onToggle={() => setOpenMenu((m) => (m === "File" ? null : "File"))}
         onHover={() => openMenu && setOpenMenu("File")}
         items={fileItems}
-        currentLang={lang}
-      />
-      <Menu
-        label={t("menu.edit")}
-        open={openMenu === "Edit"}
-        onToggle={() => setOpenMenu((m) => (m === "Edit" ? null : "Edit"))}
-        onHover={() => openMenu && setOpenMenu("Edit")}
-        items={editItems}
         currentLang={lang}
       />
       <Menu

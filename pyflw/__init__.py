@@ -1,7 +1,8 @@
-# v0.20.1 (hotfix): undo/redo の履歴粒度を「1 操作 = 1 entry」に集約
-# (= mergeKey 戦略)。ブロックドラッグ / リサイズ / number input typing は
-# 連続呼び出しを 1 履歴に統合、Ctrl+Z 1 回で操作前の状態に戻る。
-__version__ = "0.20.1"
+# v0.20.2 (UI cleanup): Edit メニュー削除。Cut/Copy/Paste/Select All/Delete は
+# キーボードショートカットで完結 + Toolbar に Undo/Redo ボタンあり、メニュー
+# 経由で発見すべき pyflw 固有編集機能 (Find / Auto-arrange 等) はまだ無いため、
+# 空に近いメニューを撤去して画面をシンプルに。
+__version__ = "0.20.2"
 
 from .analysis import (
     BodeResponse,

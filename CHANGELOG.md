@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-05-10 — Edit メニュー削除 (UI cleanup)
+
+ユーザー指摘 (= 「編集の内容は、わざわざこのようなメニューで用意するほどの
+ことでしょうか」) に応えた patch リリース。v0.20.0 で追加した Edit メニューは
+全項目がキーボードショートカットでアクセス可能 + Toolbar に Undo/Redo ボタン
+あり + pyflw 固有の編集機能 (Find / Auto-arrange 等) もまだ無い → メニュー
+として価値が低かった。
+
+### Removed
+
+- **MenuBar の Edit メニュー** (= File / View / Simulation / Help の 4 項目に)
+  - Undo / Redo は Toolbar / Ctrl+Z / Ctrl+Shift+Z で操作
+  - Cut / Copy / Paste は Ctrl+X / C / V で操作
+  - Select All は Ctrl+A、Delete は Del キーで操作
+  - 一覧は Help > Keyboard shortcuts ダイアログで参照可能 (= 残置)
+
+### 設計判断
+
+- pyflw 固有の編集機能 (Find / Replace / Comment / Auto-arrange) が将来追加
+  されたタイミングで Edit メニューを再導入する予定。それまでは「項目あるべき」
+  感を捨ててシンプルさ優先
+
+### Internal
+
+- vitest **272 件 pass** (= 既存テストに影響なし)
+- TypeScript strict mode clean、bundle 軽量化 (= ~0.3 KB 減)
+
+### v0.20.1 → v0.20.2 移行
+
+利用者は何もする必要なし (= キーボードショートカットは全て継続動作)。
+
 ## [0.20.1] - 2026-05-10 — undo/redo 履歴粒度を粗くする hotfix
 
 ユーザー指摘 (= 「ブロック移動の履歴の粒度が細かい」) に応えた patch リリース。
