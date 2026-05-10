@@ -1,8 +1,9 @@
-# v0.20.11 (UI 修正): edge 終点の矢印 head を復活。BranchableEdge の target 座標
-# 補正を 12 px → 4 px に変更 (= 12 - 矢印サイズ 8)、矢印先端が node 境界 +8 px
-# 外側、矢印 base が node 境界に綺麗に触れる位置に描画。source 側は 12 px
-# 補正のままで edge 起点は node 境界に当たる。
-__version__ = "0.20.11"
+# v0.20.12 (UI 修正): edge target 側の補正量を 4 → 12 に修正。SVG markerEnd の
+# 矢印 head は path 終端を anchor として描画 → 入力ポート (Left pos) では矢印
+# base が node 外側に伸びる。よって inset=12 で adjustedTargetX=node 境界に
+# 揃えると矢印先端が node 境界に綺麗に触れる (= v0.20.11 の inset=4 では矢印が
+# node から離れていた問題を解消)。
+__version__ = "0.20.12"
 
 from .analysis import (
     BodeResponse,

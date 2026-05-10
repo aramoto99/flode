@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.12] - 2026-05-10 — 矢印 head が node 境界に触れない問題を修正
+
+ユーザー指摘 (= 「接続先の矢印とブロックが接地してないですね」) への対応。
+v0.20.11 で ``TARGET_INSET_PX = 12 - 8 = 4`` と計算したが、SVG markerEnd の
+描画方向を考慮していなかった。
+
+### Root cause
+
+SVG markerEnd は path 終端を **矢印先端の anchor** として描画し、矢印 base
+は path 方向の **逆側** (= source 方向) に伸びる:
+
+- 入力ポート (Left pos) の場合、path は左方向に進んで終わる → 矢印先端は
+  adjustedTargetX、矢印 base は adjustedTargetX **+ 8 px** (= 右、外側)
+- v0.20.11 の inset=4 だと adjustedTargetX = node 境界 - 8 px (= 外側) →
+  矢印先端 = node 境界 - 8 px → node に届かない (= ユーザー指摘)
+
+入力ポートの矢印 head は **node 外側に既に描画される** ため、target 側を
+node 境界に揃える inset=12 でも矢印は node に重ならず、先端が node 境界
+にぴったり触れる。
+
+### Fixed
+
+- ``BranchableEdge``: ``TARGET_INSET_PX`` (= 4) を削除、``adjustWithInset``
+  も ``adjustToBorder`` に rename して inset 引数を撤去
+- source / target ともに ``PORT_TO_NODE_BORDER_PX = 12`` で補正 → adjusted
+  target = node 境界 → 矢印先端 = node 境界 → 矢印が node に綺麗に到達
+- ``DiagramCanvas`` / ``defaultEdgeOptions.markerEnd`` は v0.20.11 のまま (=
+  ``SIMULINK_MARKER_END``)
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean
+
+### v0.20.11 → v0.20.12 移行
+
+利用者は何もする必要なし。サーバ再起動で矢印先端が node 境界線に綺麗に触れる。
+
 ## [0.20.11] - 2026-05-10 — edge 終点の矢印 head を復活
 
 ユーザー指摘 (= 「エッジの端の矢印が表示されなくなったので、それは復活して
