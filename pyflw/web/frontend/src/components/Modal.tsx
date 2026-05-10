@@ -410,6 +410,175 @@ export function DirtyConfirmDialog({
 }
 
 // ---------------------------------------------------------------------------
+// AboutDialog (v0.20.0)
+// ---------------------------------------------------------------------------
+
+interface AboutDialogProps {
+  onClose: () => void;
+}
+
+/**
+ * pyflw の About ダイアログ (= MenuBar Help > About から開く)。
+ * バージョン / GitHub link / license をシンプルに表示。
+ */
+export function AboutDialog({ onClose }: AboutDialogProps): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <ModalShell
+      title={t("modal.about.title", { defaultValue: "About pyflw" })}
+      onClose={onClose}
+      width="w-[400px]"
+    >
+      <div className="flex flex-col gap-3 p-5 text-sm text-slate-700">
+        <div className="flex items-center gap-3">
+          <div className="text-3xl font-bold tracking-tight text-blue-600">
+            pyflw
+          </div>
+          <div className="font-mono text-sm text-slate-500">
+            v{__APP_VERSION__}
+          </div>
+        </div>
+        <p className="text-[12px] text-slate-600">
+          {t("modal.about.description", {
+            defaultValue:
+              "Block-diagram dynamic system simulator (Simulink-inspired).",
+          })}
+        </p>
+        <div className="flex flex-col gap-1 text-[12px]">
+          <a
+            href="https://github.com/aramoto99/pyflw"
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            github.com/aramoto99/pyflw
+          </a>
+          <span className="text-slate-500">
+            {t("modal.about.license", { defaultValue: "MIT License" })}
+          </span>
+        </div>
+      </div>
+      <div className="flex justify-end border-t border-slate-100 bg-slate-50/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+        >
+          {t("modal.button.close", { defaultValue: "Close" })}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KeyboardShortcutsDialog (v0.20.0)
+// ---------------------------------------------------------------------------
+
+interface ShortcutRow {
+  keys: string;
+  description: string;
+}
+
+interface KeyboardShortcutsDialogProps {
+  onClose: () => void;
+}
+
+/**
+ * 主要キーボードショートカット一覧モーダル (= Help > Keyboard shortcuts から
+ * 開く)。``useShortcuts.ts`` の実装と一致させる。
+ */
+export function KeyboardShortcutsDialog({
+  onClose,
+}: KeyboardShortcutsDialogProps): JSX.Element {
+  const { t } = useTranslation();
+
+  const sections: { title: string; rows: ShortcutRow[] }[] = [
+    {
+      title: t("modal.shortcuts.section.file", { defaultValue: "File" }),
+      rows: [
+        { keys: "Ctrl+N", description: "New file" },
+        { keys: "Ctrl+O", description: "Open" },
+        { keys: "Ctrl+S", description: "Save" },
+        { keys: "Ctrl+Shift+S", description: "Save As" },
+      ],
+    },
+    {
+      title: t("modal.shortcuts.section.edit", { defaultValue: "Edit" }),
+      rows: [
+        { keys: "Ctrl+Z", description: "Undo" },
+        { keys: "Ctrl+Shift+Z / Ctrl+Y", description: "Redo" },
+        { keys: "Ctrl+X", description: "Cut" },
+        { keys: "Ctrl+C", description: "Copy" },
+        { keys: "Ctrl+V", description: "Paste" },
+        { keys: "Ctrl+A", description: "Select all (in current scope)" },
+        { keys: "Delete / Backspace", description: "Delete selection" },
+      ],
+    },
+    {
+      title: t("modal.shortcuts.section.navigation", {
+        defaultValue: "Navigation",
+      }),
+      rows: [
+        { keys: "Enter", description: "Drill into selected Subsystem" },
+        { keys: "Esc", description: "Drill up / clear selection" },
+        { keys: "F2", description: "Rename file in FileBrowser" },
+      ],
+    },
+    {
+      title: t("modal.shortcuts.section.simulation", {
+        defaultValue: "Simulation",
+      }),
+      rows: [
+        { keys: "Ctrl+T / F9", description: "Run simulation" },
+        { keys: "Ctrl+Shift+T / Shift+F9", description: "Stop simulation" },
+      ],
+    },
+  ];
+
+  return (
+    <ModalShell
+      title={t("modal.shortcuts.title", {
+        defaultValue: "Keyboard shortcuts",
+      })}
+      onClose={onClose}
+      width="w-[520px]"
+    >
+      <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-5 text-[12px] text-slate-700">
+        {sections.map((sec) => (
+          <div key={sec.title}>
+            <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {sec.title}
+            </h3>
+            <table className="w-full">
+              <tbody>
+                {sec.rows.map((r) => (
+                  <tr key={r.keys} className="border-t border-slate-100">
+                    <td className="w-[200px] py-1 pr-3 font-mono text-[11px] text-slate-600">
+                      {r.keys}
+                    </td>
+                    <td className="py-1 text-slate-700">{r.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end border-t border-slate-100 bg-slate-50/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+        >
+          {t("modal.button.close", { defaultValue: "Close" })}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ConfirmDialog
 // ---------------------------------------------------------------------------
 

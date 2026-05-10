@@ -59,6 +59,14 @@ export function Toolbar(): JSX.Element {
   const hasModel = selectedModelId !== null || selectedFilePath !== null;
   const isRunning = status === "running";
 
+  // v0.20.0: Undo / Redo
+  // ``useAppStore`` の購読は state 値を必要 → past/future の **長さ** を購読して
+  // re-render を触媒する (= ボタンの disabled 状態を反映するため)。
+  const canUndo = useAppStore((s) => s.history.past.length > 0);
+  const canRedo = useAppStore((s) => s.history.future.length > 0);
+  const undo = useAppStore((s) => s.undo);
+  const redo = useAppStore((s) => s.redo);
+
   return (
     <div className="flex items-center gap-0.5 border-b border-slate-300 bg-slate-50 px-1.5 py-0.5">
       {/* Group: File */}
@@ -69,10 +77,18 @@ export function Toolbar(): JSX.Element {
       >
         <SaveIcon />
       </ToolButton>
-      <ToolButton title={t("toolbar.undo")} disabled>
+      <ToolButton
+        title={t("toolbar.undo")}
+        disabled={!hasModel || !canUndo}
+        onClick={() => undo()}
+      >
         <UndoIcon />
       </ToolButton>
-      <ToolButton title={t("toolbar.redo")} disabled>
+      <ToolButton
+        title={t("toolbar.redo")}
+        disabled={!hasModel || !canRedo}
+        onClick={() => redo()}
+      >
         <RedoIcon />
       </ToolButton>
 

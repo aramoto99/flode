@@ -9,6 +9,7 @@ import { listBlockMetadata } from "../api/client";
 import {
   copySelectionToClipboard,
   pasteClipboard,
+  removeBlockFromEditing,
   selectAllInScope,
   useAppStore,
 } from "../store/appStore";
@@ -64,6 +65,22 @@ export function useShortcuts(): void {
       // ---- 以下、テキスト編集中はブラウザ動作を優先 ----
       if (isTextEditing(e.target)) return;
 
+      // v0.20.0: Ctrl+Z Undo / Ctrl+Shift+Z (= Ctrl+Y) Redo
+      // Simulink / VS Code 流儀。Mac は Cmd+Z / Cmd+Shift+Z (= ctrl 変数で吸収)。
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "z") {
+        e.preventDefault();
+        useAppStore.getState().undo();
+        return;
+      }
+      if (
+        (ctrl && e.shiftKey && key.toLowerCase() === "z") ||
+        (ctrl && !e.shiftKey && key.toLowerCase() === "y")
+      ) {
+        e.preventDefault();
+        useAppStore.getState().redo();
+        return;
+      }
+
       // Ctrl+A 全選択
       if (ctrl && !e.shiftKey && key.toLowerCase() === "a") {
         e.preventDefault();
@@ -74,6 +91,21 @@ export function useShortcuts(): void {
       if (ctrl && !e.shiftKey && key.toLowerCase() === "c") {
         e.preventDefault();
         copySelectionToClipboard();
+        return;
+      }
+      // Ctrl+X カット (= Copy + 削除)
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "x") {
+        e.preventDefault();
+        copySelectionToClipboard();
+        // 選択中の block を削除 (= addBlockToEditing と対称な removeBlockFromEditing)
+        const state = useAppStore.getState();
+        for (const id of state.selectedNodeIds) {
+          // import 循環を避けるため動的 require ではなく直接 state action を使う
+          // — removeBlockFromEditing は appStore.ts の export だが本 file は
+          // top-level で import している
+          removeBlockFromEditing(id);
+        }
+        state.selectNode(null);
         return;
       }
       // Ctrl+V 貼り付け

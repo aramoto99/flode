@@ -1,7 +1,7 @@
-# v0.19.0 (ADR-0041 §論点 9-A / 10-A / 11-A): useExternalChangesPoll を新設
-# (= 5 秒 mtime/etag polling で外部エディタ編集を検知)、SaveAsPathDialog +
-# DirtyConfirmDialog を window.prompt / window.confirm から本格モーダル化。
-__version__ = "0.19.0"
+# v0.20.0 (UX 改善): Undo / Redo を本実装 (= history stack、最大 50)、Edit メニュー
+# 追加 (Undo/Redo/Cut/Copy/Paste/Select All/Delete)、Help メニュー追加 (About /
+# Documentation / Keyboard shortcuts)。Toolbar の Undo/Redo ボタン有効化。
+__version__ = "0.20.0"
 
 from .analysis import (
     BodeResponse,

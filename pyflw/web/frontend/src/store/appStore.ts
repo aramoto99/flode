@@ -32,6 +32,17 @@ import type {
 // 壊さないように維持する。
 export type { ScopeBuffer };
 
+/** v0.20.0: undo/redo の最大履歴サイズ (= 過去 N 状態まで保持)。
+ *
+ * 1 モデル = 数 KB〜数 MB の dict (= deep-clone コスト前提)、50 件 × 平均
+ * 100 KB ≒ 5 MB に収まる想定。利用者の編集回数 50 を超えたら一番古い履歴
+ * から drop。 */
+export const HISTORY_MAX = 50;
+
+function deepCloneModel(m: FlwModel): FlwModel {
+  return JSON.parse(JSON.stringify(m)) as FlwModel;
+}
+
 /** Ctrl+C で蓄えるブロック群のコピー (Ctrl+V でオフセット位置に貼り付け)。 */
 export interface ClipboardPayload {
   blocks: BlockEntry[];
@@ -84,6 +95,16 @@ interface AppState {
     fn: (current: FlwModel) => FlwModel,
   ) => void;
 
+  // v0.20.0: Undo / Redo 履歴 (= editingModel の past / future スタック)。
+  // ``applyEditingModel`` で変更前の model を ``past`` に push、``future`` を
+  // クリアする。``setEditingModel`` (= ファイル load) で完全クリア。
+  // 最大 ``HISTORY_MAX`` 件、それを超える古い履歴は drop。
+  history: { past: FlwModel[]; future: FlwModel[] };
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
   setDirty: (dirty: boolean) => void;
@@ -135,6 +156,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingModel: null,
       dirty: false,
       editingPath: [],
+      // v0.20.0: 履歴は別ファイルと混ぜない (= 完全クリア)
+      history: { past: [], future: [] },
     }),
 
   selectedFilePath: null,
@@ -155,6 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       editingModel: null,
       dirty: false,
       editingPath: [],
+      history: { past: [], future: [] },
     }),
 
   editingFileMtime: null,
@@ -201,11 +225,62 @@ export const useAppStore = create<AppState>((set, get) => ({
   setClipboard: (cb) => set({ clipboard: cb }),
 
   editingModel: null,
-  setEditingModel: (model) => set({ editingModel: model }),
+  // ファイル load 時に呼ばれる (= history を完全クリア、別履歴と混ぜない)
+  setEditingModel: (model) =>
+    set({ editingModel: model, history: { past: [], future: [] } }),
   applyEditingModel: (fn) => {
     const current = get().editingModel;
     if (!current) return;
-    set({ editingModel: fn(current), dirty: true });
+    const next = fn(current);
+    if (next === current) return; // no-op (= history を膨らませない)
+    set((state) => {
+      const past = [...state.history.past, deepCloneModel(current)];
+      // 上限超えたら古い履歴を drop
+      const trimmed =
+        past.length > HISTORY_MAX
+          ? past.slice(past.length - HISTORY_MAX)
+          : past;
+      return {
+        editingModel: next,
+        dirty: true,
+        // 新しい変更が入った時点で future (= redo 候補) は破棄
+        history: { past: trimmed, future: [] },
+      };
+    });
+  },
+
+  // v0.20.0: undo / redo
+  history: { past: [], future: [] },
+  canUndo: () => get().history.past.length > 0,
+  canRedo: () => get().history.future.length > 0,
+  undo: () => {
+    const state = get();
+    const past = state.history.past;
+    if (past.length === 0 || state.editingModel === null) return;
+    const previous = past[past.length - 1]!;
+    set({
+      editingModel: previous,
+      history: {
+        past: past.slice(0, -1),
+        future: [deepCloneModel(state.editingModel), ...state.history.future],
+      },
+      // undo 自体は編集アクションなので dirty 化 (= 次の auto-save で書き出す)
+      dirty: true,
+    });
+  },
+  redo: () => {
+    const state = get();
+    const future = state.history.future;
+    if (future.length === 0 || state.editingModel === null) return;
+    const next = future[0]!;
+    set({
+      editingModel: next,
+      history: {
+        past: [...state.history.past, deepCloneModel(state.editingModel)],
+        future: future.slice(1),
+      },
+      dirty: true,
+    });
   },
 
   dirty: false,

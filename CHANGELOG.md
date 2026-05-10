@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-05-10 — Undo / Redo + Edit / Help メニュー (UX ポリッシュ)
+
+ユーザーフィードバック (= 「Undo / Redo が機能していない」「Edit メニュー / Help
+メニューが空」) に応えて、エディタの基本機能を補強する minor リリース。
+ADR-0041 とは独立した GUI ポリッシュ。
+
+**v0.20.0 は後方互換 minor**。
+
+### Added
+
+- **Undo / Redo** (= ``appStore`` に history stack):
+  - ``editingModel`` に対する全ての ``applyEditingModel`` 呼び出しが
+    過去状態を ``history.past`` に push、最大 50 件まで保持
+    (``HISTORY_MAX``、超過分は古い順から drop)
+  - ``undo()`` / ``redo()`` action、``canUndo()`` / ``canRedo()`` selector
+  - ``setEditingModel`` (= ファイル load) / ``selectFilePath`` /
+    ``selectModel`` で history を完全クリア (= 別ファイルと混ぜない)
+  - undo / redo は ``dirty=true`` 化 (= 次回 auto-save で書き出す)
+- **キーボードショートカット**:
+  - ``Ctrl+Z`` / ``Cmd+Z`` → Undo
+  - ``Ctrl+Shift+Z`` / ``Ctrl+Y`` → Redo
+  - ``Ctrl+X`` → Cut (= Copy + Delete)
+  - text input フォーカス中はブラウザネイティブ動作を優先 (= 既存規約踏襲)
+- **Toolbar の Undo / Redo ボタンを有効化** (= v0.19.0 まで disabled プレース
+  ホルダだった)
+- **Edit メニュー** (= 既存ショートカットを menu からも呼べるように):
+  - Undo / Redo / Cut / Copy / Paste / Select All / Delete
+  - 選択なし / 履歴なしでは disable
+- **Help メニュー**:
+  - **About pyflw**: バージョン / GitHub link / MIT license を表示する
+    ``AboutDialog`` モーダル
+  - **Documentation**: GitHub repo を新タブで開く
+  - **Keyboard shortcuts**: 主要ショートカット一覧モーダル
+    (``KeyboardShortcutsDialog``、4 セクション × 計 14 項目)
+
+### Internal / Tests
+
+- vitest **+12 件追加** (= ``undoRedo.test.ts``、history push / undo round trip /
+  HISTORY_MAX 上限 / 別ファイル切替時の clear 等)、**合計 267 件 pass**
+- TypeScript strict mode clean、bundle gzip 帯維持
+- ``examples/spring_mass_damper.py`` 数値完全不変 (Final x=0.2505, x_dot=0.0031)
+
+### 設計判断
+
+- **history は ``editingModel`` 全体を deep-clone**: action-based より単純で
+  ``undo``/``redo`` のロジックがほぼ trivial。50 件 × 平均 100 KB ≒ 5 MB の
+  メモリ目安、現実的な範囲
+- **``setEditingModel`` で history clear**: 別ファイルの過去状態を持ち越すと
+  混乱の元 (= ``selectFilePath`` / ``selectModel`` も同様にクリア)
+- **input focus 中の Ctrl+Z**: 既存の ``isTextEditing(target)`` で skip、テキスト
+  入力中はブラウザ任せ
+- **``AboutDialog`` / ``KeyboardShortcutsDialog``**: 軽量実装で外部依存追加なし、
+  ``ModalShell`` 既存 component を再利用
+
 ## [0.19.0] - 2026-05-10 — 外部編集検知 + 本格モーダル (ADR-0041 §論点 9-A / 10-A / 11-A)
 
 ADR-0041 frontend 段階の **part 3 (= 残作業 closure)**。外部エディタとの併用を
