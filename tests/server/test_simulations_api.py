@@ -193,3 +193,246 @@ class TestErrorHandlerJson:
         body = response.json()
         assert body["error"]["type"] == "ModelLoadError"
         assert "trace_id" in body["error"]
+
+
+# ---------------------------------------------------------------------------
+# ADR-0041 §論点 5-A: model_path / model (inline) / mutual exclusion
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def workspace_client(tmp_path):
+    """``workspace_root=tmp_path`` で起動した TestClient (= ADR-0041 §3 mode)。"""
+    from pyflw.server.settings import Settings
+
+    settings = Settings(model_dir=tmp_path, workspace_root=tmp_path)
+    app = create_app(tmp_path, settings=settings)
+    with TestClient(app) as c:
+        yield c, tmp_path
+
+
+def _build_simple_model_dict(tmp_path) -> dict:
+    """インライン用の minimal `.flw.json` dict を生成する。
+
+    ``Simulator`` は to_dict を持たないため、``save`` 経由で生成して再 load する。
+    ``workspace_client`` fixture が ``tmp_path`` を workspace_root として使うので、
+    seed ファイルは専用サブディレクトリに置いて衝突を避ける。
+    """
+    import json
+
+    sim = Simulator(t_end=0.05, dt=0.01)
+    sim.add(Constant(value=2.0, id="src"))
+    sim.add(Gain(k=3.0, id="g"))
+    sim.add(Scope(n_inputs=1, id="scope"))
+    sim.connect("src", "g")
+    sim.connect("g", "scope")
+    seed_dir = tmp_path / "_inline_seed_helper"
+    seed_dir.mkdir(exist_ok=True)
+    p = seed_dir / "model.flw.json"
+    sim.save(p)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    p.unlink()
+    seed_dir.rmdir()
+    return data
+
+
+class TestStartSimulationModelPath:
+    """ADR-0041 §論点 5-A: ``model_path`` (workspace 相対) ベースの起動。"""
+
+    def test_starts_from_model_path(self, workspace_client):
+        client, workspace = workspace_client
+        sim = Simulator(t_end=0.05, dt=0.01)
+        sim.add(Constant(value=1.0, id="src"))
+        sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect("src", "scope")
+        sim.save(workspace / "demo.flw.json")
+
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "demo.flw.json"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "simulation_id" in data
+        # display id は path 文字列 (= legacy model_id ではなく)
+        assert data["model_id"] == "demo.flw.json"
+
+    def test_starts_from_subdirectory_model_path(self, workspace_client):
+        client, workspace = workspace_client
+        sim = Simulator(t_end=0.05, dt=0.01)
+        sim.add(Constant(value=1.0, id="src"))
+        sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect("src", "scope")
+        (workspace / "controllers").mkdir()
+        sim.save(workspace / "controllers" / "pid.flw.json")
+
+        response = client.post(
+            "/api/v1/simulations",
+            json={"model_path": "controllers/pid.flw.json"},
+        )
+        assert response.status_code == 200
+        assert response.json()["model_id"] == "controllers/pid.flw.json"
+
+    def test_404_for_nonexistent_model_path(self, workspace_client):
+        client, _ = workspace_client
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "ghost.flw.json"}
+        )
+        assert response.status_code == 404
+
+    def test_400_for_directory_model_path(self, workspace_client):
+        client, workspace = workspace_client
+        (workspace / "subdir").mkdir()
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "subdir"}
+        )
+        assert response.status_code == 400
+
+    def test_403_for_path_traversal(self, workspace_client):
+        client, _ = workspace_client
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "../escape.flw.json"}
+        )
+        assert response.status_code == 403
+
+    def test_503_when_workspace_root_not_set(self, client):
+        """legacy --model-dir モードで model_path 指定 → 503。"""
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "x.flw.json"}
+        )
+        assert response.status_code == 503
+
+
+class TestStartSimulationInline:
+    """ADR-0041 §論点 5-A: ``model`` (= インライン dict) ベースの起動。"""
+
+    def test_starts_from_inline_model(self, workspace_client, tmp_path):
+        client, _ = workspace_client
+        model_dict = _build_simple_model_dict(tmp_path)
+        response = client.post(
+            "/api/v1/simulations", json={"model": model_dict}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "simulation_id" in data
+        # インラインは display id = _INLINE_DISPLAY_ID (= 全インラインで共通)
+        from pyflw.server.routes.simulations import _INLINE_DISPLAY_ID
+
+        assert data["model_id"] == _INLINE_DISPLAY_ID
+
+    def test_inline_model_runs_to_completion(self, workspace_client, tmp_path):
+        client, _ = workspace_client
+        model_dict = _build_simple_model_dict(tmp_path)
+        response = client.post(
+            "/api/v1/simulations", json={"model": model_dict}
+        )
+        sim_id = response.json()["simulation_id"]
+        state = _wait_for_status(client, sim_id, {"completed"})
+        assert state["status"] == "completed"
+
+    def test_inline_works_in_legacy_model_dir_mode(self, client, tmp_path):
+        """legacy --model-dir モードでもインライン実行は可能 (= fs アクセスなし)。"""
+        model_dict = _build_simple_model_dict(tmp_path)
+        response = client.post(
+            "/api/v1/simulations", json={"model": model_dict}
+        )
+        assert response.status_code == 200
+
+    def test_400_for_non_dict_model(self, workspace_client):
+        client, _ = workspace_client
+        response = client.post(
+            "/api/v1/simulations", json={"model": "not a dict"}
+        )
+        assert response.status_code == 400
+
+    def test_400_for_invalid_inline_model(self, workspace_client):
+        """インライン model が壊れた dict なら 400 (ModelLoadError → 400)。"""
+        client, _ = workspace_client
+        response = client.post(
+            "/api/v1/simulations",
+            json={"model": {"schema_version": "0.8", "blocks": []}},
+        )
+        # 必須キー (simulator / connections) 欠落で ModelLoadError
+        assert response.status_code == 400
+
+
+class TestStartSimulationMutualExclusion:
+    """ADR-0041 §論点 5-A: 3 形式は相互排他、複数指定 / 全欠落で 400。"""
+
+    def test_400_for_no_keys(self, workspace_client):
+        client, _ = workspace_client
+        response = client.post("/api/v1/simulations", json={})
+        assert response.status_code == 400
+        assert "exactly one" in response.json()["detail"]
+
+    def test_400_for_model_id_and_model_path(self, workspace_client):
+        client, workspace = workspace_client
+        # model_id 用の seed
+        sim = Simulator(t_end=0.05, dt=0.01)
+        sim.add(Constant(value=1.0, id="src"))
+        sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect("src", "scope")
+        sim.save(workspace / "demo.flw.json")
+        response = client.post(
+            "/api/v1/simulations",
+            json={"model_id": "demo", "model_path": "demo.flw.json"},
+        )
+        assert response.status_code == 400
+        assert "mutually exclusive" in response.json()["detail"]
+
+    def test_400_for_model_path_and_inline(self, workspace_client, tmp_path):
+        client, _ = workspace_client
+        model_dict = _build_simple_model_dict(tmp_path)
+        response = client.post(
+            "/api/v1/simulations",
+            json={"model_path": "x.flw.json", "model": model_dict},
+        )
+        assert response.status_code == 400
+
+    def test_400_for_all_three(self, workspace_client):
+        client, _ = workspace_client
+        response = client.post(
+            "/api/v1/simulations",
+            json={"model_id": "x", "model_path": "y.flw.json", "model": {}},
+        )
+        assert response.status_code == 400
+
+
+class TestStartSimulationDeprecation:
+    """ADR-0041 §論点 5-A: ``model_id`` は deprecation warning を発行する。"""
+
+    def test_model_id_emits_deprecation_warning(
+        self, client, model_dir, recwarn
+    ):
+        _seed_simple_model(model_dir, "demo")
+        response = client.post(
+            "/api/v1/simulations", json={"model_id": "demo"}
+        )
+        assert response.status_code == 200
+        deprecation_warnings = [
+            w for w in recwarn.list if issubclass(w.category, DeprecationWarning)
+        ]
+        assert len(deprecation_warnings) >= 1
+        assert "model_id" in str(deprecation_warnings[0].message)
+        assert "ADR-0041" in str(deprecation_warnings[0].message)
+
+    def test_model_path_does_not_emit_deprecation_warning(
+        self, workspace_client, recwarn
+    ):
+        client, workspace = workspace_client
+        sim = Simulator(t_end=0.05, dt=0.01)
+        sim.add(Constant(value=1.0, id="src"))
+        sim.add(Scope(n_inputs=1, id="scope"))
+        sim.connect("src", "scope")
+        sim.save(workspace / "x.flw.json")
+        response = client.post(
+            "/api/v1/simulations", json={"model_path": "x.flw.json"}
+        )
+        assert response.status_code == 200
+        deprecation_warnings = [
+            w for w in recwarn.list if issubclass(w.category, DeprecationWarning)
+        ]
+        # model_path では deprecation warning 不要
+        # ただし他箇所からの DeprecationWarning は許容するため、本 warning 文言で絞る
+        assert not any(
+            "model_id" in str(w.message) for w in deprecation_warnings
+        )

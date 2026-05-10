@@ -1008,6 +1008,33 @@ class Simulator:
             data = json.loads(text)
         except json.JSONDecodeError as e:
             raise ModelLoadError(f"Invalid JSON in {path!r}: {e}") from e
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Simulator:
+        """parsed JSON 値から ``Simulator`` を再構築する (ADR-0041 §論点 5-A)。
+
+        ``Simulator.load`` の dict → Simulator 部分を分離した public API。schema
+        migration、ブロック復元、接続復元、layout 復元の全工程を実行する。
+        REST ``/api/v1/simulations`` のインライン model 実行 (= 未保存
+        editingModel をそのまま走らせる UX) で利用される。
+
+        Args:
+            data: ``json.loads`` の戻り値そのまま (= 任意の JSON 値)。dict で
+                ない場合は ``ModelLoadError``。``Any`` 型にしているのは public
+                API として「外部 JSON ソース直渡し」を許容するため (= caller が
+                isinstance チェックを重複して書かないで済む、code-reviewer
+                MUST 修正)。
+
+        Returns:
+            復元された ``Simulator`` インスタンス (``run()`` 前の状態)。
+
+        Raises:
+            ModelLoadError: top-level が dict でない、必須キー欠落、構造不正、
+                ブロック復元失敗など。
+            SchemaVersionError: サポート外の ``schema_version``。
+            UnknownBlockTypeError: ブロック ``type`` 解決失敗。
+        """
         if not isinstance(data, dict):
             raise ModelLoadError(f"Top-level JSON must be an object, got {type(data).__name__}")
         data = migrate_to_current(data)

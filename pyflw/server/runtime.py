@@ -14,7 +14,6 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -105,19 +104,27 @@ class SimulationManager:
         self,
         *,
         model_id: str,
-        model_path: Path,
+        simulator: Simulator,
         loop: asyncio.AbstractEventLoop,
         scope_batch_size: int,
     ) -> str:
-        """モデルファイルからシミュレーションを開始する。
+        """既に構築済の ``Simulator`` インスタンスからシミュレーションを開始する。
+
+        ADR-0041 §論点 5-A 以前は ``model_path`` を受け取って ``Simulator.load``
+        を内部で呼んでいたが、ファイル ロード / インラインモデル / 旧 ``model_id``
+        の 3 形式が混在するようになったため **ロード責務を呼び出し側に委譲**
+        した。route handler が文字列引数を Simulator に解決してから start を
+        呼ぶ形に統一。
 
         Args:
-            model_id: モデル識別子 (ファイル名 stem)。
-            model_path: ``.flw.json`` ファイルへのパス。
+            model_id: 表示用モデル識別子 (= ファイル path / 旧 model_id /
+                ``"<inline>"`` のいずれか)。トラッキング表示用で fs にアクセス
+                しない。
+            simulator: 構築済の ``Simulator`` インスタンス (= ``Simulator.load`` /
+                ``Simulator.from_dict`` のどちらかで生成済)。
             loop: WS dispatch 用の asyncio loop。
             scope_batch_size: Scope バッチ送信のサイズ。
         """
-        simulator = Simulator.load(model_path)
         sim_id = uuid.uuid4().hex[:12]
         record = _SimulationRecord(
             simulation_id=sim_id,
