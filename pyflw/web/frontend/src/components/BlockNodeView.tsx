@@ -163,7 +163,7 @@ export function BlockNodeView({
               type="target"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct, finalPos)}
+              style={arrowHandleStyle(pos.topPct)}
             >
               {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
@@ -179,7 +179,7 @@ export function BlockNodeView({
               type="source"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct, finalPos)}
+              style={arrowHandleStyle(pos.topPct)}
             >
               {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
@@ -556,26 +556,16 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
 // 終端を内側に手動調整する必要があるが、規模が大きいので将来検討。
 // ---------------------------------------------------------------------------
 
-function arrowHandleStyle(
-  topPct: number,
-  position: Position,
-): React.CSSProperties {
+function arrowHandleStyle(topPct: number): React.CSSProperties {
   // v0.20.4: Handle を 24×24 に拡大して chevron ``>`` (= Handle 中心から外側
   // +6〜+12 px の位置) を hit area に含める。
   //
-  // v0.20.8: ``transform`` を override して Handle 中心を **node 境界に明示
-  // 固定** する (= edge anchor 位置を node 境界線にロック、ブロックと edge
-  // の隙間ゼロ)。React Flow デフォルトの transform は Handle を node の完全
-  // 外側に押し出すため、Handle width 拡大すると edge 起点が node から離れて
-  // 見える問題を解消。Handle の半分は node 内に重なるが、port エリア (=
-  // node 端) でクリックすると connection drag を開始するのは Simulink でも
-  // 同じ慣習。
-  const transform =
-    position === Position.Right
-      ? "translate(-50%, -50%)"
-      : position === Position.Left
-        ? "translate(50%, -50%)"
-        : "translate(-50%, -50%)";
+  // v0.20.9: v0.20.8 で transform を override して Handle center を node 境界
+  // にロックしようとしたが、Handle が node 内側 24 px に押し込まれて chevron
+  // がブロック内に表示される問題発生 (ユーザー指摘「ポート位置を変更するな」)
+  // → React Flow デフォルト transform に戻して chevron は node 外側のままに。
+  // edge と node の隙間は React Flow デフォルト挙動 (Handle center が node
+  // 境界の少し外側) と markerEnd 削除 (v0.20.7) で当面我慢する。
   return {
     top: `${topPct}%`,
     background: "transparent",
@@ -583,7 +573,6 @@ function arrowHandleStyle(
     height: 24,
     border: "none",
     borderRadius: 0,
-    transform,
   };
 }
 

@@ -1,8 +1,9 @@
-# v0.20.8 (UI 修正): edge と block の隙間を完全解消。Handle (24×24) の transform
-# を override して center を node 境界に明示固定。React Flow デフォルトの
-# transform は Handle を node 完全外側に押し出すため Handle width=24 だと
-# edge anchor が node 境界 +12 px 外側になっていた。
-__version__ = "0.20.8"
+# v0.20.9 (revert): v0.20.8 で Handle center を node 境界にロックする transform
+# override したが、Handle が node 内側に押し込まれて chevron がブロック内に
+# 表示される問題発生 (ユーザー指摘「ポート位置を変更するな」)。React Flow
+# デフォルト transform に戻して chevron 位置を v0.20.4-v0.20.7 と同じに。隙間
+# は v0.20.7 markerEnd 削除分のみで折り合う。
+__version__ = "0.20.9"
 
 from .analysis import (
     BodeResponse,

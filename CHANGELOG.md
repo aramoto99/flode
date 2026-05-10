@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.9] - 2026-05-10 — v0.20.8 撤回 (ポート位置を元に戻す)
+
+ユーザー指摘 (= 「ポート位置を変更するなって言ってんだろ」) への対応。
+v0.20.8 で Handle center を node 境界にロックする ``transform`` override を
+入れたが、結果として **Handle が node 内側 24 px に押し込まれて chevron が
+ブロック内に表示される** 問題が発生していた (= React Flow Handle のデフォルト
+position 計算と私の transform override が衝突)。
+
+### Reverted
+
+- ``arrowHandleStyle`` の ``transform`` override を撤回 → React Flow デフォルト
+  に戻す
+- chevron 位置 / Handle 配置は v0.20.4-v0.20.7 と完全に同じに復元
+
+### 既知の trade-off
+
+- edge と node の隙間 ~12 px (= React Flow デフォルト Handle の center が
+  node 境界の少し外側にある) は v0.20.7 markerEnd 削除分のみで折り合う
+- 完全に隙間ゼロにするには Handle 配置 / chevron 配置を別アプローチで再設計
+  する必要あり (= 別途検討、ポート位置を壊さない設計を優先)
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean
+
+### v0.20.8 → v0.20.9 移行
+
+利用者は何もする必要なし。サーバ再起動でポート位置が v0.20.7 と同じに戻る。
+
 ## [0.20.8] - 2026-05-10 — edge と block の隙間を完全解消 (Handle transform override)
 
 v0.20.7 で markerEnd を削除したが、まだ ~12 px の隙間が残るというユーザー指摘
