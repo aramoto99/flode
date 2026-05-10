@@ -43,6 +43,29 @@ function deepCloneModel(m: FlwModel): FlwModel {
   return JSON.parse(JSON.stringify(m)) as FlwModel;
 }
 
+const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
+
+/** localStorage から FileBrowser 折りたたみ状態を復元 (= 起動時 default)。 */
+function readWorkspaceCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(WORKSPACE_COLLAPSE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeWorkspaceCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) {
+      window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(WORKSPACE_COLLAPSE_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage 不可環境では session 内のみ反映
+  }
+}
+
 /** Ctrl+C で蓄えるブロック群のコピー (Ctrl+V でオフセット位置に貼り付け)。 */
 export interface ClipboardPayload {
   blocks: BlockEntry[];
@@ -120,6 +143,12 @@ interface AppState {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
+
+  // v0.20.4: 左サイドバー上部 ``FileBrowser`` パネルの折りたたみ状態。
+  // localStorage ("pyflw.workspace_collapsed") に永続化。``true`` で header
+  // のみ表示、``false`` で tree 展開。
+  workspaceCollapsed: boolean;
+  setWorkspaceCollapsed: (collapsed: boolean) => void;
 
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
@@ -288,6 +317,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // v0.20.0: undo / redo
   history: { past: [], future: [] },
   lastMergeKey: null,
+
+  // v0.20.4: FileBrowser 折りたたみ (localStorage 連動)
+  workspaceCollapsed: readWorkspaceCollapsed(),
+  setWorkspaceCollapsed: (collapsed) => {
+    writeWorkspaceCollapsed(collapsed);
+    set({ workspaceCollapsed: collapsed });
+  },
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
   undo: () => {

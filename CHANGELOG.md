@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-05-10 — Workspace 折りたたみ + ポート hit area 拡大
+
+ユーザーフィードバック 3 件への対応:
+
+1. ワークスペースを折りたためるようにしてください
+2. 出力ポートの ``>`` の部分には当たり判定がなく、カーソルがクロスにならない
+3. Display ブロックなど、エッジから接続したいのにできない
+
+### Added
+
+- **Workspace パネル折りたたみ** (= ADR-0041 §論点 7-A 補強):
+  - FileBrowser header 全体クリックで tree を折りたたみ / 展開、状態は
+    localStorage (``pyflw.workspace_collapsed``) に永続化
+  - 折りたたみ時は左サイドバーの上半分が **24px header のみ** になり、
+    Library palette がほぼ全面表示される (= ブロック追加に集中したい時の UX 改善)
+  - ▸ / ▾ アイコンと aria-expanded 属性で状態を視覚化 + a11y 対応
+  - i18n key 2 件追加 (``filebrowser.collapse`` / ``.expand``)
+
+### Fixed
+
+- **ポート Handle の hit area 不足** (= ``arrowHandleStyle`` 12×12 → 24×24):
+  - chevron ``>`` (= Handle 中心から外側 +6〜+12 px の位置に表示) が hit area
+    の外で、カーソルを乗せても connect cursor (= ``cursor: crosshair``) が
+    効かなかった bug。Handle サイズを 24×24 に拡大して chevron を完全に hit
+    area 内に含める
+  - 副次効果: Display 等の入力ポートに対する drag connection (= 他ブロック
+    から線を引いて drop) も chevron 上で drop 成立するため、これまで「接続
+    できない」場面が解消
+  - Handle 中心位置 (= ブロック境界線上) は不変 → edge anchor 位置 / 視覚的
+    な配線終端は変化なし
+
+### Internal / Tests
+
+- vitest **272 件 pass** (回帰なし)
+- TypeScript strict mode clean
+- production build clean (= 196 KB gzip 帯維持)
+- ``examples/spring_mass_damper.py`` 数値完全不変
+
+### v0.20.3 → v0.20.4 移行
+
+利用者は何もする必要なし。サーバ再起動すれば自動反映。
+
 ## [0.20.3] - 2026-05-10 — i18n hotfix: Help / FileBrowser / 各 modal の翻訳追加
 
 ユーザー指摘 (= 「ヘルプの内容が、言語設定が反映されていない」) への hotfix。

@@ -28,6 +28,9 @@ export default function App(): JSX.Element {
   const scopes = useAppStore((s) => s.scopes);
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
+  // v0.20.4: Workspace 折りたたみで grid-rows を切替 (= collapsed 時 header 24px
+  // のみ、それ以外は 40% 表示)
+  const workspaceCollapsed = useAppStore((s) => s.workspaceCollapsed);
   // ADR-0041 §論点 8-A: ``selectedFilePath`` か ``selectedModelId`` のどちらかが
   // セットされていればモデルが開かれている扱い。1 セッション 1 経路の前提
   // なので両者は ``selectFilePath`` / ``selectModel`` 内で相互排他。
@@ -78,8 +81,16 @@ export default function App(): JSX.Element {
 
         {/* Main 3-column area */}
         <div className="grid min-h-0 grid-cols-[240px_1fr_280px] overflow-hidden">
-          {/* Left: Workspace tree (top) + Library palette (bottom) */}
-          <aside className="grid min-h-0 grid-rows-[40%_60%] overflow-hidden border-r border-slate-300 bg-white">
+          {/* Left: Workspace tree (top) + Library palette (bottom)
+              v0.20.4: workspace 折りたたみ時は header (24px) のみで残り全部
+              palette、展開時は 40%/60% で分割 */}
+          <aside
+            className={`grid min-h-0 overflow-hidden border-r border-slate-300 bg-white ${
+              workspaceCollapsed
+                ? "grid-rows-[24px_1fr]"
+                : "grid-rows-[40%_60%]"
+            }`}
+          >
             {/* ADR-0041 §論点 7-A: workspace tree (`.flw.json` を直接開ける、JupyterLab 流儀) */}
             <div className="flex min-h-0 flex-col overflow-hidden border-b border-slate-300">
               <FileBrowser />

@@ -59,6 +59,9 @@ export function FileBrowser(): JSX.Element {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // v0.20.4: 折りたたみ状態 (localStorage 連動、appStore 経由)
+  const collapsed = useAppStore((s) => s.workspaceCollapsed);
+  const setCollapsed = useAppStore((s) => s.setWorkspaceCollapsed);
   // ADR-0041 §論点 9-A: dirty 状態で別ファイルを開こうとしたら 3-button モーダル
   // (Discard / Save & Open / Cancel) で確認。``pendingOpenPath`` が non-null の
   // 間は ``DirtyConfirmDialog`` が開く。
@@ -262,36 +265,59 @@ export function FileBrowser(): JSX.Element {
   return (
     <div className="flex min-h-0 flex-col bg-white text-[12px]">
       <div className="flex h-6 items-center justify-between border-b border-slate-200 bg-slate-100 px-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          {t("filebrowser.title", "Workspace")}
-        </span>
+        {/* v0.20.4: header 全体クリックで折りたたみ。Refresh ボタンは右側に分離。 */}
         <button
           type="button"
-          onClick={handleRefresh}
-          className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200"
-          title={t("filebrowser.refresh", "Refresh")}
-          aria-label={t("filebrowser.refresh", "Refresh")}
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex flex-1 items-center gap-1 text-left hover:text-slate-700"
+          title={
+            collapsed
+              ? t("filebrowser.expand", "Expand workspace")
+              : t("filebrowser.collapse", "Collapse workspace")
+          }
+          aria-expanded={!collapsed}
         >
-          ⟳
+          <span
+            className="w-3 text-[10px] text-slate-500"
+            aria-hidden
+          >
+            {collapsed ? "▸" : "▾"}
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            {t("filebrowser.title", "Workspace")}
+          </span>
         </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200"
+            title={t("filebrowser.refresh", "Refresh")}
+            aria-label={t("filebrowser.refresh", "Refresh")}
+          >
+            ⟳
+          </button>
+        )}
       </div>
-      <div
-        className="min-h-0 flex-1 overflow-y-auto py-1"
-        onContextMenu={(e) => handleContextMenu(e, "", true)}
-      >
-        <DirectoryNode
-          path=""
-          name="(root)"
-          depth={0}
-          defaultExpanded
-          onFileClick={handleOpen}
-          onContextMenu={handleContextMenu}
-          renamingPath={renamingPath}
-          onSubmitRename={handleRename}
-          onCancelRename={() => setRenamingPath(null)}
-          selectedFilePath={selectedFilePath}
-        />
-      </div>
+      {!collapsed && (
+        <div
+          className="min-h-0 flex-1 overflow-y-auto py-1"
+          onContextMenu={(e) => handleContextMenu(e, "", true)}
+        >
+          <DirectoryNode
+            path=""
+            name="(root)"
+            depth={0}
+            defaultExpanded
+            onFileClick={handleOpen}
+            onContextMenu={handleContextMenu}
+            renamingPath={renamingPath}
+            onSubmitRename={handleRename}
+            onCancelRename={() => setRenamingPath(null)}
+            selectedFilePath={selectedFilePath}
+          />
+        </div>
+      )}
       {pendingOpenPath !== null && (
         <DirtyConfirmDialog
           currentName={selectedFilePath ?? "(untitled)"}

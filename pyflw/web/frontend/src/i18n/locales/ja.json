@@ -126,6 +126,8 @@
 
   "filebrowser.title": "ワークスペース",
   "filebrowser.refresh": "更新",
+  "filebrowser.collapse": "ワークスペースを折りたたむ",
+  "filebrowser.expand": "ワークスペースを展開",
   "filebrowser.disabled": "File API が無効です。``pyflw-server --workspace=PATH`` で再起動してください。",
   "filebrowser.loading": "読み込み中…",
   "filebrowser.empty": "(空のワークスペース)",

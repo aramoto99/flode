@@ -557,11 +557,16 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
 // ---------------------------------------------------------------------------
 
 function arrowHandleStyle(topPct: number): React.CSSProperties {
+  // v0.20.4: Handle を 24×24 に拡大して chevron ``>`` (= Handle 中心から外側
+  // +6〜+12 px の位置) を hit area に含める。利用者がブロック境界外の
+  // chevron 上にカーソルを乗せても connect cursor (= React Flow の
+  // ``cursor: crosshair``) が効き、drag connection start / drop が成立する。
+  // Handle 中心 = ブロック境界線上は変えないので edge anchor 位置は不変。
   return {
     top: `${topPct}%`,
     background: "transparent",
-    width: 12,
-    height: 12,
+    width: 24,
+    height: 24,
     border: "none",
     borderRadius: 0,
   };

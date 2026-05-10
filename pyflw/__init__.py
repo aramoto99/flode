@@ -1,9 +1,7 @@
-# v0.20.3 (i18n hotfix): v0.19.0 / v0.20.0 で追加した dialog (= AboutDialog /
-# KeyboardShortcutsDialog / SaveAsPathDialog / DirtyConfirmDialog) と
-# FileBrowser context menu / Help menu の文字列が辞書未登録 (= defaultValue
-# のみ) で日本語に切り替えても英語のままだった bug 修正。en.json / ja.json
-# に 50+ keys 追加。
-__version__ = "0.20.3"
+# v0.20.4 (UX 改善): Workspace パネル折りたたみ機能 + ポート Handle hit area
+# 拡大 (12×12 → 24×24) で chevron `>` まで cursor crosshair 反映、Display 等
+# への drag connection 成立改善。
+__version__ = "0.20.4"
 
 from .analysis import (
     BodeResponse,
