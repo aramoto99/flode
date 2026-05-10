@@ -14,23 +14,31 @@ import { BaseEdge, type EdgeProps, getSmoothStepPath, Position } from "@xyflow/r
 // なく **node 境界線** に補正するためのオフセット。React Flow Handle width=24
 // で Handle center は node 境界の Handle width/2 = 12 px 外側にあるため、
 // edge 描画座標を 12 px 内側にずらすと node 境界に edge が直接当たる。
-// chevron / Handle 位置は不変なので、接続前の chevron `>` 表示も維持される。
 const PORT_TO_NODE_BORDER_PX = 12;
 
-function adjustToBorder(
+// v0.20.11: target 側の補正量だけ矢印 head のサイズ分減らす。これで矢印
+// 先端 = node 境界 + (matricEnd width) px 外側、矢印 base が node 境界に
+// 触れる。React Flow の markerEnd は edge 終点を矢印先端の anchor として
+// 描画するため、終点を境界より少し外側に置くと矢印 head 全体が node 外側に
+// 描かれて綺麗に node に向かって入ってくる見た目になる。
+const ARROW_HEAD_SIZE_PX = 8; // SIMULINK_MARKER_END.width / .height と一致
+const TARGET_INSET_PX = PORT_TO_NODE_BORDER_PX - ARROW_HEAD_SIZE_PX;
+
+function adjustWithInset(
   x: number,
   y: number,
   position: Position,
+  inset: number,
 ): { x: number; y: number } {
   switch (position) {
     case Position.Right:
-      return { x: x - PORT_TO_NODE_BORDER_PX, y };
+      return { x: x - inset, y };
     case Position.Left:
-      return { x: x + PORT_TO_NODE_BORDER_PX, y };
+      return { x: x + inset, y };
     case Position.Top:
-      return { x, y: y + PORT_TO_NODE_BORDER_PX };
+      return { x, y: y + inset };
     case Position.Bottom:
-      return { x, y: y - PORT_TO_NODE_BORDER_PX };
+      return { x, y: y - inset };
     default:
       return { x, y };
   }
@@ -72,6 +80,7 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     sourcePosition,
     targetPosition,
     style,
+    markerEnd,
   } = props;
 
   // v0.20.10: ユーザー要求「ポート位置は動かさず、ポート接続後はエッジの起点を
@@ -79,8 +88,23 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
   // Handle center 座標 (= node 境界 + 12 px 外側、Handle width=24 のため) を
   // 渡してくる。これを 12 px 内側に補正することで edge の path が node 境界
   // に当たる見た目になる。chevron / Handle 自体は元の位置のまま。
-  const adjustedSrc = adjustToBorder(sourceX, sourceY, sourcePosition);
-  const adjustedTgt = adjustToBorder(targetX, targetY, targetPosition);
+  //
+  // v0.20.11: source は 12 px 補正で node 境界、target は (12 - 矢印サイズ) =
+  // 4 px 補正で node 境界 + 矢印サイズ 外側 → 矢印 base が node 境界に触れる
+  // 位置に矢印 head が配置される (= 矢印が node の外で path の方向を向き、
+  // node に綺麗に当たる)。
+  const adjustedSrc = adjustWithInset(
+    sourceX,
+    sourceY,
+    sourcePosition,
+    PORT_TO_NODE_BORDER_PX,
+  );
+  const adjustedTgt = adjustWithInset(
+    targetX,
+    targetY,
+    targetPosition,
+    TARGET_INSET_PX,
+  );
 
   const [edgePath] = getSmoothStepPath({
     sourceX: adjustedSrc.x,
@@ -95,10 +119,9 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
 
   return (
     <>
-      {/* v0.20.7: markerEnd を渡さない (= 矢印 head なし)。React Flow は markerEnd
-          を node 境界の外側に描画するため隙間が生じる。Simulink でも接続済み
-          配線は純粋な線で、信号方向は node 配置で把握する慣習。 */}
-      <BaseEdge id={id} path={edgePath} style={style} />
+      {/* v0.20.11: markerEnd 復活。target 座標を矢印サイズ分外側に置いた
+          ことで矢印 head が node 境界に綺麗に当たる位置に描画される。 */}
+      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
       {/* 透明・太いストロークの overlay path で hit area を拡大。
           ``pointerEvents: "stroke"`` でストローク領域のみクリック判定 (= 細い
           描画 path との見た目のズレを最小化)。 */}

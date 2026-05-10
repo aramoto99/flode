@@ -1,8 +1,8 @@
-# v0.20.10 (UI 修正): ポート位置は不変、edge の描画座標だけを 12 px 内側に補正
-# して node 境界に当たる見た目に。BranchableEdge 内で sourceX/Y / targetX/Y を
-# Position に応じて 12 px 内側にずらして getSmoothStepPath に渡す。chevron
-# (= node 境界の +12 px 外側) と Handle (= 24×24 hit area) は完全に維持。
-__version__ = "0.20.10"
+# v0.20.11 (UI 修正): edge 終点の矢印 head を復活。BranchableEdge の target 座標
+# 補正を 12 px → 4 px に変更 (= 12 - 矢印サイズ 8)、矢印先端が node 境界 +8 px
+# 外側、矢印 base が node 境界に綺麗に触れる位置に描画。source 側は 12 px
+# 補正のままで edge 起点は node 境界に当たる。
+__version__ = "0.20.11"
 
 from .analysis import (
     BodeResponse,

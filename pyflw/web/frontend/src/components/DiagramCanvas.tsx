@@ -24,6 +24,7 @@ import {
   modelToDiagram,
   SIMULINK_EDGE_STYLE,
   SIMULINK_EDGE_TYPE,
+  SIMULINK_MARKER_END,
   type BlockNode,
 } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
@@ -666,15 +667,14 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
         fitView
         nodesDraggable
         defaultEdgeOptions={{
-          // Simulink 風: 90° 折れ線 (step) + 黒系細線。
-          // v0.20.7: ``markerEnd`` (= 矢印 head) を削除。React Flow は矢印 head
-          // を node 境界の外側に描画するため、矢印が node に重ならないオフ
-          // セット分だけ edge の終端が node から離れて見える ("ブロックと
-          // エッジの隙間が大きい" ユーザー指摘)。Simulink でも接続済み配線は
-          // 矢印 head なしの純粋な線で、信号方向は node 配置 (= 左→右) で
-          // 把握する慣習。これにより edge は node 境界に直接到達する。
+          // Simulink 風: 90° 折れ線 (step) + 黒系細線 + 終点矢印 head。
+          // v0.20.11: markerEnd 復活。BranchableEdge が target 座標を矢印
+          // サイズ分外側に置く補正をするため、矢印 head が node 境界に綺麗に
+          // 当たる位置に描画される (= 矢印先端が node 境界 + 8 px、base が
+          // node 境界)。
           type: SIMULINK_EDGE_TYPE,
           style: SIMULINK_EDGE_STYLE,
+          markerEnd: SIMULINK_MARKER_END,
         }}
         proOptions={{ hideAttribution: true }}
         // 左クリックドラッグ = 空エリアで矩形選択 / ノード上でそのノード移動

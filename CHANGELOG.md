@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.11] - 2026-05-10 — edge 終点の矢印 head を復活
+
+ユーザー指摘 (= 「エッジの端の矢印が表示されなくなったので、それは復活して
+もらえますか」) への対応。v0.20.10 で edge 起点を node 境界に揃える修正は奇麗
+にハマったので、今度は **target 側の補正を矢印 head のサイズ分減らして** 矢印
+を綺麗に描画する。
+
+### Calculation
+
+- ``PORT_TO_NODE_BORDER_PX = 12`` (= Handle width / 2)
+- ``ARROW_HEAD_SIZE_PX = 8`` (= ``SIMULINK_MARKER_END.width``)
+- ``TARGET_INSET_PX = 12 - 8 = 4``
+- source 側補正: 12 px → edge 起点 = node 境界線
+- target 側補正: 4 px → edge 終点 = node 境界 + 8 px 外側
+  - React Flow markerEnd は edge 終点を矢印先端の anchor に取るので、矢印先端
+    は node 境界 + 8 px、矢印 base は node 境界に綺麗に触れる位置 → 矢印 head
+    全体が node 外側で path の方向を向いて node に入ってくる見た目
+
+### Fixed
+
+- ``BranchableEdge``: ``adjustToBorder`` を ``adjustWithInset`` に rename + 引数
+  に ``inset`` を追加、source/target で異なる補正量を渡せるように
+- ``BranchableEdge``: ``markerEnd`` prop を ``BaseEdge`` に渡すよう復活
+- ``DiagramCanvas``: ``defaultEdgeOptions.markerEnd`` に ``SIMULINK_MARKER_END``
+  を復活 (= ``ArrowClosed``、width=8、height=8、stroke 色)
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean
+
+### v0.20.10 → v0.20.11 移行
+
+利用者は何もする必要なし。サーバ再起動で edge の終端に矢印 head が綺麗に
+描画される。
+
 ## [0.20.10] - 2026-05-10 — edge 起点を node 境界に (ポート位置は不変)
 
 ユーザー指摘 (= 「ポート位置は動かさず、ポート接続後はエッジの起点をポートで
