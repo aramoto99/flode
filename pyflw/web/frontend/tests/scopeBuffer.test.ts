@@ -369,3 +369,62 @@ describe("appendBatch: mismatched row lengths in values (defensive)", () => {
     expect(next.length).toBe(1);
   });
 });
+
+describe("appendBatch: ring drop at MAX_SAMPLES (ADR-0042 §論点 2)", () => {
+  it("caps capacity at MAX_SAMPLES once exceeded (= ring start)", () => {
+    // capacity が MAX_SAMPLES に達したら頭打ち、shiftAndAppend で直近 100_000
+    // 件のみ保持する。1024 batch × 200 回 = 204_800 件投入してリング動作確認。
+    let b = createBuffer();
+    const batchSize = 1024;
+    for (let r = 0; r < 200; r++) {
+      const times: number[] = [];
+      const values: number[][] = [];
+      for (let i = 0; i < batchSize; i++) {
+        times.push(r * batchSize + i);
+        values.push([r * batchSize + i]);
+      }
+      b = appendBatch(b, times, values);
+    }
+    expect(b.capacity).toBe(100_000);
+    expect(b.length).toBe(100_000);
+    // 末尾サンプルが直近 batch の最終要素 (= 204_799) であることを確認
+    expect(b.times[b.length - 1]).toBe(204_799);
+    // 先頭サンプルは 100_000 件前 = 104_800
+    expect(b.times[0]).toBe(204_800 - 100_000);
+  });
+
+  it("doubles capacity normally below MAX_SAMPLES", () => {
+    let b = createBuffer();
+    expect(b.capacity).toBe(1024);
+    b = appendBatch(b, [0, 1, 2], [[1], [2], [3]]);
+    expect(b.capacity).toBe(1024);
+    // 1500 件投入 (= 1024 を超える)
+    const times = Array.from({ length: 1500 }, (_, i) => i + 3);
+    const values = times.map((_, i) => [i + 100]);
+    b = appendBatch(b, times, values);
+    // 2048 に倍化
+    expect(b.capacity).toBe(2048);
+    expect(b.length).toBe(1503);
+  });
+
+  it("realloc to MAX_SAMPLES when crossing limit (drops oldest)", () => {
+    let b = createBuffer();
+    // 50_000 件追加 (倍々で >= 65536 capacity に達する)
+    const initialBatch = 50_000;
+    const times1 = Array.from({ length: initialBatch }, (_, i) => i);
+    const values1 = times1.map((_, i) => [i]);
+    b = appendBatch(b, times1, values1);
+    expect(b.capacity).toBeGreaterThanOrEqual(initialBatch);
+    expect(b.length).toBe(initialBatch);
+    // さらに 60_000 件 → 合計 110_000 で MAX_SAMPLES (100_000) 超過
+    const more = 60_000;
+    const times2 = Array.from({ length: more }, (_, i) => i + initialBatch);
+    const values2 = times2.map((_, i) => [i + initialBatch]);
+    b = appendBatch(b, times2, values2);
+    expect(b.capacity).toBe(100_000);
+    expect(b.length).toBe(100_000);
+    // 直近 100_000 件保持: 先頭 = 110_000 - 100_000 = 10_000
+    expect(b.times[0]).toBe(10_000);
+    expect(b.times[b.length - 1]).toBe(109_999);
+  });
+});

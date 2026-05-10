@@ -32,6 +32,13 @@ export interface ScopeBuffer {
  * これで十分収まり拡張不要。長時間用は倍々増加で対応。 */
 const INITIAL_CAPACITY = 1024;
 
+/** ADR-0042 §論点 2-A: scope buffer の最大保持サンプル数。capacity をこの値で
+ * 上限止めし、超過分は最古サンプルから FIFO drop する (= ring buffer 動作)。
+ * 100,000 サンプル × n_signals × 8 byte ≒ 800 KB / signal、Scope 5 個 × 8 signals
+ * でも ~32 MB と妥当。``Stop Time = ∞`` の長時間実行で UI が OOM しないため。
+ * backend の ``Scope.buffer_capacity`` default と揃えてある。 */
+export const MAX_SAMPLES = 100_000;
+
 /**
  * 空の ScopeBuffer を作る (n_signals 未確定、length=0)。
  *
@@ -84,16 +91,28 @@ export function appendBatch(
     return prev;
   }
 
-  // 容量チェック: 初回 (= values 列が未確保) または不足なら倍々で再確保
+  // 容量チェック (ADR-0042 §論点 2-A):
+  // 1) 初回 / 容量不足で MAX_SAMPLES 未満なら倍々増加で再確保 (既存挙動維持)
+  // 2) MAX_SAMPLES 到達後は capacity = MAX_SAMPLES で固定し、超過分は ring drop
   const needed = prev.length + batchLen;
   if (isFirst || needed > prev.capacity) {
-    let newCap = prev.capacity;
-    while (newCap < needed) newCap *= 2;
-    return reallocAndAppend(prev, times, values, n, newCap);
+    if (needed <= MAX_SAMPLES) {
+      let newCap = prev.capacity;
+      while (newCap < needed) newCap *= 2;
+      if (newCap > MAX_SAMPLES) newCap = MAX_SAMPLES;
+      return reallocAndAppend(prev, times, values, n, newCap);
+    }
+    // 上限到達: capacity = MAX_SAMPLES で確保 (= ring 動作開始)
+    return reallocAndAppend(prev, times, values, n, MAX_SAMPLES);
   }
 
   // 容量内: in-place 追記 (= 既存 typed array に上書き)。``readonly`` はプロパティ
   // 再代入禁止を意味するだけで Float64Array の要素書き込みは型システム上も許可。
+  // ただし capacity == MAX_SAMPLES に達している状態で needed > MAX_SAMPLES
+  // (= 既存 length + batchLen > MAX_SAMPLES) のときは shift drop が必要。
+  if (needed > MAX_SAMPLES && prev.capacity === MAX_SAMPLES) {
+    return shiftAndAppend(prev, times, values, n, batchLen);
+  }
   const t = prev.times;
   for (let i = 0; i < batchLen; i++) {
     t[prev.length + i] = times[i]!;
@@ -115,13 +134,55 @@ export function appendBatch(
 }
 
 /**
+ * ADR-0042 §論点 2-A: capacity 到達後の ring drop 動作。
+ *
+ * 既存 typed array の内容を ``drop`` 件分だけ左 shift し、空いた末尾に batch を
+ * 書き込む。drop 量は ``prev.length + batchLen - MAX_SAMPLES``。最終的な length
+ * は MAX_SAMPLES に張り付く。
+ */
+function shiftAndAppend(
+  prev: ScopeBuffer,
+  times: readonly number[],
+  values: readonly (readonly number[])[],
+  n: number,
+  batchLen: number,
+): ScopeBuffer {
+  const drop = prev.length + batchLen - MAX_SAMPLES;
+  const keepCount = prev.length - drop;
+  // 左 shift (= 同 typed array 内 copy、Float64Array.copyWithin で 1 行)
+  const t = prev.times;
+  t.copyWithin(0, drop, drop + keepCount);
+  for (let i = 0; i < batchLen; i++) {
+    t[keepCount + i] = times[i]!;
+  }
+  for (let p = 0; p < n; p++) {
+    const col = prev.values[p]!;
+    col.copyWithin(0, drop, drop + keepCount);
+    for (let i = 0; i < batchLen; i++) {
+      col[keepCount + i] = values[i]![p]!;
+    }
+  }
+  return {
+    times: prev.times,
+    values: prev.values,
+    length: MAX_SAMPLES,
+    capacity: prev.capacity,
+    n_signals: n,
+  };
+}
+
+/**
  * 容量再確保 (または初回確保) して batch を末尾に追記した新 ScopeBuffer を返す。
+ *
+ * ADR-0042 §論点 2-A: ``newCap === MAX_SAMPLES`` かつ ``prev.length + batchLen >
+ * MAX_SAMPLES`` のとき、最古サンプルから drop して直近 MAX_SAMPLES 件を保持する
+ * (= ring 開始)。それ以外は既存挙動 (= 倍々増加 in-place 拡張)。
  *
  * @param prev 既存
  * @param times batch 時刻
  * @param values batch 値 (wire 行指向)
  * @param n 信号数
- * @param newCap 新容量 (>= prev.length + batch.length)
+ * @param newCap 新容量 (>= prev.length + batch.length、または MAX_SAMPLES)
  */
 function reallocAndAppend(
   prev: ScopeBuffer,
@@ -131,25 +192,39 @@ function reallocAndAppend(
   newCap: number,
 ): ScopeBuffer {
   const batchLen = times.length;
-  const newLen = prev.length + batchLen;
+  const totalNeeded = prev.length + batchLen;
 
-  // times を新 capacity で確保し、既存を copy
+  // ring drop が必要か?
+  // (= newCap = MAX_SAMPLES で totalNeeded > newCap)
+  const needsDrop = totalNeeded > newCap;
+  const keepFromPrev = needsDrop
+    ? Math.max(0, newCap - batchLen)
+    : prev.length;
+  const dropFromPrev = needsDrop ? prev.length - keepFromPrev : 0;
+  // batch 自体が capacity を超える希少ケース: batch の末尾 newCap 件のみ保持
+  const batchKeepStart = batchLen > newCap ? batchLen - newCap : 0;
+  const batchKeep = batchLen - batchKeepStart;
+  const newLen = keepFromPrev + batchKeep;
+
+  // times を新 capacity で確保し、prev の末尾 keepFromPrev 件を copy
   const newTimes = new Float64Array(newCap);
-  if (prev.length > 0) newTimes.set(prev.times.subarray(0, prev.length));
-  for (let i = 0; i < batchLen; i++) {
-    newTimes[prev.length + i] = times[i]!;
+  if (keepFromPrev > 0) {
+    newTimes.set(prev.times.subarray(dropFromPrev, dropFromPrev + keepFromPrev));
+  }
+  for (let i = 0; i < batchKeep; i++) {
+    newTimes[keepFromPrev + i] = times[batchKeepStart + i]!;
   }
 
-  // values を信号ごとに新 capacity で確保し、既存を copy + batch を転置追記
+  // values を信号ごとに同じく
   const newValues: Float64Array[] = new Array<Float64Array>(n);
   for (let p = 0; p < n; p++) {
     const col = new Float64Array(newCap);
     const oldCol = prev.values[p];
-    if (oldCol && prev.length > 0) {
-      col.set(oldCol.subarray(0, prev.length));
+    if (oldCol && keepFromPrev > 0) {
+      col.set(oldCol.subarray(dropFromPrev, dropFromPrev + keepFromPrev));
     }
-    for (let i = 0; i < batchLen; i++) {
-      col[prev.length + i] = values[i]![p]!;
+    for (let i = 0; i < batchKeep; i++) {
+      col[keepFromPrev + i] = values[batchKeepStart + i]![p]!;
     }
     newValues[p] = col;
   }
