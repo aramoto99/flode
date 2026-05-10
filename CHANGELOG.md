@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-05-10 — JupyterLab 流ローカルファイル直接編集 + legacy API 削除 (BREAKING)
+
+ADR-0041 (JupyterLab 流ローカルファイル直接編集) の本格移行に伴う major
+release。v2.x で並行サポートしていた legacy ``/api/v1/models/*`` REST と
+``--model-dir`` CLI を **完全削除** し、frontend を ``selectedFilePath`` 一本化
+した。詳細は ADR-0038 §Amendments §(3) / ADR-0041 §論点 4-A 参照。
+
+### Breaking changes
+
+- **REST `/api/v1/models/*` を全削除** — `POST/GET/PUT/DELETE/COPY` +
+  `next-untitled` (= 7 endpoint)。利用者は `/api/v1/files/*` (= JupyterLab
+  contents API 互換) に移行する。
+- **`POST /api/v1/simulations` の `model_id` body を削除** — `model_path`
+  (workspace 相対 path) または `model` (inline FlwModel dict) のみ受け付ける。
+- **`pyflw serve --model-dir DIR` を削除**、**`--workspace DIR` を必須化** —
+  workspace は path traversal 防御 (= `pyflw/server/security/paths.py`) を
+  通したのち file 操作の root として使われる。
+- **`Settings.model_dir` フィールドを削除**、`workspace_root: Path` が必須化。
+- **frontend `selectedModelId` / `updateModel` / `startSimulation(model_id)` /
+  `OpenModelDialog` / `RenameDialog` / `ConfirmDialog` を削除** —
+  `selectedFilePath` のみが「選択中の編集対象」を表す。
+
+### Migration
+
+flat な model directory を保持していた利用者向けに **1 リリース限定** で
+migration サブコマンドを提供する:
+
+```bash
+pyflw serve --migrate-models-to=./workspace --legacy-models-dir=./old_models
+```
+
+- `*.flw.json` を非破壊コピー (`shutil.copy2` で mtime 保持)
+- 既存 path は skip、`--force` で上書き
+- 結果は JSON report (`copied` / `skipped` / `errors`) で stdout 出力
+- exit code: 0 = 全 OK / 1 = 一部 skip / 2 = エラーあり
+
+migration 後は通常の `pyflw serve --workspace=./workspace` で起動する。
+
+### Added
+
+- `pyflw/server/security/paths.py` — `resolve_workspace_path` 7 step path
+  traversal 防御 (= URL decode → control char 拒否 → 絶対 path 拒否 → `..`
+  単体拒否 → `Path.resolve` → root containment check → Windows reserved name
+  検証)
+- `pyflw/server/migrations/__init__.py` — `migrate_models_to(src, dst, *,
+  force=False) -> MigrationReport`
+- `pyflw serve --migrate-models-to / --legacy-models-dir / --force` CLI
+
+### Removed
+
+- backend: `pyflw/server/routes/models.py`、`models_router` の include、
+  `tests/server/test_models_api.py`
+- frontend: `OpenModelDialog` / `RenameDialog` / `ConfirmDialog` (= Modal.tsx)、
+  `modal.open.*` / `modal.rename.*` / `modal.button.rename` i18n keys
+- frontend hooks: `useAutoSave` / `useSimulation` の legacy 経路分岐 (= 純粋に
+  File API 経路のみ)
+
+### Verification
+
+- backend pytest: **1160 passed / 2 skipped** (= 既存 mypy --strict / ruff clean)
+- frontend vitest: **271 passed** (= 既存テスト回帰なし)
+- frontend typecheck + production build: clean
+- `examples/spring_mass_damper.py`: Final x=0.2505, x_dot=0.0031 (= 数値完全不変)
+
+### v0.20.12 → v0.21.0 移行手順
+
+1. legacy `--model-dir DIR` で運用していた場合: `pyflw serve
+   --migrate-models-to=./workspace --legacy-models-dir=./DIR` で workspace に
+   コピー
+2. 起動コマンドを `pyflw serve --workspace=./workspace` に置換
+3. 自作 REST クライアントを使っていた場合: `/api/v1/models/*` の呼び出しを
+   `/api/v1/files/*` 経路に置換 (= JupyterLab contents API 互換)
+4. backend に直接依存していた場合: `Settings(workspace_root=Path("..."))` で
+   構築、`create_app(settings=...)` の keyword 必須引数化
+
 ## [0.20.12] - 2026-05-10 — 矢印 head が node 境界に触れない問題を修正
 
 ユーザー指摘 (= 「接続先の矢印とブロックが接地してないですね」) への対応。

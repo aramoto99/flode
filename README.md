@@ -136,19 +136,31 @@ print(compiled.n_states, compiled.backend)
 `TransferFunction` / `Subsystem` / `TriggeredSubsystem` 等) を含むモデルは
 `BlockSpecError` で拒否される。詳細: ADR-0037 / ADR-0038。
 
-## Web GUI (Phase 2)
+## Web GUI
 
-After installing the `gui` extras, launch the FastAPI server:
+After installing the `gui` extras, launch the FastAPI server with a workspace
+root (= directory containing your `.flw.json` files, ADR-0041):
 
 ```bash
-pyflw-server --model-dir ./models --port 8770
+pyflw-server --workspace ./workspace --port 8770
 ```
 
-Then open `http://127.0.0.1:8770` in a browser. Models are read from and
-written to `--model-dir` as `.flw.json` files (ADR-0008). The browser UI gives
-you a model list, a read-only diagram view (React Flow), Run/Stop controls,
-and a live scope plot fed by WebSocket. Drag-and-drop editing and parameter
-inline editing are slated for Phase 3 (see ADR-0012 §(10)).
+Then open `http://127.0.0.1:8770` in a browser. The browser UI gives you a
+JupyterLab-style file tree (= subdirectories supported, ADR-0041), a full
+diagram editor (React Flow + drag-and-drop), parameter editing, Run/Stop
+controls, and live scope / xy-graph plots fed by WebSocket. All file
+operations go through `/api/v1/files/*` (= JupyterLab contents API
+compatible).
+
+If you previously ran pyflw with the legacy `--model-dir DIR` (= v2.x),
+migrate the flat layout to a workspace once with:
+
+```bash
+pyflw-server --migrate-models-to=./workspace --legacy-models-dir=./old_models
+```
+
+then start with `--workspace=./workspace`. The migration command is provided
+for one release only.
 
 Frontend development (Vite dev server) is documented in
 `pyflw/web/frontend/README.md`.

@@ -1,9 +1,10 @@
-# v0.20.12 (UI 修正): edge target 側の補正量を 4 → 12 に修正。SVG markerEnd の
-# 矢印 head は path 終端を anchor として描画 → 入力ポート (Left pos) では矢印
-# base が node 外側に伸びる。よって inset=12 で adjustedTargetX=node 境界に
-# 揃えると矢印先端が node 境界に綺麗に触れる (= v0.20.11 の inset=4 では矢印が
-# node から離れていた問題を解消)。
-__version__ = "0.20.12"
+# v0.21.0 (breaking change): legacy ``/api/v1/models/*`` REST と ``--model-dir``
+# CLI を完全削除し、ADR-0041 (JupyterLab 流ローカルファイル直接編集) に統合。
+# ``pyflw serve --workspace DIR`` 必須化、移行のため
+# ``pyflw serve --migrate-models-to=DIR --legacy-models-dir=OLD`` を 1 リリース
+# 限定で提供。frontend は ``selectedModelId`` 経路を全廃し ``selectedFilePath``
+# 一本化。詳細は ADR-0038 §Amendments §(3) / ADR-0041。
+__version__ = "0.21.0"
 
 from .analysis import (
     BodeResponse,
