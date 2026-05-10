@@ -667,11 +667,18 @@ class Simulator:
             if hasattr(b, "reset"):
                 b.reset()
 
-        n_steps = int(round(self.t_end / dt_base))
-        if n_steps < 1:
-            raise SchedulingError(
-                f"t_end={self.t_end}, dt_base={dt_base}: computed n_steps={n_steps} < 1"
-            )
+        # ADR-0042 §論点 1-A: ``t_end = math.inf`` (unbounded) では n_steps を
+        # 計算せず ``None`` として、ループ側で `_stop_requested` のみで終了させる。
+        # 有限値の場合は従来通り ``int(round(t_end / dt_base))`` で打ち切り。
+        is_unbounded = math.isinf(self.t_end)
+        if is_unbounded:
+            n_steps: int | None = None
+        else:
+            n_steps = int(round(self.t_end / dt_base))
+            if n_steps < 1:
+                raise SchedulingError(
+                    f"t_end={self.t_end}, dt_base={dt_base}: computed n_steps={n_steps} < 1"
+                )
 
         # 停止フラグはこの run() 呼び出しの間だけ有効。前回の値が残っているのを
         # ここでクリアする。
@@ -688,7 +695,7 @@ class Simulator:
 
     def _run_sm_a_loop(
         self,
-        n_steps: int,
+        n_steps: int | None,
         dt_base: float,
         n_total: int,
         order: list[Block],
@@ -701,6 +708,9 @@ class Simulator:
         ``f_continuous`` を本 method 内で定義することで、ループ内の
         ``discrete_state = next_discrete`` 再代入を closure が正しく追跡する
         (= ADR-0014 §Risks #3 で確認した nonlocal capture セマンティクス)。
+
+        ADR-0042 §論点 1-A: ``n_steps is None`` のとき unbounded ループ
+        (= ``self.t_end = math.inf``)。終了は ``self._stop_requested`` のみ。
         """
 
         def f_continuous(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -710,7 +720,8 @@ class Simulator:
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], ins[b]), dtype=float)
             return xdot
 
-        for k in range(n_steps + 1):
+        k = 0
+        while True:
             t = k * dt_base
 
             # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
@@ -742,7 +753,9 @@ class Simulator:
             if self._stop_requested:
                 return
 
-            if k == n_steps:
+            # 終了判定: 有限 t_end (n_steps int) では k == n_steps で break、
+            # unbounded (n_steps None) では _stop_requested のみが終了条件。
+            if n_steps is not None and k == n_steps:
                 break
 
             # [B] 連続部分の積分 [t_k, t_{k+1}]
@@ -761,10 +774,11 @@ class Simulator:
                 if not sol.success:
                     raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
                 x_cont = sol.y[:, -1]
+            k += 1
 
     def _run_sm_b_loop(
         self,
-        n_steps: int,
+        n_steps: int | None,
         dt_base: float,
         n_total: int,
         order: list[Block],
@@ -781,6 +795,9 @@ class Simulator:
 
         ``f_continuous_vector`` を本 method 内で定義することで closure が正しく
         ``discrete_state`` 再代入を追跡する (SM-A と同じ理由)。
+
+        ADR-0042 §論点 1-A: ``n_steps is None`` のとき unbounded ループ
+        (= ``self.t_end = math.inf``)。終了は ``self._stop_requested`` のみ。
         """
 
         def f_continuous_vector(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -800,7 +817,8 @@ class Simulator:
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], u_1d), dtype=float)
             return xdot
 
-        for k in range(n_steps + 1):
+        k = 0
+        while True:
             t = k * dt_base
 
             # [A'] 離散ブロック update (SM-B path)
@@ -842,7 +860,9 @@ class Simulator:
             if self._stop_requested:
                 return
 
-            if k == n_steps:
+            # 終了判定: 有限 t_end (n_steps int) では k == n_steps で break、
+            # unbounded (n_steps None) では _stop_requested のみが終了条件。
+            if n_steps is not None and k == n_steps:
                 break
 
             # [B] 連続積分 (SM-B 版 f_continuous_vector)
@@ -861,6 +881,7 @@ class Simulator:
                 if not sol.success:
                     raise SolverError(f"Solver failed at t=[{t}, {t_next}]: {sol.message}")
                 x_cont = sol.y[:, -1]
+            k += 1
 
     def _record(self, t: float, inputs: dict[Block, npt.NDArray[Any]]) -> None:
         for b in self.blocks:
