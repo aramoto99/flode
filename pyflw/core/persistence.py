@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import math
 import numbers
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -72,6 +73,68 @@ def _is_allowed_module(module_name: str) -> bool:
     if any(module_name.startswith(p) for p in _DEFAULT_ALLOWED_PREFIXES):
         return True
     return any(module_name.startswith(p) for p in _extra_allowed_prefixes)
+
+
+def parse_t_end(raw: Any) -> float:
+    """``simulator.t_end`` 入力値を ``float`` (有限値または ``math.inf``) に変換する。
+
+    ADR-0042 §論点 4 / §論点 7-A: JSON 永続化は前方互換のため
+    ``"inf"`` 文字列リテラル単一を採用。本関数は **case-insensitive で
+    ``"inf"`` のみ** を受け入れ、``"+inf"`` / ``"-inf"`` / ``"infinity"``
+    / ``"∞"`` / ``"NaN"`` 等は ``ModelLoadError`` で拒否する。
+
+    Args:
+        raw: ``int`` / ``float`` / ``str``。``bool`` は弾く (``isinstance(True, int)``
+            の罠を避ける)。
+
+    Returns:
+        有限の正値、または ``math.inf``。
+
+    Raises:
+        ModelLoadError: 受け入れ可能でない型・値 (例: 負の数、``NaN``、``-inf``、
+            未対応の文字列、空文字)。
+    """
+    if isinstance(raw, bool):
+        raise ModelLoadError(
+            f"Invalid t_end: expected number or 'inf', got bool ({raw!r})"
+        )
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized == "inf":
+            return math.inf
+        raise ModelLoadError(
+            f"Invalid t_end string {raw!r}: only 'inf' (case-insensitive) is "
+            f"accepted as the unbounded sentinel. '+inf' / 'infinity' / '∞' "
+            f"are intentionally rejected (ADR-0042 §4)."
+        )
+    if isinstance(raw, numbers.Real):
+        value = float(raw)
+        if math.isnan(value):
+            raise ModelLoadError("Invalid t_end: NaN")
+        if value == -math.inf:
+            raise ModelLoadError(
+                "Invalid t_end: -inf is rejected (only positive 'inf' is "
+                "accepted as the unbounded sentinel, ADR-0042 §4)"
+            )
+        if value <= 0.0:
+            raise ModelLoadError(
+                f"Invalid t_end: must be positive, got {value!r}"
+            )
+        return value
+    raise ModelLoadError(
+        f"Invalid t_end type: expected number or 'inf' string, got "
+        f"{type(raw).__name__} ({raw!r})"
+    )
+
+
+def serialize_t_end(t_end: float) -> float | str:
+    """``Simulator.t_end`` を JSON-serializable な値に変換する (ADR-0042 §論点 4)。
+
+    ``math.inf`` → ``"inf"``、有限値 → ``float`` のまま。
+    """
+    if math.isinf(t_end):
+        return "inf"
+    return float(t_end)
 
 
 def to_json_value(value: Any) -> Any:

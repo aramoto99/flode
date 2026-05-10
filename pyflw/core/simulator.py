@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import math
 from collections import defaultdict, deque
 from collections.abc import Callable
 from pathlib import Path
@@ -34,8 +35,10 @@ from .persistence import (
     LayoutDict,
     migrate_to_current,
     normalize_layout,
+    parse_t_end,
     resolve_block_class,
     serialize_connections,
+    serialize_t_end,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
@@ -67,7 +70,7 @@ class Simulator:
 
     def __init__(
         self,
-        t_end: float = 10.0,
+        t_end: float | str = 10.0,
         dt: float = 0.01,
         solver: str = "RK45",
         rtol: float = 1e-6,
@@ -75,7 +78,9 @@ class Simulator:
         dt_base: float | None = None,
         on_step_callback: StepCallback | None = None,
     ) -> None:
-        self.t_end = float(t_end)
+        # ADR-0042 §論点 4-A: ``"inf"`` (case-insensitive) を受け入れて
+        # ``math.inf`` に変換する。``parse_t_end`` で全 validation 一元化。
+        self.t_end: float = parse_t_end(t_end)
         self.dt = float(dt)
         self.solver = solver
         self.rtol = rtol
@@ -956,7 +961,9 @@ class Simulator:
                 "tool": f"pyflw {_pyflw_version}",
             },
             "simulator": {
-                "t_end": float(self.t_end),
+                # ADR-0042 §論点 4-A: ``math.inf`` のときは ``"inf"`` 文字列で
+                # 永続化 (= JSON RFC 8259 違反の `"Infinity"` を避ける)
+                "t_end": serialize_t_end(self.t_end),
                 "dt": float(self.dt),
                 "solver": str(self.solver),
                 "rtol": float(self.rtol),
