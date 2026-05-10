@@ -11,16 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pyflw.server import create_app
+from pyflw.server.settings import Settings
 
 
 @pytest.fixture
-def model_dir(tmp_path):
-    return tmp_path / "models"
-
-
-@pytest.fixture
-def client(model_dir):
-    app = create_app(model_dir)
+def client(tmp_path):
+    settings = Settings(workspace_root=tmp_path)
+    app = create_app(settings=settings)
     with TestClient(app) as c:
         yield c
 

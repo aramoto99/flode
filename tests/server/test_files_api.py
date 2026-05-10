@@ -29,16 +29,8 @@ def workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(workspace: Path) -> TestClient:
     """``workspace_root=workspace`` で起動した ``TestClient``。"""
-    settings = Settings(model_dir=workspace, workspace_root=workspace)
-    app = create_app(workspace, settings=settings)
-    return TestClient(app)
-
-
-@pytest.fixture
-def legacy_client(workspace: Path) -> TestClient:
-    """``workspace_root=None`` (legacy ``--model-dir`` モード) の TestClient。"""
-    settings = Settings(model_dir=workspace, workspace_root=None)
-    app = create_app(workspace, settings=settings)
+    settings = Settings(workspace_root=workspace)
+    app = create_app(settings=settings)
     return TestClient(app)
 
 
@@ -407,43 +399,6 @@ class TestMkdir:
         assert r.status_code == 403
 
 
-# ---------------------------------------------------------------------------
-# legacy --model-dir モード (workspace_root=None) で File API は 503
-# ---------------------------------------------------------------------------
-
-
-class TestWorkspaceNotEnabled:
-    """``workspace_root=None`` (legacy mode) で全 endpoint が 503 を返す。"""
-
-    def test_tree_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.get("/api/v1/files/tree", params={"path": ""})
-        assert r.status_code == 503
-        assert "--workspace" in r.json()["detail"]
-
-    def test_get_content_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.get(
-            "/api/v1/files/content", params={"path": "x.flw.json"}
-        )
-        assert r.status_code == 503
-
-    def test_put_content_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.put(
-            "/api/v1/files/content",
-            params={"path": "x.flw.json"},
-            json={"content": {}},
-        )
-        assert r.status_code == 503
-
-    def test_rename_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.post(
-            "/api/v1/files/rename", json={"from": "a", "to": "b"}
-        )
-        assert r.status_code == 503
-
-    def test_delete_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.delete("/api/v1/files", params={"path": "x"})
-        assert r.status_code == 503
-
-    def test_mkdir_returns_503(self, legacy_client: TestClient) -> None:
-        r = legacy_client.post("/api/v1/files/mkdir", params={"path": "new_dir"})
-        assert r.status_code == 503
+# v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` モード削除に伴い
+# ``workspace_root=None`` (= 503 経路) のテストは無効化。``Settings`` で
+# ``workspace_root`` は必須キーワードになっているため、不正な状態自体が作れない。

@@ -9,12 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pyflw.server.app import create_app
+from pyflw.server.settings import Settings
 
 
 @pytest.fixture
 def client() -> TestClient:
-    tmp = tempfile.mkdtemp(prefix="pyflw_test_models_")
-    app = create_app(Path(tmp))
+    tmp = tempfile.mkdtemp(prefix="pyflw_test_workspace_")
+    settings = Settings(workspace_root=Path(tmp))
+    app = create_app(settings=settings)
     return TestClient(app)
 
 

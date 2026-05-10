@@ -45,21 +45,14 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 
 def _workspace_root(request: Request) -> Path:
-    """``app.state.settings.workspace_root`` を取得、未設定なら 503。
+    """``app.state.settings.workspace_root`` を取得 (v0.21.0: 必須なので常に non-null)。
 
-    ``--model-dir`` legacy モードで起動された場合、File API は使えないため
-    503 Service Unavailable を返す (= 利用者向けに再起動方法を案内)。
+    v2.x では legacy ``--model-dir`` モードで ``workspace_root=None`` だった場合
+    に 503 を返していたが、v0.21.0 で ``Settings.workspace_root`` 必須化に伴い
+    本 helper は単純に value を返すだけに簡素化。
     """
     settings = request.app.state.settings
-    workspace_root: Path | None = settings.workspace_root
-    if workspace_root is None:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "File API not enabled. Start pyflw-server with --workspace=PATH "
-                "(see ADR-0041 for migration from --model-dir)."
-            ),
-        )
+    workspace_root: Path = settings.workspace_root
     return workspace_root
 
 
