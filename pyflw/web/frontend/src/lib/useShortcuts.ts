@@ -115,6 +115,43 @@ export function useShortcuts(): void {
         return;
       }
 
+      // ADR-0043 §論点 2: Ctrl+Tab / Ctrl+Shift+Tab でタブ切替 (VSCode 流儀)。
+      // Ctrl+Tab はブラウザのタブ切替に取られるが、preventDefault で握り潰せる
+      // (= focus がページ内ならブラウザ shortcut より event listener が先)。
+      if (ctrl && key === "Tab") {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        if (state.tabs.length < 2) return;
+        const currentIdx = state.tabs.findIndex(
+          (t) => t.filePath === state.activeTabFilePath,
+        );
+        if (currentIdx < 0) return;
+        const delta = e.shiftKey ? -1 : 1;
+        const nextIdx =
+          (currentIdx + delta + state.tabs.length) % state.tabs.length;
+        const nextTab = state.tabs[nextIdx];
+        if (nextTab) state.switchTab(nextTab.filePath);
+        return;
+      }
+
+      // ADR-0043 §論点 5-A: Ctrl+P (path 検索) / Ctrl+Shift+F (内容検索) は
+      // Search panel を開く。実装は SearchPanel 側 (= 開く / focus を
+      // window-level event で受ける形)。本 hook では preventDefault のみ。
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "p") {
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent("pyflw:open-search", { detail: { kind: "path" } }),
+        );
+        return;
+      }
+      if (ctrl && e.shiftKey && key.toLowerCase() === "f") {
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent("pyflw:open-search", { detail: { kind: "content" } }),
+        );
+        return;
+      }
+
       // Esc: 階層を上に / 選択解除
       // Subsystem の中にいるなら drillUp、それ以外は選択解除。Simulink でも
       // Esc は段階的に「外向き」のキャンセル動作。

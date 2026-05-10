@@ -79,8 +79,9 @@ export function MenuBar(): JSX.Element {
 
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const selectFilePath = useAppStore((s) => s.selectFilePath);
+  const openFileInTab = useAppStore((s) => s.openFileInTab);
+  const closeTab = useAppStore((s) => s.closeTab);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
-  const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
 
@@ -105,10 +106,8 @@ export function MenuBar(): JSX.Element {
       const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
       await putFileContent(path, empty);
       const data = await getFileContent(path);
-      selectFilePath(path);
-      setEditingModel(data.content);
-      setEditingFileMeta(data.mtime, data.etag);
-      setDirty(false);
+      // ADR-0043 §論点 2: tab に追加 + active 化を 1 アクションで
+      openFileInTab(path, data.content, data.mtime, data.etag);
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("New file failed:", e);
@@ -148,10 +147,9 @@ export function MenuBar(): JSX.Element {
     try {
       const resp = await putFileContent(newPath, editingModel);
       const data = await getFileContent(newPath);
-      selectFilePath(newPath);
-      setEditingModel(data.content);
-      setEditingFileMeta(resp.mtime, resp.etag);
-      setDirty(false);
+      // ADR-0043 §論点 2: Save As は新しい tab を開く挙動 (= VSCode 流儀、
+      // 元 tab は dirty/未保存のまま残す)。ユーザーが必要なら元 tab を閉じる。
+      openFileInTab(newPath, data.content, resp.mtime, resp.etag);
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
       setDialog(null);
     } catch (e) {
@@ -171,9 +169,15 @@ export function MenuBar(): JSX.Element {
     if (!ok) return;
     try {
       await deleteFile(selectedFilePath);
-      selectFilePath(null);
-      setEditingModel(null);
-      setDirty(false);
+      // ADR-0043 §論点 2: closeTab で隣接 tab に切替 or 全閉じ
+      const state = useAppStore.getState();
+      if (state.tabs.some((t) => t.filePath === selectedFilePath)) {
+        closeTab(selectedFilePath);
+      } else {
+        selectFilePath(null);
+        setEditingModel(null);
+        setDirty(false);
+      }
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("Delete failed:", e);
@@ -183,9 +187,15 @@ export function MenuBar(): JSX.Element {
 
   const handleClose = (): void => {
     setOpenMenu(null);
-    selectFilePath(null);
-    setEditingModel(null);
-    setDirty(false);
+    if (selectedFilePath === null) return;
+    const state = useAppStore.getState();
+    if (state.tabs.some((t) => t.filePath === selectedFilePath)) {
+      closeTab(selectedFilePath);
+    } else {
+      selectFilePath(null);
+      setEditingModel(null);
+      setDirty(false);
+    }
   };
 
   // ---- keyboard shortcuts: Ctrl+N ----

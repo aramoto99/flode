@@ -74,12 +74,62 @@ export interface ClipboardPayload {
   layout: LayoutDict; // 元 id → 元位置 (paste 時に位相平均から bbox 中心を計算する基準)
 }
 
+/**
+ * ADR-0043 §論点 2: タブごとの完全なスナップショット。
+ *
+ * ``activeTabFilePath`` で指される tab が「現在編集中」(= 上位 ``selectedFilePath``
+ * / ``editingModel`` 等が live で同期)。それ以外の tab は本 snapshot 内に
+ * 「凍結」されており、switchTab で active になると上位 fields に restore される。
+ *
+ * tabs[] は active tab も含む順序付き配列。同一 ``filePath`` は重複しない (=
+ * VSCode 流儀、既存 tab があればそれを active 化)。
+ */
+export interface TabSnapshot {
+  filePath: string;
+  editingModel: FlwModel | null;
+  editingFileMtime: string | null;
+  editingFileEtag: string | null;
+  dirty: boolean;
+  history: { past: FlwModel[]; future: FlwModel[] };
+  lastMergeKey: string | null;
+  editingPath: string[];
+}
+
 interface AppState {
   // v0.21.0: legacy ``selectedModelId`` を完全削除済 (ADR-0041 §論点 4-A)。
   // ``selectedFilePath`` のみが「選択中の編集対象」を表す。
   selectedFilePath: string | null;
-  /** file path ベースで開く。``null`` で閉じる。 */
+  /** file path ベースで開く。``null`` で閉じる。
+   *
+   * v0.23.0 (ADR-0043 §論点 2): 内部的にも tabs[] と activeTabFilePath を更新
+   * する。既存の callsite は変更不要 — 「path を渡す = その path を active に
+   * する」セマンティクスは維持。 */
   selectFilePath: (path: string | null) => void;
+
+  // ADR-0043 §論点 2: 複数タブ管理。tabs は active も含む全タブ順序付きリスト。
+  // tabs.find(t => t.filePath === activeTabFilePath) が現在 active な snapshot。
+  // 上位 ``selectedFilePath`` / ``editingModel`` 等は active tab と常に同期される。
+  tabs: TabSnapshot[];
+  activeTabFilePath: string | null;
+  /**
+   * ファイルを新規 tab として開く、または既存 tab を active 化する。
+   * @param path file path
+   * @param model load 済みの FlwModel (= filesApi.getFileContent の戻り値)
+   * @param mtime 楽観ロック用 mtime
+   * @param etag 楽観ロック用 etag
+   */
+  openFileInTab: (
+    path: string,
+    model: FlwModel,
+    mtime: string | null,
+    etag: string | null,
+  ) => void;
+  /** 指定 tab を閉じる。active を閉じた場合は隣接 tab に切替、最後の tab なら全閉じ。 */
+  closeTab: (path: string) => void;
+  /** 指定 tab を active 化 (= tabs[] にあれば snapshot から復元)。 */
+  switchTab: (path: string) => void;
+  /** rename されたファイルの tab path を追従更新 (= 開いている tab の filePath を変更)。 */
+  renameTabFilePath: (oldPath: string, newPath: string) => void;
   // ADR-0041 §論点 11-A: 楽観ロック / 外部変更検知に使う state。`selectFilePath`
   // で `editingModel` がロードされたタイミングで一緒にセットされる。
   editingFileMtime: string | null;
@@ -176,26 +226,229 @@ interface AppState {
   handleStreamMessage: (msg: StreamMessage) => void;
 }
 
+/**
+ * ADR-0043 §論点 2: 現在の上位 state から TabSnapshot を組み立てる helper。
+ * switchTab / openFileInTab / closeTab で active 切替前に呼ぶ。
+ */
+function makeTabSnapshot(state: AppState): TabSnapshot | null {
+  if (state.activeTabFilePath === null) return null;
+  return {
+    filePath: state.activeTabFilePath,
+    editingModel: state.editingModel,
+    editingFileMtime: state.editingFileMtime,
+    editingFileEtag: state.editingFileEtag,
+    dirty: state.dirty,
+    history: state.history,
+    lastMergeKey: state.lastMergeKey,
+    editingPath: state.editingPath,
+  };
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   selectedFilePath: null,
+  tabs: [],
+  activeTabFilePath: null,
   selectFilePath: (path) =>
-    set({
-      selectedFilePath: path,
-      editingFileMtime: null,
-      editingFileEtag: null,
-      selectedNodeIds: [],
-      selectedNodeId: null,
-      selectedEdgeIds: [],
-      clipboard: null,
-      simulationId: null,
-      status: "idle",
-      scopes: {},
-      editingModel: null,
-      dirty: false,
-      editingPath: [],
-      // v0.20.0: 履歴は別ファイルと混ぜない (= 完全クリア)
-      history: { past: [], future: [] },
-      lastMergeKey: null,
+    set((state) => {
+      // tabs[] への反映: path === null は全閉じ、それ以外は **既存 tab があれば
+      // 維持、なければ tabs[] には追加しない** (= 後で openFileInTab で content
+      // 同梱で追加する想定)。FileBrowser 等から path だけで selectFilePath を
+      // 呼ぶ既存挙動は legacy として維持し、tab メタは別 hook が管理する。
+      const newTabs = path === null ? [] : state.tabs;
+      return {
+        selectedFilePath: path,
+        activeTabFilePath: path,
+        tabs: newTabs,
+        editingFileMtime: null,
+        editingFileEtag: null,
+        selectedNodeIds: [],
+        selectedNodeId: null,
+        selectedEdgeIds: [],
+        clipboard: null,
+        simulationId: null,
+        status: "idle",
+        scopes: {},
+        editingModel: null,
+        dirty: false,
+        editingPath: [],
+        history: { past: [], future: [] },
+        lastMergeKey: null,
+      };
+    }),
+
+  // ADR-0043 §論点 2: 複数タブ操作 actions
+  openFileInTab: (path, model, mtime, etag) =>
+    set((state) => {
+      // 同一 path の tab が既存ならそれを active 化 (= 重複オープン不可、VSCode 流儀)
+      const existing = state.tabs.find((t) => t.filePath === path);
+      if (existing) {
+        // 現 active を snapshot 化 + 既存 tab restore
+        const currentSnap = makeTabSnapshot(state);
+        const updatedTabs = state.tabs.map((t) =>
+          currentSnap && t.filePath === currentSnap.filePath ? currentSnap : t,
+        );
+        return {
+          tabs: updatedTabs,
+          activeTabFilePath: existing.filePath,
+          selectedFilePath: existing.filePath,
+          editingModel: existing.editingModel,
+          editingFileMtime: existing.editingFileMtime,
+          editingFileEtag: existing.editingFileEtag,
+          dirty: existing.dirty,
+          history: existing.history,
+          lastMergeKey: existing.lastMergeKey,
+          editingPath: existing.editingPath,
+          // 切替時にはノード選択 / Scope を reset
+          selectedNodeIds: [],
+          selectedNodeId: null,
+          selectedEdgeIds: [],
+          simulationId: null,
+          status: "idle",
+          scopes: {},
+        };
+      }
+      // 新規 tab。現 active を snapshot 化して tabs[] に反映、新 tab を末尾に追加。
+      const currentSnap = makeTabSnapshot(state);
+      const otherTabs = currentSnap
+        ? state.tabs.map((t) =>
+            t.filePath === currentSnap.filePath ? currentSnap : t,
+          )
+        : state.tabs;
+      const newTab: TabSnapshot = {
+        filePath: path,
+        editingModel: model,
+        editingFileMtime: mtime,
+        editingFileEtag: etag,
+        dirty: false,
+        history: { past: [], future: [] },
+        lastMergeKey: null,
+        editingPath: [],
+      };
+      return {
+        tabs: [...otherTabs, newTab],
+        activeTabFilePath: path,
+        selectedFilePath: path,
+        editingModel: model,
+        editingFileMtime: mtime,
+        editingFileEtag: etag,
+        dirty: false,
+        history: { past: [], future: [] },
+        lastMergeKey: null,
+        editingPath: [],
+        selectedNodeIds: [],
+        selectedNodeId: null,
+        selectedEdgeIds: [],
+        simulationId: null,
+        status: "idle",
+        scopes: {},
+      };
+    }),
+  closeTab: (path) =>
+    set((state) => {
+      const idx = state.tabs.findIndex((t) => t.filePath === path);
+      if (idx < 0) return {};
+      const remaining = state.tabs.filter((_, i) => i !== idx);
+      const wasActive = state.activeTabFilePath === path;
+      if (!wasActive) {
+        return { tabs: remaining };
+      }
+      // active を閉じた: 隣接 tab に switchTab。なければ全 clear。
+      if (remaining.length === 0) {
+        return {
+          tabs: [],
+          activeTabFilePath: null,
+          selectedFilePath: null,
+          editingFileMtime: null,
+          editingFileEtag: null,
+          editingModel: null,
+          dirty: false,
+          editingPath: [],
+          history: { past: [], future: [] },
+          lastMergeKey: null,
+          selectedNodeIds: [],
+          selectedNodeId: null,
+          selectedEdgeIds: [],
+          simulationId: null,
+          status: "idle",
+          scopes: {},
+        };
+      }
+      // 右側の tab を優先、無ければ左側
+      const nextIdx = idx < remaining.length ? idx : remaining.length - 1;
+      const nextTab = remaining[nextIdx]!;
+      return {
+        tabs: remaining,
+        activeTabFilePath: nextTab.filePath,
+        selectedFilePath: nextTab.filePath,
+        editingModel: nextTab.editingModel,
+        editingFileMtime: nextTab.editingFileMtime,
+        editingFileEtag: nextTab.editingFileEtag,
+        dirty: nextTab.dirty,
+        history: nextTab.history,
+        lastMergeKey: nextTab.lastMergeKey,
+        editingPath: nextTab.editingPath,
+        selectedNodeIds: [],
+        selectedNodeId: null,
+        selectedEdgeIds: [],
+        simulationId: null,
+        status: "idle",
+        scopes: {},
+      };
+    }),
+  switchTab: (path) =>
+    set((state) => {
+      if (state.activeTabFilePath === path) return {};
+      const target = state.tabs.find((t) => t.filePath === path);
+      if (!target) return {};
+      const currentSnap = makeTabSnapshot(state);
+      const updatedTabs = currentSnap
+        ? state.tabs.map((t) =>
+            t.filePath === currentSnap.filePath ? currentSnap : t,
+          )
+        : state.tabs;
+      return {
+        tabs: updatedTabs,
+        activeTabFilePath: target.filePath,
+        selectedFilePath: target.filePath,
+        editingModel: target.editingModel,
+        editingFileMtime: target.editingFileMtime,
+        editingFileEtag: target.editingFileEtag,
+        dirty: target.dirty,
+        history: target.history,
+        lastMergeKey: target.lastMergeKey,
+        editingPath: target.editingPath,
+        selectedNodeIds: [],
+        selectedNodeId: null,
+        selectedEdgeIds: [],
+        simulationId: null,
+        status: "idle",
+        scopes: {},
+      };
+    }),
+  renameTabFilePath: (oldPath, newPath) =>
+    set((state) => {
+      const idx = state.tabs.findIndex((t) => t.filePath === oldPath);
+      if (idx < 0) {
+        // active path が rename された場合だけ反映
+        if (state.activeTabFilePath === oldPath) {
+          return {
+            activeTabFilePath: newPath,
+            selectedFilePath: newPath,
+          };
+        }
+        return {};
+      }
+      const updated = state.tabs.map((t, i) =>
+        i === idx ? { ...t, filePath: newPath } : t,
+      );
+      const newActive =
+        state.activeTabFilePath === oldPath ? newPath : state.activeTabFilePath;
+      return {
+        tabs: updated,
+        activeTabFilePath: newActive,
+        selectedFilePath:
+          state.selectedFilePath === oldPath ? newPath : state.selectedFilePath,
+      };
     }),
 
   editingFileMtime: null,

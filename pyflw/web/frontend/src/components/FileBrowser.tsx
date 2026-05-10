@@ -52,6 +52,9 @@ export function FileBrowser(): JSX.Element {
   const { t } = useTranslation();
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const selectFilePath = useAppStore((s) => s.selectFilePath);
+  const openFileInTab = useAppStore((s) => s.openFileInTab);
+  const closeTab = useAppStore((s) => s.closeTab);
+  const renameTabFilePath = useAppStore((s) => s.renameTabFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const setDirty = useAppStore((s) => s.setDirty);
@@ -71,15 +74,15 @@ export function FileBrowser(): JSX.Element {
     async (path: string): Promise<void> => {
       try {
         const resp = await getFileContent(path);
-        selectFilePath(path);
-        setEditingModel(resp.content);
-        setEditingFileMeta(resp.mtime, resp.etag);
-        setDirty(false);
+        // ADR-0043 §論点 2: 単一 atomic action で tab 追加 + active 化 + state 同期。
+        // 旧 selectFilePath + setEditingModel + setEditingFileMeta + setDirty の
+        // 4 連続 set より race / dirty flag 中間状態の問題が起きにくい。
+        openFileInTab(path, resp.content, resp.mtime, resp.etag);
       } catch (e) {
         console.error("Failed to open file:", path, e);
       }
     },
-    [selectFilePath, setEditingFileMeta, setEditingModel, setDirty],
+    [openFileInTab],
   );
 
   const handleOpen = useCallback(
@@ -157,9 +160,9 @@ export function FileBrowser(): JSX.Element {
       try {
         await renameFile(oldPath, newPath);
         await refresh();
-        // 開いていたファイルを rename した場合は selectedFilePath 更新
+        // ADR-0043 §論点 2: rename を tab に追従。複数タブ時に他タブを失わない。
+        renameTabFilePath(oldPath, newPath);
         if (selectedFilePath === oldPath) {
-          selectFilePath(newPath);
           // 新 path で再 fetch して etag/mtime を最新に
           const data = await getFileContent(newPath);
           setEditingModel(data.content);
@@ -171,7 +174,7 @@ export function FileBrowser(): JSX.Element {
     },
     [
       refresh,
-      selectFilePath,
+      renameTabFilePath,
       selectedFilePath,
       setEditingFileMeta,
       setEditingModel,
@@ -189,7 +192,12 @@ export function FileBrowser(): JSX.Element {
       try {
         await deleteFile(path);
         await refresh();
-        if (selectedFilePath === path) {
+        // ADR-0043 §論点 2: 開いていた tab があれば閉じる (= 隣接 tab に切替 or 全閉じ)
+        const state = useAppStore.getState();
+        if (state.tabs.some((t) => t.filePath === path)) {
+          closeTab(path);
+        } else if (selectedFilePath === path) {
+          // 後方互換: tabs に未登録だが active な path (= legacy load パス)
           selectFilePath(null);
           setEditingModel(null);
           setDirty(false);
@@ -200,6 +208,7 @@ export function FileBrowser(): JSX.Element {
       }
     },
     [
+      closeTab,
       refresh,
       selectFilePath,
       selectedFilePath,
