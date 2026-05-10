@@ -32,6 +32,7 @@ import {
   renameFile,
 } from "../api/filesApi";
 import { useAppStore } from "../store/appStore";
+import { DirtyConfirmDialog } from "./Modal";
 
 interface ContextMenuState {
   x: number;
@@ -58,23 +59,13 @@ export function FileBrowser(): JSX.Element {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // ADR-0041 §論点 9-A: dirty 状態で別ファイルを開こうとしたら 3-button モーダル
+  // (Discard / Save & Open / Cancel) で確認。``pendingOpenPath`` が non-null の
+  // 間は ``DirtyConfirmDialog`` が開く。
+  const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
 
-  const handleOpen = useCallback(
-    async (path: string) => {
-      // ADR-0041 §論点 9-A: dirty 状態で別ファイルを開く時は破棄確認。
-      // 同ファイル再選択は no-op。
-      const state = useAppStore.getState();
-      if (state.selectedFilePath === path) return;
-      if (state.dirty) {
-        const ok = window.confirm(
-          t(
-            "filebrowser.confirm_discard",
-            "Discard unsaved changes and open {{path}}?",
-            { path },
-          ),
-        );
-        if (!ok) return;
-      }
+  const performOpen = useCallback(
+    async (path: string): Promise<void> => {
       try {
         const resp = await getFileContent(path);
         selectFilePath(path);
@@ -85,7 +76,22 @@ export function FileBrowser(): JSX.Element {
         console.error("Failed to open file:", path, e);
       }
     },
-    [selectFilePath, setEditingModel, setEditingFileMeta, setDirty, t],
+    [selectFilePath, setEditingFileMeta, setEditingModel, setDirty],
+  );
+
+  const handleOpen = useCallback(
+    async (path: string) => {
+      // 同ファイル再選択は no-op
+      const state = useAppStore.getState();
+      if (state.selectedFilePath === path) return;
+      // dirty 確認 (ADR-0041 §論点 9-A): モーダル経由で 3-button 選択させる
+      if (state.dirty) {
+        setPendingOpenPath(path);
+        return;
+      }
+      await performOpen(path);
+    },
+    [performOpen],
   );
 
   const refresh = useCallback(async () => {
@@ -286,6 +292,44 @@ export function FileBrowser(): JSX.Element {
           selectedFilePath={selectedFilePath}
         />
       </div>
+      {pendingOpenPath !== null && (
+        <DirtyConfirmDialog
+          currentName={selectedFilePath ?? "(untitled)"}
+          nextName={pendingOpenPath}
+          onDiscard={() => {
+            const target = pendingOpenPath;
+            setPendingOpenPath(null);
+            void performOpen(target);
+          }}
+          onSaveAndOpen={async () => {
+            // 現在の編集を File API モードなら保存してから開く。legacy モード
+            // (= selectedModelId) は別 hook で管理されているため、ここでは
+            // selectedFilePath の場合のみ自動保存する。
+            const target = pendingOpenPath;
+            const state = useAppStore.getState();
+            const path = state.selectedFilePath;
+            const model = state.editingModel;
+            if (path !== null && model !== null) {
+              try {
+                const saved = await putFileContent(
+                  path,
+                  model,
+                  state.editingFileEtag ?? undefined,
+                );
+                setEditingFileMeta(saved.mtime, saved.etag);
+                setDirty(false);
+              } catch (e) {
+                console.error("Save before switch failed:", e);
+                window.alert(`Save failed: ${(e as Error).message}`);
+                return;
+              }
+            }
+            setPendingOpenPath(null);
+            void performOpen(target);
+          }}
+          onClose={() => setPendingOpenPath(null)}
+        />
+      )}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

@@ -213,6 +213,203 @@ export function RenameDialog({
 }
 
 // ---------------------------------------------------------------------------
+// SaveAsPathDialog (ADR-0041 §論点 10-A 簡易版)
+// ---------------------------------------------------------------------------
+
+interface SaveAsPathDialogProps {
+  /** 既定値 (例: "controllers/pid_copy.flw.json") */
+  defaultValue: string;
+  /** 既存 path との衝突判定 (= 上書き確認は OS dialog 互換で別途 confirm) */
+  existingPaths?: readonly string[];
+  primaryLabel: string;
+  onConfirm: (newPath: string) => void;
+  onClose: () => void;
+}
+
+/**
+ * File API モードの Save As 用 path 入力ダイアログ。``window.prompt`` の置換。
+ *
+ * v0.19.0 では単純な text input のみ。FileBrowser 込みの mini-dialog
+ * (= ADR §論点 10-A 完全版) は v0.20.0 以降で検討。
+ */
+export function SaveAsPathDialog({
+  defaultValue,
+  existingPaths = [],
+  primaryLabel,
+  onConfirm,
+  onClose,
+}: SaveAsPathDialogProps): JSX.Element {
+  const { t } = useTranslation();
+  const [value, setValue] = useState(defaultValue);
+  const trimmed = value.trim();
+  // 妥当性: 空 / null byte / 制御文字 / 先頭 ``/`` / ``\`` を弾く (= backend 側
+  // ``resolve_workspace_path`` でも検証されるが、UX としては入力時点で示す)
+  const invalid =
+    trimmed.length === 0 ||
+    /[\x00-\x1f\\]/.test(trimmed) ||
+    trimmed.startsWith("/");
+  const conflict = !invalid && existingPaths.includes(trimmed);
+  // 上書き確認: conflict は warning 表示、submit 時に confirm する
+  const disabled = invalid;
+
+  const handleSubmit = (): void => {
+    if (disabled) return;
+    if (conflict) {
+      const ok = window.confirm(
+        t("modal.save_as.overwrite_confirm", {
+          defaultValue: `Overwrite "${trimmed}"?`,
+          path: trimmed,
+        }),
+      );
+      if (!ok) return;
+    }
+    onConfirm(trimmed);
+  };
+
+  return (
+    <ModalShell
+      title={t("modal.save_as.title", { defaultValue: "Save As" })}
+      onClose={onClose}
+    >
+      <div className="flex flex-col gap-2 p-4">
+        <label className="flex flex-col gap-1 text-xs text-slate-600">
+          {t("modal.save_as.label", {
+            defaultValue: "Workspace-relative path (POSIX, e.g. controllers/foo.flw.json):",
+          })}
+          <input
+            autoFocus
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onFocus={(e) => {
+              // 既定値の拡張子前 stem を選択 (= JupyterLab 流儀)
+              const ext = defaultValue.lastIndexOf(".flw.json");
+              const stemEnd = ext > 0 ? ext : defaultValue.length;
+              e.target.setSelectionRange(0, stemEnd);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !disabled) handleSubmit();
+            }}
+            spellCheck={false}
+            className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 font-mono text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </label>
+        {invalid && trimmed.length > 0 && (
+          <span className="text-[11px] text-rose-600">
+            {t("modal.save_as.invalid", {
+              defaultValue:
+                "Path contains forbidden characters (backslash, control chars, leading slash).",
+            })}
+          </span>
+        )}
+        {!invalid && conflict && (
+          <span className="text-[11px] text-amber-600">
+            {t("modal.save_as.conflict", {
+              defaultValue:
+                'A file already exists at this path. Submitting will ask for overwrite confirmation.',
+            })}
+          </span>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+        >
+          {t("modal.button.cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={disabled}
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:bg-slate-300"
+        >
+          {primaryLabel}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DirtyConfirmDialog (ADR-0041 §論点 9-A)
+// ---------------------------------------------------------------------------
+
+interface DirtyConfirmDialogProps {
+  /** 現在編集中のファイル path / id (= 失われる可能性のある変更の対象) */
+  currentName: string;
+  /** これから開こうとしているファイル */
+  nextName: string;
+  /** 「破棄して開く」を選んだ場合に呼ばれる */
+  onDiscard: () => void;
+  /** 「保存して開く」を選んだ場合に呼ばれる (= 保存処理は呼び出し側で実装) */
+  onSaveAndOpen: () => void;
+  /** ダイアログ自体を閉じる (= キャンセル) */
+  onClose: () => void;
+}
+
+/**
+ * dirty 状態で別ファイルを開こうとしたときの 3-button 確認モーダル。
+ * ``window.confirm`` の 2-button 版を置換。
+ */
+export function DirtyConfirmDialog({
+  currentName,
+  nextName,
+  onDiscard,
+  onSaveAndOpen,
+  onClose,
+}: DirtyConfirmDialogProps): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <ModalShell
+      title={t("modal.dirty_confirm.title", {
+        defaultValue: "Unsaved changes",
+      })}
+      onClose={onClose}
+    >
+      <div className="p-4 text-sm text-slate-700">
+        <p className="mb-2">
+          {t("modal.dirty_confirm.message", {
+            defaultValue:
+              'You have unsaved changes in "{{currentName}}". Open "{{nextName}}" anyway?',
+            currentName,
+            nextName,
+          })}
+        </p>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+        >
+          {t("modal.button.cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={onDiscard}
+          className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700"
+        >
+          {t("modal.dirty_confirm.discard", {
+            defaultValue: "Discard changes",
+          })}
+        </button>
+        <button
+          type="button"
+          onClick={onSaveAndOpen}
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+        >
+          {t("modal.dirty_confirm.save_and_open", {
+            defaultValue: "Save & Open",
+          })}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ConfirmDialog
 // ---------------------------------------------------------------------------
 

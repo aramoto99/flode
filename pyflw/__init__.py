@@ -1,8 +1,7 @@
-# v0.18.0 (ADR-0041 §論点 5-A / 7-A / 9-A / 10-A): FileBrowser に右クリック
-# context menu + inline rename (F2) を追加。MenuBar の File 操作を File API
-# モード対応 (= New / Save As / Delete)。Toolbar Save / Run も File API モードで
-# 動作。dirty 状態で別ファイル切替時に確認ダイアログ。
-__version__ = "0.18.0"
+# v0.19.0 (ADR-0041 §論点 9-A / 10-A / 11-A): useExternalChangesPoll を新設
+# (= 5 秒 mtime/etag polling で外部エディタ編集を検知)、SaveAsPathDialog +
+# DirtyConfirmDialog を window.prompt / window.confirm から本格モーダル化。
+__version__ = "0.19.0"
 
 from .analysis import (
     BodeResponse,

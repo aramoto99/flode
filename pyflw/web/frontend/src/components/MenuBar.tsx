@@ -32,12 +32,14 @@ import {
   ConfirmDialog,
   OpenModelDialog,
   RenameDialog,
+  SaveAsPathDialog,
 } from "./Modal";
 import { ModelSettingsModal } from "./ModelSettingsModal";
 
 type DialogKind =
   | { kind: "open" }
   | { kind: "save-as" }
+  | { kind: "save-as-path" }
   | { kind: "rename" }
   | { kind: "delete" }
   | { kind: "model-settings" }
@@ -214,42 +216,36 @@ export function MenuBar(): JSX.Element {
       queryKey: ["model", selectedModelId],
     });
   };
-  const handleSaveAs = async (): Promise<void> => {
+  const handleSaveAs = (): void => {
     setOpenMenu(null);
-    // ADR-0041 §論点 10-A (簡易版、v0.18.0): File API モードでは window.prompt で
-    // path を受け取って putFileContent で書き出す。本格的な FileBrowser 込み
-    // の mini-dialog は v0.19.0 で実装予定。
+    // ADR-0041 §論点 10-A (v0.19.0 本格モーダル化): File API モードでは
+    // ``SaveAsPathDialog`` で path 入力を受ける。legacy モードは従来通り。
     if (selectedFilePath !== null) {
-      if (!editingModel) return;
-      const defaultPath = selectedFilePath.replace(
-        /(\.flw\.json)?$/,
-        "_copy.flw.json",
-      );
-      const newPath = window.prompt(
-        t(
-          "filebrowser.prompt_save_as",
-          "Save As (workspace-relative path):",
-        ),
-        defaultPath,
-      );
-      if (!newPath) return;
-      try {
-        const resp = await putFileContent(newPath, editingModel);
-        const data = await getFileContent(newPath);
-        selectFilePath(newPath);
-        setEditingModel(data.content);
-        setEditingFileMeta(resp.mtime, resp.etag);
-        setDirty(false);
-        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-      } catch (e) {
-        console.error("Save As failed:", e);
-        window.alert(`Save As failed: ${(e as Error).message}`);
-      }
+      setDialog({ kind: "save-as-path" });
       return;
     }
-    // legacy mode は従来のモーダル
     if (!selectedModelId) return;
     setDialog({ kind: "save-as" });
+  };
+
+  const performSaveAsPath = async (newPath: string): Promise<void> => {
+    if (!editingModel) {
+      setDialog(null);
+      return;
+    }
+    try {
+      const resp = await putFileContent(newPath, editingModel);
+      const data = await getFileContent(newPath);
+      selectFilePath(newPath);
+      setEditingModel(data.content);
+      setEditingFileMeta(resp.mtime, resp.etag);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+      setDialog(null);
+    } catch (e) {
+      console.error("Save As failed:", e);
+      window.alert(`Save As failed: ${(e as Error).message}`);
+    }
   };
   const handleRename = (): void => {
     setOpenMenu(null);
@@ -441,6 +437,17 @@ export function MenuBar(): JSX.Element {
           forbiddenIds={models}
           primaryLabel={t("modal.button.save_as")}
           onConfirm={(newName) => performSaveAs.mutate(newName)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "save-as-path" && selectedFilePath && (
+        <SaveAsPathDialog
+          defaultValue={selectedFilePath.replace(
+            /(\.flw\.json)?$/,
+            "_copy.flw.json",
+          )}
+          primaryLabel={t("modal.button.save_as")}
+          onConfirm={(newPath) => void performSaveAsPath(newPath)}
           onClose={() => setDialog(null)}
         />
       )}

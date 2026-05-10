@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-05-10 — 外部編集検知 + 本格モーダル (ADR-0041 §論点 9-A / 10-A / 11-A)
+
+ADR-0041 frontend 段階の **part 3 (= 残作業 closure)**。外部エディタとの併用を
+支える polling 機構と、``window.prompt`` / ``window.confirm`` を本格モーダル
+に置換。
+
+**v0.19.0 は後方互換 minor**。
+
+### Added
+
+- **``useExternalChangesPoll``** (= ADR-0041 §論点 11-A):
+  - ``selectedFilePath`` が non-null + シミュレーション実行中でない時、5 秒
+    間隔で ``GET /api/v1/files/content`` を polling
+  - etag が一致 → no-op (= 変更なし)
+  - etag 不一致 + ``dirty == false`` → silent reload (= editingModel を新内容
+    で上書き)
+  - etag 不一致 + ``dirty == true`` → ``window.confirm`` で 「外部変更を取り
+    込む / 自分の変更を残す」 を選択 (本格モーダルは v0.20.0 で別途実装可)
+  - JupyterLab 既定と整合 (= 5 秒間隔)、OS 別 file watcher は採用しない
+- **``SaveAsPathDialog``** (= ADR-0041 §論点 10-A 本格版):
+  - ``Modal.tsx`` に追加、``ModalShell`` ベース
+  - workspace 相対 path 入力 (POSIX 形式)、autofocus 時に拡張子前 stem を選択
+  - 不正文字 (= backslash / 制御文字 / 先頭 ``/``) を入力時に警告
+  - 既存 path との衝突は warning 表示 + submit 時に上書き confirm
+  - ``window.prompt`` を置換 (= MenuBar.Save As)
+- **``DirtyConfirmDialog``** (= ADR-0041 §論点 9-A 3-button モーダル):
+  - 3 ボタン: Cancel / **Discard changes** (= rose) / **Save & Open** (= blue)
+  - FileBrowser の dirty 状態でファイル切替時に発火 (``window.confirm`` 置換)
+  - "Save & Open" ボタンは現在ファイルを保存してから新ファイルを開く一連の動作
+
+### Changed
+
+- **MenuBar.Save As** が ``SaveAsPathDialog`` 経由に (= ``window.prompt`` 撤去)
+- **FileBrowser のファイル切替時の dirty 確認** が ``DirtyConfirmDialog``
+  経由に (= ``window.confirm`` 撤去)
+- **App.tsx** が ``useExternalChangesPoll`` を mount
+
+### Internal / Tests
+
+- vitest **+10 件追加** (= context menu 3 件、dirty modal 1 件、external poll
+  6 件)、**合計 255 件 pass**
+- TypeScript strict mode clean、bundle gzip 帯維持
+- ``examples/spring_mass_damper.py`` 数値完全不変 (Final x=0.2505, x_dot=0.0031)
+
+### v0.20.0 送り (= ADR-0041 §論点 7-A / 11-A 残作業)
+
+- ``ExternalChangeModal`` (= ``useExternalChangesPoll`` の ``window.confirm``
+  を 3-button モーダル化、Reload / Force overwrite / Cancel)
+- ``OpenModelDialog`` 相当の File API 版 (= MenuBar の Open メニューが File
+  API モードで FileBrowser tree を mini-dialog として表示)
+- drag-drop でフォルダ移動 (`@dnd-kit` 既存依存を再利用、ADR-0019)
+- 全ファイル表示 toggle / multi-select (Shift / Ctrl)
+- inline rename の vitest (= 現状 useExternalChangesPoll / context menu /
+  dirty modal までカバー、inline rename は手動検証のみ)
+
 ## [0.18.0] - 2026-05-10 — FileBrowser context menu + Simulation 実行対応 (ADR-0041 §論点 5-A / 7-A / 9-A / 10-A)
 
 v0.17.0 で導入した FileBrowser サイドバーに **実用的な操作系を追加**。

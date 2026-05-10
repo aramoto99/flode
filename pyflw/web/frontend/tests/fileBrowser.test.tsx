@@ -23,6 +23,10 @@ vi.mock("../src/api/filesApi", async (importOriginal) => {
     ...actual,
     fileTree: vi.fn(),
     getFileContent: vi.fn(),
+    putFileContent: vi.fn(),
+    deleteFile: vi.fn(),
+    renameFile: vi.fn(),
+    mkdir: vi.fn(),
   };
 });
 
@@ -31,11 +35,19 @@ vi.mock("../src/api/filesApi", async (importOriginal) => {
 async function getMocks(): Promise<{
   fileTree: ReturnType<typeof vi.fn>;
   getFileContent: ReturnType<typeof vi.fn>;
+  putFileContent: ReturnType<typeof vi.fn>;
+  deleteFile: ReturnType<typeof vi.fn>;
+  renameFile: ReturnType<typeof vi.fn>;
+  mkdir: ReturnType<typeof vi.fn>;
 }> {
   const mod = await import("../src/api/filesApi");
   return {
     fileTree: vi.mocked(mod.fileTree),
     getFileContent: vi.mocked(mod.getFileContent),
+    putFileContent: vi.mocked(mod.putFileContent),
+    deleteFile: vi.mocked(mod.deleteFile),
+    renameFile: vi.mocked(mod.renameFile),
+    mkdir: vi.mocked(mod.mkdir),
   };
 }
 
@@ -182,5 +194,131 @@ describe("FileBrowser file open", () => {
     fireEvent.click(fileButton);
 
     expect(getFileContent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR-0041 §論点 7-A (v0.18.0): context menu / inline rename / delete
+// ---------------------------------------------------------------------------
+
+describe("FileBrowser context menu", () => {
+  it("right-click on file shows context menu with Rename / Delete", async () => {
+    const { fileTree } = await getMocks();
+    fileTree.mockResolvedValue({
+      path: "",
+      children: [
+        {
+          name: "x.flw.json",
+          type: "file",
+          size: 10,
+          mtime: "2026-05-10T00:00:00Z",
+        },
+      ],
+    });
+    renderWithProvider(<FileBrowser />);
+    const fileButton = await screen.findByText("x.flw.json");
+    fireEvent.contextMenu(fileButton);
+    // Rename と Delete メニュー項目が出る
+    expect(screen.getByText(/Rename/i)).toBeTruthy();
+    expect(screen.getByText(/Delete/i)).toBeTruthy();
+    // root 領域では出ない New file / New folder も file ノード上では出る
+    expect(screen.getByText(/New file/i)).toBeTruthy();
+  });
+
+  it("Delete menu calls deleteFile after confirm", async () => {
+    const { fileTree, deleteFile } = await getMocks();
+    fileTree.mockResolvedValue({
+      path: "",
+      children: [
+        {
+          name: "victim.flw.json",
+          type: "file",
+          size: 10,
+          mtime: "2026-05-10T00:00:00Z",
+        },
+      ],
+    });
+    deleteFile.mockResolvedValue(undefined);
+    // window.confirm を OK で固定
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderWithProvider(<FileBrowser />);
+    const fileButton = await screen.findByText("victim.flw.json");
+    fireEvent.contextMenu(fileButton);
+    const deleteItem = screen.getByText(/Delete/i);
+    fireEvent.click(deleteItem);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith("victim.flw.json");
+    confirmSpy.mockRestore();
+  });
+
+  it("Delete menu does NOT call deleteFile when confirm cancels", async () => {
+    const { fileTree, deleteFile } = await getMocks();
+    fileTree.mockResolvedValue({
+      path: "",
+      children: [
+        {
+          name: "saved.flw.json",
+          type: "file",
+          size: 10,
+          mtime: "2026-05-10T00:00:00Z",
+        },
+      ],
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    renderWithProvider(<FileBrowser />);
+    const fileButton = await screen.findByText("saved.flw.json");
+    fireEvent.contextMenu(fileButton);
+    fireEvent.click(screen.getByText(/Delete/i));
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("FileBrowser dirty confirm modal", () => {
+  it("opening another file when dirty shows DirtyConfirmDialog (= no auto-load)", async () => {
+    const { fileTree, getFileContent } = await getMocks();
+    fileTree.mockResolvedValue({
+      path: "",
+      children: [
+        {
+          name: "current.flw.json",
+          type: "file",
+          size: 10,
+          mtime: "2026-05-10T00:00:00Z",
+        },
+        {
+          name: "next.flw.json",
+          type: "file",
+          size: 20,
+          mtime: "2026-05-10T00:00:00Z",
+        },
+      ],
+    });
+    // 既に current.flw.json を開いていて、dirty == true の状態を仮定
+    useAppStore.setState({
+      selectedFilePath: "current.flw.json",
+      editingModel: { schema_version: "0.8" } as never,
+      editingFileEtag: 'W/"10-1"',
+      editingFileMtime: "2026-05-10T00:00:00Z",
+      dirty: true,
+    });
+
+    renderWithProvider(<FileBrowser />);
+    const nextFile = await screen.findByText("next.flw.json");
+    fireEvent.click(nextFile);
+
+    // dirty 確認モーダルが出ていて、まだ getFileContent は呼ばれていない
+    // (= "Unsaved changes" は title + aria-label で複数 hit するため findAllByText)
+    const matches = await screen.findAllByText(/Unsaved changes/i);
+    expect(matches.length).toBeGreaterThan(0);
+    expect(getFileContent).not.toHaveBeenCalledWith("next.flw.json");
   });
 });
