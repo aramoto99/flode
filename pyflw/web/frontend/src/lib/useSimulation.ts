@@ -1,13 +1,19 @@
 // シミュレーション開始 / 停止 + WebSocket ストリーミングを 1 か所に集約する hook。
 // Toolbar の Run/Stop ボタンと SimulationControls の進捗表示で共通使用する。
+//
+// ADR-0041 §論点 5-A: ``selectedFilePath`` セット時は File API 経由 (= 保存 →
+// model_path body で start)、それ以外は legacy ``selectedModelId`` 経由
+// (= updateModel → model_id body で start)。
 
 import { useEffect, useRef } from "react";
 
 import {
   startSimulation,
+  startSimulationByPath,
   stopSimulation,
   updateModel,
 } from "../api/client";
+import { putFileContent } from "../api/filesApi";
 import { streamSimulation } from "../api/stream";
 import { useAppStore } from "../store/appStore";
 
@@ -37,18 +43,37 @@ export function useSimulation(): {
 
   const run = async (): Promise<void> => {
     const state = useAppStore.getState();
-    const id = state.selectedModelId;
     const model = state.editingModel;
-    if (!id) return;
+    if (!model) return;
     try {
-      // Run 前に最新を保存 (auto-save の debounce で未送信の可能性に対処)
-      if (model) {
-        await updateModel(id, model);
+      let simulationId: string;
+      if (state.selectedFilePath !== null) {
+        // ADR-0041 §論点 5-A: File API モード。Run 前に最新を保存 (= legacy 動線
+        // と同じ「保存してから実行」セマンティクス、editingFileEtag を使った
+        // 楽観ロックで race を検知)。
+        const resp = await putFileContent(
+          state.selectedFilePath,
+          model,
+          state.editingFileEtag ?? undefined,
+        );
+        state.setEditingFileMeta(resp.mtime, resp.etag);
         state.setDirty(false);
+        const { simulation_id } = await startSimulationByPath(
+          state.selectedFilePath,
+        );
+        simulationId = simulation_id;
+      } else if (state.selectedModelId !== null) {
+        // legacy ``--model-dir`` モード
+        await updateModel(state.selectedModelId, model);
+        state.setDirty(false);
+        const { simulation_id } = await startSimulation(state.selectedModelId);
+        simulationId = simulation_id;
+      } else {
+        // 未選択 (= editingModel あるが path / id どちらも未設定): no-op
+        return;
       }
-      const { simulation_id } = await startSimulation(id);
-      startedSimulation(simulation_id);
-      const ws = streamSimulation(simulation_id, handleStreamMessage);
+      startedSimulation(simulationId);
+      const ws = streamSimulation(simulationId, handleStreamMessage);
       wsRef.current?.close();
       wsRef.current = ws;
     } catch (e) {

@@ -98,10 +98,12 @@ export default function App(): JSX.Element {
                 <div className="flex-1 border-b border-slate-300 bg-white">
                   <DiagramCanvas modelId={selectedModelId} />
                 </div>
-                {/* SimulationControls は legacy `selectedModelId` 前提で `model_id`
-                    body を送るため、File API モードでは一旦非表示 (= v0.18.0 で
-                    `model_path` 拡張を frontend に取り込む際に再導入)。 */}
-                {selectedModelId && <SimulationControls modelId={selectedModelId} />}
+                {/* ADR-0041 §論点 5-A (v0.18.0): legacy `selectedModelId` /
+                    File API `selectedFilePath` どちらのモードでも表示。
+                    ``useSimulation`` 内部で経路を分岐する。 */}
+                <SimulationControls
+                  modelId={selectedModelId ?? selectedFilePath ?? ""}
+                />
                 {Object.entries(scopes).length > 0 && (
                   <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
                     {Object.entries(scopes).map(([scopeId, buffer]) => {

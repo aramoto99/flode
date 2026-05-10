@@ -15,6 +15,13 @@ import {
   updateModel,
 } from "../api/client";
 import {
+  FileApiUnavailableError,
+  deleteFile,
+  getFileContent,
+  nextUntitledFilePath,
+  putFileContent,
+} from "../api/filesApi";
+import {
   currentLanguage,
   setLanguage,
   type SupportedLanguage,
@@ -86,6 +93,7 @@ export function MenuBar(): JSX.Element {
   const selectModel = useAppStore((s) => s.selectModel);
   const selectFilePath = useAppStore((s) => s.selectFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
+  const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
 
@@ -107,15 +115,38 @@ export function MenuBar(): JSX.Element {
   }, [openMenu]);
 
   // ---- File actions ----
+  // ADR-0041 §論点 8-A: New は workspace mode (= File API) と legacy mode を分岐。
+  // workspace mode では `untitled<N>.flw.json` を File API で作成、`selectFilePath`
+  // で開く。legacy mode は従来通り `createModel` 経由。
   const newMutation = useMutation({
-    mutationFn: async () => {
-      const name = await nextUntitledName();
-      const resp = await createModel(emptyModel(name));
-      return resp.model_id;
+    mutationFn: async (): Promise<{ id?: string; path?: string }> => {
+      try {
+        const path = await nextUntitledFilePath();
+        const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
+        await putFileContent(path, empty);
+        return { path };
+      } catch (e) {
+        if (e instanceof FileApiUnavailableError) {
+          // legacy fallback: workspace 未有効なら従来 model_id 経路
+          const name = await nextUntitledName();
+          const resp = await createModel(emptyModel(name));
+          return { id: resp.model_id };
+        }
+        throw e;
+      }
     },
-    onSuccess: async (newId) => {
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
-      selectModel(newId);
+    onSuccess: async (resp) => {
+      if (resp.path !== undefined) {
+        const data = await getFileContent(resp.path);
+        selectFilePath(resp.path);
+        setEditingModel(data.content);
+        setEditingFileMeta(data.mtime, data.etag);
+        setDirty(false);
+        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+      } else if (resp.id !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: ["models"] });
+        selectModel(resp.id);
+      }
     },
   });
 
@@ -183,8 +214,40 @@ export function MenuBar(): JSX.Element {
       queryKey: ["model", selectedModelId],
     });
   };
-  const handleSaveAs = (): void => {
+  const handleSaveAs = async (): Promise<void> => {
     setOpenMenu(null);
+    // ADR-0041 §論点 10-A (簡易版、v0.18.0): File API モードでは window.prompt で
+    // path を受け取って putFileContent で書き出す。本格的な FileBrowser 込み
+    // の mini-dialog は v0.19.0 で実装予定。
+    if (selectedFilePath !== null) {
+      if (!editingModel) return;
+      const defaultPath = selectedFilePath.replace(
+        /(\.flw\.json)?$/,
+        "_copy.flw.json",
+      );
+      const newPath = window.prompt(
+        t(
+          "filebrowser.prompt_save_as",
+          "Save As (workspace-relative path):",
+        ),
+        defaultPath,
+      );
+      if (!newPath) return;
+      try {
+        const resp = await putFileContent(newPath, editingModel);
+        const data = await getFileContent(newPath);
+        selectFilePath(newPath);
+        setEditingModel(data.content);
+        setEditingFileMeta(resp.mtime, resp.etag);
+        setDirty(false);
+        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+      } catch (e) {
+        console.error("Save As failed:", e);
+        window.alert(`Save As failed: ${(e as Error).message}`);
+      }
+      return;
+    }
+    // legacy mode は従来のモーダル
     if (!selectedModelId) return;
     setDialog({ kind: "save-as" });
   };
@@ -193,8 +256,28 @@ export function MenuBar(): JSX.Element {
     if (!selectedModelId) return;
     setDialog({ kind: "rename" });
   };
-  const handleDelete = (): void => {
+  const handleDelete = async (): Promise<void> => {
     setOpenMenu(null);
+    // ADR-0041: File API モードは confirm + deleteFile + selectFilePath(null)
+    if (selectedFilePath !== null) {
+      const ok = window.confirm(
+        t("filebrowser.confirm_delete", "Delete {{path}}?", {
+          path: selectedFilePath,
+        }),
+      );
+      if (!ok) return;
+      try {
+        await deleteFile(selectedFilePath);
+        selectFilePath(null);
+        setEditingModel(null);
+        setDirty(false);
+        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+      } catch (e) {
+        console.error("Delete failed:", e);
+        window.alert(`Delete failed: ${(e as Error).message}`);
+      }
+      return;
+    }
     if (!selectedModelId) return;
     setDialog({ kind: "delete" });
   };
@@ -243,14 +326,14 @@ export function MenuBar(): JSX.Element {
       onClick: handleSave,
       disabled: !hasModel,
     },
-    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasLegacyModel },
+    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasModel },
     { label: t("menu.file.rename"), onClick: handleRename, disabled: !hasLegacyModel },
     { label: "", divider: true },
     { label: t("menu.file.close"), onClick: handleClose, disabled: !hasModel },
     {
       label: t("menu.file.delete"),
       onClick: handleDelete,
-      disabled: !hasLegacyModel,
+      disabled: !hasModel,
       destructive: true,
     },
   ];

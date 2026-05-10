@@ -7,23 +7,40 @@
 //   - Refresh ボタンで再 fetch
 //   - 503 (= legacy --model-dir モード) なら「File API 無効」表示
 //
-// v0.18.0 送り (ADR-0041 §論点 7-A):
-//   - 右クリック context menu (Rename / Duplicate / Delete / New file / New folder)
-//   - inline rename (F2)
+// v0.18.0 追加 (本 commit):
+//   - 右クリック context menu (Rename / Delete / New file / New folder)
+//   - inline rename (F2 + double-click rename via context menu)
+//   - 上書き保存
+//
+// v0.19.0 送り (ADR-0041 §論点 7-A):
 //   - drag-drop でフォルダ移動
-//   - 全ファイル表示 toggle (現状は `.flw.json` のみ)
+//   - 全ファイル表示 toggle (現状は全ファイルを tree で列挙)
+//   - multi-select (Shift / Ctrl)
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   type FileEntry,
   fileTree,
   FileApiUnavailableError,
+  deleteFile,
   getFileContent,
+  mkdir,
+  putFileContent,
+  renameFile,
 } from "../api/filesApi";
 import { useAppStore } from "../store/appStore";
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  /** 対象 path (= 操作対象の file/dir、空文字列で root を対象) */
+  path: string;
+  /** 対象がディレクトリか */
+  isDirectory: boolean;
+}
 
 /**
  * 左サイドバーに置く workspace ツリービュー。React Query で 1 階層分の `tree`
@@ -39,8 +56,25 @@ export function FileBrowser(): JSX.Element {
   const setDirty = useAppStore((s) => s.setDirty);
   const queryClient = useQueryClient();
 
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+
   const handleOpen = useCallback(
     async (path: string) => {
+      // ADR-0041 §論点 9-A: dirty 状態で別ファイルを開く時は破棄確認。
+      // 同ファイル再選択は no-op。
+      const state = useAppStore.getState();
+      if (state.selectedFilePath === path) return;
+      if (state.dirty) {
+        const ok = window.confirm(
+          t(
+            "filebrowser.confirm_discard",
+            "Discard unsaved changes and open {{path}}?",
+            { path },
+          ),
+        );
+        if (!ok) return;
+      }
       try {
         const resp = await getFileContent(path);
         selectFilePath(path);
@@ -51,12 +85,173 @@ export function FileBrowser(): JSX.Element {
         console.error("Failed to open file:", path, e);
       }
     },
-    [selectFilePath, setEditingModel, setEditingFileMeta, setDirty],
+    [selectFilePath, setEditingModel, setEditingFileMeta, setDirty, t],
   );
 
-  const handleRefresh = useCallback(async () => {
+  const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
   }, [queryClient]);
+
+  const handleRefresh = useCallback(() => {
+    void refresh();
+  }, [refresh]);
+
+  // F2 で選択ファイルを inline rename
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === "F2" && selectedFilePath !== null && renamingPath === null) {
+        // input フォーカス中は trigger しない (= ブラウザネイティブの編集を妨げない)
+        const ae = document.activeElement;
+        if (
+          ae instanceof HTMLInputElement ||
+          ae instanceof HTMLTextAreaElement
+        ) {
+          return;
+        }
+        e.preventDefault();
+        setRenamingPath(selectedFilePath);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedFilePath, renamingPath]);
+
+  // クリック outside で context menu を閉じる
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (): void => setContextMenu(null);
+    window.addEventListener("click", handler);
+    window.addEventListener("blur", handler);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("blur", handler);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, path: string, isDirectory: boolean) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, path, isDirectory });
+    },
+    [],
+  );
+
+  const handleRename = useCallback(
+    async (oldPath: string, newName: string) => {
+      setRenamingPath(null);
+      if (!newName || newName === oldPath.split("/").pop()) return;
+      // 同階層に rename (= dirname 維持)
+      const parts = oldPath.split("/");
+      parts[parts.length - 1] = newName;
+      const newPath = parts.join("/");
+      try {
+        await renameFile(oldPath, newPath);
+        await refresh();
+        // 開いていたファイルを rename した場合は selectedFilePath 更新
+        if (selectedFilePath === oldPath) {
+          selectFilePath(newPath);
+          // 新 path で再 fetch して etag/mtime を最新に
+          const data = await getFileContent(newPath);
+          setEditingModel(data.content);
+          setEditingFileMeta(data.mtime, data.etag);
+        }
+      } catch (e) {
+        console.error("Rename failed:", e);
+      }
+    },
+    [
+      refresh,
+      selectFilePath,
+      selectedFilePath,
+      setEditingFileMeta,
+      setEditingModel,
+    ],
+  );
+
+  const handleDelete = useCallback(
+    async (path: string) => {
+      // confirm dialog (= browser native、SaveAsModal の作りと同じ自前 modal は
+      // v0.19.0 で実装)
+      const ok = window.confirm(
+        t("filebrowser.confirm_delete", "Delete {{path}}?", { path }),
+      );
+      if (!ok) return;
+      try {
+        await deleteFile(path);
+        await refresh();
+        if (selectedFilePath === path) {
+          selectFilePath(null);
+          setEditingModel(null);
+          setDirty(false);
+        }
+      } catch (e) {
+        console.error("Delete failed:", e);
+        window.alert(`Delete failed: ${(e as Error).message}`);
+      }
+    },
+    [
+      refresh,
+      selectFilePath,
+      selectedFilePath,
+      setDirty,
+      setEditingModel,
+      t,
+    ],
+  );
+
+  const handleNewFile = useCallback(
+    async (parentPath: string) => {
+      const name = window.prompt(
+        t("filebrowser.prompt_new_file", "New file name (.flw.json):"),
+        "untitled.flw.json",
+      );
+      if (!name) return;
+      const fullPath = parentPath ? `${parentPath}/${name}` : name;
+      try {
+        // 空モデル (= legacy emptyModel と同じ scaffold) を書き込む
+        await putFileContent(fullPath, {
+          schema_version: "0.8",
+          metadata: { name: name.replace(/\.flw\.json$/, ""), tool: "pyflw GUI" },
+          simulator: {
+            t_end: 10.0,
+            dt: 0.01,
+            solver: "RK45",
+            rtol: 1e-3,
+            atol: 1e-6,
+            dt_base: null,
+          },
+          blocks: [],
+          connections: [],
+          layout: {},
+        });
+        await refresh();
+      } catch (e) {
+        console.error("New file failed:", e);
+        window.alert(`Create failed: ${(e as Error).message}`);
+      }
+    },
+    [refresh, t],
+  );
+
+  const handleNewFolder = useCallback(
+    async (parentPath: string) => {
+      const name = window.prompt(
+        t("filebrowser.prompt_new_folder", "New folder name:"),
+        "subdir",
+      );
+      if (!name) return;
+      const fullPath = parentPath ? `${parentPath}/${name}` : name;
+      try {
+        await mkdir(fullPath);
+        await refresh();
+      } catch (e) {
+        console.error("Mkdir failed:", e);
+        window.alert(`Mkdir failed: ${(e as Error).message}`);
+      }
+    },
+    [refresh, t],
+  );
 
   return (
     <div className="flex min-h-0 flex-col bg-white text-[12px]">
@@ -74,16 +269,50 @@ export function FileBrowser(): JSX.Element {
           ⟳
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto py-1"
+        onContextMenu={(e) => handleContextMenu(e, "", true)}
+      >
         <DirectoryNode
           path=""
           name="(root)"
           depth={0}
           defaultExpanded
           onFileClick={handleOpen}
+          onContextMenu={handleContextMenu}
+          renamingPath={renamingPath}
+          onSubmitRename={handleRename}
+          onCancelRename={() => setRenamingPath(null)}
           selectedFilePath={selectedFilePath}
         />
       </div>
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          path={contextMenu.path}
+          isDirectory={contextMenu.isDirectory}
+          onRename={() => {
+            if (contextMenu.path !== "") setRenamingPath(contextMenu.path);
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            if (contextMenu.path !== "") void handleDelete(contextMenu.path);
+            setContextMenu(null);
+          }}
+          onNewFile={() => {
+            const parent = contextMenu.isDirectory ? contextMenu.path : "";
+            void handleNewFile(parent);
+            setContextMenu(null);
+          }}
+          onNewFolder={() => {
+            const parent = contextMenu.isDirectory ? contextMenu.path : "";
+            void handleNewFolder(parent);
+            setContextMenu(null);
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -94,6 +323,10 @@ interface DirectoryNodeProps {
   depth: number;
   defaultExpanded?: boolean;
   onFileClick: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  renamingPath: string | null;
+  onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
+  onCancelRename: () => void;
   selectedFilePath: string | null;
 }
 
@@ -103,6 +336,10 @@ function DirectoryNode({
   depth,
   defaultExpanded = false,
   onFileClick,
+  onContextMenu,
+  renamingPath,
+  onSubmitRename,
+  onCancelRename,
   selectedFilePath,
 }: DirectoryNodeProps): JSX.Element {
   const { t } = useTranslation();
@@ -158,6 +395,10 @@ function DirectoryNode({
             parentPath=""
             depth={1}
             onFileClick={onFileClick}
+            onContextMenu={onContextMenu}
+            renamingPath={renamingPath}
+            onSubmitRename={onSubmitRename}
+            onCancelRename={onCancelRename}
             selectedFilePath={selectedFilePath}
           />
         ))}
@@ -166,12 +407,12 @@ function DirectoryNode({
   }
 
   // 子ディレクトリの場合: 行 + 折りたたみ children
-  const childPath = path; // already includes parent prefix
   return (
     <li role="treeitem" aria-expanded={expanded}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
+        onContextMenu={(e) => onContextMenu(e, path, true)}
         className={`flex w-full items-center gap-1 py-0.5 text-left hover:bg-slate-100`}
         style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
       >
@@ -187,9 +428,13 @@ function DirectoryNode({
             <TreeEntry
               key={child.name}
               entry={child}
-              parentPath={childPath}
+              parentPath={path}
               depth={depth + 1}
               onFileClick={onFileClick}
+              onContextMenu={onContextMenu}
+              renamingPath={renamingPath}
+              onSubmitRename={onSubmitRename}
+              onCancelRename={onCancelRename}
               selectedFilePath={selectedFilePath}
             />
           ))}
@@ -204,6 +449,10 @@ interface TreeEntryProps {
   parentPath: string;
   depth: number;
   onFileClick: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  renamingPath: string | null;
+  onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
+  onCancelRename: () => void;
   selectedFilePath: string | null;
 }
 
@@ -212,6 +461,10 @@ function TreeEntry({
   parentPath,
   depth,
   onFileClick,
+  onContextMenu,
+  renamingPath,
+  onSubmitRename,
+  onCancelRename,
   selectedFilePath,
 }: TreeEntryProps): JSX.Element {
   const fullPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
@@ -223,6 +476,10 @@ function TreeEntry({
         name={entry.name}
         depth={depth}
         onFileClick={onFileClick}
+        onContextMenu={onContextMenu}
+        renamingPath={renamingPath}
+        onSubmitRename={onSubmitRename}
+        onCancelRename={onCancelRename}
         selectedFilePath={selectedFilePath}
       />
     );
@@ -230,27 +487,185 @@ function TreeEntry({
 
   const isSelected = selectedFilePath === fullPath;
   const isFlw = entry.name.endsWith(".flw.json");
+  const isRenaming = renamingPath === fullPath;
   return (
     <li role="treeitem">
-      <button
-        type="button"
-        onClick={() => isFlw && onFileClick(fullPath)}
-        disabled={!isFlw}
-        className={`flex w-full items-center gap-1 py-0.5 text-left ${
-          isSelected
-            ? "bg-blue-100 text-blue-800"
-            : isFlw
-              ? "text-slate-700 hover:bg-slate-100"
-              : "text-slate-400"
-        }`}
-        style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
-        title={fullPath}
-      >
-        <span className="w-3" />
-        <FileIcon flw={isFlw} />
-        <span className="truncate">{entry.name}</span>
-      </button>
+      {isRenaming ? (
+        <InlineRename
+          initialValue={entry.name}
+          depth={depth}
+          onSubmit={(newName) => void onSubmitRename(fullPath, newName)}
+          onCancel={onCancelRename}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => isFlw && onFileClick(fullPath)}
+          onContextMenu={(e) => onContextMenu(e, fullPath, false)}
+          disabled={!isFlw}
+          className={`flex w-full items-center gap-1 py-0.5 text-left ${
+            isSelected
+              ? "bg-blue-100 text-blue-800"
+              : isFlw
+                ? "text-slate-700 hover:bg-slate-100"
+                : "text-slate-400"
+          }`}
+          style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
+          title={fullPath}
+        >
+          <span className="w-3" />
+          <FileIcon flw={isFlw} />
+          <span className="truncate">{entry.name}</span>
+        </button>
+      )}
     </li>
+  );
+}
+
+interface InlineRenameProps {
+  initialValue: string;
+  depth: number;
+  onSubmit: (newName: string) => void;
+  onCancel: () => void;
+}
+
+function InlineRename({
+  initialValue,
+  depth,
+  onSubmit,
+  onCancel,
+}: InlineRenameProps): JSX.Element {
+  const [value, setValue] = useState(initialValue);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // mount 時に focus + 拡張子を除く部分を選択 (= JupyterLab 流儀)
+    const input = ref.current;
+    if (!input) return;
+    input.focus();
+    const ext = initialValue.lastIndexOf(".flw.json");
+    const stemEnd = ext > 0 ? ext : initialValue.length;
+    input.setSelectionRange(0, stemEnd);
+  }, [initialValue]);
+
+  return (
+    <div
+      className="flex w-full items-center gap-1 py-0.5"
+      style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
+    >
+      <span className="w-3" />
+      <FileIcon flw={initialValue.endsWith(".flw.json")} />
+      <input
+        ref={ref}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSubmit(value);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={() => {
+          // blur で確定 (= JupyterLab と同じ、Esc で cancel 経由のみ取消)
+          onSubmit(value);
+        }}
+        className="flex-1 border border-blue-500 bg-white px-1 text-[12px] outline-none"
+      />
+    </div>
+  );
+}
+
+interface ContextMenuProps {
+  x: number;
+  y: number;
+  path: string;
+  isDirectory: boolean;
+  onRename: () => void;
+  onDelete: () => void;
+  onNewFile: () => void;
+  onNewFolder: () => void;
+  onClose: () => void;
+}
+
+function ContextMenu({
+  x,
+  y,
+  path,
+  isDirectory,
+  onRename,
+  onDelete,
+  onNewFile,
+  onNewFolder,
+}: ContextMenuProps): JSX.Element {
+  const { t } = useTranslation();
+  const isRoot = path === "";
+  return (
+    <div
+      role="menu"
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-50 min-w-[160px] border border-slate-300 bg-white py-0.5 shadow-md"
+      style={{ left: x, top: y }}
+    >
+      <MenuItem
+        label={t("filebrowser.menu.new_file", "New file")}
+        onClick={onNewFile}
+      />
+      <MenuItem
+        label={t("filebrowser.menu.new_folder", "New folder")}
+        onClick={onNewFolder}
+      />
+      {!isRoot && (
+        <>
+          <div className="my-0.5 border-t border-slate-200" />
+          <MenuItem
+            label={t("filebrowser.menu.rename", "Rename (F2)")}
+            onClick={onRename}
+            disabled={isDirectory}
+          />
+          <MenuItem
+            label={t("filebrowser.menu.delete", "Delete")}
+            onClick={onDelete}
+            destructive
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface MenuItemProps {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}
+
+function MenuItem({
+  label,
+  onClick,
+  disabled = false,
+  destructive = false,
+}: MenuItemProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${
+        disabled
+          ? "text-slate-400"
+          : destructive
+            ? "text-rose-600 hover:bg-rose-50"
+            : "text-slate-700 hover:bg-blue-600 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

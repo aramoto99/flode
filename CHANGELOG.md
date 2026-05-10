@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-10 — FileBrowser context menu + Simulation 実行対応 (ADR-0041 §論点 5-A / 7-A / 9-A / 10-A)
+
+v0.17.0 で導入した FileBrowser サイドバーに **実用的な操作系を追加**。
+File API モードでも **シミュレーション実行が可能** に (= 最重要、v0.17.0 では
+Simulation Controls が非表示だった)。
+
+**v0.18.0 は後方互換 minor**。
+
+### Added
+
+- **FileBrowser 右クリック context menu** (= ADR-0041 §論点 7-A):
+  - `New file` / `New folder` (= 親ディレクトリ配下に作成)
+  - `Rename (F2)` (= ファイルのみ、ディレクトリは disable)
+  - `Delete` (= confirm 後、開いているファイルなら自動 close)
+  - root 領域の右クリックで New file / New folder のみ表示
+- **FileBrowser inline rename (F2)**: 選択中ファイルで F2 押下 → input が
+  オーバーレイ表示、Enter で確定 / Escape でキャンセル / blur でも確定。
+  拡張子前 (= stem 部分) を自動選択 (= JupyterLab 流儀)
+- **dirty 確認ダイアログ** (= ADR-0041 §論点 9-A): 別ファイルを開く時に
+  ``dirty == true`` なら ``window.confirm`` で破棄確認 (専用モーダルは
+  v0.19.0 で実装、簡易版)
+- **`MenuBar.New`** (= File API モード): `nextUntitledFilePath` で
+  ``untitled<N>.flw.json`` を採番、空モデル雛形を File API で書き込んで開く。
+  workspace 未有効 (= 503) なら legacy ``createModel`` に fallback
+- **`MenuBar.Save As`** (= File API モード、簡易版): ``window.prompt`` で
+  workspace 相対 path 入力、`putFileContent` で書き込み + 切替。本格モーダル
+  は v0.19.0 (= ADR-0041 §論点 10-A FileBrowser 込み mini-dialog)
+- **`MenuBar.Delete`** (= File API モード): confirm + ``deleteFile`` +
+  selectFilePath(null)
+- **`startSimulationByPath`** / **`startSimulationInline`** (= ``api/client.ts``
+  追加、ADR-0041 §論点 5-A の 3 形式 body 用 client wrapper)
+
+### Changed
+
+- **`useSimulation.run()`** (= ADR-0041 §論点 5-A): ``selectedFilePath`` セット
+  時は File API 経路 (= ``putFileContent`` で保存 → ``startSimulationByPath``
+  で実行)、それ以外は legacy ``selectedModelId`` 経路。両モードで自動保存
+  + 楽観ロック (= etag) を維持
+- **`Toolbar.saveMutation`**: File API モード時は `putFileContent` で書き込み
+  (= etag 楽観ロック対応)、legacy モード時は `updateModel`
+- **`SimulationControls`** が **両モードで表示** (= v0.17.0 では File API
+  モードで非表示だった)。``App.tsx`` の条件分岐を撤去
+- **`MenuBar` File メニュー disable 状態**: New / Save / Save As / Close /
+  Delete を `hasModel` (= 両モード) ベース、Rename のみ legacy 限定
+  (= File API モードの rename は FileBrowser 経由で行うため)
+
+### Internal / Tests
+
+- vitest **245 件 pass** (= 既存テストに回帰なし、v0.19.0 で FileBrowser context
+  menu / inline rename / Save As の追加テストを予定)
+- TypeScript strict mode clean、bundle 192 KB gzip 帯維持
+- ``examples/spring_mass_damper.py`` 数値完全不変 (Final x=0.2505, x_dot=0.0031)
+
+### v0.19.0 送り (= ADR-0041 §論点 7-A / 9 / 10 / 11 残作業)
+
+- ``SaveAsModal`` (= FileBrowser 込み mini-dialog、ADR-0041 §論点 10-A)
+- ``DirtyConfirmModal`` (= window.confirm を本格モーダル化、ADR-0041 §論点 9-A)
+- ``useExternalChangesPoll`` (= 5 秒 mtime/etag polling、ADR-0041 §論点 11-A)
+- drag-drop でフォルダ移動
+- 全ファイル表示 toggle / multi-select (Shift / Ctrl)
+- FileBrowser context menu / inline rename の vitest 整備
+
 ## [0.17.0] - 2026-05-10 — FileBrowser サイドバー (ADR-0041 §論点 7-A / 8-A)
 
 SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集」の **frontend 段階 part 1**。

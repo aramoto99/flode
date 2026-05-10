@@ -1,7 +1,8 @@
-# v0.17.0 (ADR-0041 §論点 7-A / 8-A): frontend FileBrowser サイドバー新設 +
-# selectedFilePath state + File API ベースの load/save 経路。legacy
-# /api/v1/models 経路と coexist (= 1 セッション 1 経路、相互排他)。
-__version__ = "0.17.0"
+# v0.18.0 (ADR-0041 §論点 5-A / 7-A / 9-A / 10-A): FileBrowser に右クリック
+# context menu + inline rename (F2) を追加。MenuBar の File 操作を File API
+# モード対応 (= New / Save As / Delete)。Toolbar Save / Run も File API モードで
+# 動作。dirty 状態で別ファイル切替時に確認ダイアログ。
+__version__ = "0.18.0"
 
 from .analysis import (
     BodeResponse,

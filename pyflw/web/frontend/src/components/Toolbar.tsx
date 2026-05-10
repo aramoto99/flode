@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { updateModel } from "../api/client";
+import { putFileContent } from "../api/filesApi";
 import { useSimulation } from "../lib/useSimulation";
 import { updateSimulatorConfig, useAppStore } from "../store/appStore";
 
@@ -18,6 +19,9 @@ export function Toolbar(): JSX.Element {
   const queryClient = useQueryClient();
 
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
+  const editingFileEtag = useAppStore((s) => s.editingFileEtag);
+  const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const editingModel = useAppStore((s) => s.editingModel);
   const dirty = useAppStore((s) => s.dirty);
   const setDirty = useAppStore((s) => s.setDirty);
@@ -25,18 +29,34 @@ export function Toolbar(): JSX.Element {
 
   const { run, stop } = useSimulation();
 
+  // ADR-0041 §論点 5-A: File API モード / legacy モードで保存先を分岐。
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedModelId || !editingModel) throw new Error("no model");
-      await updateModel(selectedModelId, editingModel);
-      setDirty(false);
-      await queryClient.invalidateQueries({
-        queryKey: ["model", selectedModelId],
-      });
+      if (!editingModel) throw new Error("no model");
+      if (selectedFilePath !== null) {
+        const resp = await putFileContent(
+          selectedFilePath,
+          editingModel,
+          editingFileEtag ?? undefined,
+        );
+        setEditingFileMeta(resp.mtime, resp.etag);
+        setDirty(false);
+        await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
+        return;
+      }
+      if (selectedModelId !== null) {
+        await updateModel(selectedModelId, editingModel);
+        setDirty(false);
+        await queryClient.invalidateQueries({
+          queryKey: ["model", selectedModelId],
+        });
+        return;
+      }
+      throw new Error("no model selected");
     },
   });
 
-  const hasModel = selectedModelId !== null;
+  const hasModel = selectedModelId !== null || selectedFilePath !== null;
   const isRunning = status === "running";
 
   return (

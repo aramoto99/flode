@@ -58,6 +58,34 @@ export async function startSimulation(
   });
 }
 
+/**
+ * ADR-0041 §論点 5-A: workspace 相対 path でシミュレーション開始。
+ * backend が `resolve_workspace_path` で path traversal 防御を通したのち、
+ * `Simulator.load(path)` で構築する。
+ */
+export async function startSimulationByPath(
+  modelPath: string,
+): Promise<{ simulation_id: string; model_id: string }> {
+  return _fetch("/simulations", {
+    method: "POST",
+    body: JSON.stringify({ model_path: modelPath }),
+  });
+}
+
+/**
+ * ADR-0041 §論点 5-A: インラインモデルでシミュレーション開始 (= 未保存
+ * editingModel の試行実行)。本関数は **保存をスキップ**して in-memory dict を
+ * そのまま渡すため、ファイル化されていないモデルを試走するときに使う。
+ */
+export async function startSimulationInline(
+  model: import("../types/api").FlwModel,
+): Promise<{ simulation_id: string; model_id: string }> {
+  return _fetch("/simulations", {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  });
+}
+
 export async function stopSimulation(simId: string): Promise<void> {
   await _fetch(`/simulations/${encodeURIComponent(simId)}/stop`, {
     method: "POST",
