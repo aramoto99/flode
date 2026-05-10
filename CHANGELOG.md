@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.7] - 2026-05-10 — edge と block の隙間を解消 (markerEnd 削除)
+
+ユーザー指摘 (= 「ブロックとエッジの隙間が大きい、接続してしまえばエッジの
+表示の起点はブロックからでいい」) への対応。
+
+### Changed
+
+- **接続済み edge の ``markerEnd`` (= 矢印 head) を削除**:
+  - React Flow は矢印 head を node 境界の外側に描画するオフセットを自動的に
+    入れるため、edge の終端が node から ~10 px 離れて見えていた
+  - Simulink でも接続済み配線は純粋な線で、信号方向は node 配置 (= 左→右)
+    で把握する慣習
+  - これにより edge は node 境界に直接到達する見た目に
+- **`defaultEdgeOptions.markerEnd`** を削除、**`BranchableEdge`** も markerEnd
+  prop を渡さない
+- ``SIMULINK_MARKER_END`` 定数自体は ``diagramConverter.ts`` に残す (= 将来
+  drag connection 中の仮 edge で再利用する余地、現状未使用)
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean (= 196 KB gzip 帯維持)
+- ``examples/spring_mass_damper.py`` 数値完全不変
+
+### v0.20.6 → v0.20.7 移行
+
+利用者は何もする必要なし。サーバ再起動で自動反映。
+
 ## [0.20.6] - 2026-05-10 — Simulink 流ドラッグ&ドロップで配線から分岐
 
 ユーザー指摘 (= 「エッジの任意の点をクリックしてそのままドラッグアンドドロップで

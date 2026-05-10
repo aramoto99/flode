@@ -46,7 +46,6 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     sourcePosition,
     targetPosition,
     style,
-    markerEnd,
   } = props;
 
   const [edgePath] = getSmoothStepPath({
@@ -62,7 +61,10 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
+      {/* v0.20.7: markerEnd を渡さない (= 矢印 head なし)。React Flow は markerEnd
+          を node 境界の外側に描画するため隙間が生じる。Simulink でも接続済み
+          配線は純粋な線で、信号方向は node 配置で把握する慣習。 */}
+      <BaseEdge id={id} path={edgePath} style={style} />
       {/* 透明・太いストロークの overlay path で hit area を拡大。
           ``pointerEvents: "stroke"`` でストローク領域のみクリック判定 (= 細い
           描画 path との見た目のズレを最小化)。 */}

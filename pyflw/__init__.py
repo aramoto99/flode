@@ -1,8 +1,8 @@
-# v0.20.6 (機能追加): Simulink 流の「配線をクリック → ドラッグ → ブロックに
-# ドロップ」で分岐配線を作る機能。Custom Edge (BranchableEdge) で edge 上の
-# pointerdown を捕捉、window mousemove で追従線を描画、mouseup の hit testing
-# で着地点ブロックの input port[0] へ枝分かれ edge を追加。
-__version__ = "0.20.6"
+# v0.20.7 (UI ポリッシュ): 接続済み edge から markerEnd (= 矢印 head) を削除。
+# React Flow は矢印 head を node 境界の外側に描画するため edge と node の
+# 隙間が大きく見えていた問題を解消、edge は node 境界に直接到達する Simulink
+# 流の見た目に。
+__version__ = "0.20.7"
 
 from .analysis import (
     BodeResponse,
