@@ -8,7 +8,33 @@
 // で DiagramCanvas に届ける (= React Context を edge component に流すと
 // 全 edge が再 render するため避ける)。
 
-import { BaseEdge, type EdgeProps, getSmoothStepPath } from "@xyflow/react";
+import { BaseEdge, type EdgeProps, getSmoothStepPath, Position } from "@xyflow/react";
+
+// v0.20.10: edge の起点 / 終点を Handle 中心 (= node 境界の +12 px 外側) では
+// なく **node 境界線** に補正するためのオフセット。React Flow Handle width=24
+// で Handle center は node 境界の Handle width/2 = 12 px 外側にあるため、
+// edge 描画座標を 12 px 内側にずらすと node 境界に edge が直接当たる。
+// chevron / Handle 位置は不変なので、接続前の chevron `>` 表示も維持される。
+const PORT_TO_NODE_BORDER_PX = 12;
+
+function adjustToBorder(
+  x: number,
+  y: number,
+  position: Position,
+): { x: number; y: number } {
+  switch (position) {
+    case Position.Right:
+      return { x: x - PORT_TO_NODE_BORDER_PX, y };
+    case Position.Left:
+      return { x: x + PORT_TO_NODE_BORDER_PX, y };
+    case Position.Top:
+      return { x, y: y + PORT_TO_NODE_BORDER_PX };
+    case Position.Bottom:
+      return { x, y: y - PORT_TO_NODE_BORDER_PX };
+    default:
+      return { x, y };
+  }
+}
 
 export interface BranchStartParams {
   /** 既存 edge の source ノード ID (= 分岐の起点ブロック) */
@@ -48,11 +74,19 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     style,
   } = props;
 
+  // v0.20.10: ユーザー要求「ポート位置は動かさず、ポート接続後はエッジの起点を
+  // ポートではなくブロックにしてほしい」への対応。React Flow は sourceX/Y に
+  // Handle center 座標 (= node 境界 + 12 px 外側、Handle width=24 のため) を
+  // 渡してくる。これを 12 px 内側に補正することで edge の path が node 境界
+  // に当たる見た目になる。chevron / Handle 自体は元の位置のまま。
+  const adjustedSrc = adjustToBorder(sourceX, sourceY, sourcePosition);
+  const adjustedTgt = adjustToBorder(targetX, targetY, targetPosition);
+
   const [edgePath] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
+    sourceX: adjustedSrc.x,
+    sourceY: adjustedSrc.y,
+    targetX: adjustedTgt.x,
+    targetY: adjustedTgt.y,
     sourcePosition,
     targetPosition,
     // Simulink 流: 折れ角は直角 (= radius 0)

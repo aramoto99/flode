@@ -1,9 +1,8 @@
-# v0.20.9 (revert): v0.20.8 で Handle center を node 境界にロックする transform
-# override したが、Handle が node 内側に押し込まれて chevron がブロック内に
-# 表示される問題発生 (ユーザー指摘「ポート位置を変更するな」)。React Flow
-# デフォルト transform に戻して chevron 位置を v0.20.4-v0.20.7 と同じに。隙間
-# は v0.20.7 markerEnd 削除分のみで折り合う。
-__version__ = "0.20.9"
+# v0.20.10 (UI 修正): ポート位置は不変、edge の描画座標だけを 12 px 内側に補正
+# して node 境界に当たる見た目に。BranchableEdge 内で sourceX/Y / targetX/Y を
+# Position に応じて 12 px 内側にずらして getSmoothStepPath に渡す。chevron
+# (= node 境界の +12 px 外側) と Handle (= 24×24 hit area) は完全に維持。
+__version__ = "0.20.10"
 
 from .analysis import (
     BodeResponse,

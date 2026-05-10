@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.10] - 2026-05-10 — edge 起点を node 境界に (ポート位置は不変)
+
+ユーザー指摘 (= 「ポート位置は動かさず、ポート接続後はエッジの起点をポートで
+はなくてブロックにしてほしい」) への正しい対応。v0.20.8 でポート位置を動かして
+失敗したので、今度は **edge の描画座標だけ** を補正する。
+
+### Approach
+
+React Flow は ``BranchableEdge`` (Custom Edge) の props として ``sourceX/Y``
+``targetX/Y`` に **Handle center 座標** (= node 境界の +12 px 外側、Handle
+width=24 のため) を渡してくる。これを **Position に応じて 12 px 内側にずらして**
+``getSmoothStepPath`` に渡すと、edge path が node 境界に当たる見た目になる。
+
+- chevron (= node 境界の +12 px 外側) は **不変**
+- Handle (= 24×24 hit area) も **不変**
+- edge の描画座標だけ 12 px 内側
+
+### Fixed
+
+- ``BranchableEdge`` に ``adjustToBorder(x, y, position)`` ヘルパ追加 (=
+  ``Position.Right`` なら ``-12 px``、``Position.Left`` なら ``+12 px``、
+  ``Top/Bottom`` も同様)
+- ``sourceX/Y`` / ``targetX/Y`` を補正してから ``getSmoothStepPath`` を呼ぶ
+- ``PORT_TO_NODE_BORDER_PX`` 定数 (= 12 px = Handle width / 2) を導入
+
+### Internal / Tests
+
+- vitest **272 件 pass** (= 既存テスト回帰なし)
+- TypeScript strict mode clean
+- production build clean
+
+### v0.20.9 → v0.20.10 移行
+
+利用者は何もする必要なし。サーバ再起動で edge が node 境界に直接当たる見た目
+になり、chevron / Handle 位置は v0.20.7-v0.20.9 と同じ。
+
 ## [0.20.9] - 2026-05-10 — v0.20.8 撤回 (ポート位置を元に戻す)
 
 ユーザー指摘 (= 「ポート位置を変更するなって言ってんだろ」) への対応。
