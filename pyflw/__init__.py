@@ -1,8 +1,9 @@
-# v0.20.2 (UI cleanup): Edit メニュー削除。Cut/Copy/Paste/Select All/Delete は
-# キーボードショートカットで完結 + Toolbar に Undo/Redo ボタンあり、メニュー
-# 経由で発見すべき pyflw 固有編集機能 (Find / Auto-arrange 等) はまだ無いため、
-# 空に近いメニューを撤去して画面をシンプルに。
-__version__ = "0.20.2"
+# v0.20.3 (i18n hotfix): v0.19.0 / v0.20.0 で追加した dialog (= AboutDialog /
+# KeyboardShortcutsDialog / SaveAsPathDialog / DirtyConfirmDialog) と
+# FileBrowser context menu / Help menu の文字列が辞書未登録 (= defaultValue
+# のみ) で日本語に切り替えても英語のままだった bug 修正。en.json / ja.json
+# に 50+ keys 追加。
+__version__ = "0.20.3"
 
 from .analysis import (
     BodeResponse,

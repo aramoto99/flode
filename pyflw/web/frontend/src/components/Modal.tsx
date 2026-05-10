@@ -495,43 +495,39 @@ export function KeyboardShortcutsDialog({
 
   const sections: { title: string; rows: ShortcutRow[] }[] = [
     {
-      title: t("modal.shortcuts.section.file", { defaultValue: "File" }),
+      title: t("modal.shortcuts.section.file"),
       rows: [
-        { keys: "Ctrl+N", description: "New file" },
-        { keys: "Ctrl+O", description: "Open" },
-        { keys: "Ctrl+S", description: "Save" },
-        { keys: "Ctrl+Shift+S", description: "Save As" },
+        { keys: "Ctrl+N", description: t("modal.shortcuts.desc.new_file") },
+        { keys: "Ctrl+O", description: t("modal.shortcuts.desc.open") },
+        { keys: "Ctrl+S", description: t("modal.shortcuts.desc.save") },
+        { keys: "Ctrl+Shift+S", description: t("modal.shortcuts.desc.save_as") },
       ],
     },
     {
-      title: t("modal.shortcuts.section.edit", { defaultValue: "Edit" }),
+      title: t("modal.shortcuts.section.edit"),
       rows: [
-        { keys: "Ctrl+Z", description: "Undo" },
-        { keys: "Ctrl+Shift+Z / Ctrl+Y", description: "Redo" },
-        { keys: "Ctrl+X", description: "Cut" },
-        { keys: "Ctrl+C", description: "Copy" },
-        { keys: "Ctrl+V", description: "Paste" },
-        { keys: "Ctrl+A", description: "Select all (in current scope)" },
-        { keys: "Delete / Backspace", description: "Delete selection" },
+        { keys: "Ctrl+Z", description: t("modal.shortcuts.desc.undo") },
+        { keys: "Ctrl+Shift+Z / Ctrl+Y", description: t("modal.shortcuts.desc.redo") },
+        { keys: "Ctrl+X", description: t("modal.shortcuts.desc.cut") },
+        { keys: "Ctrl+C", description: t("modal.shortcuts.desc.copy") },
+        { keys: "Ctrl+V", description: t("modal.shortcuts.desc.paste") },
+        { keys: "Ctrl+A", description: t("modal.shortcuts.desc.select_all") },
+        { keys: "Delete / Backspace", description: t("modal.shortcuts.desc.delete") },
       ],
     },
     {
-      title: t("modal.shortcuts.section.navigation", {
-        defaultValue: "Navigation",
-      }),
+      title: t("modal.shortcuts.section.navigation"),
       rows: [
-        { keys: "Enter", description: "Drill into selected Subsystem" },
-        { keys: "Esc", description: "Drill up / clear selection" },
-        { keys: "F2", description: "Rename file in FileBrowser" },
+        { keys: "Enter", description: t("modal.shortcuts.desc.drill_in") },
+        { keys: "Esc", description: t("modal.shortcuts.desc.drill_up") },
+        { keys: "F2", description: t("modal.shortcuts.desc.rename_file") },
       ],
     },
     {
-      title: t("modal.shortcuts.section.simulation", {
-        defaultValue: "Simulation",
-      }),
+      title: t("modal.shortcuts.section.simulation"),
       rows: [
-        { keys: "Ctrl+T / F9", description: "Run simulation" },
-        { keys: "Ctrl+Shift+T / Shift+F9", description: "Stop simulation" },
+        { keys: "Ctrl+T / F9", description: t("modal.shortcuts.desc.run") },
+        { keys: "Ctrl+Shift+T / Shift+F9", description: t("modal.shortcuts.desc.stop") },
       ],
     },
   ];

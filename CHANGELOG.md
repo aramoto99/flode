@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-05-10 — i18n hotfix: Help / FileBrowser / 各 modal の翻訳追加
+
+ユーザー指摘 (= 「ヘルプの内容が、言語設定が反映されていない」) への hotfix。
+v0.19.0 / v0.20.0 で追加した dialog 群と FileBrowser context menu / Help menu の
+文字列は辞書登録されておらず、``defaultValue`` のみ指定だったため日本語に
+切り替えても英語のまま表示されていた bug。
+
+### Fixed
+
+- ``en.json`` / ``ja.json`` に **50+ keys 追加**:
+  - **Help menu**: ``menu.help.about`` / ``.documentation`` / ``.shortcuts``
+  - **AboutDialog**: ``modal.about.title`` / ``.description`` / ``.license``
+  - **KeyboardShortcutsDialog**:
+    - section 4 件 (= file / edit / navigation / simulation)
+    - description 16 件 (= undo / redo / cut / copy / paste / select_all /
+      delete / new_file / open / save / save_as / drill_in / drill_up /
+      rename_file / run / stop)
+  - **SaveAsPathDialog**: ``modal.save_as.title`` / ``.label`` / ``.invalid`` /
+    ``.conflict`` / ``.overwrite_confirm``
+  - **DirtyConfirmDialog**: ``modal.dirty_confirm.title`` / ``.message`` /
+    ``.discard`` / ``.save_and_open``
+  - **FileBrowser**: ``filebrowser.title`` / ``.refresh`` / ``.disabled`` /
+    ``.loading`` / ``.empty`` / ``.confirm_delete`` / ``.confirm_discard`` /
+    ``.prompt_new_file`` / ``.prompt_new_folder`` / ``.prompt_save_as`` /
+    ``.menu.new_file`` / ``.menu.new_folder`` / ``.menu.rename`` / ``.menu.delete``
+  - **modal.button.close** (= 共通)
+- ``KeyboardShortcutsDialog`` の ``description`` を hardcoded 英語から i18n
+  key 経由に変更
+
+### v0.20.2 → v0.20.3 移行
+
+利用者は何もする必要なし。ja 設定で開いた時に Help メニュー / 各 dialog が
+正しく日本語表示されるようになる。
+
 ## [0.20.2] - 2026-05-10 — Edit メニュー削除 (UI cleanup)
 
 ユーザー指摘 (= 「編集の内容は、わざわざこのようなメニューで用意するほどの
