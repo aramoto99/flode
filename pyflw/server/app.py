@@ -16,6 +16,7 @@ from .library_registry import build_library_registry
 from .registry import build_block_registry
 from .routes import (
     blocks_router,
+    files_router,
     libraries_router,
     models_router,
     simulations_router,
@@ -96,6 +97,7 @@ def create_app(
     app.include_router(simulations_router, prefix="/api/v1")
     app.include_router(blocks_router, prefix="/api/v1")
     app.include_router(libraries_router, prefix="/api/v1")
+    app.include_router(files_router, prefix="/api/v1")
     register_error_handlers(app)
 
     # ADR-0012 §(6): frontend ビルド成果物を ``pyflw/server/static/`` から配信。
