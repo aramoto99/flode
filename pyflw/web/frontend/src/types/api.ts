@@ -44,6 +44,40 @@ export interface LayoutEntry {
   flipped?: boolean;
 }
 
+// ADR-0044 §論点 4: per-signal の表示設定。Y 軸 / 凡例位置等は per-scope。
+export type SignalMarker = "none" | "circle" | "square" | "cross";
+
+export interface SignalSettings {
+  /** CSS color string (= ``"#3b82f6"`` 等)、欠落時は uPlot 自動色 (8 色 fallback)。 */
+  color?: string;
+  /** 線幅 (1 / 2 / 3 px)、欠落時 1。 */
+  width?: 1 | 2 | 3;
+  /** マーカー形状、欠落時 ``"none"``。 */
+  marker?: SignalMarker;
+}
+
+// ADR-0044 §論点 4 / §論点 7 / §論点 9: Scope のプロット設定 (per-scope)。
+// 全フィールド optional、欠落時は ``DEFAULT_SCOPE_SETTINGS`` を使用。
+export interface ScopeSettings {
+  /** Y 軸スケール ``"auto"`` / ``"manual"`` / ``"log"`` (default ``"auto"``)。 */
+  y_mode?: "auto" | "manual" | "log";
+  /** ``y_mode === "manual"`` のときの min/max。 */
+  y_min?: number;
+  y_max?: number;
+  /** X 軸スケール ``"auto"`` / ``"manual"`` (default ``"auto"``)。 */
+  x_mode?: "auto" | "manual";
+  x_min?: number;
+  x_max?: number;
+  /** 凡例位置 (default ``"top"``)。 */
+  legend?: "top" | "bottom" | "right" | "off";
+  /** メジャーグリッド (default true)。 */
+  grid_major?: boolean;
+  /** マイナーグリッド (default false)。 */
+  grid_minor?: boolean;
+  /** per-signal 設定。key は signal_idx (= 数値文字列、JSON 互換性のため string key)。 */
+  signals?: Record<string, SignalSettings>;
+}
+
 export type LayoutDict = Record<string, LayoutEntry>;
 
 export interface FlwModel {
@@ -55,6 +89,9 @@ export interface FlwModel {
   // ADR-0020: optional な layout セクション (block_id → position)。欠落時は GUI 側の
   // grid auto-layout fallback で位置を算出する。
   layout?: LayoutDict;
+  // ADR-0044 §論点 1: optional な per-scope プロット設定 (block_id → ScopeSettings)。
+  // schema 0.8 維持 (= optional 追加なので bump 不要、ADR-0008 慣習)。
+  scope_settings?: Record<string, ScopeSettings>;
 }
 
 export interface ModelList {

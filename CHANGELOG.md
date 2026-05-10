@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-05-11 — Scope 表示エリア + プロット設定 + floating panel
+
+ADR-0044 採択。Scope の表示と操作性を大幅強化。**完全後方互換** (= 既存
+`.flw.json` は無改変、schema 0.8 維持、`scope_settings` は optional フィールド)。
+
+### Added
+
+- **Canvas / Scope エリア drag resize**: `react-resizable-panels` の縦分割で
+  両エリアの分割比をユーザー操作。分割比は localStorage 永続 (workspace 横断)。
+- **per-Scope プロット設定 dialog**: ScopeView ヘッダの gear ボタンから開く:
+  - **Y 軸**: auto / manual / log (= log で 0/負値があれば auto に fallback + 警告)
+  - **X 軸**: auto / manual
+  - **凡例位置**: top / bottom / right / off
+  - **グリッド**: major / minor の on/off
+  - **per-signal 線色 / 線幅**: `react-colorful` の color picker、1/2/3 px width
+  - 設定は `editingModel.scope_settings[scopeId]` に保存 → File API で
+    `.flw.json` に永続化 (= モデル単位、`git diff` で追跡可)
+- **Scope ダブルクリック → floating panel**: Canvas で Scope / XYGraph
+  ブロックをダブルクリック → `react-rnd` の drag + resize 可能な floating panel:
+  - Stop 後も保持 (= scope buffer データを表示継続)
+  - 複数 Scope 同時オープン (= z-index は最後にクリックした panel が前面)
+  - モデル切替 / closeTab で全 panel 自動 close
+  - panel 位置 / サイズは localStorage 永続
+    (`pyflw.scope_panel.<workspace_hash>.<base64(model_path)>.<scope_id>`)
+- **inline ScopeView ヘッダ**: gear / 最大化 / panel 化ボタン (= ダブルクリック
+  以外の経路でも panel を開ける)
+- **maximize ボタン** (= ScopeView ヘッダ): Scope エリア内で 1 個だけを全画面化、
+  再押下で縦並びに戻る
+
+### Changed
+
+- ADR-0023 §Decision §(7) の「8 色 ローテーション固定」を **8 色 fallback +
+  per-signal user override 可** に amend
+- ADR-0023 §Decision §(8) bundle 予算: +15 KB → **+30 KB**
+  (`react-resizable-panels` ~6 KB / `react-rnd` ~12 KB / `react-colorful` ~3 KB
+  gzip)
+
+### Migration
+
+なし。完全後方互換。既存 Scope は `scope_settings` フィールドが無いだけで
+今までと同じ uPlot 自動色 8 色 fallback で表示される。
+
+### Out of Scope (= 永続的 / 別 ADR 送り)
+
+- **物理的に別ウィンドウ (window.open + BroadcastChannel)**: stretch、必要性
+  顕在化時に独立 ADR で起草
+- **背景色 / ダークモード**: 永続的 out-of-scope (= memory `feedback_no_dark_mode`)
+
+### Verification
+
+- backend pytest: **1233 passed / 2 skipped** (= 既存テスト回帰なし)
+- frontend vitest: **281 passed** (= 281 prior、回帰なし)
+- typecheck + production build: clean
+
 ## [0.23.0] - 2026-05-11 — ワークスペース機能強化 (Recent / 複数タブ / 検索)
 
 ADR-0043 採択。FileBrowser を起点に、日常使いに耐えるワークスペース UX を組む。

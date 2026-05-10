@@ -1,11 +1,13 @@
-# v0.23.0 (minor、後方互換): ADR-0043 採択。ワークスペース機能強化:
-# (a) 前回 active file の自動復元 (= localStorage)、(b) Recent Files メニュー
-# (= workspace 単位、上限 10)、(c) 複数ファイル同時編集 (= TabStrip N タブ +
-# Ctrl+Tab / Ctrl+Shift+Tab + middle-click close)、(d) ファイル / 内容検索
-# (= rapidfuzz fuzzy path + substring content、Ctrl+P / Ctrl+Shift+F、backend
-# `/api/v1/files/search`、`.gitignore` 尊重)。新規 backend endpoint
-# `/api/v1/files/workspace_info`、新規依存 `rapidfuzz` / `pathspec`。
-__version__ = "0.23.0"
+# v0.24.0 (minor、後方互換): ADR-0044 採択。Scope 表示 + プロット設定 + floating panel:
+# (1) Canvas / Scope エリアを ``react-resizable-panels`` で drag resize 可能に、
+# (2) per-Scope プロット設定 (Y/X 軸 auto/manual/log、凡例位置、グリッド、
+# per-signal 線色 / 線幅) を gear UI で編集、永続化先は ``.flw.json`` の
+# ``scope_settings`` (= モデル単位、git diff で追跡可、schema 0.8 維持)、
+# (3) Scope ブロックダブルクリックで ``react-rnd`` の floating panel が開く
+# (= Stop 後保持・複数同時・モデル切替で全閉じ・位置サイズは localStorage 永続)。
+# 新規依存 ``react-resizable-panels`` / ``react-rnd`` / ``react-colorful``。
+# ADR-0023 §Decision §(7) の 8 色固定を「user override 可、未設定時 fallback」に amend。
+__version__ = "0.24.0"
 
 from .analysis import (
     BodeResponse,

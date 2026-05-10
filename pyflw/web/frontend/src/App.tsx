@@ -1,6 +1,11 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  Group as PanelGroup,
+  Panel,
+  Separator as PanelResizeHandle,
+} from "react-resizable-panels";
 
 import { getWorkspaceInfo } from "./api/filesApi";
 
@@ -10,6 +15,8 @@ import { DiagramCanvas } from "./components/DiagramCanvas";
 import { FileBrowser } from "./components/FileBrowser";
 import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
+import { ScopePanelContainer } from "./components/ScopePanelContainer";
+import { ScopeSettingsDialog } from "./components/ScopeSettingsDialog";
 import { ScopeView } from "./components/ScopeView";
 import { SearchPanel } from "./components/SearchPanel";
 import { SimulationControls } from "./components/SimulationControls";
@@ -166,42 +173,57 @@ export default function App(): JSX.Element {
             </div>
           </aside>
 
-          {/* Center: canvas + sim controls + scopes */}
+          {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}
           <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {hasOpenedModel ? (
               <>
                 <Breadcrumb />
-                <div className="flex-1 border-b border-slate-300 bg-white">
-                  <DiagramCanvas />
-                </div>
-                {/* v0.21.0: SimulationControls は ``selectedFilePath`` 一本化、
-                    ``useSimulation`` 内部で File API 経路で実行する。 */}
-                <SimulationControls modelId={selectedFilePath ?? ""} />
-                {Object.entries(scopes).length > 0 && (
-                  <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
-                    {Object.entries(scopes).map(([scopeId, buffer]) => {
-                      const blockType = blockTypeById.get(scopeId) ?? "";
-                      // Display は block face に live 表示 → bottom panel には出さない
-                      if (blockType.endsWith(".Display")) return null;
-                      if (blockType.endsWith(".XYGraph")) {
-                        return (
-                          <XYGraphView
-                            key={scopeId}
-                            scopeId={scopeId}
-                            buffer={buffer}
-                          />
-                        );
-                      }
-                      return (
-                        <ScopeView
-                          key={scopeId}
-                          scopeId={scopeId}
-                          buffer={buffer}
-                        />
-                      );
-                    })}
+                {Object.entries(scopes).filter(([id]) => {
+                  const t = blockTypeById.get(id) ?? "";
+                  return !t.endsWith(".Display");
+                }).length > 0 ? (
+                  <PanelGroup
+                    orientation="vertical"
+                    id="pyflw.scope_split"
+                    className="flex-1 border-b border-slate-300"
+                  >
+                    <Panel defaultSize={60} minSize={20}>
+                      <div className="h-full bg-white">
+                        <DiagramCanvas />
+                      </div>
+                    </Panel>
+                    <PanelResizeHandle className="h-1 bg-slate-200 hover:bg-blue-300 transition-colors" />
+                    <Panel defaultSize={40} minSize={10}>
+                      <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
+                        {Object.entries(scopes).map(([scopeId, buffer]) => {
+                          const blockType = blockTypeById.get(scopeId) ?? "";
+                          if (blockType.endsWith(".Display")) return null;
+                          if (blockType.endsWith(".XYGraph")) {
+                            return (
+                              <XYGraphView
+                                key={scopeId}
+                                scopeId={scopeId}
+                                buffer={buffer}
+                              />
+                            );
+                          }
+                          return (
+                            <ScopeView
+                              key={scopeId}
+                              scopeId={scopeId}
+                              buffer={buffer}
+                            />
+                          );
+                        })}
+                      </div>
+                    </Panel>
+                  </PanelGroup>
+                ) : (
+                  <div className="flex-1 border-b border-slate-300 bg-white">
+                    <DiagramCanvas />
                   </div>
                 )}
+                <SimulationControls modelId={selectedFilePath ?? ""} />
               </>
             ) : (
               <EmptyState />
@@ -229,8 +251,28 @@ export default function App(): JSX.Element {
 
         {/* ADR-0043 §論点 5-A: Search panel (Ctrl+P / Ctrl+Shift+F で開く) */}
         <SearchPanel />
+
+        {/* ADR-0044 §論点 6: floating Scope panel (= Scope ダブルクリックで開く) */}
+        <ScopePanelContainer />
+
+        {/* ADR-0044 §論点 4: per-Scope プロット設定 dialog (= gear アイコンで開く) */}
+        <GlobalScopeSettingsDialog />
       </div>
     </ReactFlowProvider>
+  );
+}
+
+function GlobalScopeSettingsDialog(): JSX.Element | null {
+  const editingScopeSettingsId = useAppStore((s) => s.editingScopeSettingsId);
+  const setEditingScopeSettingsId = useAppStore(
+    (s) => s.setEditingScopeSettingsId,
+  );
+  if (!editingScopeSettingsId) return null;
+  return (
+    <ScopeSettingsDialog
+      scopeId={editingScopeSettingsId}
+      onClose={() => setEditingScopeSettingsId(null)}
+    />
   );
 }
 

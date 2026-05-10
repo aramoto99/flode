@@ -1,46 +1,45 @@
 // ADR-0023: Scope ストリームの可視化を uPlot 化。
-// 旧 canvas 自前実装 (ADR-0012 §(7) で「Phase 3 で uPlot に置換」と宣言) を完全置換し、
-// 100k 点規模で 60fps スクロールを担保する。
+// ADR-0044: per-scope プロット設定 + ヘッダー (= 設定 / 最大化 / panel 化ボタン)。
 //
 // データフロー:
 //   appStore.scopes[scopeId]: ScopeBuffer (SoA, Float64Array)
 //     -> ``buildAlignedData(buffer)``: uPlot.AlignedData の subarray view を生成
-//        (= ゼロコピー、length に応じて先頭から view を切る)
 //     -> UPlotChart に渡す
 //
-// uPlot options は ``buffer.n_signals`` + ``scopeId`` ごとに 1 回だけ生成し
+// uPlot options は ``buffer.n_signals`` + ``scopeId`` + settings ごとに生成して
 // useMemo で参照固定 (= UPlotChart の effect が再生成 trigger するのを抑える)。
 
 import uPlot from "uplot";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ScopeBuffer } from "../store/appStore";
+import {
+  DEFAULT_SCOPE_SETTINGS,
+  FALLBACK_COLORS,
+  canUseLogScale,
+  resolveSettings,
+  resolveSignalColor,
+} from "../lib/scopeSettings";
+import { type ScopeBuffer, useAppStore } from "../store/appStore";
+import type { ScopeSettings } from "../types/api";
 import { UPlotChart } from "./UPlotChart";
 
 interface ScopeViewProps {
   scopeId: string;
   buffer: ScopeBuffer;
+  /** ADR-0044 §論点 10: ``"inline"`` (Canvas 下部) / ``"panel"`` (floating window) */
+  formFactor?: "inline" | "panel";
+  /** ADR-0044 §論点 6: maximize 状態のときヘッダーは「元に戻す」ボタン */
+  isMaximized?: boolean;
+  /** ヘッダーを完全に非表示 (= 旧テスト互換用)。 */
+  hideHeader?: boolean;
 }
-
-/** Tailwind パレット 8 色ローテーション (ADR-0023 §Decision §(7))。 */
-const SCOPE_COLORS = [
-  "#0ea5e9", // sky-500
-  "#10b981", // emerald-500
-  "#f59e0b", // amber-500
-  "#f43f5e", // rose-500
-  "#8b5cf6", // violet-500
-  "#06b6d4", // cyan-500
-  "#84cc16", // lime-500
-  "#ec4899", // pink-500
-];
 
 /** ScopeBuffer から uPlot AlignedData (= ゼロコピー subarray view) を組み立てる。
  * @internal テスト用 export。
  */
 export function buildAlignedData(buffer: ScopeBuffer): uPlot.AlignedData {
   if (buffer.length === 0 || buffer.n_signals === 0) {
-    // 空データ: uPlot は最低限 [xs, ys1] を要求するので 1 系列の空 array を返す
     return [new Float64Array(0), new Float64Array(0)];
   }
   const xs = buffer.times.subarray(0, buffer.length);
@@ -48,70 +47,201 @@ export function buildAlignedData(buffer: ScopeBuffer): uPlot.AlignedData {
   return [xs, ...ys] as uPlot.AlignedData;
 }
 
-/** uPlot.Options を信号数 / scopeId / サイズから組み立てる。
+/** uPlot.Options を組み立てる。
+ *
+ * ADR-0044 §論点 4 / §論点 7: per-scope settings から
+ * - Y/X 軸スケール (auto / manual / log)
+ * - 凡例位置 (= legend.show + 配置は React 側で wrapper、本関数は show のみ)
+ * - グリッド (major / minor)
+ * - per-signal 線色 / 線幅
+ *
  * @internal テスト用 export。
  */
-export function buildOptions(scopeId: string, n_signals: number): uPlot.Options {
+export function buildOptions(
+  scopeId: string,
+  n_signals: number,
+  settings: ScopeSettings,
+  buffer?: ScopeBuffer,
+): uPlot.Options {
+  const resolved = resolveSettings(settings);
+  // ADR-0044 §論点 7: log で 0/負値があれば auto に fallback
+  const yMode =
+    resolved.y_mode === "log" && buffer && !canUseLogScale(buffer)
+      ? "auto"
+      : resolved.y_mode!;
+
   const series: uPlot.Series[] = [
     {}, // x 軸 (時間)
     ...Array.from({ length: n_signals }, (_, i): uPlot.Series => ({
       label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
-      stroke: SCOPE_COLORS[i % SCOPE_COLORS.length],
-      width: 1.5,
+      stroke: resolveSignalColor(resolved.signals, i),
+      width: resolved.signals?.[String(i)]?.width ?? 1.5,
       points: { show: false },
     })),
   ];
+
+  const xRange =
+    resolved.x_mode === "manual" &&
+    typeof resolved.x_min === "number" &&
+    typeof resolved.x_max === "number"
+      ? { min: resolved.x_min, max: resolved.x_max }
+      : undefined;
+  const yRange =
+    yMode === "manual" &&
+    typeof resolved.y_min === "number" &&
+    typeof resolved.y_max === "number"
+      ? { min: resolved.y_min, max: resolved.y_max }
+      : undefined;
+
   return {
-    width: 400, // ResizeObserver で実寸に追従するため初期値で良い
-    height: 192, // h-48 = 12rem = 192px
+    width: 400,
+    height: 192,
     series,
     scales: {
-      x: { time: false }, // シミュレーション時間 [s] は時刻として扱わない (= 数値軸)
+      x: {
+        time: false,
+        ...(xRange ? { auto: false, range: () => [xRange.min, xRange.max] } : {}),
+      },
+      y: {
+        ...(yMode === "log" ? { distr: 3 as const } : {}),
+        ...(yRange ? { auto: false, range: () => [yRange.min, yRange.max] } : {}),
+      },
     },
     axes: [
-      { stroke: "#94a3b8", grid: { stroke: "#e2e8f0" }, label: "t [s]" },
-      { stroke: "#94a3b8", grid: { stroke: "#e2e8f0" } },
+      {
+        stroke: "#94a3b8",
+        grid: { stroke: "#e2e8f0", show: resolved.grid_major !== false },
+        label: "t [s]",
+      },
+      {
+        stroke: "#94a3b8",
+        grid: { stroke: "#e2e8f0", show: resolved.grid_major !== false },
+      },
     ],
-    legend: { show: true, live: false },
+    legend: {
+      show: resolved.legend !== "off",
+      live: false,
+    },
     cursor: { show: true, drag: { x: true, y: false } },
   };
 }
 
 /**
  * Scope ストリームを uPlot で時系列描画するコンポーネント。
- *
- * 信号数 ``buffer.n_signals`` は最初のサンプルを受信するまで 0 で、その間は
- * placeholder (= 「No data」) を表示する。
  */
-export function ScopeView({ scopeId, buffer }: ScopeViewProps): JSX.Element {
+export function ScopeView({
+  scopeId,
+  buffer,
+  formFactor = "inline",
+  isMaximized = false,
+  hideHeader = false,
+}: ScopeViewProps): JSX.Element {
   const { t } = useTranslation();
-  // signals 数が変わったら uPlot を再生成する必要があるので、options を memo
-  // 依存に含める (= options 参照変更で UPlotChart が destroy → 再生成)。
-  const options = useMemo(
-    () => buildOptions(scopeId, Math.max(buffer.n_signals, 1)),
-    [scopeId, buffer.n_signals],
+  const editingModel = useAppStore((s) => s.editingModel);
+  const setEditingScopeSettingsId = useAppStore(
+    (s) => s.setEditingScopeSettingsId,
   );
-  // data は buffer の length が変わるたびに新参照を作る (= setData が走る)。
-  // ``buffer`` 参照だけでなく ``buffer.length`` を依存に明示することで、in-place
-  // 追記 (= buffer 参照は変わったが内部 typed array 参照は同一) でも data の
-  // 再構成 trigger が確実に走るよう意図を露出させる。
+  const openScopePanel = useAppStore((s) => s.openScopePanel);
+  const setMaximizedScopeId = useAppStore((s) => s.setMaximizedScopeId);
+  const closeScopePanel = useAppStore((s) => s.closeScopePanel);
+
+  const settings = editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
+
+  const options = useMemo(
+    () =>
+      buildOptions(scopeId, Math.max(buffer.n_signals, 1), settings, buffer),
+    [scopeId, buffer.n_signals, settings, buffer],
+  );
   const data = useMemo(
     () => buildAlignedData(buffer),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- length 変化で再計算
     [buffer, buffer.length],
   );
 
+  // ADR-0044 §論点 4 / §論点 6 / §論点 8: ヘッダー (= 設定 / 最大化 / panel 化)
+  const header = !hideHeader && (
+    <div className="flex h-6 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700">
+      <span className="font-mono font-medium">{scopeId}</span>
+      <div className="flex-1" />
+      <button
+        type="button"
+        title={t("scope.button.settings", "Settings")}
+        onClick={() => setEditingScopeSettingsId(scopeId)}
+        className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+      >
+        <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      {formFactor === "inline" && (
+        <>
+          <button
+            type="button"
+            title={
+              isMaximized
+                ? t("scope.button.restore", "Restore")
+                : t("scope.button.maximize", "Maximize")
+            }
+            onClick={() => setMaximizedScopeId(isMaximized ? null : scopeId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+              {isMaximized ? (
+                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+              ) : (
+                <path d="M3 3h7v2H5v5H3zM21 3h-7v2h5v5h2zM3 21h7v-2H5v-5H3zM21 21h-7v-2h5v-5h2z" />
+              )}
+            </svg>
+          </button>
+          <button
+            type="button"
+            title={t("scope.button.open_panel", "Open in floating panel")}
+            onClick={() => openScopePanel(scopeId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 3h7v7M10 21H3v-7M21 3l-9 9M3 21l9-9" />
+            </svg>
+          </button>
+        </>
+      )}
+      {formFactor === "panel" && (
+        <button
+          type="button"
+          title={t("scope.button.close_panel", "Close panel")}
+          onClick={() => closeScopePanel(scopeId)}
+          className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-rose-100 hover:text-rose-600"
+        >
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+
   if (buffer.length === 0) {
     return (
-      <div className="flex h-48 w-full items-center justify-center border border-slate-200 bg-white text-[12px] text-slate-400">
-        {t("scopeview.no_data", { scope_id: scopeId })}
+      <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
+        {header}
+        <div className="flex flex-1 items-center justify-center text-[12px] text-slate-400">
+          {t("scopeview.no_data", { scope_id: scopeId })}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-48 w-full border border-slate-200 bg-white">
-      <UPlotChart options={options} data={data} className="absolute inset-0" />
+    <div className={`flex w-full flex-col border border-slate-200 bg-white ${formFactor === "inline" ? "h-48" : "h-full"}`}>
+      {header}
+      <div className="relative flex-1">
+        <UPlotChart options={options} data={data} className="absolute inset-0" />
+      </div>
     </div>
   );
 }
+
+// FALLBACK_COLORS / SCOPE_COLORS の export 互換性 (旧テスト): re-export
+export { FALLBACK_COLORS as SCOPE_COLORS };

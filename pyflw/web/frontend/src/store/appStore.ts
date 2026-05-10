@@ -116,6 +116,31 @@ interface AppState {
   workspaceHash: string | null;
   workspaceAbsolutePath: string | null;
   setWorkspaceInfo: (hash: string | null, absolutePath: string | null) => void;
+
+  // ADR-0044 §論点 6 / §論点 11: 開いている floating Scope panel (scope_id の集合)。
+  // モデル切替 / closeTab で全 panel を閉じる。
+  scopePanels: string[];
+  openScopePanel: (scopeId: string) => void;
+  closeScopePanel: (scopeId: string) => void;
+  closeAllScopePanels: () => void;
+
+  // ADR-0044 §論点 6: maximize 状態 (= scope エリア内で 1 個だけを全画面化)。
+  // null のときは縦並び。値は scope_id。
+  maximizedScopeId: string | null;
+  setMaximizedScopeId: (id: string | null) => void;
+
+  // ADR-0044 §論点 4 / §論点 10: scope 設定編集中の scope_id (= ScopeSettingsDialog 制御)。
+  editingScopeSettingsId: string | null;
+  setEditingScopeSettingsId: (id: string | null) => void;
+
+  /**
+   * ADR-0044 §論点 4 / §論点 10: editingModel.scope_settings の partial 更新。
+   * モデル単位で永続化されるため applyEditingModel 経由で書き込む (= dirty 化、auto-save 対象)。
+   */
+  updateScopeSettings: (
+    scopeId: string,
+    partial: import("../types/api").ScopeSettings,
+  ) => void;
   /**
    * ファイルを新規 tab として開く、または既存 tab を active 化する。
    * @param path file path
@@ -257,6 +282,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceAbsolutePath: null,
   setWorkspaceInfo: (hash, absolutePath) =>
     set({ workspaceHash: hash, workspaceAbsolutePath: absolutePath }),
+
+  // ADR-0044 §論点 6 / §論点 11
+  scopePanels: [],
+  openScopePanel: (scopeId) =>
+    set((state) => {
+      if (state.scopePanels.includes(scopeId)) {
+        // 既に開いていれば末尾に move (= bring to front)
+        return {
+          scopePanels: [
+            ...state.scopePanels.filter((id) => id !== scopeId),
+            scopeId,
+          ],
+        };
+      }
+      return { scopePanels: [...state.scopePanels, scopeId] };
+    }),
+  closeScopePanel: (scopeId) =>
+    set((state) => ({
+      scopePanels: state.scopePanels.filter((id) => id !== scopeId),
+    })),
+  closeAllScopePanels: () => set({ scopePanels: [] }),
+
+  maximizedScopeId: null,
+  setMaximizedScopeId: (id) => set({ maximizedScopeId: id }),
+
+  editingScopeSettingsId: null,
+  setEditingScopeSettingsId: (id) => set({ editingScopeSettingsId: id }),
+
+  updateScopeSettings: (scopeId, partial) => {
+    const current = get().editingModel;
+    if (!current) return;
+    const next = {
+      ...current,
+      scope_settings: {
+        ...(current.scope_settings ?? {}),
+        [scopeId]: {
+          ...(current.scope_settings?.[scopeId] ?? {}),
+          ...partial,
+        },
+      },
+    };
+    set((state) => ({
+      editingModel: next,
+      dirty: true,
+      history: {
+        past: [...state.history.past, JSON.parse(JSON.stringify(current))],
+        future: [],
+      },
+      lastMergeKey: `scope-settings:${scopeId}`,
+    }));
+  },
   selectFilePath: (path) =>
     set((state) => {
       // tabs[] への反映: path === null は全閉じ、それ以外は **既存 tab があれば

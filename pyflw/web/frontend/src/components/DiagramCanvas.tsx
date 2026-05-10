@@ -566,6 +566,8 @@ export function DiagramCanvas(): JSX.Element {
 
   // ADR-0021 §(4): is_container=true なノード (= Subsystem サブクラス) を
   // ダブルクリックでドリルダウンする。registry の `is_container` を参照。
+  // ADR-0044 §論点 8-A: Scope / XYGraph をダブルクリックで floating panel を開く。
+  const openScopePanel = useAppStore((s) => s.openScopePanel);
   const onNodeDoubleClick = (
     _event: React.MouseEvent,
     node: BlockNode,
@@ -573,6 +575,11 @@ export function DiagramCanvas(): JSX.Element {
     const meta = registryMap.get(node.data.blockType);
     if (meta?.is_container) {
       drilldownInto(node.id);
+      return;
+    }
+    const t = node.data.blockType;
+    if (t.endsWith(".Scope") || t.endsWith(".XYGraph")) {
+      openScopePanel(node.id);
     }
   };
 
