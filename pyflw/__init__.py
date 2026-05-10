@@ -1,6 +1,7 @@
-# v0.16.0 (ADR-0041): File API + --workspace CLI + /api/v1/simulations 拡張、
-# /api/v1/models/* deprecation 予告 (v3.0 で削除)。
-__version__ = "0.16.0"
+# v0.17.0 (ADR-0041 §論点 7-A / 8-A): frontend FileBrowser サイドバー新設 +
+# selectedFilePath state + File API ベースの load/save 経路。legacy
+# /api/v1/models 経路と coexist (= 1 セッション 1 経路、相互排他)。
+__version__ = "0.17.0"
 
 from .analysis import (
     BodeResponse,

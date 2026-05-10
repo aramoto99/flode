@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-10 — FileBrowser サイドバー (ADR-0041 §論点 7-A / 8-A)
+
+SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集」の **frontend 段階 part 1**。
+v0.16.0 で導入した backend File API を前提に、左サイドバーに **JupyterLab 流儀
+の workspace ツリービュー** を新設し、ユーザーが ``.flw.json`` ファイルを直接
+ブラウズしてクリック 1 つで開けるようにした。
+
+**v0.17.0 は後方互換 minor**: 既存 endpoint 削除なし、Public API 凍結
+(ADR-0038) を破壊せず、UI は既存 legacy フロー (``selectedModelId``) と
+新 file path フロー (``selectedFilePath``) を **1 セッション 1 経路の相互排他**
+で coexist。
+
+### Added
+
+- **左サイドバー上部に ``FileBrowser`` コンポーネント** (= ADR-0041 §論点 7-A、
+  自前実装):
+  - workspace tree 表示 (1 階層ずつ展開、React Query で TanStack キャッシュ)
+  - ``.flw.json`` クリックで File API GET → ``editingModel`` に load
+  - その他のファイル (= ``.flwlib.json`` 等) は disabled 表示
+  - Refresh ボタン
+  - 503 (= legacy ``--model-dir`` モード) なら「File API 無効」案内表示
+- **state 拡張** (``appStore.ts``、ADR-0041 §論点 8-A):
+  - ``selectedFilePath: string | null`` (= workspace 相対 POSIX path)
+  - ``editingFileMtime`` / ``editingFileEtag`` (= 楽観ロック用)
+  - ``selectFilePath(path)`` action (= legacy ``selectedModelId`` を nullify
+    して 1 セッション 1 経路を強制)
+- **File API client wrapper** ``api/filesApi.ts`` (= ``fileTree`` /
+  ``getFileContent`` / ``putFileContent`` / ``renameFile`` / ``deleteFile`` /
+  ``mkdir`` / ``nextUntitledFilePath``、``FileApiUnavailableError`` /
+  ``EtagMismatchError`` の専用例外型付き)
+
+### Changed
+
+- **``useAutoSave``** が ``selectedFilePath`` セット時は File API
+  (``PUT /api/v1/files/content`` + etag 楽観ロック) で保存、それ以外は
+  legacy ``PUT /api/v1/models/{id}``。``Ctrl+S`` も同経路で flush
+- **``StatusBar``** / **``TabStrip``** / **``MenuBar`` Close** が
+  ``selectedFilePath`` 表示と Close 連動を実装。``TabStrip`` は basename
+  (= ``path.split("/").pop()``) を主表示、フルパスを ``title`` で hover 表示
+- **``DiagramCanvas``** の ``modelId`` prop を nullable 化 (= File API モード
+  で ``null`` を渡すと legacy query を skip、``editingModel`` を直接利用)
+- **``App.tsx``** 左サイドバーを 2 段組 (上 ``FileBrowser`` 40% / 下
+  ``BlockPalette`` 60%) に再構成
+
+### Internal / Tests
+
+- **vitest +6 件** (= ``tests/fileBrowser.test.tsx``、tree rendering / file open
+  click / non-flw filter / 合計 **245 件 pass**)
+- TypeScript strict mode clean、bundle 192.18 KB gzip (= ADR-0023 1 MB 予算の
+  19.2%)
+
+### v0.18.0 送り (= ADR-0041 §論点 7-A / 8 / 9 / 10 / 11 段階移行)
+
+- 右クリック context menu (Rename / Duplicate / Delete / New file / New folder)
+- inline rename (F2)
+- drag-drop でフォルダ移動
+- 全ファイル表示 toggle (現状は tree で全ファイル列挙、有効フィルタは未実装)
+- ``SaveAsModal`` / ``DirtyConfirmModal``
+- ``useExternalChangesPoll`` (= 5 秒 mtime/etag polling、ADR-0041 §論点 11-A)
+- ``MenuBar`` の File メニュー全面移行 (= New file in workspace、Save As path
+  指定モーダル)
+- ``useSimulation`` を ``model_path`` body 拡張 (= 現状 legacy ``model_id``
+  経路でしか実行不可、File API モードでは Simulation Controls が非表示)
+
 ## [0.16.0] - 2026-05-10 — File API + ワークスペース対応 (ADR-0041 §1〜§5)
 
 SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集 (JupyterLab 流儀)」の **backend

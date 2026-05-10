@@ -47,7 +47,10 @@ import {
 import type { FlwModel } from "../types/api";
 
 interface DiagramCanvasProps {
-  modelId: string;
+  /** legacy ``selectedModelId`` 経路の model id。``selectedFilePath`` (= File API
+   *  経路、ADR-0041 §論点 8-A) では null を渡し、内部で legacy query を skip。
+   *  editingModel は FileBrowser onClick が事前にセット済前提。 */
+  modelId: string | null;
 }
 
 // React Flow に渡すカスタムノード type 表 (modelToDiagram で type: "blockNode" を返す)。
@@ -62,10 +65,13 @@ const PAN_BUTTONS = [1, 2];
 
 export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
   const { t } = useTranslation();
-  // サーバ最新モデルを fetch (= editingModel の初期値)
+  // サーバ最新モデルを fetch (= editingModel の初期値)。
+  // ``modelId == null`` (= File API モード) では legacy query を skip。FileBrowser
+  // onClick が editingModel を直接セット済 (ADR-0041 §論点 8-A)。
   const { data: serverModel, isLoading, error } = useQuery({
-    queryKey: ["model", modelId],
-    queryFn: () => getModel(modelId),
+    queryKey: ["model", modelId ?? "__none__"],
+    queryFn: () => getModel(modelId!),
+    enabled: modelId !== null,
   });
   const { data: registry } = useQuery({
     queryKey: ["blocks-registry"],
@@ -218,9 +224,9 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     };
   }, [reactFlow]);
 
-  // モデル切替 / 初期 fetch 完了で editingModel を初期化
+  // モデル切替 / 初期 fetch 完了で editingModel を初期化 (legacy 経路のみ)
   useEffect(() => {
-    if (serverModel && selectedModelId === modelId) {
+    if (modelId !== null && serverModel && selectedModelId === modelId) {
       // 既に同 model を編集中ならサーバ更新を上書きしない (auto-save 中の race
       // 対策: PUT 直後に再 fetch されると編集が消える)
       const current = useAppStore.getState().editingModel;
@@ -238,17 +244,20 @@ export function DiagramCanvas({ modelId }: DiagramCanvasProps): JSX.Element {
     pushToast({ severity: "warning", message: msg });
   };
 
-  if (isLoading) {
-    return <div className="p-4 text-sm text-gray-500">{t("diagram.loading")}</div>;
+  // legacy mode の loading / error 判定 (modelId が null の File API mode では skip)
+  if (modelId !== null) {
+    if (isLoading) {
+      return <div className="p-4 text-sm text-gray-500">{t("diagram.loading")}</div>;
+    }
+    if (error) {
+      return (
+        <div className="p-4 text-sm text-red-600">
+          {t("diagram.load_failed", { message: (error as Error).message })}
+        </div>
+      );
+    }
   }
-  if (error) {
-    return (
-      <div className="p-4 text-sm text-red-600">
-        {t("diagram.load_failed", { message: (error as Error).message })}
-      </div>
-    );
-  }
-  const model = editingModel ?? serverModel;
+  const model = editingModel ?? serverModel ?? null;
   if (!model) {
     return <div className="p-4 text-sm text-gray-500">{t("diagram.no_model")}</div>;
   }

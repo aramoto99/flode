@@ -8,24 +8,39 @@ import { useAppStore } from "../store/appStore";
 export function TabStrip(): JSX.Element {
   const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const dirty = useAppStore((s) => s.dirty);
   const selectModel = useAppStore((s) => s.selectModel);
+  const selectFilePath = useAppStore((s) => s.selectFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setDirty = useAppStore((s) => s.setDirty);
 
+  // ADR-0041 §論点 8-A: file path 優先で basename 表示、無ければ legacy id 表示
+  const fullDisplay = selectedFilePath ?? selectedModelId;
+  const tabLabel = selectedFilePath
+    ? selectedFilePath.split("/").pop() || selectedFilePath
+    : selectedModelId;
+
   const handleClose = (): void => {
-    selectModel(null);
+    if (selectedFilePath !== null) {
+      selectFilePath(null);
+    } else {
+      selectModel(null);
+    }
     setEditingModel(null);
     setDirty(false);
   };
 
   return (
     <div className="flex items-end border-b border-slate-300 bg-slate-200/60 pl-1 pt-1">
-      {selectedModelId ? (
+      {fullDisplay ? (
         <div className="group relative flex max-w-[260px] items-center gap-2 border-l border-r border-t border-slate-300 bg-white px-3 py-1 text-[12px]">
           <DocIcon />
-          <span className="truncate font-medium text-slate-800">
-            {selectedModelId}
+          <span
+            className="truncate font-medium text-slate-800"
+            title={fullDisplay}
+          >
+            {tabLabel}
           </span>
           {dirty && (
             <span

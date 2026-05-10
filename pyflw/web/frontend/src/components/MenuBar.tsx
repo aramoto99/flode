@@ -82,7 +82,9 @@ export function MenuBar(): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
 
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const selectModel = useAppStore((s) => s.selectModel);
+  const selectFilePath = useAppStore((s) => s.selectFilePath);
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
@@ -165,7 +167,16 @@ export function MenuBar(): JSX.Element {
   };
   const handleSave = async (): Promise<void> => {
     setOpenMenu(null);
-    if (!selectedModelId || !editingModel) return;
+    if (!editingModel) return;
+    // ADR-0041 §論点 8-A: file path モードでは Ctrl+S は useAutoSave 内で File API
+    // PUT を発射する (= 本ハンドラを通る代わりに既存の Ctrl+S handler が flush
+    // を呼ぶ)。本 handle は legacy `selectedModelId` 経路の即時保存のみ担当。
+    if (selectedFilePath !== null) {
+      // useAutoSave の Ctrl+S と二重保存を避けるため何もしない (= flush は
+      // useAutoSave 側の keydown handler が担当)
+      return;
+    }
+    if (!selectedModelId) return;
     await updateModel(selectedModelId, editingModel);
     setDirty(false);
     await queryClient.invalidateQueries({
@@ -189,7 +200,12 @@ export function MenuBar(): JSX.Element {
   };
   const handleClose = (): void => {
     setOpenMenu(null);
-    selectModel(null);
+    // ADR-0041 §論点 8-A: file path 経路 / legacy 経路どちらかを閉じる
+    if (selectedFilePath !== null) {
+      selectFilePath(null);
+    } else {
+      selectModel(null);
+    }
     setEditingModel(null);
     setDirty(false);
   };
@@ -210,7 +226,11 @@ export function MenuBar(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const hasModel = selectedModelId !== null;
+  const hasModel = selectedModelId !== null || selectedFilePath !== null;
+  // ADR-0041 §論点 8-A: legacy `selectedModelId` 経路でしか動かない操作 (Save As /
+  // Rename / Delete) は File API モードでは disable。v0.18.0 で path-based の同
+  // 機能を実装する。
+  const hasLegacyModel = selectedModelId !== null;
 
   // ---- Menu definitions ----
   const fileItems: MenuItemSpec[] = [
@@ -223,14 +243,14 @@ export function MenuBar(): JSX.Element {
       onClick: handleSave,
       disabled: !hasModel,
     },
-    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasModel },
-    { label: t("menu.file.rename"), onClick: handleRename, disabled: !hasModel },
+    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasLegacyModel },
+    { label: t("menu.file.rename"), onClick: handleRename, disabled: !hasLegacyModel },
     { label: "", divider: true },
     { label: t("menu.file.close"), onClick: handleClose, disabled: !hasModel },
     {
       label: t("menu.file.delete"),
       onClick: handleDelete,
-      disabled: !hasModel,
+      disabled: !hasLegacyModel,
       destructive: true,
     },
   ];

@@ -10,11 +10,14 @@ import { useAppStore } from "../store/appStore";
 export function StatusBar(): JSX.Element {
   const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
   const dirty = useAppStore((s) => s.dirty);
   const status = useAppStore((s) => s.status);
   const progress = useAppStore((s) => s.progress);
+  // ADR-0041 §論点 8-A: file path 優先表示、無ければ legacy model id を表示
+  const displayName = selectedFilePath ?? selectedModelId;
 
   const stats = useMemo(() => {
     if (!editingModel) return null;
@@ -70,12 +73,14 @@ export function StatusBar(): JSX.Element {
 
       <Sep />
 
-      {/* model id + dirty */}
+      {/* model id / file path + dirty */}
       <span>
-        {selectedModelId ? (
+        {displayName ? (
           <>
             <span className="text-slate-500">{t("statusbar.label.file")}</span>{" "}
-            <span className="font-mono">{selectedModelId}</span>
+            <span className="font-mono" title={displayName}>
+              {displayName}
+            </span>
             {dirty && (
               <span
                 className="ml-1 text-amber-600"

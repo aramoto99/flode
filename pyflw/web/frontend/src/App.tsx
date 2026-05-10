@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
 import { DiagramCanvas } from "./components/DiagramCanvas";
+import { FileBrowser } from "./components/FileBrowser";
 import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopeView } from "./components/ScopeView";
@@ -22,9 +23,15 @@ import { useAppStore } from "./store/appStore";
 export default function App(): JSX.Element {
   const { t } = useTranslation();
   const selectedModelId = useAppStore((s) => s.selectedModelId);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
   const scopes = useAppStore((s) => s.scopes);
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
+  // ADR-0041 §論点 8-A: ``selectedFilePath`` か ``selectedModelId`` のどちらかが
+  // セットされていればモデルが開かれている扱い。1 セッション 1 経路の前提
+  // なので両者は ``selectFilePath`` / ``selectModel`` 内で相互排他。
+  const hasOpenedModel = selectedModelId !== null || selectedFilePath !== null;
+  const displayName = selectedFilePath ?? selectedModelId ?? "untitled";
 
   // ADR-0019 §(5): debounce auto-save / Ctrl+S / beforeunload
   useAutoSave();
@@ -52,9 +59,7 @@ export default function App(): JSX.Element {
           <div className="flex items-center gap-2">
             <span className="font-semibold tracking-tight">pyflw</span>
             <span className="text-slate-400">—</span>
-            <span className="text-slate-300">
-              {selectedModelId ?? "untitled"}
-            </span>
+            <span className="text-slate-300">{displayName}</span>
           </div>
           <span className="text-slate-400">v{__APP_VERSION__}</span>
         </div>
@@ -70,23 +75,33 @@ export default function App(): JSX.Element {
 
         {/* Main 3-column area */}
         <div className="grid min-h-0 grid-cols-[240px_1fr_280px] overflow-hidden">
-          {/* Left: Library / Palette */}
-          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
-            <PanelHeader>{t("panel.library")}</PanelHeader>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <BlockPalette />
+          {/* Left: Workspace tree (top) + Library palette (bottom) */}
+          <aside className="grid min-h-0 grid-rows-[40%_60%] overflow-hidden border-r border-slate-300 bg-white">
+            {/* ADR-0041 §論点 7-A: workspace tree (`.flw.json` を直接開ける、JupyterLab 流儀) */}
+            <div className="flex min-h-0 flex-col overflow-hidden border-b border-slate-300">
+              <FileBrowser />
+            </div>
+            {/* Library palette (Phase 3 で導入、ADR-0019) */}
+            <div className="flex min-h-0 flex-col overflow-hidden">
+              <PanelHeader>{t("panel.library")}</PanelHeader>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <BlockPalette />
+              </div>
             </div>
           </aside>
 
           {/* Center: canvas + sim controls + scopes */}
           <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
-            {selectedModelId ? (
+            {hasOpenedModel ? (
               <>
                 <Breadcrumb />
                 <div className="flex-1 border-b border-slate-300 bg-white">
                   <DiagramCanvas modelId={selectedModelId} />
                 </div>
-                <SimulationControls modelId={selectedModelId} />
+                {/* SimulationControls は legacy `selectedModelId` 前提で `model_id`
+                    body を送るため、File API モードでは一旦非表示 (= v0.18.0 で
+                    `model_path` 拡張を frontend に取り込む際に再導入)。 */}
+                {selectedModelId && <SimulationControls modelId={selectedModelId} />}
                 {Object.entries(scopes).length > 0 && (
                   <div className="flex flex-col gap-2 overflow-y-auto border-t border-slate-300 bg-white p-2">
                     {Object.entries(scopes).map(([scopeId, buffer]) => {
@@ -121,8 +136,8 @@ export default function App(): JSX.Element {
           {/* Right: Inspector */}
           <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-slate-300 bg-white">
             <PanelHeader>{t("panel.inspector")}</PanelHeader>
-            {selectedModelId ? (
-              <ParameterPanel modelId={selectedModelId} />
+            {hasOpenedModel ? (
+              <ParameterPanel modelId={selectedModelId ?? selectedFilePath ?? ""} />
             ) : (
               <div className="p-3 text-[11px] text-slate-400">
                 {t("app.inspector.locked")}
