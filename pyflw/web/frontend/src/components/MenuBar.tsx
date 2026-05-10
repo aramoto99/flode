@@ -20,6 +20,11 @@ import {
   setLanguage,
   type SupportedLanguage,
 } from "../i18n";
+import {
+  clearRecentFiles,
+  readRecentFiles,
+  removeRecentFile,
+} from "../lib/recentFiles";
 import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import {
@@ -84,6 +89,12 @@ export function MenuBar(): JSX.Element {
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
+  const workspaceHash = useAppStore((s) => s.workspaceHash);
+  // ADR-0043 §論点 4: Recent Files の再読込トリガー (= recent 変更時に再描画)
+  const [recentRev, setRecentRev] = useState(0);
+  const recentFiles =
+    workspaceHash !== null ? readRecentFiles(workspaceHash) : [];
+  void recentRev; // recentRev が変わると再 read される (= deps trigger)
 
   const queryClient = useQueryClient();
 
@@ -215,10 +226,69 @@ export function MenuBar(): JSX.Element {
 
   const hasModel = selectedFilePath !== null;
 
+  // ADR-0043 §論点 4: Recent ファイルを開く (= openFileInTab + move-to-front)
+  const handleOpenRecent = async (path: string): Promise<void> => {
+    setOpenMenu(null);
+    if (!workspaceHash) return;
+    try {
+      const data = await getFileContent(path);
+      openFileInTab(path, data.content, data.mtime, data.etag);
+      const { addRecentFile } = await import("../lib/recentFiles");
+      addRecentFile(workspaceHash, path);
+      setRecentRev((r) => r + 1);
+    } catch (e) {
+      console.error("Failed to open recent file:", path, e);
+      window.alert(
+        t("recent.open_failed", "Failed to open: {{path}}", { path }),
+      );
+      // 開けないファイルは prune
+      removeRecentFile(workspaceHash, path);
+      setRecentRev((r) => r + 1);
+    }
+  };
+
+  const handleRemoveRecent = (path: string): void => {
+    if (!workspaceHash) return;
+    removeRecentFile(workspaceHash, path);
+    setRecentRev((r) => r + 1);
+  };
+
+  const handleClearRecent = (): void => {
+    if (!workspaceHash) return;
+    clearRecentFiles(workspaceHash);
+    setRecentRev((r) => r + 1);
+    setOpenMenu(null);
+  };
+
   // ---- Menu definitions ----
+  // ADR-0043 §論点 4: Recent Files を File menu に inline 展開。最大 10 件、
+  // 末尾に Clear Recent。空なら "(No recent)" 表示で disabled。
+  const recentItems: MenuItemSpec[] = recentFiles.length > 0
+    ? [
+        ...recentFiles.map<MenuItemSpec>((path) => ({
+          label: path,
+          onClick: () => void handleOpenRecent(path),
+        })),
+        { label: "", divider: true },
+        {
+          label: t("menu.file.clear_recent", "Clear Recent"),
+          onClick: handleClearRecent,
+        },
+      ]
+    : [
+        {
+          label: t("menu.file.no_recent", "(No recent files)"),
+          disabled: true,
+        },
+      ];
+
   const fileItems: MenuItemSpec[] = [
     { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: () => void handleNew() },
     { label: t("menu.file.open"), shortcut: "Ctrl+O", onClick: handleOpen, disabled: true },
+    { label: "", divider: true },
+    // ADR-0043 §論点 4: Recent Files セクション
+    { label: t("menu.file.recent", "Recent Files"), disabled: true },
+    ...recentItems,
     { label: "", divider: true },
     {
       label: t("menu.file.save"),
@@ -236,6 +306,7 @@ export function MenuBar(): JSX.Element {
       destructive: true,
     },
   ];
+  void handleRemoveRecent; // 個別削除は v3.x 以降の UI 拡張で再導入
 
   // v0.20.0: Help メニュー
   const helpItems: MenuItemSpec[] = [

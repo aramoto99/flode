@@ -1,13 +1,11 @@
-# v0.22.0 (minor、後方互換): ADR-0042 採択。``simulator.t_end`` を ``number | "inf"``
-# Union 化し、Toolbar Stop Time フィールドに ``"inf"`` (case-insensitive) を入力する
-# と Stop ボタンを押すまで実行する Simulink 互換 unbounded run を実現。
-# ``Simulator.run`` の SM-A / SM-B ループを ``while True`` に refactor、各ステップ
-# は ``solve_ivp`` を有限 ``(t, t+dt_base)`` 区間で呼び続けるため SciPy
-# ``t_bound=inf`` 仕様未対応問題は構造的に回避。Scope は ``buffer_mode``
-# (``"ring"`` default / ``"bounded"`` / ``"unbounded"``) と ``buffer_capacity=100_000``
-# を獲得、frontend ``scopeBuffer`` も ``MAX_SAMPLES=100_000`` で ring 化、長時間
-# 実行で OOM を防ぐ。ADR-0023 §Decision §(2) を部分 amend。
-__version__ = "0.22.0"
+# v0.23.0 (minor、後方互換): ADR-0043 採択。ワークスペース機能強化:
+# (a) 前回 active file の自動復元 (= localStorage)、(b) Recent Files メニュー
+# (= workspace 単位、上限 10)、(c) 複数ファイル同時編集 (= TabStrip N タブ +
+# Ctrl+Tab / Ctrl+Shift+Tab + middle-click close)、(d) ファイル / 内容検索
+# (= rapidfuzz fuzzy path + substring content、Ctrl+P / Ctrl+Shift+F、backend
+# `/api/v1/files/search`、`.gitignore` 尊重)。新規 backend endpoint
+# `/api/v1/files/workspace_info`、新規依存 `rapidfuzz` / `pathspec`。
+__version__ = "0.23.0"
 
 from .analysis import (
     BodeResponse,

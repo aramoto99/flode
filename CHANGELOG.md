@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-05-11 — ワークスペース機能強化 (Recent / 複数タブ / 検索)
+
+ADR-0043 採択。FileBrowser を起点に、日常使いに耐えるワークスペース UX を組む。
+**完全後方互換** (= 既存 `.flw.json` は無改変、schema 0.8 維持)。詳細は ADR-0043
+を参照。
+
+### Added
+
+- **前回 active file の自動復元**: 起動時に最後に開いていたファイルを
+  workspace 単位で localStorage から復元 (`pyflw.last_active.<workspace_hash>`)
+- **Recent Files メニュー**: File メニューに最近開いたファイル一覧を表示。
+  上限 10 件、workspace 単位で別エントリ管理 (`pyflw.recent.<hash>`)、
+  「履歴をクリア」アクション
+- **複数ファイル同時編集 (multi-tab)**: TabStrip が N タブに対応。
+  - クリックでタブ切替
+  - middle-click でタブ閉じ
+  - **Ctrl+Tab** / **Ctrl+Shift+Tab** で循環切替
+  - 各タブが独立した ``editingModel`` / ``dirty`` / undo-redo 履歴を保持
+  - rename はタブ追従、delete は active タブを閉じて隣接へ切替
+- **検索 (Ctrl+P / Ctrl+Shift+F)**: VSCode 風 overlay panel:
+  - **Ctrl+P**: ファイル名 fuzzy 検索 (rapidfuzz WRatio、score ≥ 50)
+  - **Ctrl+Shift+F**: 内容 substring 検索 (case-insensitive、line-by-line)
+  - workspace 直下の `.gitignore` を尊重 (= `pathspec`)
+  - hard-coded 除外: `.git` / `.venv` / `__pycache__` / `node_modules` /
+    `dist` / `build` / `.mypy_cache` / `.ruff_cache` / `.pytest_cache`
+  - シンボリックリンクは辿らない (= 無限ループ防止)
+  - 結果上限 100 件、超過時 truncated フラグ
+- **新 backend endpoint**:
+  - `GET /api/v1/files/workspace_info` → `{absolute_path, hash}` (hash =
+    `sha256(absolute_path)[:16]`)、frontend が localStorage キー suffix に使用
+  - `GET /api/v1/files/search?q=&kind=path|content&limit=` → 検索結果
+- **新依存** (gui extras): `rapidfuzz>=3.6`、`pathspec>=0.12`
+
+### Migration
+
+なし。完全後方互換。既存利用者は何もしなくても新機能が利用可能。
+`pyflw-server --workspace=PATH` の起動コマンドは変わらず。
+
+### Verification
+
+- backend pytest: **1233 passed / 2 skipped** (= 1219 prior + 14 new for
+  workspace_info / search)
+- frontend vitest: **281 passed** (regression なし)
+- typecheck + production build: clean
+
 ## [0.22.0] - 2026-05-10 — Stop Time = `"inf"` (無限実行) + Scope ring buffer
 
 ADR-0042 採択。Simulink 互換で Toolbar の Stop Time フィールドに `"inf"`

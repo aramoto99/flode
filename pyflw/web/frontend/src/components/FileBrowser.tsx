@@ -78,6 +78,12 @@ export function FileBrowser(): JSX.Element {
         // 旧 selectFilePath + setEditingModel + setEditingFileMeta + setDirty の
         // 4 連続 set より race / dirty flag 中間状態の問題が起きにくい。
         openFileInTab(path, resp.content, resp.mtime, resp.etag);
+        // ADR-0043 §論点 4: Recent Files に move-to-front。
+        const hash = useAppStore.getState().workspaceHash;
+        if (hash) {
+          const { addRecentFile } = await import("../lib/recentFiles");
+          addRecentFile(hash, path);
+        }
       } catch (e) {
         console.error("Failed to open file:", path, e);
       }

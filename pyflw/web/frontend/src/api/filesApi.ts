@@ -159,6 +159,48 @@ export async function mkdir(path: string): Promise<void> {
   await _fetch<void>(`${API_BASE}/mkdir?${_query(path)}`, { method: "POST" });
 }
 
+// ADR-0043 §論点 1-A / §論点 8-A: workspace_info
+export interface WorkspaceInfoResponse {
+  absolute_path: string;
+  hash: string;
+}
+
+export async function getWorkspaceInfo(): Promise<WorkspaceInfoResponse> {
+  return _fetch<WorkspaceInfoResponse>(`${API_BASE}/workspace_info`);
+}
+
+// ADR-0043 §論点 5-A: search
+export type SearchKind = "path" | "content";
+
+export interface SearchResultEntry {
+  path: string;
+  /** kind=path のみ。0-100 の rapidfuzz スコア。 */
+  score?: number;
+  /** kind=content のみ。1-based 行番号。 */
+  line_no?: number;
+  /** kind=content のみ。マッチ行 (200 文字 truncated)。 */
+  line_content?: string;
+}
+
+export interface SearchResponse {
+  kind: SearchKind;
+  results: SearchResultEntry[];
+  truncated: boolean;
+}
+
+export async function searchFiles(
+  q: string,
+  kind: SearchKind = "path",
+  limit: number = 100,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({
+    q,
+    kind,
+    limit: String(limit),
+  });
+  return _fetch<SearchResponse>(`${API_BASE}/search?${params.toString()}`);
+}
+
 /**
  * Untitled<N>.flw.json の N を採番する (= 既存 tree 内で衝突しない最小 N)。
  * ``path.basename`` レベルで判定するため、サブディレクトリの同名ファイルは無視。

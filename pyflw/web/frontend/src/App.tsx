@@ -1,6 +1,8 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+
+import { getWorkspaceInfo } from "./api/filesApi";
 
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
@@ -9,6 +11,7 @@ import { FileBrowser } from "./components/FileBrowser";
 import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopeView } from "./components/ScopeView";
+import { SearchPanel } from "./components/SearchPanel";
 import { SimulationControls } from "./components/SimulationControls";
 import { StatusBar } from "./components/StatusBar";
 import { TabStrip } from "./components/TabStrip";
@@ -41,6 +44,67 @@ export default function App(): JSX.Element {
   useExternalChangesPoll();
   // Simulink 風キーボードショートカット (Ctrl+T/A/C/V, Esc, Enter)
   useShortcuts();
+
+  // ADR-0043 §論点 1-A / §論点 8-A: startup で workspace_info を fetch、
+  // localStorage キーの suffix に使う hash を store に保存。Recent Files /
+  // タブ復元 / Search panel が参照する。完了後、最後に開いていた active file
+  // path (= localStorage `pyflw.last_active.<hash>`) を復元する。
+  const setWorkspaceInfo = useAppStore((s) => s.setWorkspaceInfo);
+  const openFileInTab = useAppStore((s) => s.openFileInTab);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const info = await getWorkspaceInfo();
+        if (cancelled) return;
+        setWorkspaceInfo(info.hash, info.absolute_path);
+
+        // 最後に開いていた active file を復元 (ADR-0043 §論点 8-A)
+        const lastKey = `pyflw.last_active.${info.hash}`;
+        const lastPath = window.localStorage.getItem(lastKey);
+        if (!lastPath) return;
+        // 既に store に何か開いていたら復元しない (= ユーザーが手動で何か
+        // 開いた直後に restore が走るのを避ける)
+        if (useAppStore.getState().selectedFilePath !== null) return;
+        try {
+          const { getFileContent } = await import("./api/filesApi");
+          const data = await getFileContent(lastPath);
+          if (cancelled) return;
+          openFileInTab(lastPath, data.content, data.mtime, data.etag);
+        } catch (e) {
+          // 復元失敗 (= 削除された / アクセス不能) は黙って無視、key も削除
+          console.warn("Failed to restore last active file:", lastPath, e);
+          window.localStorage.removeItem(lastKey);
+        }
+      } catch (e) {
+        console.warn("Failed to fetch workspace_info:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setWorkspaceInfo, openFileInTab]);
+
+  // ADR-0043 §論点 8-A: active file 変更時に localStorage に永続化 (= 次回 startup で復元)
+  const activeTabFilePath = useAppStore((s) => s.activeTabFilePath);
+  const workspaceHash = useAppStore((s) => s.workspaceHash);
+  useEffect(() => {
+    if (!workspaceHash) return;
+    const key = `pyflw.last_active.${workspaceHash}`;
+    if (activeTabFilePath) {
+      try {
+        window.localStorage.setItem(key, activeTabFilePath);
+      } catch {
+        // quota / private mode は黙って無視
+      }
+    } else {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        // 同上
+      }
+    }
+  }, [activeTabFilePath, workspaceHash]);
 
   // 各 scope_id がどのブロック type かを引くためのマップ (現スコープ内のみ)
   const blockTypeById = useMemo(() => {
@@ -162,6 +226,9 @@ export default function App(): JSX.Element {
 
         {/* ADR-0030: グローバル toast container (fixed positioning なので grid 末尾でも OK)。 */}
         <ToastContainer />
+
+        {/* ADR-0043 §論点 5-A: Search panel (Ctrl+P / Ctrl+Shift+F で開く) */}
+        <SearchPanel />
       </div>
     </ReactFlowProvider>
   );

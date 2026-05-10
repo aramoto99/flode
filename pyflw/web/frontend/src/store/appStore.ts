@@ -111,6 +111,11 @@ interface AppState {
   // 上位 ``selectedFilePath`` / ``editingModel`` 等は active tab と常に同期される。
   tabs: TabSnapshot[];
   activeTabFilePath: string | null;
+  // ADR-0043 §論点 1-A / §論点 8-A: workspace 情報 (= startup で fetch)。
+  // hash は localStorage キーの suffix に使う (= workspace 単位 scope)。
+  workspaceHash: string | null;
+  workspaceAbsolutePath: string | null;
+  setWorkspaceInfo: (hash: string | null, absolutePath: string | null) => void;
   /**
    * ファイルを新規 tab として開く、または既存 tab を active 化する。
    * @param path file path
@@ -248,6 +253,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedFilePath: null,
   tabs: [],
   activeTabFilePath: null,
+  workspaceHash: null,
+  workspaceAbsolutePath: null,
+  setWorkspaceInfo: (hash, absolutePath) =>
+    set({ workspaceHash: hash, workspaceAbsolutePath: absolutePath }),
   selectFilePath: (path) =>
     set((state) => {
       // tabs[] への反映: path === null は全閉じ、それ以外は **既存 tab があれば
