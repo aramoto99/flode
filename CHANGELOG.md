@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.4] - 2026-05-11 — Inspector のラベル左寄せ + 入力欄が画面右半分に偏らない
+
+### Fixed
+
+- **Inspector で「label + input が右半分に偏って、左半分が空白」だった問題**:
+  v0.26.3 で右側の breathing room は確保したが、ラベルを右寄せ column (96px) で
+  保持していたため、`"k:"` のような短いラベルは依然 col 96 付近に表示され、
+  入力もその右に配置されていた → パネル左半分がほぼ空白という偏った見た目。
+- 解決: `PropertyRow` primitive に **`labelAlign?: "left" | "right"`** を追加
+  (default は既存の `"right"`、広い modal はそのまま)。`ParameterPanel` だけ
+  `labelAlign="left"` + `labelWidth=88` を渡して左寄せ化、入力幅を 140px に
+  戻す。これでパネル左端からラベル → 入力 → 右余白の自然な左→右 flow になる。
+- 長いラベル (例: `buffer_capacity (int)`) は label cell 内で truncate + hover
+  tooltip 表示するよう ``truncate`` + `title=label` を追加 (= layout 崩壊回避)。
+
+`ScopeSettingsDialog` / `ModelSettingsModal` は default の `labelAlign="right"`
+のまま (= colon が綺麗に縦揃いするので広い modal では適切)。
+
 ## [0.26.3] - 2026-05-11 — Inspector の入力欄が右端に張り付く問題を修正
 
 ### Fixed

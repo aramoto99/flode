@@ -66,29 +66,39 @@ export function PropertyGrid({
 /**
  * 「ラベル: 入力」の 1 行。``indent`` で sub-property (= 親モードに依存する
  * 副入力、例: y_mode=manual 時の y_min/y_max) を表現。
+ *
+ * ``labelAlign``:
+ * - ``"right"`` (default): ラベルを固定幅 column 内で右寄せ。colon が縦に揃って
+ *   見やすい — **広い modal (480 px〜)** 向け。
+ * - ``"left"``: ラベルを左寄せ、入力までの余分なスペースを潰す。**narrow sidebar
+ *   (Inspector 280 px)** 向け。labelWidth はラベル column の上限になり、短い
+ *   ラベルは natural width で表示される。
  */
 export function PropertyRow({
   label,
   children,
   indent = false,
   labelWidth = 140,
+  labelAlign = "right",
 }: {
   label: string;
   children: React.ReactNode;
   indent?: boolean;
   labelWidth?: number;
+  labelAlign?: "left" | "right";
 }): JSX.Element {
   return (
     <div className="flex min-h-[22px] items-center gap-2 py-0.5">
       <label
-        className={`shrink-0 text-right text-[11px] text-slate-700 ${
-          indent ? "pl-3" : ""
-        }`}
+        title={label}
+        className={`shrink-0 truncate text-[11px] text-slate-700 ${
+          labelAlign === "right" ? "text-right" : "text-left"
+        } ${indent ? "pl-3" : ""}`}
         style={{ width: `${labelWidth}px` }}
       >
         {label}:
       </label>
-      <div className="flex flex-1 items-center">{children}</div>
+      <div className="flex min-w-0 flex-1 items-center">{children}</div>
     </div>
   );
 }
