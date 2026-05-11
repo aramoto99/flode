@@ -209,6 +209,10 @@
   "workspace.split.handle.horizontal": "左右の分割サイズを変更",
   "workspace.split.handle.vertical": "上下の分割サイズを変更",
   "workspace.scopes_stack.empty": "すべての Scope が個別ペインに分離されています (右上の「分割解除」で閉じられます)",
+  "workspace.scopes_stack.no_data": "シミュレーションを実行するとここに Scope のグラフが表示されます",
+  "workspace.split.disabled.scope_leaf": "Scope ペインはこれ以上分割できません",
+  "workspace.split.disabled.run_simulation": "シミュレーションを実行すると Scope を別ペインに分離できます",
+  "workspace.split.disabled.all_separated": "すべての Scope が既に別ペインに分離されています",
 
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",

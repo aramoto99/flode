@@ -120,7 +120,9 @@ export default function App(): JSX.Element {
     }
   }, [activeTabFilePath, workspaceHash]);
 
-  // 各 scope_id がどのブロック type かを引くためのマップ (現スコープ内のみ)
+  // 各 scope_id がどのブロック type かを引くためのマップ (現スコープ内のみ)。
+  // ``block.id`` (= 例: ``Scope_1``) は表示名兼識別子なので、pane タイトルは
+  // ``scope_id`` をそのまま使う (= BlockEntry に separate な name フィールドなし)。
   const blockTypeById = useMemo(() => {
     if (!editingModel) return new Map<string, string>();
     try {
@@ -304,6 +306,7 @@ export default function App(): JSX.Element {
                     setDiagramSlot={setDiagramPortalEl}
                     visibleScopeEntries={visibleScopeEntries}
                     blockTypeById={blockTypeById}
+                    hasScopeBlocks={hasScopeBlocks}
                   />
                 </div>
                 <SimulationControls modelId={selectedFilePath ?? ""} />

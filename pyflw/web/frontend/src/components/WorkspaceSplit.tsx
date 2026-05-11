@@ -43,13 +43,18 @@ interface WorkspaceSplitProps {
   visibleScopeEntries: Array<[string, ScopeBuffer]>;
   /** scope_id → block.type マップ (= ``XYGraph`` 判別用)。 */
   blockTypeById: Map<string, string>;
+  /** v0.27.1: モデルが構造的に Scope/XYGraph ブロックを持つか (= sim 未実行でも true)。
+   * 空 ``scopes-stack`` pane の表示文言を「sim 未実行」と「全分離済」で出し分ける。 */
+  hasScopeBlocks: boolean;
 }
 
 export function WorkspaceSplit({
   setDiagramSlot,
   visibleScopeEntries,
   blockTypeById,
+  hasScopeBlocks,
 }: WorkspaceSplitProps): JSX.Element {
+  const { t } = useTranslation();
   const layout = useAppStore((s) => s.workspaceLayout);
   const splitPane = useAppStore((s) => s.splitPane);
   const unsplitPane = useAppStore((s) => s.unsplitPane);
@@ -79,6 +84,13 @@ export function WorkspaceSplit({
   const leafCount = getLeafPaneIds(layout).length;
   const hasScopesStackLeaf = findLeaf(layout, "scopes-stack");
 
+  // v0.27.1 UX-1: 空 scopes-stack pane の表示文言を出し分けるための判定情報。
+  // - splitOutAnyScope=true → 「全分離済」(= 個別 pane に分離 + stack は空)
+  // - splitOutAnyScope=false → 「sim 未実行」or 「Scope 無し」
+  // hasScopeBlocks (= モデル内に Scope/XYGraph ブロックが存在) が true で
+  // visibleScopeEntries が empty なら sim 未実行、false なら Scope 無し。
+  const splitOutAnyScope = splitOutScopeIds.size > 0;
+
   const ctx: RenderContext = {
     layout,
     leafCount,
@@ -89,6 +101,11 @@ export function WorkspaceSplit({
     setDiagramSlot,
     splitPane,
     unsplitPane,
+    splitOutAnyScope,
+    hasScopeBlocks,
+    t_scopeLeafCannotSplit: t("workspace.split.disabled.scope_leaf"),
+    t_runSimulationToSplit: t("workspace.split.disabled.run_simulation"),
+    t_allScopesSeparated: t("workspace.split.disabled.all_separated"),
   };
 
   return (
@@ -112,6 +129,13 @@ interface RenderContext {
     newPaneId: string,
   ) => void;
   unsplitPane: (paneId: string) => void;
+  /** v0.27.1 UX-1: scopes-stack 空表示の文言出し分け用。 */
+  splitOutAnyScope: boolean;
+  hasScopeBlocks: boolean;
+  /** v0.27.1 UX-3: split 無効時の tooltip 文言 (= pre-resolved i18n)。 */
+  t_scopeLeafCannotSplit: string;
+  t_runSimulationToSplit: string;
+  t_allScopesSeparated: string;
 }
 
 function renderTree(
@@ -253,6 +277,22 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       ? () => ctx.unsplitPane(paneId)
       : null;
 
+  // v0.27.1 UX-3: split が無効 (= nextNewLeaf===null) のとき、ボタンを hide ではなく
+  // disabled で表示し、tooltip で理由を伝える。理由は paneId と状況で出し分け:
+  // - scope:<id> 葉 → "Scope 葉はこれ以上分割できない"
+  // - diagram / stack で stack 空 (= sim 未実行 or 全分離済) → "実行 or 別 pane 戻し待ち"
+  const disabledSplitReason = ((): string | null => {
+    if (nextNewLeaf !== null) return null; // enabled、disabled 表示不要
+    if (!isDiagram && !isStack) {
+      // scope:<id> 葉: これ以上 split できない (Stage 1 仕様)
+      return ctx.t_scopeLeafCannotSplit;
+    }
+    // diagram / stack で stack 空: sim 未実行 or 全分離済
+    return ctx.splitOutAnyScope
+      ? ctx.t_allScopesSeparated
+      : ctx.t_runSimulationToSplit;
+  })();
+
   // 本体描画
   let body: JSX.Element;
   let titleKey: PaneTitleKey;
@@ -264,6 +304,8 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       <ScopesStack
         entries={ctx.stackEntries}
         blockTypeById={ctx.blockTypeById}
+        splitOutAnyScope={ctx.splitOutAnyScope}
+        hasScopeBlocks={ctx.hasScopeBlocks}
       />
     );
     titleKey = "workspace.pane.title.scopes_stack";
@@ -288,6 +330,7 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       onSplitRight={onSplitRight}
       onSplitDown={onSplitDown}
       onUnsplit={onUnsplit}
+      disabledSplitReason={disabledSplitReason}
     >
       {body}
     </PaneLeafShell>
@@ -305,6 +348,7 @@ function PaneLeafShell({
   onSplitRight,
   onSplitDown,
   onUnsplit,
+  disabledSplitReason,
   children,
 }: {
   /** i18n キー (= 翻訳して title に使う)。``""`` ならスキップ。
@@ -315,6 +359,8 @@ function PaneLeafShell({
   onSplitRight: (() => void) | null;
   onSplitDown: (() => void) | null;
   onUnsplit: (() => void) | null;
+  /** v0.27.1 UX-3: split 無効時の tooltip 文言。 */
+  disabledSplitReason: string | null;
   children: React.ReactNode;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -333,6 +379,7 @@ function PaneLeafShell({
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
         onUnsplit={onUnsplit}
+        disabledSplitReason={disabledSplitReason}
       />
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
@@ -368,17 +415,30 @@ function DiagramSlot({
 function ScopesStack({
   entries,
   blockTypeById,
+  splitOutAnyScope,
+  hasScopeBlocks,
 }: {
   entries: Array<[string, ScopeBuffer]>;
   blockTypeById: Map<string, string>;
+  splitOutAnyScope: boolean;
+  hasScopeBlocks: boolean;
 }): JSX.Element {
   const { t } = useTranslation();
   if (entries.length === 0) {
-    // stack 内のすべての Scope が個別 pane に分離されている / そもそも Scope が
-    // 無い場合: ユーザーに状態を明示する notice を表示 (code-reviewer §SHOULD #5)。
+    // v0.27.1 UX-1: 空 stack の理由を出し分ける:
+    // - 個別 pane に分離済 (= splitOutAnyScope=true)         → "all separated"
+    // - sim 未実行 (= scope buffer 未受信、splitOutAnyScope=false かつ
+    //   hasScopeBlocks=true)                                 → "no data, run sim"
+    // - そもそも Scope ブロック無し (= hasScopeBlocks=false) → "no data, run sim"
+    //   (= scope ブロック無し時に scopes-stack pane に到達するのは UI 上稀)
+    const message = splitOutAnyScope
+      ? t("workspace.scopes_stack.empty")
+      : hasScopeBlocks
+        ? t("workspace.scopes_stack.no_data")
+        : t("workspace.scopes_stack.no_data");
     return (
       <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
-        {t("workspace.scopes_stack.empty")}
+        {message}
       </div>
     );
   }

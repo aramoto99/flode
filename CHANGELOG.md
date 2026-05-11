@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-05-12 — Workspace multi-pane Stage 1 の UX hotfix
+
+v0.27.0 リリース直後の UX 改善 2 点。実装範囲は ADR-0045 §(1) Stage 1 必須スコープ
+の範囲内 (= 機能追加ではなく既存挙動の親切化)。
+
+### Changed
+
+- **空 `scopes-stack` ペインの説明文を状況別に出し分け** (UX-1): 従来は「すべての
+  Scope が個別ペインに分離されています」のみ表示していたが、シミュレーション未
+  実行時 (= scope buffer 未受信) と全分離済の 2 状態を区別:
+  - sim 未実行: 「シミュレーションを実行するとここに Scope のグラフが表示されます」
+  - 全分離済: 「すべての Scope が個別ペインに分離されています (右上の「分割解除」で閉じられます)」
+- **split / split-down ボタンを hide ではなく disabled で表示** (UX-3): 押せない
+  状態でも灰色で残し、tooltip (= `title` 属性) に「なぜ押せないか」を表示:
+  - `scope:<id>` 葉から → 「Scope ペインはこれ以上分割できません」
+  - sim 未実行で `scopes-stack` 空 → 「シミュレーションを実行すると Scope を別ペインに分離できます」
+  - 全分離済で `scopes-stack` 空 → 「すべての Scope が既に別ペインに分離されています」
+- a11y: disabled ボタンに `aria-disabled` + `cursor-not-allowed` + 灰色文字
+
+### Added
+
+- i18n キー 5 個追加 (ja/en):
+  `workspace.scopes_stack.no_data` / `workspace.split.disabled.scope_leaf` /
+  `workspace.split.disabled.run_simulation` / `workspace.split.disabled.all_separated`
+- `PaneTitleBar` に optional `disabledSplitReason?: string | null` prop
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass (= v0.27.0 と同じ件数、新規 i18n キーは i18n.test.ts の
+  「ja/en key 集合一致」テストで自動検証)
+- bundle: 微増 (= 文言追加のみ、削減は無し)
+
+### 補足
+
+UX-2 「Scope pane タイトルを block name で表示」は調査結果 cancel:
+`BlockEntry` には `name` フィールドが存在せず、`block.id` (例: `Scope_1`) が
+そのまま Simulink でいう Block Name に相当するため、現状の挙動 (= scope_id raw
+表示) が正しいことを確認。
+
 ## [0.27.0] - 2026-05-11 — Workspace JupyterLab Stage 1 = multi-pane split (ADR-0045)
 
 ADR-0045 採択。**Phase 6c (Workspace JupyterLab convergence) Stage 1** として

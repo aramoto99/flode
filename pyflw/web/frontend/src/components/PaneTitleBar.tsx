@@ -18,6 +18,10 @@ interface PaneTitleBarProps {
   /** unsplit (= 分割解除、この pane を閉じる) アクション。``null`` で hide
    * (= tree 内最後の葉なら閉じられないため hide)。 */
   onUnsplit: (() => void) | null;
+  /** v0.27.1 UX-3: split 系ボタンを **hide ではなく disabled** で表示する。
+   * onSplitRight / onSplitDown が ``null`` でも、本 prop が非 null なら button を
+   * 描画して disabled + title=disabledReason に「なぜ押せないか」を出す。 */
+  disabledSplitReason?: string | null;
 }
 
 export function PaneTitleBar({
@@ -25,20 +29,26 @@ export function PaneTitleBar({
   onSplitRight,
   onSplitDown,
   onUnsplit,
+  disabledSplitReason,
 }: PaneTitleBarProps): JSX.Element {
   const { t } = useTranslation();
+  // v0.27.1 UX-3: split 系は null でも disabled で描画する (= disabledSplitReason
+  // が指定されていれば)。これにより「ボタンが存在するが押せない」UX で
+  // ユーザーに「何故押せないか」を tooltip で伝える。
+  const showSplitDisabled =
+    disabledSplitReason !== undefined && disabledSplitReason !== null;
   return (
     <div className="flex h-6 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
       <span className="truncate" title={title}>
         {title}
       </span>
       <div className="flex items-center gap-0.5">
-        {onSplitRight !== null && (
+        {(onSplitRight !== null || showSplitDisabled) && (
           <PaneActionButton
             label={t("workspace.split.right")}
             onClick={onSplitRight}
+            disabledReason={onSplitRight === null ? disabledSplitReason ?? null : null}
           >
-            {/* split right icon: 縦の bar 1 本 + 右に +、Tailwind SVG */}
             <svg
               viewBox="0 0 16 16"
               className="h-3 w-3"
@@ -52,10 +62,11 @@ export function PaneTitleBar({
             </svg>
           </PaneActionButton>
         )}
-        {onSplitDown !== null && (
+        {(onSplitDown !== null || showSplitDisabled) && (
           <PaneActionButton
             label={t("workspace.split.down")}
             onClick={onSplitDown}
+            disabledReason={onSplitDown === null ? disabledSplitReason ?? null : null}
           >
             <svg
               viewBox="0 0 16 16"
@@ -74,6 +85,7 @@ export function PaneTitleBar({
           <PaneActionButton
             label={t("workspace.unsplit")}
             onClick={onUnsplit}
+            disabledReason={null}
           >
             <svg
               viewBox="0 0 16 16"
@@ -96,19 +108,30 @@ export function PaneTitleBar({
 function PaneActionButton({
   label,
   onClick,
+  disabledReason,
   children,
 }: {
   label: string;
-  onClick: () => void;
+  /** ``null`` でクリック不可。disabledReason と組み合わせて使う。 */
+  onClick: (() => void) | null;
+  /** v0.27.1 UX-3: disabled 時の理由テキスト (= tooltip)。``null`` で enabled。 */
+  disabledReason: string | null;
   children: React.ReactNode;
 }): JSX.Element {
+  const isDisabled = onClick === null;
   return (
     <button
       type="button"
-      onClick={onClick}
-      title={label}
+      onClick={onClick ?? undefined}
+      disabled={isDisabled}
+      title={isDisabled && disabledReason !== null ? disabledReason : label}
       aria-label={label}
-      className="flex h-5 w-5 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+      aria-disabled={isDisabled || undefined}
+      className={
+        isDisabled
+          ? "flex h-5 w-5 cursor-not-allowed items-center justify-center text-slate-300"
+          : "flex h-5 w-5 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+      }
     >
       {children}
     </button>
