@@ -182,13 +182,15 @@ export default function App(): JSX.Element {
                 id="pyflw.workspace_library_split"
                 className="flex-1"
               >
-                <Panel defaultSize={40} minSize={15}>
+                {/* v0.26.7: minSize を pixel 指定 (= ヘッダー 24 px より下に縮まない)。
+                    v4 の minSize は CSS 単位文字列を受ける ("32px" / "2rem" 等)。 */}
+                <Panel defaultSize={40} minSize="48px">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden">
                     <FileBrowser />
                   </div>
                 </Panel>
                 <PanelResizeHandle className="h-1 bg-slate-200 transition-colors hover:bg-blue-300" />
-                <Panel defaultSize={60} minSize={15}>
+                <Panel defaultSize={60} minSize="48px">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden">
                     <PanelHeader>{t("panel.library")}</PanelHeader>
                     <div className="min-h-0 flex-1 overflow-hidden">

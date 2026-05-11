@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.7] - 2026-05-11 — Workspace/Library 分割の最小サイズを pixel 指定 (ヘッダー以下に縮まない)
+
+### Fixed
+
+- **Workspace 部分をヘッダーバーより小さく縮められた問題**: v0.26.6 の minSize は
+  `15` (% 指定) で、viewport が低い場合に 24 px のヘッダーバーより小さくなる
+  ケースがあった。``react-resizable-panels`` v4 の string-with-units 機能を使い、
+  両 panel の minSize を `"48px"` (= header 24 px + 内容 24 px 程度) に切替。
+  これでヘッダーは常に完全表示される。
+
+### Verification
+
+- typecheck + production build: clean
+
 ## [0.26.6] - 2026-05-11 — Workspace / Library 分割比を drag resize 可能に
 
 ### Changed
