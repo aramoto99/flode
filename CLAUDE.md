@@ -181,6 +181,18 @@ Claudeのデフォルト挙動と異なる、重要な規約のみ記載する�
 - strictモード、`any` 型禁止
 - JSDoc で関数・コンポーネントのドキュメント記述
 
+### UI デザイン (frontend 設定 UI / Inspector / dialog)
+- **`/.claude/docs/ui-design-system.md` に必ず従う** (Simulink Property Inspector 風)。
+- すべての設定 UI は `src/components/ui/inspector.tsx` の primitives を使う:
+  `<DialogShell>` / `<PropertyGrid>` / `<PropertyRow>` / `<SectionDivider>` /
+  `<TabBar>` + `<TabButton>` / `<PrimaryButton>` / `<SecondaryButton>` /
+  `<DangerButton>` / `<NumberInput>` / `<TextInput>` / `INPUT_CLS` / `SELECT_CLS` / `CHECKBOX_CLS`。
+- ❌ 禁止 idiom: pill button / switch toggle / segmented control / 大きな padding /
+  `rounded-md` 以上の角丸 / 大型カード / icon + ラベル の大型ボタン / 派手な shadow /
+  ダークモード / 背景色オプション。
+- 新規 UI で primitives で対応できない要件 → **primitives に追加してから使う**
+  (= 1 箇所だけのアドホックスタイル禁止)。
+
 <!-- より詳細な規約やファイル配置ルールは `docs/coding-style.md` / `docs/file-layout.md` に分離し、
      必要に応じて Claude に参照させる（進行中タスクに関係しない時は context を消費させない） -->
 

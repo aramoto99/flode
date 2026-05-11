@@ -209,6 +209,10 @@
   "xygraph.no_data": "(no data yet)",
 
   "inspector.empty": "Click a block in the diagram to edit its parameters.",
+  "inspector.section.layout": "Layout",
+  "inspector.section.parameters": "Parameters",
+  "inspector.section.read_only": "Read only",
+  "inspector.section.mask_params": "Mask parameters",
   "inspector.not_found": "Block {{id}} not found in current scope.",
   "inspector.no_editable": "No editable parameters on this block.",
   "inspector.flip_horizontal": "Flip horizontally",
@@ -240,6 +244,10 @@
   "toast.dismiss": "Dismiss notification",
 
   "model_settings.title": "Model Settings",
+  "model_settings.section.solver": "Solver",
+  "model_settings.section.step_size": "Step size",
+  "model_settings.section.tolerance": "Tolerance",
+  "model_settings.dt_base_value": "Value",
   "model_settings.description": "Solver and integration parameters. Stop time is on the toolbar.",
   "model_settings.solver": "Solver",
   "model_settings.solver_hint": "scipy solve_ivp method (RK45 = Dormand-Prince, default).",

@@ -1,5 +1,9 @@
-// ノードのパラメータ inline 編集パネル (ADR-0012 §(3)、ADR-0019 §(5) auto-save 連動、
-// ADR-0021 §(9) で Subsystem の mask_values 編集モードを追加)。
+// ノードのパラメータ inline 編集パネル (右サイドバー = Inspector)。
+// ADR-0012 §(3)、ADR-0019 §(5) auto-save 連動、ADR-0021 §(9) Mask Subsystem 編集。
+//
+// v0.25.0: ui/inspector.tsx primitives ベースに refactor、ScopeSettingsDialog /
+// ModelSettingsModal と同じ Simulink Property Inspector スタイル (= PropertyGrid +
+// SectionDivider + native widgets) に統一。
 //
 // editingModel + editingPath が source of truth。useAutoSave がそれを PUT する。
 
@@ -9,10 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
-import {
-  isPrimitiveParam,
-  parseNumericInput,
-} from "../lib/paramEdit";
+import { isPrimitiveParam, parseNumericInput } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
   toggleBlockFlipped,
@@ -21,12 +22,23 @@ import {
   useAppStore,
 } from "../store/appStore";
 import type { BlockEntry, MaskParamSpec } from "../types/api";
+import {
+  CHECKBOX_CLS,
+  INPUT_CLS,
+  INPUT_MONO_CLS,
+  PropertyGrid,
+  PropertyRow,
+  SectionDivider,
+  SELECT_CLS,
+} from "./ui/inspector";
 
 interface ParameterPanelProps {
   modelId: string;
 }
 
-export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.Element {
+export function ParameterPanel({
+  modelId: _modelId,
+}: ParameterPanelProps): JSX.Element {
   const { t } = useTranslation();
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const editingModel = useAppStore((s) => s.editingModel);
@@ -41,22 +53,17 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
     }
   }, [editingModel, editingPath, selectedNodeId]);
 
-  // ノード未選択 / 削除済みノードが selection に残っているケース (= drilldown
-  // 経路外、別モデル切替後の stale 等) はどちらも同じ「空 panel」表示にする。
-  // 「Block X not found in current scope」エラーを出すのは UX 悪い (Simulink も
-  // ブロック削除で Inspector が静かに空になる)。
   if (!selectedNodeId || !block) {
     return (
       <div
         data-testid="parameter-panel-empty"
-        className="border-l border-gray-200 bg-white p-3 text-xs text-gray-500"
+        className="bg-white px-3 py-2 text-[11px] text-slate-500"
       >
         {t("inspector.empty")}
       </div>
     );
   }
 
-  // ADR-0021 §(9): mask_params が宣言された Subsystem は mask 値編集モードに切替
   const maskParamsRaw = block.params.mask_params;
   const isMaskedSubsystem =
     Array.isArray(maskParamsRaw) && maskParamsRaw.length > 0;
@@ -73,7 +80,37 @@ export function ParameterPanel({ modelId: _modelId }: ParameterPanelProps): JSX.
 }
 
 // ---------------------------------------------------------------------------
-// 通常 block の数値 inline 編集 (Phase 2 互換、editingModel に書き込む)
+// Block header (id + 型表示、Inspector 全モード共通)
+// ---------------------------------------------------------------------------
+
+function BlockHeader({
+  block,
+  subtitle,
+}: {
+  block: BlockEntry;
+  subtitle?: string;
+}): JSX.Element {
+  const shortType = block.type.split(".").at(-1) ?? block.type;
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-slate-300 bg-gradient-to-b from-slate-100 to-slate-50 px-2 py-1">
+      <span
+        className="truncate text-[12px] font-semibold text-slate-800"
+        title={block.id}
+      >
+        {block.id}
+      </span>
+      <span
+        className="truncate font-mono text-[10px] text-slate-500"
+        title={block.type}
+      >
+        {subtitle ? `${shortType} · ${subtitle}` : shortType}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 通常 block のパラメータ inline 編集
 // ---------------------------------------------------------------------------
 
 function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
@@ -87,8 +124,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     () => indexRegistry(registryData?.blocks ?? []),
     [registryData],
   );
-  // v0.15.0: ``flipped`` 状態は ``editingModel.layout[block.id].flipped`` にある。
-  // store を直接購読して、checkbox に反映する。
+
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
   const flippedNow = useMemo(() => {
@@ -105,7 +141,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const prevBlockIdRef = useRef<string | undefined>(undefined);
 
-  // ブロック切替時に draft を最新値で初期化 (number/string/bool すべてを文字列化して保持)
+  // ブロック切替時に draft を最新値で初期化
   useEffect(() => {
     if (block.id === prevBlockIdRef.current) return;
     prevBlockIdRef.current = block.id;
@@ -124,9 +160,6 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     () => JSON.stringify(Object.fromEntries(readOnlyEntries), null, 2),
     [readOnlyEntries],
   );
-  const shortType = block.type.split(".").at(-1) ?? block.type;
-  // ADR-0039 follow-up (v0.15.0 / code-reviewer SHOULD): registry の block meta は
-  // ループ外で 1 度だけ取得 (= ループ内毎回 lookup を避ける + 意図を明確化)。
   const blockMeta = registryMap.get(block.type);
 
   const commit = (k: string, raw: string, originalType: string): void => {
@@ -137,7 +170,6 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
         setError(t("inspector.invalid_number", { name: k }));
         return;
       }
-      // n_inputs / n / n_outputs などの整数 param は明示的に整数化
       const isIntParam =
         k === "n" ||
         k === "n_inputs" ||
@@ -148,7 +180,6 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     } else if (originalType === "boolean") {
       newValue = raw === "true";
     } else {
-      // string param (e.g. Sum.signs, Switch.criterion)
       newValue = raw;
     }
     setError(null);
@@ -162,136 +193,140 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   return (
     <div
       data-testid="parameter-panel"
-      className="flex h-full flex-col gap-2 p-3 text-xs"
+      className="flex h-full flex-col bg-white text-[11px]"
     >
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-        <h3 className="truncate text-sm font-semibold text-slate-800">
-          {block.id}
-        </h3>
-        <span
-          title={block.type}
-          className="truncate font-mono text-[10px] text-slate-500"
-        >
-          {shortType}
-        </span>
+      <BlockHeader block={block} />
+
+      <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
+        <PropertyGrid>
+          <SectionDivider
+            label={t("inspector.section.layout", "Layout")}
+          />
+          <PropertyRow
+            labelWidth={120}
+            label={t("inspector.flip_horizontal", "Flip horizontal")}
+          >
+            <input
+              type="checkbox"
+              data-testid="flip-block-button"
+              checked={flippedNow}
+              onChange={() => toggleBlockFlipped(block.id)}
+              title={t(
+                "inspector.flip_horizontal_tooltip",
+                "Flip block left/right",
+              )}
+              className={CHECKBOX_CLS}
+            />
+          </PropertyRow>
+
+          <SectionDivider
+            label={t("inspector.section.parameters", "Parameters")}
+          />
+          {editableEntries.length === 0 && (
+            <div className="px-2 py-1 text-[11px] text-slate-500">
+              {t("inspector.no_editable")}
+            </div>
+          )}
+          {editableEntries.map(([k, v]) => {
+            const valueType = typeof v;
+            const enumValues = blockMeta?.params_spec.find(
+              (p) => p.name === k,
+            )?.enum_values;
+            return (
+              <PropertyRow key={k} labelWidth={120} label={k}>
+                {enumValues && enumValues.length > 0 ? (
+                  <select
+                    data-testid={`param-input-${k}`}
+                    value={draft[k] ?? String(v)}
+                    onChange={(e) => {
+                      setDraft((prev) => ({ ...prev, [k]: e.target.value }));
+                      commit(k, e.target.value, "string");
+                    }}
+                    className={`${SELECT_CLS} flex-1 max-w-[160px]`}
+                  >
+                    {enumValues.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                ) : valueType === "boolean" ? (
+                  <select
+                    data-testid={`param-input-${k}`}
+                    value={draft[k] ?? "false"}
+                    onChange={(e) => {
+                      setDraft((prev) => ({ ...prev, [k]: e.target.value }));
+                      commit(k, e.target.value, "boolean");
+                    }}
+                    className={`${SELECT_CLS} w-24`}
+                  >
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                ) : valueType === "number" ? (
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    data-testid={`param-input-${k}`}
+                    value={draft[k] ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDraft((prev) => ({ ...prev, [k]: val }));
+                      if (val !== "" && parseNumericInput(val) !== null) {
+                        commit(k, val, "number");
+                      }
+                    }}
+                    onBlur={(e) => commit(k, e.target.value, "number")}
+                    className={`${INPUT_MONO_CLS} flex-1 max-w-[160px]`}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    data-testid={`param-input-${k}`}
+                    value={draft[k] ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDraft((prev) => ({ ...prev, [k]: val }));
+                      commit(k, val, "string");
+                    }}
+                    onBlur={(e) => commit(k, e.target.value, "string")}
+                    className={`${INPUT_CLS} flex-1 max-w-[160px]`}
+                  />
+                )}
+              </PropertyRow>
+            );
+          })}
+
+          {readOnlyEntries.length > 0 && (
+            <>
+              <SectionDivider
+                label={t("inspector.section.read_only", "Read only")}
+              />
+              <details className="border border-slate-300 bg-slate-50 px-2 py-1">
+                <summary className="cursor-pointer text-[11px] text-slate-600">
+                  {t("inspector.read_only_summary", {
+                    count: readOnlyEntries.length,
+                  })}
+                </summary>
+                <pre className="mt-1 overflow-auto font-mono text-[10px] text-slate-700">
+                  {readOnlyJson}
+                </pre>
+              </details>
+            </>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-2 border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] text-rose-700"
+            >
+              {error}
+            </div>
+          )}
+        </PropertyGrid>
       </div>
 
-      {/* v0.15.0: Simulink 互換の Flip Block (左右反転) ボタン。layout.flipped を
-          toggle するだけ、backend 影響なし。 */}
-      <label className="flex items-center justify-between text-slate-700">
-        <span className="font-medium">{t("inspector.flip_horizontal")}</span>
-        <input
-          type="checkbox"
-          data-testid="flip-block-button"
-          checked={flippedNow}
-          onChange={() => toggleBlockFlipped(block.id)}
-          title={t("inspector.flip_horizontal_tooltip")}
-          className="h-3.5 w-3.5 cursor-pointer accent-blue-600"
-        />
-      </label>
-
-      {editableEntries.length === 0 && (
-        <div className="text-slate-500">
-          {t("inspector.no_editable")}
-        </div>
-      )}
-
-      {editableEntries.map(([k, v]) => {
-        const valueType = typeof v;
-        // ADR-0039 follow-up (v0.15.0): registry の enum_values を見て、許容値が
-        // 限定された string param は ``<select>`` で render する (= MinMax の
-        // operator、Switch の criterion、Logical/Relational の operator 等)。
-        const enumValues = blockMeta?.params_spec.find((p) => p.name === k)?.enum_values;
-        return (
-          <label key={k} className="flex flex-col gap-0.5">
-            <span className="flex items-center justify-between text-slate-700">
-              <span className="font-medium">{k}</span>
-              <span className="font-mono text-[9px] text-slate-400">
-                {valueType}
-              </span>
-            </span>
-            {enumValues && enumValues.length > 0 ? (
-              <select
-                data-testid={`param-input-${k}`}
-                value={draft[k] ?? String(v)}
-                onChange={(e) => {
-                  setDraft((prev) => ({ ...prev, [k]: e.target.value }));
-                  commit(k, e.target.value, "string");
-                }}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {enumValues.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            ) : valueType === "boolean" ? (
-              <select
-                data-testid={`param-input-${k}`}
-                value={draft[k] ?? "false"}
-                onChange={(e) => {
-                  setDraft((prev) => ({ ...prev, [k]: e.target.value }));
-                  commit(k, e.target.value, "boolean");
-                }}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="false">false</option>
-                <option value="true">true</option>
-              </select>
-            ) : valueType === "number" ? (
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                data-testid={`param-input-${k}`}
-                value={draft[k] ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDraft((prev) => ({ ...prev, [k]: val }));
-                  // 入力途中でも有効な数値なら即 commit (= canvas 表示が live 更新される)
-                  if (val !== "" && parseNumericInput(val) !== null) {
-                    commit(k, val, "number");
-                  }
-                }}
-                onBlur={(e) => commit(k, e.target.value, "number")}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            ) : (
-              <input
-                type="text"
-                data-testid={`param-input-${k}`}
-                value={draft[k] ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDraft((prev) => ({ ...prev, [k]: val }));
-                  // 任意の文字列でも即 commit (空でも OK)。Sum.signs / Switch.criterion 等の
-                  // ライブ反映用 (ハンドル数が ``signs.length`` で変わる)。
-                  commit(k, val, "string");
-                }}
-                onBlur={(e) => commit(k, e.target.value, "string")}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            )}
-          </label>
-        );
-      })}
-
-      {readOnlyEntries.length > 0 && (
-        <details className="mt-2 rounded border border-slate-200 p-2">
-          <summary className="cursor-pointer text-slate-600">
-            {t("inspector.read_only_summary", {
-              count: readOnlyEntries.length,
-            })}
-          </summary>
-          <pre className="mt-1 overflow-auto text-[10px] text-slate-700">
-            {readOnlyJson}
-          </pre>
-        </details>
-      )}
-
-      {error && <div className="text-rose-600">{error}</div>}
-      <div className="mt-2 text-[10px] text-slate-400">
+      <div className="border-t border-slate-200 bg-slate-50 px-3 py-1 text-[10px] text-slate-500">
         {t("inspector.autosave_hint")}
       </div>
     </div>
@@ -338,7 +373,11 @@ function MaskValuesEditor({
     setError(null);
   }, [block.id, initialValues]);
 
-  const commit = (name: string, raw: string, type: MaskParamSpec["type"]): void => {
+  const commit = (
+    name: string,
+    raw: string,
+    type: MaskParamSpec["type"],
+  ): void => {
     let parsed: number | boolean;
     if (type === "bool") {
       parsed = raw === "true" || raw === "1";
@@ -363,83 +402,100 @@ function MaskValuesEditor({
           const existingNum = parseNumericInput(existing);
           next[p.name] =
             existingNum === null
-              ? (typeof p.default === "number" ? p.default : 0)
-              : (p.type === "int" ? Math.trunc(existingNum) : existingNum);
+              ? typeof p.default === "number"
+                ? p.default
+                : 0
+              : p.type === "int"
+                ? Math.trunc(existingNum)
+                : existingNum;
         }
       }
     }
     updateSubsystemMaskValues(block.id, next);
   };
 
-  const shortType = block.type.split(".").at(-1) ?? block.type;
-
   return (
     <div
       data-testid="parameter-panel-mask"
-      className="flex h-full flex-col gap-2 border-l border-gray-200 bg-white p-3 text-xs"
+      className="flex h-full flex-col bg-white text-[11px]"
     >
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate text-sm font-medium">{block.id}</h3>
-        <span
-          title={block.type}
-          className="truncate font-mono text-[10px] text-gray-500"
-        >
-          {shortType} · {t("inspector.mask.suffix")}
-        </span>
-      </div>
+      <BlockHeader block={block} subtitle={t("inspector.mask.suffix")} />
 
-      <div className="text-[10px] text-gray-500">
-        {t("inspector.mask.section_hint")}
-      </div>
-
-      {maskParams.map((p) => (
-        <label key={p.name} className="flex flex-col gap-1">
-          <span className="text-gray-700">
-            {p.name}{" "}
-            <span className="text-[10px] text-gray-400">({p.type})</span>
-          </span>
-          {p.type === "bool" ? (
-            <select
-              data-testid={`mask-input-${p.name}`}
-              value={draft[p.name] ?? "false"}
-              onChange={(e) => {
-                // ADR-0021 code-reviewer SHOULD: select は onChange で commit
-                // (onBlur だと数値 fields の不正値 evaluation が誘発される)
-                setDraft((prev) => ({ ...prev, [p.name]: e.target.value }));
-                commit(p.name, e.target.value, p.type);
-              }}
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
+      <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
+        <PropertyGrid>
+          <SectionDivider
+            label={t("inspector.section.mask_params", "Mask parameters")}
+          />
+          {maskParams.map((p) => (
+            <PropertyRow
+              key={p.name}
+              labelWidth={120}
+              label={`${p.name} (${p.type})`}
             >
-              <option value="false">false</option>
-              <option value="true">true</option>
-            </select>
-          ) : (
-            <input
-              type="number"
-              inputMode={p.type === "int" ? "numeric" : "decimal"}
-              step={p.type === "int" ? "1" : "any"}
-              data-testid={`mask-input-${p.name}`}
-              value={draft[p.name] ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setDraft((prev) => ({ ...prev, [p.name]: val }));
-                // 有効な数値なら即 commit (= live 反映)
-                if (val !== "" && parseNumericInput(val) !== null) {
-                  commit(p.name, val, p.type);
-                }
-              }}
-              onBlur={(e) => commit(p.name, e.target.value, p.type)}
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
-            />
-          )}
-          {p.description && (
-            <span className="text-[10px] text-gray-500">{p.description}</span>
-          )}
-        </label>
-      ))}
+              {p.type === "bool" ? (
+                <select
+                  data-testid={`mask-input-${p.name}`}
+                  value={draft[p.name] ?? "false"}
+                  onChange={(e) => {
+                    setDraft((prev) => ({ ...prev, [p.name]: e.target.value }));
+                    commit(p.name, e.target.value, p.type);
+                  }}
+                  className={`${SELECT_CLS} w-24`}
+                >
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  inputMode={p.type === "int" ? "numeric" : "decimal"}
+                  data-testid={`mask-input-${p.name}`}
+                  value={draft[p.name] ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDraft((prev) => ({ ...prev, [p.name]: val }));
+                    if (val !== "" && parseNumericInput(val) !== null) {
+                      commit(p.name, val, p.type);
+                    }
+                  }}
+                  onBlur={(e) => commit(p.name, e.target.value, p.type)}
+                  className={`${INPUT_MONO_CLS} flex-1 max-w-[160px]`}
+                />
+              )}
+            </PropertyRow>
+          ))}
 
-      {error && <div className="text-red-600">{error}</div>}
-      <div className="mt-2 text-[10px] text-gray-400">
+          {/* descriptions が長いと PropertyRow に収まらないので、別レイアウトで
+              下に並べる */}
+          {maskParams.some((p) => p.description) && (
+            <div className="mt-2 flex flex-col gap-1">
+              {maskParams.map(
+                (p) =>
+                  p.description && (
+                    <div
+                      key={p.name}
+                      className="text-[10px] text-slate-500"
+                    >
+                      <span className="font-mono text-slate-600">{p.name}</span>
+                      : {p.description}
+                    </div>
+                  ),
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-2 border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] text-rose-700"
+            >
+              {error}
+            </div>
+          )}
+        </PropertyGrid>
+      </div>
+
+      <div className="border-t border-slate-200 bg-slate-50 px-3 py-1 text-[10px] text-slate-500">
         {t("inspector.mask.autosave_hint")}
       </div>
     </div>

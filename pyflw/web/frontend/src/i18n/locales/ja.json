@@ -209,6 +209,10 @@
   "xygraph.no_data": "(データ未受信)",
 
   "inspector.empty": "ブロックをクリックするとパラメータを編集できます。",
+  "inspector.section.layout": "レイアウト",
+  "inspector.section.parameters": "パラメータ",
+  "inspector.section.read_only": "読み取り専用",
+  "inspector.section.mask_params": "マスクパラメータ",
   "inspector.not_found": "ブロック {{id}} は現在のスコープに存在しません。",
   "inspector.no_editable": "このブロックには編集可能なパラメータがありません。",
   "inspector.flip_horizontal": "左右反転",
@@ -240,6 +244,10 @@
   "toast.dismiss": "通知を閉じる",
 
   "model_settings.title": "モデル設定",
+  "model_settings.section.solver": "ソルバ",
+  "model_settings.section.step_size": "ステップサイズ",
+  "model_settings.section.tolerance": "許容誤差",
+  "model_settings.dt_base_value": "値",
   "model_settings.description": "ソルバと積分のパラメータ。「終了時刻」はツールバー側で編集します。",
   "model_settings.solver": "ソルバ",
   "model_settings.solver_hint": "scipy solve_ivp の method (RK45 = Dormand-Prince、既定)。",

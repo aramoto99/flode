@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-05-11 — UI デザインシステム確立 + Inspector / ModelSettings 統一
+
+### Added
+
+- **UI primitives `src/components/ui/inspector.tsx`** (新規): 設定 UI / dialog の
+  共通 building block。Simulink Property Inspector 風スタイルを SSOT として固定:
+  - Layout: `<PropertyGrid>` / `<PropertyRow>` (label 右寄せ + 値、indent 対応) /
+    `<SectionDivider>` (uppercase + 横ルール)
+  - Dialog: `<DialogShell>` (Escape / 外側 click で close、subtle gradient title bar) /
+    `<DialogFooter>` (左 secondary + 右 primary)
+  - Tabs: `<TabBar>` + `<TabButton>` (active = 白背景の上面紙)
+  - Buttons: `<PrimaryButton>` / `<SecondaryButton>` / `<DangerButton>`
+  - Inputs: `<NumberInput>` / `<TextInput>` + `INPUT_CLS` / `SELECT_CLS` /
+    `CHECKBOX_CLS` の Tailwind 定数
+- **デザインガイド `.claude/docs/ui-design-system.md`** (新規): 採用 / 禁止 idiom、
+  カラーパレット、レイアウト定型、reference 実装。
+- CLAUDE.md にデザインシステム規約を追記。
+- memory `feedback_simulink_native_ui` 追加 (= 今後の UI 実装で primitives 厳守)。
+
+### Changed
+
+- **ParameterPanel (Inspector サイドバー)** を Simulink Property Inspector 風に
+  全面 refactor (= 旧 label 上 / 入力下の縦レイアウトを 2 列 PropertyGrid に置換)。
+  - BlockHeader (gradient title bar) + section divider ("Layout" / "Parameters" /
+    "Read only" / "Mask parameters")
+  - native widgets (`<select>` / `<input>` / `<input type="checkbox">`)
+- **ModelSettingsModal** を同スタイルに全面 refactor:
+  - DialogShell + 3 section ("Solver" / "Step size" / "Tolerance")
+  - PropertyGrid で `solver` / `dt` / `dt_base` (auto + indent value) / `rtol` /
+    `atol` を整列
+  - 旧 `<Field>` (label 上 / 入力 + hint) を撤去
+- **ScopeSettingsDialog** を primitives ベースに簡素化 (= 見た目同一、内部のみ
+  クリーンアップ)。
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 295 passed (回帰なし、ModelSettings 7 件は新スタイルで再確認済)
+
 ## [0.24.6] - 2026-05-11 — 「既定値に戻す」が機能しない不具合修正
 
 ### Fixed
