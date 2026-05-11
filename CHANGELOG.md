@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-05-11 — プロット設定 dialog のタブ切替時 window 寸法固定
+
+### Fixed
+
+- **ScopeSettingsDialog のタブ切替で window サイズが上下に伸縮していた問題**:
+  Display tab (= manual / log で行数が増減) と Style tab (= 信号数で行数が変動)
+  で content 高さがばらつき、タブ切替のたびに dialog が伸び縮みしていた。
+  content 領域を固定高さ ``h-[340px]`` に変更し、内容が超える場合はその領域
+  内で scroll する。タブ切替時に window 寸法は不変。
+
+### Verification
+
+- typecheck + production build: clean
+
 ## [0.24.4] - 2026-05-11 — プロット設定 dialog を Simulink Property Inspector 風に再設計
 
 ### Changed

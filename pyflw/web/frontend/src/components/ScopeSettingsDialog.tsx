@@ -102,8 +102,8 @@ export function ScopeSettingsDialog({
           </TabButton>
         </div>
 
-        {/* Content */}
-        <div className="max-h-[60vh] overflow-y-auto bg-white px-3 py-2.5">
+        {/* Content (固定高さ — タブ切替で window 寸法が変動しないように) */}
+        <div className="h-[340px] overflow-y-auto bg-white px-3 py-2.5">
           {tab === "display" && (
             <DisplayTab
               t={t}
