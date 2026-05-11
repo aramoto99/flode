@@ -30,13 +30,13 @@ class Scope(Block):
     Args:
         n_inputs: 記録する信号数 (= 入力ポート数)。
         labels: 各信号のラベル (省略時は ``in0``, ``in1`` ...)。``plot`` で凡例に使う。
-        buffer_mode: バッファ動作 (ADR-0042 §論点 2-A):
-            - ``"ring"`` (default): ``buffer_capacity`` 到達後は最古サンプルから
-              FIFO drop。``Stop Time = inf`` の長時間実行で OOM 防止。
-            - ``"bounded"``: capacity 到達で `BufferOverflowWarning` を 1 回発し、
-              以降は record を黙って捨てる (= 直近サンプル保持を諦め、初期実行を保つ)。
-            - ``"unbounded"``: 上限なし、無限に成長。**``Simulator.t_end = inf`` と
-              組み合わせると build 時に `BlockSpecError` で reject される**。
+        buffer_mode: バッファ動作 (ADR-0042 §論点 2-A)。``"ring"`` (default) は
+            ``buffer_capacity`` 到達後に最古サンプルから FIFO drop (= ``Stop Time
+            = inf`` の長時間実行で OOM 防止)。``"bounded"`` は capacity 到達で
+            ``BufferOverflowWarning`` を 1 回発し以降は record を黙って捨てる
+            (= 直近サンプル保持を諦め、初期実行を保つ)。``"unbounded"`` は上限
+            なしで無限に成長 — ``Simulator.t_end = inf`` と組み合わせると build
+            時に ``BlockSpecError`` で reject される。
         buffer_capacity: ``ring`` / ``bounded`` の容量 (sample 数)。default
             ``100_000`` (ADR-0042 §論点 2-A)。``unbounded`` では未使用。
     """
@@ -55,13 +55,10 @@ class Scope(Block):
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
         if buffer_mode not in ("ring", "bounded", "unbounded"):
             raise BlockSpecError(
-                f"Scope: buffer_mode must be 'ring' / 'bounded' / 'unbounded', "
-                f"got {buffer_mode!r}"
+                f"Scope: buffer_mode must be 'ring' / 'bounded' / 'unbounded', got {buffer_mode!r}"
             )
         if buffer_mode != "unbounded" and buffer_capacity < 1:
-            raise BlockSpecError(
-                f"Scope: buffer_capacity must be >= 1, got {buffer_capacity!r}"
-            )
+            raise BlockSpecError(f"Scope: buffer_capacity must be >= 1, got {buffer_capacity!r}")
         self.buffer_mode: ScopeBufferMode = buffer_mode
         self.buffer_capacity: int = int(buffer_capacity)
         # ring/bounded は deque/list で実装、unbounded は list (= 既存挙動)

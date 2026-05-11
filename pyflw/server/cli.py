@@ -133,9 +133,7 @@ def _build_settings(
     )
 
 
-def _run_migration(
-    src: Path | None, dst: Path, *, force: bool
-) -> int:
+def _run_migration(src: Path | None, dst: Path, *, force: bool) -> int:
     """``--migrate-models-to`` の本体 (= main から呼ばれる、サーバは起動しない)。
 
     Returns:

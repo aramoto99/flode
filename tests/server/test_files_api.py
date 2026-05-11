@@ -65,9 +65,7 @@ class TestGetTree:
         names = [c["name"] for c in r.json()["children"]]
         assert names == ["alpha.flw.json", "beta.flw.json"]
 
-    def test_directories_listed_before_files(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_directories_listed_before_files(self, client: TestClient, workspace: Path) -> None:
         (workspace / "controllers").mkdir()
         _seed_flw_json(workspace, "alpha.flw.json")
         r = client.get("/api/v1/files/tree", params={"path": ""})
@@ -87,9 +85,7 @@ class TestGetTree:
         # ISO 8601 format (= microseconds + Z)
         assert "T" in f["mtime"]
 
-    def test_directory_metadata_size_is_null(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_directory_metadata_size_is_null(self, client: TestClient, workspace: Path) -> None:
         (workspace / "subdir").mkdir()
         r = client.get("/api/v1/files/tree", params={"path": ""})
         d = r.json()["children"][0]
@@ -135,16 +131,12 @@ class TestGetContent:
         r = client.get("/api/v1/files/content", params={"path": "ghost.flw.json"})
         assert r.status_code == 404
 
-    def test_400_for_directory_path(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_400_for_directory_path(self, client: TestClient, workspace: Path) -> None:
         (workspace / "subdir").mkdir()
         r = client.get("/api/v1/files/content", params={"path": "subdir"})
         assert r.status_code == 400
 
-    def test_422_for_invalid_json(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_422_for_invalid_json(self, client: TestClient, workspace: Path) -> None:
         bad = workspace / "bad.flw.json"
         bad.write_text("not valid json {", encoding="utf-8")
         r = client.get("/api/v1/files/content", params={"path": "bad.flw.json"})
@@ -163,66 +155,46 @@ class TestGetContent:
 class TestPutContent:
     def test_creates_new_file(self, client: TestClient, workspace: Path) -> None:
         body = {"content": {"schema_version": "0.8", "blocks": []}}
-        r = client.put(
-            "/api/v1/files/content", params={"path": "new.flw.json"}, json=body
-        )
+        r = client.put("/api/v1/files/content", params={"path": "new.flw.json"}, json=body)
         assert r.status_code == 200
         assert (workspace / "new.flw.json").exists()
-        assert json.loads((workspace / "new.flw.json").read_text(encoding="utf-8")) == body[
-            "content"
-        ]
+        assert (
+            json.loads((workspace / "new.flw.json").read_text(encoding="utf-8")) == body["content"]
+        )
 
-    def test_overwrites_existing_without_etag(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_overwrites_existing_without_etag(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "x.flw.json", {"v": 1})
         body = {"content": {"v": 2}}
-        r = client.put(
-            "/api/v1/files/content", params={"path": "x.flw.json"}, json=body
-        )
+        r = client.put("/api/v1/files/content", params={"path": "x.flw.json"}, json=body)
         assert r.status_code == 200
         loaded = json.loads((workspace / "x.flw.json").read_text(encoding="utf-8"))
         assert loaded == {"v": 2}
 
-    def test_succeeds_with_matching_etag(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_succeeds_with_matching_etag(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "x.flw.json", {"v": 1})
         # まず GET で etag を取得
         r1 = client.get("/api/v1/files/content", params={"path": "x.flw.json"})
         etag = r1.json()["etag"]
         body = {"content": {"v": 2}, "expected_etag": etag}
-        r2 = client.put(
-            "/api/v1/files/content", params={"path": "x.flw.json"}, json=body
-        )
+        r2 = client.put("/api/v1/files/content", params={"path": "x.flw.json"}, json=body)
         assert r2.status_code == 200
 
-    def test_409_for_mismatched_etag(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_409_for_mismatched_etag(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "x.flw.json", {"v": 1})
         body = {"content": {"v": 2}, "expected_etag": 'W/"99-99"'}
-        r = client.put(
-            "/api/v1/files/content", params={"path": "x.flw.json"}, json=body
-        )
+        r = client.put("/api/v1/files/content", params={"path": "x.flw.json"}, json=body)
         assert r.status_code == 409
         detail = r.json()["detail"]
         assert "current_etag" in detail
         assert detail["message"].startswith("etag mismatch")
 
-    def test_400_for_directory_path(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_400_for_directory_path(self, client: TestClient, workspace: Path) -> None:
         (workspace / "subdir").mkdir()
         body = {"content": {"v": 1}}
-        r = client.put(
-            "/api/v1/files/content", params={"path": "subdir"}, json=body
-        )
+        r = client.put("/api/v1/files/content", params={"path": "subdir"}, json=body)
         assert r.status_code == 400
 
-    def test_auto_creates_parent_dir(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_auto_creates_parent_dir(self, client: TestClient, workspace: Path) -> None:
         body = {"content": {"v": 1}}
         r = client.put(
             "/api/v1/files/content",
@@ -268,9 +240,7 @@ class TestRename:
         assert not (workspace / "old_dir").exists()
         assert (workspace / "new_dir").exists()
 
-    def test_move_across_directories(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_move_across_directories(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "src/file.flw.json")
         r = client.post(
             "/api/v1/files/rename",
@@ -286,9 +256,7 @@ class TestRename:
         )
         assert r.status_code == 404
 
-    def test_409_for_existing_destination(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_409_for_existing_destination(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "a.flw.json")
         _seed_flw_json(workspace, "b.flw.json")
         r = client.post(
@@ -327,17 +295,13 @@ class TestDelete:
         assert r.status_code == 204
         assert not (workspace / "x.flw.json").exists()
 
-    def test_delete_empty_directory(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_delete_empty_directory(self, client: TestClient, workspace: Path) -> None:
         (workspace / "empty").mkdir()
         r = client.delete("/api/v1/files", params={"path": "empty"})
         assert r.status_code == 204
         assert not (workspace / "empty").exists()
 
-    def test_409_for_non_empty_directory(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_409_for_non_empty_directory(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "subdir/x.flw.json")
         r = client.delete("/api/v1/files", params={"path": "subdir"})
         assert r.status_code == 409
@@ -362,30 +326,22 @@ class TestDelete:
 
 
 class TestMkdir:
-    def test_creates_new_directory(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_creates_new_directory(self, client: TestClient, workspace: Path) -> None:
         r = client.post("/api/v1/files/mkdir", params={"path": "new_dir"})
         assert r.status_code == 201
         assert (workspace / "new_dir").is_dir()
 
-    def test_creates_nested_directory(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_creates_nested_directory(self, client: TestClient, workspace: Path) -> None:
         r = client.post("/api/v1/files/mkdir", params={"path": "a/b/c"})
         assert r.status_code == 201
         assert (workspace / "a" / "b" / "c").is_dir()
 
-    def test_409_for_existing_directory(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_409_for_existing_directory(self, client: TestClient, workspace: Path) -> None:
         (workspace / "existing").mkdir()
         r = client.post("/api/v1/files/mkdir", params={"path": "existing"})
         assert r.status_code == 409
 
-    def test_409_for_existing_file(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_409_for_existing_file(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "x.flw.json")
         r = client.post("/api/v1/files/mkdir", params={"path": "x.flw.json"})
         assert r.status_code == 409
@@ -401,9 +357,7 @@ class TestMkdir:
 
 # ADR-0043 §論点 1-A / §論点 8-A: workspace_info endpoint
 class TestWorkspaceInfo:
-    def test_returns_absolute_path_and_hash(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_returns_absolute_path_and_hash(self, client: TestClient, workspace: Path) -> None:
         r = client.get("/api/v1/files/workspace_info")
         assert r.status_code == 200
         data = r.json()
@@ -437,9 +391,7 @@ class TestSearchFiles:
             encoding="utf-8",
         )
 
-    def test_path_search_finds_matches(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_path_search_finds_matches(self, client: TestClient, workspace: Path) -> None:
         self._seed_search_corpus(workspace)
         r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "path"})
         assert r.status_code == 200
@@ -451,9 +403,7 @@ class TestSearchFiles:
             assert "score" in entry
             assert 50.0 <= entry["score"] <= 100.0
 
-    def test_content_search_finds_matches(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_content_search_finds_matches(self, client: TestClient, workspace: Path) -> None:
         self._seed_search_corpus(workspace)
         r = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
         assert r.status_code == 200
@@ -467,9 +417,7 @@ class TestSearchFiles:
             assert "line_content" in entry
             assert len(entry["line_content"]) <= 200
 
-    def test_content_search_case_insensitive(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_content_search_case_insensitive(self, client: TestClient, workspace: Path) -> None:
         self._seed_search_corpus(workspace)
         r1 = client.get("/api/v1/files/search", params={"q": "pid", "kind": "content"})
         r2 = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
@@ -484,15 +432,11 @@ class TestSearchFiles:
         assert r.status_code == 400
 
     def test_invalid_kind_400(self, client: TestClient) -> None:
-        r = client.get(
-            "/api/v1/files/search", params={"q": "pid", "kind": "regex"}
-        )
+        r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "regex"})
         assert r.status_code == 400
 
     def test_invalid_limit_400(self, client: TestClient) -> None:
-        r = client.get(
-            "/api/v1/files/search", params={"q": "pid", "kind": "path", "limit": 0}
-        )
+        r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "path", "limit": 0})
         assert r.status_code == 400
         r = client.get(
             "/api/v1/files/search",
@@ -512,13 +456,9 @@ class TestSearchFiles:
         assert len(data["results"]) <= 3
         assert data["truncated"] is True
 
-    def test_excludes_hard_coded_dirs(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_excludes_hard_coded_dirs(self, client: TestClient, workspace: Path) -> None:
         (workspace / "__pycache__").mkdir()
-        (workspace / "__pycache__" / "pid_cached.txt").write_text(
-            "PID", encoding="utf-8"
-        )
+        (workspace / "__pycache__" / "pid_cached.txt").write_text("PID", encoding="utf-8")
         (workspace / "regular_pid.flw.json").write_text("{}", encoding="utf-8")
         r = client.get("/api/v1/files/search", params={"q": "pid", "kind": "path"})
         paths = [r["path"] for r in r.json()["results"]]
@@ -530,9 +470,7 @@ class TestSearchFiles:
         (workspace / "real.flw.json").write_text("{}", encoding="utf-8")
         (workspace / "skipped.log").write_text("PID inside", encoding="utf-8")
         (workspace / "ignored_dir").mkdir()
-        (workspace / "ignored_dir" / "hidden.flw.json").write_text(
-            "{}", encoding="utf-8"
-        )
+        (workspace / "ignored_dir" / "hidden.flw.json").write_text("{}", encoding="utf-8")
 
         r = client.get("/api/v1/files/search", params={"q": "skipped", "kind": "path"})
         assert all("skipped.log" not in r["path"] for r in r.json()["results"])
@@ -541,17 +479,13 @@ class TestSearchFiles:
         r = client.get("/api/v1/files/search", params={"q": "PID", "kind": "content"})
         assert all("skipped.log" != r["path"] for r in r.json()["results"])
 
-    def test_default_kind_is_path(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_default_kind_is_path(self, client: TestClient, workspace: Path) -> None:
         (workspace / "test.flw.json").write_text("{}", encoding="utf-8")
         r = client.get("/api/v1/files/search", params={"q": "test"})
         assert r.status_code == 200
         assert r.json()["kind"] == "path"
 
-    def test_path_traversal_in_q_does_not_escape(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_path_traversal_in_q_does_not_escape(self, client: TestClient, workspace: Path) -> None:
         (workspace / "real.flw.json").write_text("{}", encoding="utf-8")
         r = client.get("/api/v1/files/search", params={"q": "../etc", "kind": "path"})
         assert r.status_code == 200

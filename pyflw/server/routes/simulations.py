@@ -45,9 +45,7 @@ def _scope_batch_size(request: Request) -> int:
     return int(request.app.state.settings.scope_batch_size)
 
 
-def _resolve_simulator(
-    request: Request, payload: dict[str, Any]
-) -> tuple[Simulator, str]:
+def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simulator, str]:
     """request body から ``Simulator`` を構築する (ADR-0041 §論点 5-A)。
 
     v0.21.0: 2 形式のみ。相互排他で 1 つだけ指定:
@@ -96,9 +94,7 @@ def _resolve_simulator(
                 detail="Path traversal rejected (see server log for details).",
             ) from e
         if not resolved.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Model file not found: {model_path}"
-            )
+            raise HTTPException(status_code=404, detail=f"Model file not found: {model_path}")
         if resolved.is_dir():
             raise HTTPException(
                 status_code=400,
@@ -112,9 +108,7 @@ def _resolve_simulator(
 
     # model_inline (= dict)
     if not isinstance(model_inline, dict):
-        raise HTTPException(
-            status_code=400, detail="'model' must be a JSON object"
-        )
+        raise HTTPException(status_code=400, detail="'model' must be a JSON object")
     try:
         simulator = Simulator.from_dict(model_inline)
     except ModelLoadError as e:

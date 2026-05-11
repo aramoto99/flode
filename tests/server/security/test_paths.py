@@ -145,9 +145,7 @@ class TestRejectWindowsReservedNames:
         with pytest.raises(PathTraversalError):
             resolve_workspace_path(tmp_path, name)
 
-    @pytest.mark.parametrize(
-        "name", ["con", "prn", "aux", "nul", "com0", "com1", "lpt0", "lpt1"]
-    )
+    @pytest.mark.parametrize("name", ["con", "prn", "aux", "nul", "com0", "com1", "lpt0", "lpt1"])
     def test_reserved_without_extension(self, tmp_path: Path, name: str) -> None:
         with pytest.raises(PathTraversalError):
             resolve_workspace_path(tmp_path, name)

@@ -24,7 +24,7 @@ import logging
 import numpy as np
 
 from pyflw import Simulator, linearize
-from pyflw.blocks import Constant, Gain, Integrator, Scope, Step, Sum
+from pyflw.blocks import Gain, Integrator, Scope, Step, Sum
 
 _logger = logging.getLogger("pyflw.examples.jax_jacfwd_pid")
 
@@ -89,7 +89,7 @@ def main() -> None:
     print()
     diff = float(np.max(np.abs(ls_central.A - ls_jax.A)))
     print(f"[PID system] |A_central - A_jax|_max = {diff:.3e}")
-    print(f"[PID system] jax method recovers analytical Jacobian to machine precision.")
+    print("[PID system] jax method recovers analytical Jacobian to machine precision.")
 
     # eigenvalues 比較
     eig_central = np.linalg.eigvals(ls_central.A)

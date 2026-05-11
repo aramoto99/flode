@@ -123,9 +123,7 @@ class TestBuildSettingsWorkspaceErrors:
 
 
 class TestBuildSettingsDefault:
-    def test_default_uses_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_uses_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.chdir(tmp_path)
         settings = _build_settings(
             workspace=None,

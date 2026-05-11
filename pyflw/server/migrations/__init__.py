@@ -33,9 +33,7 @@ class MigrationReport:
         return len(self.errors) > 0
 
 
-def migrate_models_to(
-    src_dir: Path, dst_dir: Path, *, force: bool = False
-) -> MigrationReport:
+def migrate_models_to(src_dir: Path, dst_dir: Path, *, force: bool = False) -> MigrationReport:
     """``src_dir`` 配下の ``*.flw.json`` を ``dst_dir`` 配下に非破壊コピーする。
 
     ADR-0041 §論点 6-A の仕様:
@@ -57,15 +55,11 @@ def migrate_models_to(
     report = MigrationReport()
 
     if not src_dir.exists():
-        report.errors.append(
-            (src_dir, f"Source directory does not exist: {src_dir}")
-        )
+        report.errors.append((src_dir, f"Source directory does not exist: {src_dir}"))
         return report
 
     if not src_dir.is_dir():
-        report.errors.append(
-            (src_dir, f"Source path is not a directory: {src_dir}")
-        )
+        report.errors.append((src_dir, f"Source path is not a directory: {src_dir}"))
         return report
 
     dst_dir.mkdir(parents=True, exist_ok=True)

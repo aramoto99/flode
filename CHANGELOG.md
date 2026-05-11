@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-05-11 — CI hotfix (v0.26.0 で 6 ジョブ赤、ローカル緑)
+
+### Fixed
+
+- **dev extras に ``rapidfuzz`` / ``pathspec`` を追加**: v0.26.0 (= v0.23.0 で追加した
+  workspace 検索の依存) で gui extras にのみ追加していたが、CI test job は
+  ``[dev]`` のみインストールするため ``tests/server/test_files_api.py::TestSearchFiles``
+  が ``ImportError`` で全 collection 失敗していた。
+- **mypy ``[type-arg]`` エラー**: ``pathspec.PathSpec`` を generic 型として
+  ``pathspec.PathSpec[Any]`` (string forward ref) に annotate (= ``files.py``)。
+- **Sphinx ``docs`` ジョブ赤**: ``Scope`` docstring の Args 内に bullet list を
+  書いていたため docutils の ``Unexpected indentation`` 警告 → ``-W`` で error 昇格。
+  bullet list を散文に書き換えた。
+- **ruff lint / format 違反**: ``examples/jax_jacfwd_pid.py`` の unused import +
+  f-string プレースホルダーなしを autofix、複数ファイルの format も適用。
+
+ローカルでは ``pytest`` / ``mypy --strict`` / ``ruff`` / ``sphinx`` の 4 段階
+チェックを CI と同じ手順で通過することを確認。
+
 ## [0.26.0] - 2026-05-11 — Simulink "auto-connect on edge" 対応
 
 ### Added

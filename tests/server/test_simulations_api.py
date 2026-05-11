@@ -106,24 +106,16 @@ class TestStartSimulationModelPath:
         assert response.json()["model_id"] == "controllers/pid.flw.json"
 
     def test_404_for_nonexistent_model_path(self, client: TestClient) -> None:
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "ghost.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "ghost.flw.json"})
         assert response.status_code == 404
 
-    def test_400_for_directory_model_path(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_400_for_directory_model_path(self, client: TestClient, workspace: Path) -> None:
         (workspace / "subdir").mkdir()
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "subdir"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "subdir"})
         assert response.status_code == 400
 
     def test_403_for_path_traversal(self, client: TestClient) -> None:
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "../escape.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "../escape.flw.json"})
         assert response.status_code == 403
 
 
@@ -133,17 +125,13 @@ class TestStartSimulationModelPath:
 
 
 class TestStartSimulationInline:
-    def test_starts_from_inline_model(
-        self, client: TestClient, tmp_path: Path
-    ) -> None:
+    def test_starts_from_inline_model(self, client: TestClient, tmp_path: Path) -> None:
         model_dict = _build_simple_model_dict(tmp_path)
         response = client.post("/api/v1/simulations", json={"model": model_dict})
         assert response.status_code == 200
         assert response.json()["model_id"] == _INLINE_DISPLAY_ID
 
-    def test_inline_model_runs_to_completion(
-        self, client: TestClient, tmp_path: Path
-    ) -> None:
+    def test_inline_model_runs_to_completion(self, client: TestClient, tmp_path: Path) -> None:
         model_dict = _build_simple_model_dict(tmp_path)
         response = client.post("/api/v1/simulations", json={"model": model_dict})
         sim_id = response.json()["simulation_id"]
@@ -151,9 +139,7 @@ class TestStartSimulationInline:
         assert state["status"] == "completed"
 
     def test_400_for_non_dict_model(self, client: TestClient) -> None:
-        response = client.post(
-            "/api/v1/simulations", json={"model": "not a dict"}
-        )
+        response = client.post("/api/v1/simulations", json={"model": "not a dict"})
         assert response.status_code == 400
 
     def test_400_for_invalid_inline_model(self, client: TestClient) -> None:
@@ -175,9 +161,7 @@ class TestStartSimulationMutualExclusion:
         assert response.status_code == 400
         assert "exactly one" in response.json()["detail"]
 
-    def test_400_for_both_keys(
-        self, client: TestClient, workspace: Path, tmp_path: Path
-    ) -> None:
+    def test_400_for_both_keys(self, client: TestClient, workspace: Path, tmp_path: Path) -> None:
         path = _seed_simple_model(workspace, "demo")
         model_dict = _build_simple_model_dict(tmp_path)
         response = client.post(
@@ -200,9 +184,7 @@ class TestStartSimulationMutualExclusion:
 
 
 class TestSimulationLifecycle:
-    def test_completes_and_results_available(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_completes_and_results_available(self, client: TestClient, workspace: Path) -> None:
         path = _seed_simple_model(workspace, "demo")
         response = client.post("/api/v1/simulations", json={"model_path": path})
         sim_id = response.json()["simulation_id"]
@@ -222,9 +204,7 @@ class TestSimulationLifecycle:
 
 
 class TestStopSimulation:
-    def test_stop_marks_simulation_stopped(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_stop_marks_simulation_stopped(self, client: TestClient, workspace: Path) -> None:
         sim = Simulator(t_end=10.0, dt=0.001)
         sim.add(Constant(value=1.0, id="src"))
         sim.add(Gain(k=1.0, id="g"))
@@ -233,9 +213,7 @@ class TestStopSimulation:
         sim.connect("g", "scope")
         sim.save(workspace / "long.flw.json")
 
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "long.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "long.flw.json"})
         sim_id = response.json()["simulation_id"]
 
         time.sleep(0.05)
@@ -247,9 +225,7 @@ class TestStopSimulation:
 
 
 class TestWebSocketStream:
-    def test_receives_progress_and_completed(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_receives_progress_and_completed(self, client: TestClient, workspace: Path) -> None:
         path = _seed_simple_model(workspace, "demo")
         response = client.post("/api/v1/simulations", json={"model_path": path})
         sim_id = response.json()["simulation_id"]
@@ -278,9 +254,7 @@ class TestScopeBatchStreaming:
         sim.connect("g", "scope")
         sim.save(workspace / "batchy.flw.json")
 
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "batchy.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "batchy.flw.json"})
         sim_id = response.json()["simulation_id"]
 
         scope_batches: list[dict] = []
@@ -309,9 +283,7 @@ class TestUnboundedTEnd:
         sim.save(workspace / "unbounded.flw.json")
         return "unbounded.flw.json"
 
-    def test_rest_state_t_end_is_inf_string(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_rest_state_t_end_is_inf_string(self, client: TestClient, workspace: Path) -> None:
         path = self._save_inf_model(workspace)
         response = client.post("/api/v1/simulations", json={"model_path": path})
         sim_id = response.json()["simulation_id"]
@@ -328,9 +300,7 @@ class TestUnboundedTEnd:
         client.post(f"/api/v1/simulations/{sim_id}/stop")
         _wait_for_status(client, sim_id, {"stopped", "completed"}, timeout=5.0)
 
-    def test_ws_progress_t_end_is_inf_string(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_ws_progress_t_end_is_inf_string(self, client: TestClient, workspace: Path) -> None:
         path = self._save_inf_model(workspace)
         response = client.post("/api/v1/simulations", json={"model_path": path})
         sim_id = response.json()["simulation_id"]

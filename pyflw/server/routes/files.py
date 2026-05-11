@@ -41,8 +41,18 @@ from ..security import resolve_workspace_path
 # ADR-0043 §論点 5-A: 検索時に hard-coded で除外するディレクトリ。
 # .gitignore と無関係に常に除外 (= 巨大なノイズ源)。
 _HARD_CODED_EXCLUDE_DIRS: frozenset[str] = frozenset(
-    {".git", ".venv", "venv", "__pycache__", "node_modules", ".pytest_cache",
-     "dist", "build", ".mypy_cache", ".ruff_cache"}
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        ".pytest_cache",
+        "dist",
+        "build",
+        ".mypy_cache",
+        ".ruff_cache",
+    }
 )
 # 検索結果のデフォルト上限 (ADR-0043 §論点 5-A): UI レスポンス性確保のため。
 _DEFAULT_SEARCH_LIMIT = 100
@@ -205,9 +215,7 @@ def get_tree(request: Request, path: str = "") -> dict[str, Any]:
 
     children: list[dict[str, Any]] = []
     # ソート規則: ディレクトリ優先 → 名前順 (case-insensitive)。
-    for child in sorted(
-        resolved.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
-    ):
+    for child in sorted(resolved.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
         try:
             st = child.stat()
         except OSError as e:
@@ -262,9 +270,7 @@ def get_content(request: Request, path: str) -> dict[str, Any]:
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
     if resolved.is_dir():
-        raise HTTPException(
-            status_code=400, detail=f"Path is a directory, not a file: {path}"
-        )
+        raise HTTPException(status_code=400, detail=f"Path is a directory, not a file: {path}")
     # ``stat`` を **read_text の前** に取得して、レスポンスの ``etag`` と
     # ``content`` の対応を保つ (code-reviewer MUST 修正)。read 後に外部書き換えで
     # mtime_ns / size が変わると、後撮りの stat が新しい状態を指して content と
@@ -281,9 +287,7 @@ def get_content(request: Request, path: str) -> dict[str, Any]:
     try:
         content = json.loads(text)
     except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=422, detail=f"File is not valid JSON: {e}"
-        ) from e
+        raise HTTPException(status_code=422, detail=f"File is not valid JSON: {e}") from e
     return {
         "path": path,
         "content": content,
@@ -321,9 +325,7 @@ def put_content(
     workspace_root = _workspace_root(request)
     resolved = _resolve(workspace_root, path)
     if resolved.exists() and resolved.is_dir():
-        raise HTTPException(
-            status_code=400, detail=f"Path is a directory: {path}"
-        )
+        raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
 
     # 楽観ロック: expected_etag 指定 + ファイル既存時のみ check
     if body.expected_etag is not None and resolved.exists():
@@ -347,16 +349,12 @@ def put_content(
     try:
         text = json.dumps(body.content, indent=2, ensure_ascii=False)
     except (TypeError, ValueError) as e:
-        raise HTTPException(
-            status_code=422, detail=f"Content not JSON-serializable: {e}"
-        ) from e
+        raise HTTPException(status_code=422, detail=f"Content not JSON-serializable: {e}") from e
 
     try:
         resolved.write_text(text, encoding="utf-8")
     except OSError as e:
-        raise HTTPException(
-            status_code=500, detail=f"Cannot write file: {e}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Cannot write file: {e}") from e
 
     st = resolved.stat()
     return {
@@ -387,13 +385,9 @@ def rename(request: Request, body: RenameBody) -> dict[str, str]:
     dst = _resolve(workspace_root, body.to)
 
     if not src.exists():
-        raise HTTPException(
-            status_code=404, detail=f"Source not found: {body.from_}"
-        )
+        raise HTTPException(status_code=404, detail=f"Source not found: {body.from_}")
     if dst.exists():
-        raise HTTPException(
-            status_code=409, detail=f"Destination already exists: {body.to}"
-        )
+        raise HTTPException(status_code=409, detail=f"Destination already exists: {body.to}")
 
     # 移動先の親ディレクトリは auto-create
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -428,9 +422,7 @@ def delete(request: Request, path: str) -> Response:
     resolved = _resolve(workspace_root, path)
 
     if _is_same_as_workspace_root(resolved, workspace_root):
-        raise HTTPException(
-            status_code=400, detail="Cannot delete workspace root"
-        )
+        raise HTTPException(status_code=400, detail="Cannot delete workspace root")
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
@@ -445,21 +437,14 @@ def delete(request: Request, path: str) -> Response:
             if e.errno == errno.ENOTEMPTY or getattr(e, "winerror", None) == 145:
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        f"Directory not empty (recursive delete not supported): "
-                        f"{path}"
-                    ),
+                    detail=(f"Directory not empty (recursive delete not supported): {path}"),
                 ) from e
-            raise HTTPException(
-                status_code=500, detail=f"Cannot delete directory: {e}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Cannot delete directory: {e}") from e
     else:
         try:
             resolved.unlink()
         except OSError as e:
-            raise HTTPException(
-                status_code=500, detail=f"Cannot delete file: {e}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Cannot delete file: {e}") from e
 
     return Response(status_code=204)
 
@@ -487,20 +472,14 @@ def mkdir(request: Request, path: str) -> Response:
     resolved = _resolve(workspace_root, path)
 
     if _is_same_as_workspace_root(resolved, workspace_root):
-        raise HTTPException(
-            status_code=400, detail="Cannot mkdir workspace root"
-        )
+        raise HTTPException(status_code=400, detail="Cannot mkdir workspace root")
     if resolved.exists():
-        raise HTTPException(
-            status_code=409, detail=f"Path already exists: {path}"
-        )
+        raise HTTPException(status_code=409, detail=f"Path already exists: {path}")
 
     try:
         resolved.mkdir(parents=True, exist_ok=False)
     except OSError as e:
-        raise HTTPException(
-            status_code=500, detail=f"Cannot create directory: {e}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Cannot create directory: {e}") from e
 
     return Response(status_code=201)
 
@@ -510,7 +489,7 @@ def mkdir(request: Request, path: str) -> Response:
 # ---------------------------------------------------------------------------
 
 
-def _load_gitignore(workspace_root: Path) -> pathspec.PathSpec | None:
+def _load_gitignore(workspace_root: Path) -> pathspec.PathSpec[Any] | None:
     """workspace root 直下の ``.gitignore`` を読んで PathSpec を返す。
 
     存在しない / 読めない場合は ``None`` (= filter なし)。``.gitignore`` が
@@ -532,7 +511,7 @@ def _load_gitignore(workspace_root: Path) -> pathspec.PathSpec | None:
 
 def _iter_workspace_files(
     workspace_root: Path,
-    gitignore_spec: pathspec.PathSpec | None,
+    gitignore_spec: pathspec.PathSpec[Any] | None,
 ) -> Iterator[tuple[Path, str]]:
     """workspace 配下のファイルを再帰列挙し、``(absolute_path, relative_posix)`` を yield する。
 

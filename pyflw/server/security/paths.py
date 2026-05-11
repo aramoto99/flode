@@ -99,9 +99,7 @@ def resolve_workspace_path(workspace_root: Path, raw: str) -> Path:
     # Step 2: backslash 拒否 (POSIX path 形式限定の API)
     # UNC ``\\server\share`` や Windows-style ``\Windows\System32`` を同時に弾く。
     if "\\" in decoded:
-        raise PathTraversalError(
-            "Backslash not allowed in workspace path; use forward slash"
-        )
+        raise PathTraversalError("Backslash not allowed in workspace path; use forward slash")
 
     # Step 3: 絶対 path / Windows ドライブ拒否
     if decoded.startswith("/"):
@@ -124,9 +122,7 @@ def resolve_workspace_path(workspace_root: Path, raw: str) -> Path:
         if seg in ("", ".", ".."):
             continue
         if seg.endswith((" ", ".")):
-            raise PathTraversalError(
-                f"Path segment with trailing space or dot: {seg!r}"
-            )
+            raise PathTraversalError(f"Path segment with trailing space or dot: {seg!r}")
         # 拡張子前の base 部分のみで予約名判定 (= ``CON.flw.json`` も拒否)。
         base = seg.split(".", 1)[0].lower()
         if base in _WIN_RESERVED_NAMES:
@@ -142,8 +138,6 @@ def resolve_workspace_path(workspace_root: Path, raw: str) -> Path:
     try:
         candidate.relative_to(root_resolved)
     except ValueError as e:
-        raise PathTraversalError(
-            f"Path escapes workspace root: {decoded!r}"
-        ) from e
+        raise PathTraversalError(f"Path escapes workspace root: {decoded!r}") from e
 
     return candidate

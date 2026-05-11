@@ -95,9 +95,7 @@ def parse_t_end(raw: Any) -> float:
             未対応の文字列、空文字)。
     """
     if isinstance(raw, bool):
-        raise ModelLoadError(
-            f"Invalid t_end: expected number or 'inf', got bool ({raw!r})"
-        )
+        raise ModelLoadError(f"Invalid t_end: expected number or 'inf', got bool ({raw!r})")
     if isinstance(raw, str):
         normalized = raw.strip().lower()
         if normalized == "inf":
@@ -117,13 +115,10 @@ def parse_t_end(raw: Any) -> float:
                 "accepted as the unbounded sentinel, ADR-0042 §4)"
             )
         if value <= 0.0:
-            raise ModelLoadError(
-                f"Invalid t_end: must be positive, got {value!r}"
-            )
+            raise ModelLoadError(f"Invalid t_end: must be positive, got {value!r}")
         return value
     raise ModelLoadError(
-        f"Invalid t_end type: expected number or 'inf' string, got "
-        f"{type(raw).__name__} ({raw!r})"
+        f"Invalid t_end type: expected number or 'inf' string, got {type(raw).__name__} ({raw!r})"
     )
 
 
