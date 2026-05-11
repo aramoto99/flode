@@ -1180,6 +1180,57 @@ export function removeConnectionFromEditing(
   );
 }
 
+/**
+ * v0.26.0 (Simulink auto-connect-on-edge): エッジを 1 件削除し、source → block →
+ * target の 2 本を atomic に追加する (= 履歴 1 entry にまとめる、undo で 1 回で元に戻る)。
+ * 同 dst_idx に既存接続があれば置換 (= ``addConnectionToEditing`` と同じ規約)。
+ */
+export function spliceEdgeWithBlock(
+  oldEdge: { src: string; src_idx: number; dst: string; dst_idx: number },
+  blockId: string,
+  blockInputIdx: number = 0,
+  blockOutputIdx: number = 0,
+): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) =>
+    applyAtPath(m, path, (view) => {
+      // 旧 edge を除外
+      const withoutOld = view.connections.filter(
+        (c) =>
+          !(
+            c.src === oldEdge.src &&
+            c.src_idx === oldEdge.src_idx &&
+            c.dst === oldEdge.dst &&
+            c.dst_idx === oldEdge.dst_idx
+          ),
+      );
+      // 新 2 本 (= 同 dst_idx と衝突する既存接続も置換するため filter 適用)
+      const upstream = {
+        src: oldEdge.src,
+        src_idx: oldEdge.src_idx,
+        dst: blockId,
+        dst_idx: blockInputIdx,
+      };
+      const downstream = {
+        src: blockId,
+        src_idx: blockOutputIdx,
+        dst: oldEdge.dst,
+        dst_idx: oldEdge.dst_idx,
+      };
+      const dedup = withoutOld.filter(
+        (c) =>
+          !(c.dst === upstream.dst && c.dst_idx === upstream.dst_idx) &&
+          !(c.dst === downstream.dst && c.dst_idx === downstream.dst_idx),
+      );
+      return {
+        blocks: view.blocks,
+        connections: [...dedup, upstream, downstream],
+        layout: view.layout,
+      };
+    }),
+  );
+}
+
 export function updateBlockParams(
   blockId: string,
   params: Record<string, unknown>,

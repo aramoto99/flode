@@ -45,11 +45,17 @@ import {
   addConnectionToEditing,
   removeBlockFromEditing,
   removeConnectionFromEditing,
+  spliceEdgeWithBlock,
   updateBlockPosition,
   updateBlockPositions,
   useAppStore,
 } from "../store/appStore";
 import type { FlwModel } from "../types/api";
+import {
+  type BlockGeom,
+  type EdgeGeom,
+  findSpliceCandidate,
+} from "../lib/autoSplice";
 
 // React Flow に渡すカスタムノード type 表 (modelToDiagram で type: "blockNode" を返す)。
 // 識別子の object 参照を毎回同じにすることで React Flow の警告を回避する
@@ -562,7 +568,72 @@ export function DiagramCanvas(): JSX.Element {
       { id: newId, type: typePath, params: defaultParams },
       position,
     );
+    // v0.26.0 Simulink auto-connect-on-edge: drop 直後に block が edge 上に
+    // 載ったら自動接続。store は同期 set なので getState で最新を読める。
+    tryAutoSplice(newId);
   };
+
+  /**
+   * v0.26.0: ``blockId`` の現在位置で auto-connect-on-edge の判定を行い、
+   * 該当 edge が **正確に 1 件** なら splice する (= 元 edge を 2 本に置換)。
+   *
+   * 適用条件:
+   *   - block が SISO (n_inputs=1, n_outputs=1)
+   *   - block 入力 0 と出力 0 が edge path 上にある (= helper 判定)
+   *   - block 自身に既存 connection が無い (= 動的な auto-splice での既存接続
+   *     破壊を防ぐ、新規 drop と「孤立ブロック移動」だけ対象)
+   */
+  function tryAutoSplice(blockId: string): void {
+    const state = useAppStore.getState();
+    const model = state.editingModel;
+    if (!model) return;
+    let view;
+    try {
+      view = resolveBlocksAtPath(model, state.editingPath);
+    } catch {
+      return;
+    }
+    // block 自身に既存 connection があれば skip (= 利用者が明示的に接続済)
+    const hasOwnConnection = view.connections.some(
+      (c) => c.src === blockId || c.dst === blockId,
+    );
+    if (hasOwnConnection) return;
+    const target = view.blocks.find((b) => b.id === blockId);
+    if (!target) return;
+    const targetLayout = view.layout[blockId];
+    if (!targetLayout) return;
+
+    // block → BlockGeom 変換 (= autoSplice helper が期待する形)
+    const toGeom = (b: typeof target): BlockGeom => {
+      const l = view.layout[b.id];
+      return {
+        id: b.id,
+        type: b.type,
+        params: b.params,
+        x: l?.x ?? 0,
+        y: l?.y ?? 0,
+        w: typeof l?.w === "number" ? l.w : undefined,
+        h: typeof l?.h === "number" ? l.h : undefined,
+      };
+    };
+    const blockGeom = toGeom(target);
+    const allGeoms = view.blocks.map(toGeom);
+    const edgeGeoms: EdgeGeom[] = view.connections.map((c) => ({
+      src: c.src,
+      src_idx: c.src_idx,
+      dst: c.dst,
+      dst_idx: c.dst_idx,
+    }));
+    const candidate = findSpliceCandidate(
+      blockGeom,
+      allGeoms,
+      edgeGeoms,
+      registryMap,
+    );
+    if (candidate) {
+      spliceEdgeWithBlock(candidate.edge, blockId);
+    }
+  }
 
   // ADR-0021 §(4): is_container=true なノード (= Subsystem サブクラス) を
   // ダブルクリックでドリルダウンする。registry の `is_container` を参照。
@@ -745,8 +816,11 @@ export function DiagramCanvas(): JSX.Element {
             }
           }
         }}
-        onNodeDragStop={() => {
+        onNodeDragStop={(_event, node) => {
           document.body.classList.remove("pyflw-dragging");
+          // v0.26.0: 移動後の位置で auto-connect-on-edge を試行
+          // (= 孤立ブロックを wire の上に置いたケース)
+          tryAutoSplice(node.id);
         }}
         onSelectionDragStart={() => {
           document.body.classList.add("pyflw-dragging");

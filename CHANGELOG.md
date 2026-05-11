@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-05-11 — Simulink "auto-connect on edge" 対応
+
+### Added
+
+- **エッジ上にブロックを置くと自動接続**: Simulink R2014b〜の "drop on wire"
+  / "splice into wire" 動作を再現。SISO (n_inputs=1, n_outputs=1) ブロックを:
+  - Palette からエッジ上に **drop** すると、入力 0 と出力 0 がエッジ路上に
+    乗っている場合に元エッジが `source → block → target` の 2 本に自動分割
+  - 既存の孤立ブロック (= 接続が無いブロック) を canvas 上で **drag stop** した
+    位置がエッジ上の場合も同様に自動分割
+  - 既に接続を持つブロックの移動は対象外 (= 既存接続の破壊を回避)
+  - エッジ複数が match する場合は曖昧として何もしない (= 利用者の手動接続待ち)
+- 判定 helper `src/lib/autoSplice.ts`:
+  - smooth-step (90° 折れ線) edge を前提に、水平セグメント (source 側 / target 側 /
+    縮退時の単一直線) 上の交点判定を実装
+  - 許容距離 10 px (`SPLICE_TOLERANCE_PX`)
+  - `<input type="text">` 互換、純粋関数で testable
+- store action `spliceEdgeWithBlock(oldEdge, blockId)`: 元エッジ 1 本削除 +
+  upstream / downstream 2 本追加を **1 history entry** にまとめ、`Ctrl+Z` 1 回で
+  完全に元に戻る。
+
+### Verification
+
+- frontend vitest: **312 passed** (= 295 prior + 17 new for autoSplice)
+- typecheck + production build: clean
+
 ## [0.25.0] - 2026-05-11 — UI デザインシステム確立 + Inspector / ModelSettings 統一
 
 ### Added
