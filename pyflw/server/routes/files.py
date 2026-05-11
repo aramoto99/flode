@@ -39,7 +39,9 @@ from ...exceptions import PathTraversalError
 from ..security import resolve_workspace_path
 
 # ADR-0043 §論点 5-A: 検索時に hard-coded で除外するディレクトリ。
-# .gitignore と無関係に常に除外 (= 巨大なノイズ源)。
+# .gitignore と無関係に常に除外 (= 巨大なノイズ源 + 機密漏洩防止)。
+# security-reviewer SHOULD: ``.ssh`` / ``.aws`` / ``.gnupg`` / ``.docker`` /
+# ``.idea`` を追加 (= secret / IDE workspace dump の露出回避)。
 _HARD_CODED_EXCLUDE_DIRS: frozenset[str] = frozenset(
     {
         ".git",
@@ -52,11 +54,29 @@ _HARD_CODED_EXCLUDE_DIRS: frozenset[str] = frozenset(
         "build",
         ".mypy_cache",
         ".ruff_cache",
+        ".ssh",
+        ".aws",
+        ".gnupg",
+        ".docker",
+        ".idea",
     }
 )
+# secret ファイル名パターン: content 検索でこれらの中身が response 行に混入する
+# のを防ぐため、列挙段階で除外する。``.env.local`` / ``.env.production`` 等の
+# ``.env.`` prefix も _iter_workspace_files 側で startswith 判定。
+_HARD_CODED_EXCLUDE_FILE_NAMES: frozenset[str] = frozenset(
+    {".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"}
+)
+
 # 検索結果のデフォルト上限 (ADR-0043 §論点 5-A): UI レスポンス性確保のため。
 _DEFAULT_SEARCH_LIMIT = 100
 _MAX_SEARCH_LIMIT = 1000
+# security-reviewer MUST: ``q`` 長さ上限 (= rapidfuzz の O(|q|·|rel|) DoS 防止)。
+_MAX_QUERY_LEN = 256
+# security-reviewer MUST: content 検索の 1 ファイルあたり最大バイト数 (OOM 防止)。
+_MAX_CONTENT_FILE_SIZE = 2 * 1024 * 1024  # 2 MiB
+# security-reviewer SHOULD: fs walk で訪問する file 上限。超過は truncated=True。
+_MAX_FILES_SCANNED = 50_000
 
 _logger = logging.getLogger("pyflw.server.routes.files")
 
@@ -548,6 +568,13 @@ def _iter_workspace_files(
                         continue
                     stack.append(entry)
                 elif entry.is_file():
+                    # security-reviewer SHOULD: secret ファイル名 (.env / .env.*
+                    # / id_rsa 等) は中身を露出させないため列挙段階で除外。
+                    name = entry.name
+                    if name in _HARD_CODED_EXCLUDE_FILE_NAMES:
+                        continue
+                    if name.startswith(".env."):
+                        continue
                     rel = entry.relative_to(workspace_resolved).as_posix()
                     if gitignore_spec is not None and gitignore_spec.match_file(rel):
                         continue
@@ -590,6 +617,9 @@ def search_files(
     """
     if not q.strip():
         raise HTTPException(status_code=400, detail="Empty query")
+    # security-reviewer MUST: ``q`` 長さ上限 (= rapidfuzz の DoS 防止)
+    if len(q) > _MAX_QUERY_LEN:
+        raise HTTPException(status_code=400, detail=f"Query too long (max {_MAX_QUERY_LEN} chars)")
     if kind not in ("path", "content"):
         raise HTTPException(
             status_code=400, detail=f"Invalid kind: {kind!r} (must be 'path' or 'content')"
@@ -606,26 +636,47 @@ def search_files(
     truncated = False
 
     if kind == "path":
-        # rapidfuzz の WRatio はファイル名 vs クエリで「全体的な近さ」を 0-100 で返す。
+        # rapidfuzz WRatio はファイル名 vs クエリの「全体的な近さ」を 0-100 で返す。
         # スコア ≥ 50 をしきい値とし、降順ソートで limit 件返す。
+        # security-reviewer SHOULD: fs walk visit 上限と heap で全件蓄積を回避。
+        import heapq
+
         scored: list[tuple[float, str]] = []
+        scanned = 0
         for _file_path, rel in _iter_workspace_files(workspace_root, gitignore_spec):
+            scanned += 1
+            if scanned > _MAX_FILES_SCANNED:
+                truncated = True
+                break
             score = fuzz.WRatio(q, rel)
             if score >= 50:
-                scored.append((score, rel))
-        scored.sort(key=lambda x: -x[0])
-        for score, rel in scored[:limit]:
+                # top-limit 件だけ保持する min-heap (= 全件蓄積を避ける)
+                if len(scored) < limit:
+                    heapq.heappush(scored, (score, rel))
+                else:
+                    truncated = True  # 1 件でも溢れたら truncated
+                    heapq.heappushpop(scored, (score, rel))
+        # スコア降順で出力
+        for score, rel in sorted(scored, key=lambda x: -x[0]):
             results.append({"path": rel, "score": float(score)})
-        truncated = len(scored) > limit
     else:  # kind == "content"
         # substring case-insensitive line grep。バイナリ判定は単純化のため非テキスト
         # ファイル (= UTF-8 decode 失敗) は skip。
+        # security-reviewer MUST: 大ファイルの read_text による OOM を防ぐため
+        # ``_MAX_CONTENT_FILE_SIZE`` 超は skip。fs walk 自体も visit 上限あり。
         q_lower = q.lower()
+        scanned = 0
         for file_path, rel in _iter_workspace_files(workspace_root, gitignore_spec):
+            scanned += 1
+            if scanned > _MAX_FILES_SCANNED:
+                truncated = True
+                break
             if len(results) >= limit:
                 truncated = True
                 break
             try:
+                if file_path.stat().st_size > _MAX_CONTENT_FILE_SIZE:
+                    continue
                 text = file_path.read_text(encoding="utf-8", errors="strict")
             except (OSError, UnicodeDecodeError):
                 continue

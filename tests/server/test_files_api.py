@@ -489,6 +489,45 @@ class TestSearchFiles:
         (workspace / "real.flw.json").write_text("{}", encoding="utf-8")
         r = client.get("/api/v1/files/search", params={"q": "../etc", "kind": "path"})
         assert r.status_code == 200
+        # security-reviewer SHOULD: 戻り値に ``..`` / 絶対 path 不在を確認
+        for entry in r.json()["results"]:
+            assert not entry["path"].startswith("/"), entry
+            assert ".." not in entry["path"], entry
+
+    def test_query_too_long_400(self, client: TestClient) -> None:
+        # security-reviewer MUST: ``q`` 長さ上限 (= rapidfuzz DoS 防止)
+        r = client.get(
+            "/api/v1/files/search",
+            params={"q": "A" * 5000, "kind": "path"},
+        )
+        assert r.status_code == 400
+        assert "Query too long" in r.json()["detail"]
+
+    def test_excludes_env_file_content(self, client: TestClient, workspace: Path) -> None:
+        # security-reviewer SHOULD: ``.env`` の中身が content 検索で漏れない
+        (workspace / ".env").write_text("SECRET_KEY=abc123", encoding="utf-8")
+        (workspace / ".env.production").write_text("DB_PASS=xyz", encoding="utf-8")
+        (workspace / "normal.flw.json").write_text("SECRET_KEY=harmless", encoding="utf-8")
+        r = client.get(
+            "/api/v1/files/search",
+            params={"q": "SECRET_KEY", "kind": "content"},
+        )
+        paths = [entry["path"] for entry in r.json()["results"]]
+        assert ".env" not in paths
+        assert ".env.production" not in paths
+        # normal file はヒットすること (= 機能の正常動作確認)
+        assert "normal.flw.json" in paths
+
+    def test_excludes_ssh_directory(self, client: TestClient, workspace: Path) -> None:
+        # security-reviewer SHOULD: ``.ssh`` 配下が検索対象外
+        (workspace / ".ssh").mkdir()
+        (workspace / ".ssh" / "id_rsa").write_text("KEY", encoding="utf-8")
+        r = client.get(
+            "/api/v1/files/search",
+            params={"q": "id_rsa", "kind": "path"},
+        )
+        paths = [entry["path"] for entry in r.json()["results"]]
+        assert not any(".ssh" in p for p in paths)
 
 
 # v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` モード削除に伴い

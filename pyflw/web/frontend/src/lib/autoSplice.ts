@@ -53,18 +53,11 @@ export interface SpliceCandidate {
  * Triangle / Circle の出力は中央 (50%)、Bar / Trapezoid 等は等間隔。
  */
 function inputHandleY(shape: BlockShape, h: number, idx: number, n: number): number {
-  // BlockNodeView の inputHandlePosition と同じロジック
-  if (
-    shape.kind === "triangle-r" ||
-    shape.kind === "circle" ||
-    shape.kind === "bar" ||
-    shape.kind === "trapezoid-l" ||
-    shape.kind === "rect" ||
-    shape.kind === "rect-wide" ||
-    shape.kind === "trapezoid-r"
-  ) {
-    return ((idx + 1) * h) / (n + 1);
-  }
+  // BlockNodeView の inputHandlePosition と同じロジック (= 全 shape kind で
+  // 左辺等間隔配置)。code-reviewer MUST 修正: 旧コードは shape kind ごとに
+  // 同一式を返す dead if 分岐で、将来 BlockNodeView が shape 依存になった時に
+  // ここの更新が漏れて auto-splice が誤判定する罠だったため統一。
+  void shape;
   return ((idx + 1) * h) / (n + 1);
 }
 

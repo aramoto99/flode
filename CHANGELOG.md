@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.11] - 2026-05-11 — code-reviewer / security-reviewer 指摘の hotfix
+
+### Security
+
+- **File API ``/api/v1/files/search`` の秘密ファイル除外を強化** (security-reviewer
+  指摘): workspace 内に偶発的に置かれている可能性のある credential ファイルを
+  hardcoded で検索結果から除外する。
+  - ファイル名除外: ``.env`` (+ ``.env.*`` 前綴)、``id_rsa`` / ``id_ed25519`` /
+    ``id_ecdsa`` / ``id_dsa``
+  - ディレクトリ除外に ``.ssh`` / ``.aws`` / ``.gnupg`` / ``.docker`` / ``.idea``
+    を追加 (= 既存の ``.git`` / ``node_modules`` 等と同じ frozenset)
+  - これは workspace owner の機密ファイルが** preview として bytes ペイロードに
+    含まれてしまう** リスクを潰すため、設定可能 (user override) ではなく **常に
+    enforce** する hard-coded list として実装。
+- **DoS 緩和** (security-reviewer 指摘):
+  - ``q`` パラメータの長さを **256 文字に制限** (= rapidfuzz の WRatio が
+    超長文クエリで O(N×M) 退化するのを防止)、超過時は 400 Bad Request
+  - **path search を heap-bounded** に変更 (``heapq.heappushpop``): スコア順
+    top-N を保持しながら最大 ``limit`` 件しかメモリに保持しない (= 旧実装は
+    全マッチを保持してから sort、巨大 workspace で OOM)
+  - **content search 1 ファイル ≤ 2 MiB** 制限 (= ``file_path.stat().st_size``
+    で事前 skip、bytes load 前に弾く)
+  - **fs walk 全体で最大 50,000 ファイルまで visit** (= 万一 excludes を
+    すり抜けても探索が無限に続かない、超過後は途中結果を返す)
+
+### Fixed
+
+- **``autoSplice.ts`` ``inputHandleY`` の dead if-branch を削除** (code-reviewer
+  指摘): 全 shape kind で同じ式を返す死分岐が、将来 ``BlockNodeView`` が shape
+  依存になった時に同期漏れで誤判定する罠だったため、単純な等間隔配置式に統一。
+- **``ResizeHandleX`` (左サイドバー drag) に ``setPointerCapture`` を追加**
+  (code-reviewer 指摘): drag 開始 element がスクロール等で外れた時にも
+  ``pointermove`` を確実に拾い続け、稀に発生する「ドラッグ中断で幅が固まる」
+  バグを防止。
+- **``TabBar`` / ``TabButton`` に ARIA ``role`` / ``aria-selected`` を付与**
+  (code-reviewer 指摘): スクリーンリーダーで tablist として認識されるよう、
+  ``role="tablist"`` (+ optional ``aria-label``)、``role="tab"`` +
+  ``aria-selected={active}`` を実装。
+
+### Tests
+
+- ``tests/server/test_files_api.py`` に 3 ケース追加:
+  - ``test_query_too_long_400`` (= ``q`` 257 文字超で 400)
+  - ``test_excludes_env_file_content`` (= ``.env`` ファイルが content search で
+    返ってこない)
+  - ``test_excludes_ssh_directory`` (= ``.ssh/`` 配下が path / content 双方で
+    返ってこない)
+- ``test_path_traversal_in_q_does_not_escape`` を強化 (結果 path が ``/`` 始まり
+  または ``..`` を含まないことを assert)
+
+### Verification
+
+- ruff check / ruff format --check: clean
+- mypy 48 files: clean
+- pytest: 1236 passed (回帰なし、+3 新規)
+- frontend vitest: 312 passed
+- typecheck + production build: clean
+
 ## [0.26.10] - 2026-05-11 — 左サイドバー drag resize を自前実装に切替 (react-resizable-panels horizontal が grid 内で機能せず)
 
 ### Fixed

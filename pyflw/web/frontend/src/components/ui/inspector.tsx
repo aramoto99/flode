@@ -328,11 +328,17 @@ export function DangerButton({
  */
 export function TabBar({
   children,
+  label,
 }: {
   children: React.ReactNode;
+  label?: string;
 }): JSX.Element {
   return (
-    <div className="flex items-end gap-0 border-b border-slate-400 bg-slate-100 pl-2 pt-1">
+    <div
+      role="tablist"
+      aria-label={label}
+      className="flex items-end gap-0 border-b border-slate-400 bg-slate-100 pl-2 pt-1"
+    >
       {children}
     </div>
   );
@@ -350,6 +356,8 @@ export function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={`-mb-px border border-b-0 px-3 py-0.5 text-[11px] ${
         active

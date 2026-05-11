@@ -399,6 +399,13 @@ function ResizeHandleX({
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.stopPropagation();
+    // code-reviewer SHOULD: setPointerCapture で高速 drag + window 外への
+    // ポインタ離脱でも pointerup を取りこぼさないように。
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // 古いブラウザ等で setPointerCapture が無い場合は window listener にフォールバック
+    }
     startRef.current = { x: e.clientX, baseline: value };
     setDragging(true);
     const move = (me: PointerEvent): void => {
