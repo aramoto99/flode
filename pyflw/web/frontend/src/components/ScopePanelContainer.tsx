@@ -17,7 +17,7 @@ interface PanelGeometry {
   h: number;
 }
 
-const DEFAULT_GEOMETRY: PanelGeometry = { x: 200, y: 200, w: 480, h: 320 };
+const DEFAULT_GEOMETRY: PanelGeometry = { x: 200, y: 200, w: 560, h: 360 };
 
 function makeKey(workspaceHash: string, modelPath: string, scopeId: string): string {
   // ADR-0044 §論点 6-A: pyflw.scope_panel.<hash>.<base64url(model_path)>.<scope_id>
@@ -91,7 +91,11 @@ export function ScopePanelContainer(): JSX.Element {
             : null;
         const initial = key
           ? loadGeometry(key)
-          : { ...DEFAULT_GEOMETRY, x: DEFAULT_GEOMETRY.x + idx * 30, y: DEFAULT_GEOMETRY.y + idx * 30 };
+          : {
+              ...DEFAULT_GEOMETRY,
+              x: DEFAULT_GEOMETRY.x + idx * 30,
+              y: DEFAULT_GEOMETRY.y + idx * 30,
+            };
 
         return (
           <Rnd
@@ -102,9 +106,11 @@ export function ScopePanelContainer(): JSX.Element {
               width: initial.w,
               height: initial.h,
             }}
-            minWidth={280}
-            minHeight={180}
+            minWidth={320}
+            minHeight={220}
             bounds="window"
+            // ADR-0044 §論点 6: ScopeView の header を drag handle にする
+            // (= 二重タイトル回避、UX 1 まとまり)
             dragHandleClassName="scope-panel-drag-handle"
             onDragStop={(_, d) => {
               if (!key) return;
@@ -122,23 +128,20 @@ export function ScopePanelContainer(): JSX.Element {
             }}
             // ADR-0044 §論点 6: 後にクリックされた panel が前面 (= z-index 順)
             style={{ zIndex: 40 + idx, pointerEvents: "auto" }}
-            className="rounded border border-slate-400 bg-white shadow-2xl"
+            className="rounded border border-slate-400 bg-white shadow-2xl overflow-hidden"
           >
-            <div className="flex h-full flex-col">
-              <div className="scope-panel-drag-handle flex h-6 cursor-move items-center border-b border-slate-300 bg-slate-100 px-2 text-[11px] font-medium text-slate-700">
-                <span className="font-mono">{scopeId}</span>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                {blockType.endsWith(".XYGraph") ? (
-                  <XYGraphView scopeId={scopeId} buffer={buffer} />
-                ) : (
-                  <ScopeView
-                    scopeId={scopeId}
-                    buffer={buffer}
-                    formFactor="panel"
-                  />
-                )}
-              </div>
+            {/* React-rnd の inner wrapper は inline style で height: 100% を持つ。
+                内側の div は h-full / w-full で chain を繋ぐ。 */}
+            <div className="flex h-full w-full flex-col">
+              {blockType.endsWith(".XYGraph") ? (
+                <XYGraphView scopeId={scopeId} buffer={buffer} />
+              ) : (
+                <ScopeView
+                  scopeId={scopeId}
+                  buffer={buffer}
+                  formFactor="panel"
+                />
+              )}
             </div>
           </Rnd>
         );

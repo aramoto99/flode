@@ -51,6 +51,13 @@ export function UPlotChart({
     instanceRef.current = inst;
     lastOptionsRef.current = options;
     lastDataRef.current = data;
+    // ADR-0044 §論点 6: 新 instance は options.width/height (default 400x192) で
+    // 作られるため、即座に親サイズへリサイズする (= ResizeObserver は size 変化
+    // が無いと発火しないので、再生成のたびに明示的に setSize を呼ぶ必要がある)。
+    const { width, height } = root.getBoundingClientRect();
+    if (width > 0 && height > 0) {
+      inst.setSize({ width, height });
+    }
     return () => {
       inst.destroy();
       if (instanceRef.current === inst) instanceRef.current = null;

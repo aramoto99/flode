@@ -147,10 +147,16 @@ export function ScopeView({
 
   const settings = editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
 
+  // ADR-0044 §論点 4: options は buffer 変更ごとに再計算しない
+  // (= 毎 WS scope_batch で uPlot を destroy/recreate してしまうのを避ける)。
+  // 再生成 trigger は ``scopeId`` / ``n_signals`` / ``settings`` 変更のみ。
+  // log fallback は buffer の参照を使うが、recheck タイミングは settings 変更時
+  // のみで OK (= log mode に切替えた時点で再評価され、その後はモード一定)。
   const options = useMemo(
     () =>
       buildOptions(scopeId, Math.max(buffer.n_signals, 1), settings, buffer),
-    [scopeId, buffer.n_signals, settings, buffer],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scopeId, buffer.n_signals, settings],
   );
   const data = useMemo(
     () => buildAlignedData(buffer),
@@ -158,9 +164,14 @@ export function ScopeView({
     [buffer, buffer.length],
   );
 
-  // ADR-0044 §論点 4 / §論点 6 / §論点 8: ヘッダー (= 設定 / 最大化 / panel 化)
+  // ADR-0044 §論点 4 / §論点 6 / §論点 8: ヘッダー (= 設定 / 最大化 / panel 化)。
+  // panel mode 時は ``scope-panel-drag-handle`` クラスを付与し、Rnd の drag 起点にする。
   const header = !hideHeader && (
-    <div className="flex h-6 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700">
+    <div
+      className={`flex h-6 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700 ${
+        formFactor === "panel" ? "scope-panel-drag-handle cursor-move" : ""
+      }`}
+    >
       <span className="font-mono font-medium">{scopeId}</span>
       <div className="flex-1" />
       <button

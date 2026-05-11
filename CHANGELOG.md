@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-05-11 — Scope floating panel 表示不具合修正
+
+### Fixed
+
+- **Floating Scope panel のプロットがパネルサイズに追従しない問題**: uPlot は
+  options.width / options.height で初期化されるため、設定変更等で uPlot を
+  再生成した直後は default 400x192px のままだった。``UPlotChart`` で
+  instance 作成直後に親要素サイズへ ``setSize`` を明示的に呼ぶよう修正。
+- **Floating Scope panel に "Scope_X" タイトルが二重表示される問題**:
+  ``ScopePanelContainer`` の drag handle タイトルを削除し、``ScopeView`` の
+  header (= 設定 / 最大化 / 閉じるボタン付き) を drag handle として再利用。
+- **Scope 表示が WS スコープバッチごとに uPlot 再生成する性能問題**: 
+  ``ScopeView`` の options ``useMemo`` 依存から ``buffer`` 参照を除外、
+  Scope ID / 信号数 / 設定変更時のみ再生成するように修正。
+
 ## [0.24.1] - 2026-05-11 — Scope ホイールズーム
 
 ADR-0044 §論点 7 で予告したカーソル/ズーム/パンのうち、ホイールズームを実装。
