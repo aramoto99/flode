@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-05-11 — Scope ホイールズーム
+
+ADR-0044 §論点 7 で予告したカーソル/ズーム/パンのうち、ホイールズームを実装。
+
+### Added
+
+- **Scope / XYGraph のグラフ上でマウスホイール**:
+  - **上スクロール**: カーソル位置を中心に X 軸ズームイン (= 20% per notch)
+  - **下スクロール**: 同様にズームアウト
+  - **Shift + ホイール**: Y 軸方向のズーム
+  - **Ctrl + ホイール**: ブラウザのページズームに譲る (= 干渉なし)
+  - inline / floating panel どちらでも動作
+
+### Verification
+
+- frontend vitest: **286 passed** (= 281 prior + 5 new wheel zoom)
+- typecheck + production build: clean
+- backend pytest: 1233 passed (回帰なし)
+
 ## [0.24.0] - 2026-05-11 — Scope 表示エリア + プロット設定 + floating panel
 
 ADR-0044 採択。Scope の表示と操作性を大幅強化。**完全後方互換** (= 既存

@@ -11,11 +11,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const setData = vi.fn();
 const setSize = vi.fn();
 const destroy = vi.fn();
+const setScale = vi.fn();
+const posToVal = vi.fn((pos: number, axis: string) => {
+  // テスト用 stub: data 座標 ≒ pixel 座標 / 10 を返す (= 簡易な変換)
+  void axis;
+  return pos / 10;
+});
 const ctorCalls: Array<{ opts: unknown; data: unknown; root: unknown }> = [];
 
 vi.mock("uplot", () => {
   const ctor = vi.fn(function (
-    this: { setData: typeof setData; setSize: typeof setSize; destroy: typeof destroy },
+    this: {
+      setData: typeof setData;
+      setSize: typeof setSize;
+      destroy: typeof destroy;
+      setScale: typeof setScale;
+      posToVal: typeof posToVal;
+      scales: Record<string, { min: number; max: number }>;
+    },
     opts: unknown,
     data: unknown,
     root: unknown,
@@ -24,6 +37,10 @@ vi.mock("uplot", () => {
     this.setData = setData;
     this.setSize = setSize;
     this.destroy = destroy;
+    this.setScale = setScale;
+    this.posToVal = posToVal;
+    // テスト用 default scales: x [0,10], y [0,100]
+    this.scales = { x: { min: 0, max: 10 }, y: { min: 0, max: 100 } };
   });
   return { default: ctor };
 });
@@ -34,6 +51,8 @@ beforeEach(() => {
   setData.mockClear();
   setSize.mockClear();
   destroy.mockClear();
+  setScale.mockClear();
+  posToVal.mockClear();
   ctorCalls.length = 0;
 });
 
@@ -145,6 +164,98 @@ describe("UPlotChart: className prop", () => {
     const div = container.firstChild as HTMLElement;
     expect(div.className).toContain("absolute");
     expect(div.className).toContain("inset-0");
+  });
+});
+
+describe("UPlotChart: wheel zoom (ADR-0044 §論点 7)", () => {
+  function dispatchWheel(
+    el: HTMLElement,
+    init: Partial<WheelEventInit & { ctrlKey: boolean; shiftKey: boolean }>,
+  ): WheelEvent {
+    // jsdom の WheelEvent は preventDefault を自前で持つ。cancelable: true で
+    // デフォルト挙動キャンセル可能にする。
+    const ev = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: init.deltaY ?? 100,
+      clientX: init.clientX ?? 50,
+      clientY: init.clientY ?? 50,
+      ctrlKey: init.ctrlKey ?? false,
+      shiftKey: init.shiftKey ?? false,
+    });
+    el.dispatchEvent(ev);
+    return ev;
+  }
+
+  it("zooms in X axis on wheel up (negative deltaY)", () => {
+    const opts = { width: 400, height: 200, series: [{}, { label: "A" }] };
+    const data: [Float64Array, Float64Array] = [
+      new Float64Array([0, 1, 2]),
+      new Float64Array([10, 20, 30]),
+    ];
+    const { container } = render(<UPlotChart options={opts} data={data} />);
+    const div = container.firstChild as HTMLElement;
+    dispatchWheel(div, { deltaY: -100, clientX: 50 });
+    // setScale("x", {...}) が呼ばれる
+    expect(setScale).toHaveBeenCalledTimes(1);
+    const [axis, range] = setScale.mock.calls[0]!;
+    expect(axis).toBe("x");
+    // zoom in なので新 range は元 [0,10] より狭い
+    expect((range as { max: number }).max - (range as { min: number }).min).toBeLessThan(10);
+  });
+
+  it("zooms out X axis on wheel down (positive deltaY)", () => {
+    const opts = { width: 400, height: 200, series: [{}, { label: "A" }] };
+    const data: [Float64Array, Float64Array] = [
+      new Float64Array([0, 1]),
+      new Float64Array([10, 20]),
+    ];
+    const { container } = render(<UPlotChart options={opts} data={data} />);
+    const div = container.firstChild as HTMLElement;
+    dispatchWheel(div, { deltaY: 100, clientX: 50 });
+    expect(setScale).toHaveBeenCalledTimes(1);
+    const [, range] = setScale.mock.calls[0]!;
+    // zoom out なので新 range は元 [0,10] より広い
+    expect((range as { max: number }).max - (range as { min: number }).min).toBeGreaterThan(10);
+  });
+
+  it("targets Y axis when Shift held", () => {
+    const opts = { width: 400, height: 200, series: [{}, { label: "A" }] };
+    const data: [Float64Array, Float64Array] = [
+      new Float64Array([0, 1]),
+      new Float64Array([10, 20]),
+    ];
+    const { container } = render(<UPlotChart options={opts} data={data} />);
+    const div = container.firstChild as HTMLElement;
+    dispatchWheel(div, { deltaY: -100, shiftKey: true });
+    expect(setScale).toHaveBeenCalledTimes(1);
+    expect(setScale.mock.calls[0]![0]).toBe("y");
+  });
+
+  it("passes through Ctrl+wheel (browser page zoom)", () => {
+    const opts = { width: 400, height: 200, series: [{}, { label: "A" }] };
+    const data: [Float64Array, Float64Array] = [
+      new Float64Array([0, 1]),
+      new Float64Array([10, 20]),
+    ];
+    const { container } = render(<UPlotChart options={opts} data={data} />);
+    const div = container.firstChild as HTMLElement;
+    const ev = dispatchWheel(div, { deltaY: -100, ctrlKey: true });
+    // setScale は呼ばれず、event の preventDefault も呼ばれない (= browser に譲る)
+    expect(setScale).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it("prevents page scroll while zooming (preventDefault)", () => {
+    const opts = { width: 400, height: 200, series: [{}, { label: "A" }] };
+    const data: [Float64Array, Float64Array] = [
+      new Float64Array([0, 1]),
+      new Float64Array([10, 20]),
+    ];
+    const { container } = render(<UPlotChart options={opts} data={data} />);
+    const div = container.firstChild as HTMLElement;
+    const ev = dispatchWheel(div, { deltaY: 50 });
+    expect(ev.defaultPrevented).toBe(true);
   });
 });
 

@@ -83,5 +83,51 @@ export function UPlotChart({
     return () => ro.disconnect();
   }, []);
 
+  // ADR-0044 §論点 7: マウスホイールで X 軸 zoom (カーソル位置を中心に拡大/縮小)。
+  // Shift 押下時は Y 軸 zoom。Ctrl 押下時はブラウザのページズームに譲る。
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const ZOOM_FACTOR = 1.2; // 1 notch = 20% zoom in/out
+
+    const handler = (e: WheelEvent): void => {
+      // Ctrl は browser のページズーム / OS のスクロール拡大に譲る
+      if (e.ctrlKey || e.metaKey) return;
+      const inst = instanceRef.current;
+      if (!inst) return;
+      e.preventDefault();
+
+      // uPlot のプロット領域 (axes 外) 座標に変換
+      const rect = root.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+
+      const axisKey = e.shiftKey ? "y" : "x";
+      const scale = inst.scales[axisKey];
+      if (!scale || scale.min == null || scale.max == null) return;
+
+      // 拡大係数: deltaY > 0 (= 下スクロール) で zoom out、deltaY < 0 で zoom in
+      const factor = e.deltaY > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+
+      // カーソル位置の data 値を取得 (= zoom 中心)
+      const cursorVal =
+        axisKey === "x"
+          ? inst.posToVal(offsetX, "x")
+          : inst.posToVal(offsetY, "y");
+      if (cursorVal == null || !Number.isFinite(cursorVal)) return;
+
+      const newMin = cursorVal - (cursorVal - scale.min) * factor;
+      const newMax = cursorVal + (scale.max - cursorVal) * factor;
+      if (!Number.isFinite(newMin) || !Number.isFinite(newMax)) return;
+      if (newMax <= newMin) return;
+
+      inst.setScale(axisKey, { min: newMin, max: newMax });
+    };
+
+    // `passive: false` で preventDefault を効かせる
+    root.addEventListener("wheel", handler, { passive: false });
+    return () => root.removeEventListener("wheel", handler);
+  }, []);
+
   return <div ref={containerRef} className={className} />;
 }
