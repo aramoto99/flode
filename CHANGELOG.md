@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.12] - 2026-05-11 — シミュレーション開始時にブロック図のビューポート (zoom + pan) がリセットされる問題を修正
+
+### Fixed
+
+- **シミュレーション実行で React Flow の zoom / pan がリセットされる問題**:
+  ``App.tsx`` の center main エリアで、可視 Scope の有無によって
+  ``<DiagramCanvas/>`` の親要素を ``<PanelGroup>`` (Scope あり) と素の
+  ``<div>`` (Scope なし) で切り替えていたため、Run を押した直後に最初の
+  Scope サンプルが届いた瞬間に親要素が変わり、React の reconciliation で
+  ``<DiagramCanvas/>`` がアンマウント → 再マウントされていた。再マウント
+  された ``<ReactFlow fitView/>`` が初期 fitView を再実行し、ユーザーの
+  ビューポートが破棄される。
+- ``PanelGroup`` を **常時描画** に変更。canvas 用 Panel を child 0 に固定で
+  置き、Scope 用 handle + Panel を後置 sibling として ``hasVisibleScopes``
+  でのみ条件付きで描画。Panel 0 (canvas) は常に同じ React tree 位置を保つ
+  ため、reconciliation がインスタンスを維持しビューポートが保持される。
+- Scope 無し時の Panel 0 ``defaultSize=100``、Scope ありで ``defaultSize=60``
+  (= ``react-resizable-panels`` 内部はその差分を吸収して下 Panel に 40 % 割振り)。
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 312 passed
+- 手動ブラウザ確認は要 (Claude 側では UI 実機検証未実施)
+
 ## [0.26.11] - 2026-05-11 — code-reviewer / security-reviewer 指摘の hotfix
 
 ### Security

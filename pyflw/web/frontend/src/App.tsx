@@ -130,6 +130,19 @@ export default function App(): JSX.Element {
     }
   }, [editingModel, editingPath]);
 
+  // v0.26.12: Display 以外で実体のある Scope / XYGraph のリスト。
+  // PanelGroup を常時描画 + scope エリアは ``hasVisibleScopes`` でのみ描画 (=
+  // DiagramCanvas を remount させずビューポートを保持するため)。
+  const visibleScopeEntries = useMemo(
+    () =>
+      Object.entries(scopes).filter(([id]) => {
+        const t = blockTypeById.get(id) ?? "";
+        return !t.endsWith(".Display");
+      }),
+    [scopes, blockTypeById],
+  );
+  const hasVisibleScopes = visibleScopeEntries.length > 0;
+
   return (
     <ReactFlowProvider>
       <div className="grid h-full grid-rows-[auto_auto_auto_auto_1fr_auto] bg-slate-50 font-sans text-[13px] text-slate-900">
@@ -214,58 +227,61 @@ export default function App(): JSX.Element {
             onChange={setLeftSidebarWidth}
           />
 
-          {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}
+          {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2).
+              v0.26.12: PanelGroup を **常時描画** に変更。Scope の有無で
+              ``<DiagramCanvas/>`` の親要素 (``<PanelGroup>`` vs ``<div>``) を
+              切り替えていた旧実装では、シミュレーション開始で scopes が空 → 非空に
+              変わった瞬間に React が DiagramCanvas をアンマウント→再マウントし、
+              ``<ReactFlow fitView>`` が再発火してユーザーのズーム / pan が
+              リセットされる問題があった。Panel 0 (= canvas) を一貫して同じ位置に
+              保つことで React の reconciliation がインスタンスを維持し、ビューポートが
+              保持される。Scope の有無に応じて handle + 下 Panel を後置 sibling として
+              条件付きで足し引きするが、Panel 0 は影響を受けない。 */}
           <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {hasOpenedModel ? (
               <>
                 <Breadcrumb />
-                {Object.entries(scopes).filter(([id]) => {
-                  const t = blockTypeById.get(id) ?? "";
-                  return !t.endsWith(".Display");
-                }).length > 0 ? (
-                  <PanelGroup
-                    orientation="vertical"
-                    id="pyflw.scope_split"
-                    className="flex-1 border-b border-slate-300"
-                  >
-                    <Panel defaultSize={60} minSize={20}>
-                      <div className="h-full bg-white">
-                        <DiagramCanvas />
-                      </div>
-                    </Panel>
-                    <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
-                      <div className="absolute inset-x-0 -top-1 -bottom-1" />
-                    </PanelResizeHandle>
-                    <Panel defaultSize={40} minSize={10}>
-                      <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
-                        {Object.entries(scopes).map(([scopeId, buffer]) => {
-                          const blockType = blockTypeById.get(scopeId) ?? "";
-                          if (blockType.endsWith(".Display")) return null;
-                          if (blockType.endsWith(".XYGraph")) {
+                <PanelGroup
+                  orientation="vertical"
+                  id="pyflw.scope_split"
+                  className="flex-1 border-b border-slate-300"
+                >
+                  <Panel id="canvas" minSize={20} defaultSize={hasVisibleScopes ? 60 : 100}>
+                    <div className="h-full bg-white">
+                      <DiagramCanvas />
+                    </div>
+                  </Panel>
+                  {hasVisibleScopes && (
+                    <>
+                      <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
+                        <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                      </PanelResizeHandle>
+                      <Panel id="scopes" minSize={10} defaultSize={40}>
+                        <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
+                          {visibleScopeEntries.map(([scopeId, buffer]) => {
+                            const blockType = blockTypeById.get(scopeId) ?? "";
+                            if (blockType.endsWith(".XYGraph")) {
+                              return (
+                                <XYGraphView
+                                  key={scopeId}
+                                  scopeId={scopeId}
+                                  buffer={buffer}
+                                />
+                              );
+                            }
                             return (
-                              <XYGraphView
+                              <ScopeView
                                 key={scopeId}
                                 scopeId={scopeId}
                                 buffer={buffer}
                               />
                             );
-                          }
-                          return (
-                            <ScopeView
-                              key={scopeId}
-                              scopeId={scopeId}
-                              buffer={buffer}
-                            />
-                          );
-                        })}
-                      </div>
-                    </Panel>
-                  </PanelGroup>
-                ) : (
-                  <div className="flex-1 border-b border-slate-300 bg-white">
-                    <DiagramCanvas />
-                  </div>
-                )}
+                          })}
+                        </div>
+                      </Panel>
+                    </>
+                  )}
+                </PanelGroup>
                 <SimulationControls modelId={selectedFilePath ?? ""} />
               </>
             ) : (
