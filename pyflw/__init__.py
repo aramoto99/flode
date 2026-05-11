@@ -7,7 +7,7 @@
 # (= Stop 後保持・複数同時・モデル切替で全閉じ・位置サイズは localStorage 永続)。
 # 新規依存 ``react-resizable-panels`` / ``react-rnd`` / ``react-colorful``。
 # ADR-0023 §Decision §(7) の 8 色固定を「user override 可、未設定時 fallback」に amend。
-__version__ = "0.24.3"
+__version__ = "0.24.4"
 
 from .analysis import (
     BodeResponse,

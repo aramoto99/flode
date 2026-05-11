@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-05-11 — プロット設定 dialog を Simulink Property Inspector 風に再設計
+
+### Changed
+
+- **ScopeSettingsDialog を Simulink Property Inspector スタイルに再設計**
+  (= 旧 v0.24.3 が依然 web app 然としていたため):
+  - **タブレイアウト**: Display (表示) / Style (スタイル) の 2 タブ、
+    Style タブ header に信号数バッジ
+  - **プロパティグリッド**: 「ラベル (右寄せ 140px) | 値入力 (左寄せ)」の
+    伝統的な 2 列レイアウト、項目間は 22px 高で密
+  - **ネイティブ widget**: `<select>` / `<input type="checkbox">` /
+    `<input type="text">` を直接使用 (= 旧 segmented control / switch toggle /
+    pill button を撤去)、border 1px slate-400、border-radius は廃止
+  - **セクション divider**: 「Y axis」「X axis」「Layout」の小見出しで論理分け
+  - **タイトル/フッタ**: subtle gradient で windowy な見た目、OK + Reset to
+    defaults ボタンは native dialog 風
+  - **Style タブ**: 信号一覧を table-like grid (`#` / Color / Width / Marker)
+    で表示、color picker は swatch + hex 表示
+  - manual mode の min/max は indent 表示で階層を示唆
+  - Escape で close (新規)
+  - 信号 0 個のとき「シミュレーション実行してください」表示
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 286 passed (回帰なし)
+
 ## [0.24.3] - 2026-05-11 — プロット設定 dialog UI リファイン
 
 ### Changed
