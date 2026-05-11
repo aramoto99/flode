@@ -203,7 +203,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             label={t("inspector.section.layout", "Layout")}
           />
           <PropertyRow
-            labelWidth={120}
+            labelWidth={96}
             label={t("inspector.flip_horizontal", "Flip horizontal")}
           >
             <input
@@ -233,7 +233,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
               (p) => p.name === k,
             )?.enum_values;
             return (
-              <PropertyRow key={k} labelWidth={120} label={k}>
+              <PropertyRow key={k} labelWidth={96} label={k}>
                 {enumValues && enumValues.length > 0 ? (
                   <select
                     data-testid={`param-input-${k}`}
@@ -242,7 +242,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       setDraft((prev) => ({ ...prev, [k]: e.target.value }));
                       commit(k, e.target.value, "string");
                     }}
-                    className={`${SELECT_CLS} flex-1 max-w-[160px]`}
+                    className={`${SELECT_CLS} w-full max-w-[120px]`}
                   >
                     {enumValues.map((opt) => (
                       <option key={opt} value={opt}>
@@ -277,7 +277,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       }
                     }}
                     onBlur={(e) => commit(k, e.target.value, "number")}
-                    className={`${INPUT_MONO_CLS} flex-1 max-w-[160px]`}
+                    className={`${INPUT_MONO_CLS} w-full max-w-[120px]`}
                   />
                 ) : (
                   <input
@@ -290,7 +290,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       commit(k, val, "string");
                     }}
                     onBlur={(e) => commit(k, e.target.value, "string")}
-                    className={`${INPUT_CLS} flex-1 max-w-[160px]`}
+                    className={`${INPUT_CLS} w-full max-w-[120px]`}
                   />
                 )}
               </PropertyRow>
@@ -429,7 +429,7 @@ function MaskValuesEditor({
           {maskParams.map((p) => (
             <PropertyRow
               key={p.name}
-              labelWidth={120}
+              labelWidth={96}
               label={`${p.name} (${p.type})`}
             >
               {p.type === "bool" ? (
@@ -459,7 +459,7 @@ function MaskValuesEditor({
                     }
                   }}
                   onBlur={(e) => commit(p.name, e.target.value, p.type)}
-                  className={`${INPUT_MONO_CLS} flex-1 max-w-[160px]`}
+                  className={`${INPUT_MONO_CLS} w-full max-w-[120px]`}
                 />
               )}
             </PropertyRow>

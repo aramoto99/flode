@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.3] - 2026-05-11 — Inspector の入力欄が右端に張り付く問題を修正
+
+### Fixed
+
+- **ParameterPanel の入力欄が右端まで延びて窮屈に見える**: Inspector パネル幅は
+  280 px 固定で、ラベル 120 px + 入力 `max-w-[160px]` (= flex-1 で実際は ~128 px)
+  だと入力ボックスの右辺が panel 右パディングのほぼ直上に位置し、視覚的に窮屈
+  だった。``labelWidth`` 120 → 96、入力幅 `max-w-[160px]` → `max-w-[120px]` に
+  絞り、入力の右側に ~30 px の明確な breathing room を確保。
+
+ScopeSettingsDialog / ModelSettingsModal は 480〜540 px 幅の modal で同問題は
+無いため変更なし (= primitives は共通だが幅の指定が個別)。
+
 ## [0.26.2] - 2026-05-11 — E2E hotfix (v0.21.0 から壊れていた Playwright spec を v3.x UI に書換)
 
 ### Fixed
