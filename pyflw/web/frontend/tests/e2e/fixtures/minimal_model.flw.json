@@ -1,8 +1,8 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.8",
   "metadata": {
-    "created_at": "2026-05-05T21:37:43Z",
-    "tool": "pyflw 0.3.0"
+    "created_at": "2026-05-11T00:00:00Z",
+    "tool": "pyflw e2e fixture"
   },
   "simulator": {
     "t_end": 0.1,
@@ -32,24 +32,19 @@
       "type": "pyflw.blocks.sinks.Scope",
       "params": {
         "n_inputs": 1,
-        "labels": [
-          "in0"
-        ]
+        "labels": ["in0"],
+        "buffer_mode": "ring",
+        "buffer_capacity": 100000
       }
     }
   ],
   "connections": [
-    {
-      "src": "src",
-      "src_idx": 0,
-      "dst": "g",
-      "dst_idx": 0
-    },
-    {
-      "src": "g",
-      "src_idx": 0,
-      "dst": "sc",
-      "dst_idx": 0
-    }
-  ]
+    {"src": "src", "src_idx": 0, "dst": "g", "dst_idx": 0},
+    {"src": "g", "src_idx": 0, "dst": "sc", "dst_idx": 0}
+  ],
+  "layout": {
+    "src": {"x": 100, "y": 100},
+    "g": {"x": 240, "y": 100},
+    "sc": {"x": 380, "y": 100}
+  }
 }

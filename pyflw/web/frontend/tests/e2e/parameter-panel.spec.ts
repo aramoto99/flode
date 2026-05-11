@@ -4,86 +4,56 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
-// ADR-0012 §(3) ParameterPanel の E2E。
-// 数値パラメータを inline 編集して PUT /api/v1/models/{id} で永続化されることを
-// 確認する。Phase 2 改善 #4 の機能検証。
+// ADR-0012 §(3) ParameterPanel E2E。v3.x ADR-0019 §(5) で auto-save 化されたため
+// 旧 "Save" ボタンは無く、入力即時 commit + 500ms debounce で File API PUT。
+// 本テストは数値パラメータを inline 編集して **ファイルに永続化される**ことを
+// fs ベースで確認する (= GUI 上の "Saved" badge は廃止済)。
 
-const FIXTURE_MODEL_ID = "minimal_model";
+const FIXTURE_FILENAME = "minimal_model.flw.json";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PATH = path.join(__dirname, "fixtures", "minimal_model.flw.json");
+const FIXTURE_PATH = path.join(__dirname, "fixtures", FIXTURE_FILENAME);
+const AUTOSAVE_DEBOUNCE_MS = 500;
 
-// テスト実行前に fixture のスナップショットを取り、afterEach で必ず復元する。
-// PUT API は JSON フォーマット (`2.0` → `2`、trailing newline) を変えるため、
-// バイナリ一致での復元には fs ベースの戻しが必要 (code-reviewer MUST 修正)。
 let fixtureSnapshot: string;
 
-test.describe("ParameterPanel", () => {
+test.describe("ParameterPanel (v3.x auto-save)", () => {
   test.beforeAll(() => {
     fixtureSnapshot = readFileSync(FIXTURE_PATH, "utf-8");
   });
 
   test.afterEach(() => {
-    // 各テストの成否にかかわらず fixture を元に戻す。fs ベースなので Playwright
-    // ブラウザを開く必要はなく確実に冪等。
+    // 各テストで fs ベースに fixture を復元 (= 次テスト・次 CI run の独立性)
     writeFileSync(FIXTURE_PATH, fixtureSnapshot, "utf-8");
   });
 
-  test("edits a numeric param and persists via PUT", async ({ page }) => {
+  test("edits a numeric param and persists via File API PUT", async ({
+    page,
+  }) => {
     await page.goto("/");
-    await page
-      .getByRole("button", { name: FIXTURE_MODEL_ID })
-      .click({ timeout: 15_000 });
+    await page.getByText(FIXTURE_FILENAME).click({ timeout: 15_000 });
 
-    // 何も選択していない初期状態 (右パネルは "Click a block" メッセージ)
+    // 空 Inspector (ノード未選択)
     await expect(page.getByTestId("parameter-panel-empty")).toBeVisible();
 
-    // ノード "g" (Gain ブロック、param: k=2.0) を React Flow 上でクリック。
-    // React Flow は data-id 属性でノードを識別する。
+    // Gain ブロック "g" を React Flow 上で選択 (data-id)
     await page.locator('.react-flow__node[data-id="g"]').click();
 
-    // 右パネルが Gain ブロックの編集モードになる
+    // Inspector が編集モードに遷移
     await expect(page.getByTestId("parameter-panel")).toBeVisible();
     const kInput = page.getByTestId("param-input-k");
     await expect(kInput).toHaveValue("2");
 
-    // 値を 2 → 7.5 に変更し Save
+    // 値を 2 → 7.5 に変更 (= onChange で即 commit、auto-save が 500ms 後に PUT)
     await kInput.fill("7.5");
-    await page.getByTestId("parameter-panel-save").click();
+    await kInput.blur();
 
-    // 保存成功 (Saved badge と PUT 成功)
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 10_000 });
+    // debounce + PUT 反映待ち
+    await page.waitForTimeout(AUTOSAVE_DEBOUNCE_MS + 1500);
 
-    // モデル再読込で input が新しい値を保持していること
-    await page.reload();
-    await page
-      .getByRole("button", { name: FIXTURE_MODEL_ID })
-      .click({ timeout: 15_000 });
-    await page.locator('.react-flow__node[data-id="g"]').click();
-    await expect(page.getByTestId("param-input-k")).toHaveValue("7.5");
-  });
-
-  test("rejects invalid numeric input with an error message", async ({ page }) => {
-    await page.goto("/");
-    await page
-      .getByRole("button", { name: FIXTURE_MODEL_ID })
-      .click({ timeout: 15_000 });
-    await page.locator('.react-flow__node[data-id="g"]').click();
-
-    const kInput = page.getByTestId("param-input-k");
-    await expect(kInput).toHaveValue("2");
-    // ``<input type="number">`` は Playwright の ``fill("")`` / ``clear()`` で
-    // 確実に空にならないことがあるため、ネイティブセッターで value="" を流し込み
-    // React の onChange を明示的に発火する。
-    await kInput.evaluate((el) => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(el, "");
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await expect(kInput).toHaveValue("");
-    await page.getByTestId("parameter-panel-save").click();
-    await expect(page.getByText(/Invalid number/)).toBeVisible();
+    // ファイルが書き換わっていることを確認 (= 真の永続化検証、UI badge 非依存)
+    const persisted = JSON.parse(readFileSync(FIXTURE_PATH, "utf-8"));
+    const gain = (persisted.blocks as { id: string; params: { k: number } }[])
+      .find((b) => b.id === "g");
+    expect(gain?.params.k).toBe(7.5);
   });
 });

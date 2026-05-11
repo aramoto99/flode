@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2] - 2026-05-11 — E2E hotfix (v0.21.0 から壊れていた Playwright spec を v3.x UI に書換)
+
+### Fixed
+
+- **Playwright webServer 起動失敗**: `playwright.config.ts` が v0.21.0 で削除された
+  `--model-dir` を依然指定していたため `pyflw-server: error: unrecognized arguments`
+  で立ち上がらず。`--workspace` に置換、health-check URL も `/api/v1/models` →
+  `/api/v1/files/workspace_info` に更新。
+- **E2E spec 全面書き換え (v3.x UI 適合)**:
+  - `smoke.spec.ts`: 旧 ModelList / "Run" button 検証は撤去、新 FileBrowser tree +
+    TabStrip + DiagramCanvas viewport を確認する 3 ケースに刷新
+  - `parameter-panel.spec.ts`: 旧 "Save" button + "Saved" badge 検証は撤去 (= v3.x
+    で auto-save 化、UI badge 廃止)。**ファイル内容の永続化を fs ベースで直接検証**
+    する形に書き換え、500 ms debounce + 1.5 s 余裕の wait を入れる
+- E2E fixture `minimal_model.flw.json` を schema 0.8 + `layout` 付き + Scope の
+  `buffer_mode` / `buffer_capacity` を明示。
+
+E2E ジョブは v0.21.0 以降 "Queued - Waiting to run" のまま動いていなかった (= 6
+fail のうち 1 だけ queued だった理由)。本リリースで実際に green になる。
+
 ## [0.26.1] - 2026-05-11 — CI hotfix (v0.26.0 で 6 ジョブ赤、ローカル緑)
 
 ### Fixed

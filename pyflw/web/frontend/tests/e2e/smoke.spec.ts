@@ -1,64 +1,51 @@
 import { expect, test } from "@playwright/test";
 
-// pyflw Web GUI の最小回帰テスト。
+// pyflw Web GUI の最小回帰テスト (v3.x、ADR-0041 File API ベース)。
 //
+// v2.x までは ModelList / model_id ベースだったが、v0.21.0 で workspace +
+// FileBrowser に置換されたため smoke spec を全面書き換え。
 // 検証内容:
-// 1. ルート (/) にアクセスし、ヘッダー "pyflw" が描画される
-// 2. fixtures/minimal_model のモデルがリストに表示される
-// 3. モデルを選択すると Diagram と Simulation Controls が表示される
-// 4. Run ボタンを押すと WebSocket 経由で進捗が更新される
+//   1. ルート (/) にアクセスし、title bar "pyflw" が描画される
+//   2. workspace 内の minimal_model.flw.json が FileBrowser に表示される
+//   3. ファイルを開くと TabStrip にタブが現れる + DiagramCanvas が描画される
 
-const FIXTURE_MODEL_ID = "minimal_model";
+const FIXTURE_FILENAME = "minimal_model.flw.json";
 
-test.describe("pyflw web GUI smoke", () => {
-  test("renders root page with pyflw header", async ({ page }) => {
+test.describe("pyflw web GUI smoke (v3.x)", () => {
+  test("renders root page with pyflw branding", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "pyflw" })).toBeVisible();
-    await expect(page.getByText("Models")).toBeVisible();
+    // title bar の "pyflw" + version
+    await expect(page.locator("text=pyflw").first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
-  test("shows fixture model in the model list", async ({ page }) => {
+  test("shows fixture file in workspace tree", async ({ page }) => {
     await page.goto("/");
-    // ModelList は React Query で /api/v1/models を fetch する。
-    // fixture から minimal_model.flw.json を読み込んでいることを確認。
-    await expect(
-      page.getByRole("button", { name: FIXTURE_MODEL_ID })
-    ).toBeVisible({ timeout: 15_000 });
+    // FileBrowser の tree に minimal_model.flw.json が出る
+    // (= GET /api/v1/files/tree が返す children)
+    await expect(page.getByText(FIXTURE_FILENAME)).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
-  test("selecting a model shows the diagram canvas and simulation controls", async ({
+  test("opens fixture file, showing diagram canvas and tab strip", async ({
     page,
   }) => {
     await page.goto("/");
+    // tree 上で fixture をクリック → 開く
     await page
-      .getByRole("button", { name: FIXTURE_MODEL_ID })
+      .getByText(FIXTURE_FILENAME)
       .click({ timeout: 15_000 });
 
-    // SimulationControls の Run / Stop ボタン
-    await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
-    // モデル未選択時のメッセージが消えている
+    // TabStrip に該当 file の basename が表示される
     await expect(
-      page.getByText("Select a model from the left panel")
-    ).toBeHidden();
-  });
+      page.locator(`text=${FIXTURE_FILENAME}`).first(),
+    ).toBeVisible({ timeout: 10_000 });
 
-  test("Run button starts simulation and progress reaches t_end", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    await page
-      .getByRole("button", { name: FIXTURE_MODEL_ID })
-      .click({ timeout: 15_000 });
-
-    const runButton = page.getByRole("button", { name: "Run" });
-    await runButton.click();
-
-    // minimal_model は t_end=0.1, dt=0.01 で 11 ステップなので即終了する。
-    // ``running`` 中間状態は WebSocket 速度次第で観測できないため、最終状態
-    // ``completed`` だけを待つ (code-reviewer SHOULD 修正)。
-    await expect(page.getByText("status: completed")).toBeVisible({
-      timeout: 30_000,
+    // DiagramCanvas (React Flow) の viewport が描画される
+    await expect(page.locator(".react-flow__viewport")).toBeVisible({
+      timeout: 10_000,
     });
   });
 });

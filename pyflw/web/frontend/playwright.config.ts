@@ -47,9 +47,12 @@ export default defineConfig({
       // ``pyflw-server`` console script が PATH に通っていない環境でも動くよう
       // ``python -m pyflw.server.cli`` で起動する。``cwd`` は本ファイルからの
       // 絶対パスでリポジトリルートに固定 (process cwd 依存をなくす)。
-      command: `python -m pyflw.server.cli --model-dir ${FIXTURES_DIR} --port ${E2E_BACKEND_PORT}`,
+      // v0.21.0 (ADR-0041 §論点 4-A): ``--model-dir`` 廃止 → ``--workspace``。
+      // health check URL も legacy ``/api/v1/models`` から
+      // ``/api/v1/files/workspace_info`` (= ADR-0043 §論点 1-A) に切替。
+      command: `python -m pyflw.server.cli --workspace ${FIXTURES_DIR} --port ${E2E_BACKEND_PORT}`,
       cwd: REPO_ROOT,
-      url: `http://127.0.0.1:${E2E_BACKEND_PORT}/api/v1/models`,
+      url: `http://127.0.0.1:${E2E_BACKEND_PORT}/api/v1/files/workspace_info`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       stdout: "pipe",
