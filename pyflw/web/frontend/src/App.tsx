@@ -17,15 +17,18 @@ import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopePanelContainer } from "./components/ScopePanelContainer";
 import { ScopeSettingsDialog } from "./components/ScopeSettingsDialog";
-import { ScopeView } from "./components/ScopeView";
 import { SearchPanel } from "./components/SearchPanel";
 import { SimulationControls } from "./components/SimulationControls";
 import { StatusBar } from "./components/StatusBar";
 import { TabStrip } from "./components/TabStrip";
 import { ToastContainer } from "./components/Toast";
 import { Toolbar } from "./components/Toolbar";
-import { XYGraphView } from "./components/XYGraphView";
+import { WorkspaceSplit } from "./components/WorkspaceSplit";
 import { resolveBlocksAtPath } from "./lib/pathResolver";
+import {
+  LEGACY_SCOPE_SPLIT_KEY,
+  makeWorkspaceLayoutKey,
+} from "./lib/storageKeys";
 import { useAutoSave } from "./lib/useAutoSave";
 import { useExternalChangesPoll } from "./lib/useExternalChangesPoll";
 import { useShortcuts } from "./lib/useShortcuts";
@@ -131,8 +134,8 @@ export default function App(): JSX.Element {
   }, [editingModel, editingPath]);
 
   // v0.26.12: Display 以外で実体のある Scope / XYGraph のリスト。
-  // PanelGroup を常時描画 + scope エリアは ``hasVisibleScopes`` でのみ描画 (=
-  // DiagramCanvas を remount させずビューポートを保持するため)。
+  // ADR-0045 §(1): WorkspaceSplit 内で scope:<id> 葉に独立分離 / scopes-stack
+  // 葉に縦並べ。
   const visibleScopeEntries = useMemo(
     () =>
       Object.entries(scopes).filter(([id]) => {
@@ -141,7 +144,64 @@ export default function App(): JSX.Element {
       }),
     [scopes, blockTypeById],
   );
-  const hasVisibleScopes = visibleScopeEntries.length > 0;
+
+  // ADR-0045 §(3-C): モデルが Scope/XYGraph ブロックを構造的に持つかどうか。
+  // ``visibleScopeEntries`` は scope buffer データ依存 (= sim 開始までは空) なので、
+  // 初期 SplitTree 選定の根拠としては editingModel.blocks の方が確実。
+  const hasScopeBlocks = useMemo(() => {
+    if (!editingModel) return false;
+    try {
+      const view = resolveBlocksAtPath(editingModel, editingPath);
+      return view.blocks.some(
+        (b) => b.type.endsWith(".Scope") || b.type.endsWith(".XYGraph"),
+      );
+    } catch {
+      return false;
+    }
+  }, [editingModel, editingPath]);
+
+  // ADR-0045 §(6): React Portal で DiagramCanvas を WorkspaceSplit の Diagram
+  // slot div に投影する。useState の setter は安定 (= React 保証) なので
+  // ref callback としてそのまま渡せる。
+  const [diagramPortalEl, setDiagramPortalEl] =
+    useState<HTMLDivElement | null>(null);
+
+  // ADR-0045 §(3-C) §(3-D): モデル切替 / 起動時に SplitTree を localStorage から
+  // 復元 (+ 旧 ``pyflw.scope_split`` 片方向 migration)。``hasScopeBlocks`` は
+  // モデルが Scope/XYGraph を持つかの構造的判定で、stored / legacy 両方なし時の
+  // default tree 選定根拠。
+  const loadWorkspaceLayout = useAppStore((s) => s.loadWorkspaceLayout);
+  useEffect(() => {
+    if (workspaceHash === null || activeTabFilePath === null) {
+      // workspace 未確定 or タブ未選択時: default
+      loadWorkspaceLayout(null, null, hasScopeBlocks);
+      return;
+    }
+    const newKey = makeWorkspaceLayoutKey(workspaceHash, activeTabFilePath);
+    const stored = (() => {
+      try {
+        return window.localStorage.getItem(newKey);
+      } catch {
+        return null;
+      }
+    })();
+    const legacy = (() => {
+      try {
+        return window.localStorage.getItem(LEGACY_SCOPE_SPLIT_KEY);
+      } catch {
+        return null;
+      }
+    })();
+    loadWorkspaceLayout(stored, legacy, hasScopeBlocks);
+    // hasScopeBlocks は依存配列から **意図的に除外**: モデル内でブロック追加 /
+    // 削除が起きても layout を勝手にリセットしない (= ユーザーが手で組んだ
+    // SplitTree を維持)。モデル切替時のみ初期化したい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceHash, activeTabFilePath, loadWorkspaceLayout]);
+
+  // ADR-0045 §(6): ``setDiagramPortalEl`` (= useState setter) は React により
+  // 識別性が保証されるため、``useCallback`` ラップ不要でそのまま WorkspaceSplit の
+  // ref callback に渡せる (= code-reviewer §SHOULD #3)。
 
   return (
     <ReactFlowProvider>
@@ -227,61 +287,25 @@ export default function App(): JSX.Element {
             onChange={setLeftSidebarWidth}
           />
 
-          {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2).
-              v0.26.12: PanelGroup を **常時描画** に変更。Scope の有無で
-              ``<DiagramCanvas/>`` の親要素 (``<PanelGroup>`` vs ``<div>``) を
-              切り替えていた旧実装では、シミュレーション開始で scopes が空 → 非空に
-              変わった瞬間に React が DiagramCanvas をアンマウント→再マウントし、
-              ``<ReactFlow fitView>`` が再発火してユーザーのズーム / pan が
-              リセットされる問題があった。Panel 0 (= canvas) を一貫して同じ位置に
-              保つことで React の reconciliation がインスタンスを維持し、ビューポートが
-              保持される。Scope の有無に応じて handle + 下 Panel を後置 sibling として
-              条件付きで足し引きするが、Panel 0 は影響を受けない。 */}
+          {/* Center: canvas + sim controls + scopes
+              ADR-0045 §(1) §(6): v0.26.12 の「Panel id="canvas" 常時描画 +
+              scope を sibling 条件付き足し引き」を ``<WorkspaceSplit>`` に
+              置換。SplitTree を再帰的に PanelGroup + Panel に展開し、Diagram
+              + scope:<id> + scopes-stack の任意配置を可能に。DiagramCanvas は
+              ``<ReactFlowProvider>`` 直下に常時 mount + React Portal で
+              WorkspaceSplit 内の Diagram slot div に投影することで、SplitTree
+              再構造でも viewport が保持される (= v0.26.12 規律継承)。 */}
           <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {hasOpenedModel ? (
               <>
                 <Breadcrumb />
-                <PanelGroup
-                  orientation="vertical"
-                  id="pyflw.scope_split"
-                  className="flex-1 border-b border-slate-300"
-                >
-                  <Panel id="canvas" minSize={20} defaultSize={hasVisibleScopes ? 60 : 100}>
-                    <div className="h-full bg-white">
-                      <DiagramCanvas />
-                    </div>
-                  </Panel>
-                  {hasVisibleScopes && (
-                    <>
-                      <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
-                        <div className="absolute inset-x-0 -top-1 -bottom-1" />
-                      </PanelResizeHandle>
-                      <Panel id="scopes" minSize={10} defaultSize={40}>
-                        <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
-                          {visibleScopeEntries.map(([scopeId, buffer]) => {
-                            const blockType = blockTypeById.get(scopeId) ?? "";
-                            if (blockType.endsWith(".XYGraph")) {
-                              return (
-                                <XYGraphView
-                                  key={scopeId}
-                                  scopeId={scopeId}
-                                  buffer={buffer}
-                                />
-                              );
-                            }
-                            return (
-                              <ScopeView
-                                key={scopeId}
-                                scopeId={scopeId}
-                                buffer={buffer}
-                              />
-                            );
-                          })}
-                        </div>
-                      </Panel>
-                    </>
-                  )}
-                </PanelGroup>
+                <div className="flex-1 min-h-0 border-b border-slate-300">
+                  <WorkspaceSplit
+                    setDiagramSlot={setDiagramPortalEl}
+                    visibleScopeEntries={visibleScopeEntries}
+                    blockTypeById={blockTypeById}
+                  />
+                </div>
                 <SimulationControls modelId={selectedFilePath ?? ""} />
               </>
             ) : (
@@ -375,6 +399,14 @@ export default function App(): JSX.Element {
 
         {/* ADR-0044 §論点 4: per-Scope プロット設定 dialog (= gear アイコンで開く) */}
         <GlobalScopeSettingsDialog />
+
+        {/* ADR-0045 §(6): DiagramCanvas を ReactFlowProvider 直下に常時 mount。
+            実体 DOM は WorkspaceSplit 内の Diagram slot div に React Portal で
+            投影される (= SplitTree 再構造で slot DOM 位置が変わっても、
+            DiagramCanvas の React tree 位置は不変のため viewport / nodes /
+            edges 等の internal state は維持)。モデル未選択時は portal 不要
+            なので mount しない。 */}
+        {hasOpenedModel && <DiagramCanvas portalTarget={diagramPortalEl} />}
       </div>
     </ReactFlowProvider>
   );

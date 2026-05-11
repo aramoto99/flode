@@ -15,6 +15,18 @@ import {
   createBuffer as createScopeBuffer,
   type ScopeBuffer,
 } from "../lib/scopeBuffer";
+import {
+  chooseInitialTree,
+  DEFAULT_TREE,
+  DEFAULT_TREE_WITH_SCOPES,
+  insertSplit,
+  removeLeaf,
+  serializeTree,
+  setSplitRatio as splitTreeSetRatio,
+  toggleSplitOrientation as splitTreeToggleOrientation,
+  type SplitTree,
+} from "../lib/splitTree";
+import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
 import type {
   BlockEntry,
   BlockMetadata,
@@ -46,6 +58,23 @@ function deepCloneModel(m: FlwModel): FlwModel {
 
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
 const INSPECTOR_COLLAPSE_STORAGE_KEY = "pyflw.inspector_collapsed";
+
+/** ADR-0045 §(3-B): Workspace SplitTree を localStorage に永続化する。
+ * ``workspaceHash`` / ``activeTabFilePath`` のいずれかが未確定なら no-op
+ * (= 起動直後 / タブ未選択時)。 */
+function persistWorkspaceLayoutFor(
+  workspaceHash: string | null,
+  activeTabFilePath: string | null,
+  layout: SplitTree,
+): void {
+  if (workspaceHash === null || activeTabFilePath === null) return;
+  const key = makeWorkspaceLayoutKey(workspaceHash, activeTabFilePath);
+  try {
+    window.localStorage.setItem(key, serializeTree(layout));
+  } catch {
+    // localStorage 不可環境 (= quota / private mode) は session 内のみ反映
+  }
+}
 
 /** localStorage から FileBrowser 折りたたみ状態を復元 (= 起動時 default)。 */
 function readWorkspaceCollapsed(): boolean {
@@ -173,6 +202,35 @@ interface AppState {
   openScopePanel: (scopeId: string) => void;
   closeScopePanel: (scopeId: string) => void;
   closeAllScopePanels: () => void;
+
+  // ADR-0045 §(1) Workspace JupyterLab Stage 1: Diagram + Scope の multi-pane split。
+  // モデル別 (= ``workspaceHash`` + ``activeTabFilePath`` 単位) に
+  // ``pyflw.workspace_layout.<hash>.<b64url(path)>`` で永続化。
+  workspaceLayout: SplitTree;
+  /** モデル切替 / 起動時に localStorage から SplitTree を復元 (= 旧 ``pyflw.
+   * scope_split`` 片方向 migration を含む)。``loadWorkspaceLayout`` 内では
+   * 永続化を呼ばない (= 読み込みは write 不要)。 */
+  loadWorkspaceLayout: (
+    storedRaw: string | null,
+    legacyRaw: string | null,
+    hasVisibleScopes: boolean,
+  ) => void;
+  /** 既存 pane を split (= 新葉を b 側 / right or down に追加)。 */
+  splitPane: (
+    paneId: string,
+    orientation: "horizontal" | "vertical",
+    newPaneId: string,
+  ) => void;
+  /** 既存 pane を tree から除去 (= 兄弟が親位置に昇格)。
+   * tree 全体が 1 葉のみのとき呼ぶと ``DEFAULT_TREE`` (= ``diagram`` 単独) に戻る。 */
+  unsplitPane: (paneId: string) => void;
+  /** split node ごとの ratio を更新 (= drag resize 確定時)。``splitId`` は
+   * ``makeSplitId(node)`` で計算した一意 ID。 */
+  setWorkspaceSplitRatio: (splitId: string, ratio: number) => void;
+  /** split node の orientation を反転 (= 縦 ↔ 横 切替、Stage 1 未使用予定)。 */
+  toggleWorkspaceSplitOrientation: (splitId: string) => void;
+  /** SplitTree を強制リセット (= DEFAULT_TREE_WITH_SCOPES or DEFAULT_TREE)。 */
+  resetWorkspaceLayout: (hasVisibleScopes: boolean) => void;
 
   // ADR-0044 §論点 6: maximize 状態 (= scope エリア内で 1 個だけを全画面化)。
   // null のときは縦並び。値は scope_id。
@@ -361,6 +419,95 @@ export const useAppStore = create<AppState>((set, get) => ({
       scopePanels: state.scopePanels.filter((id) => id !== scopeId),
     })),
   closeAllScopePanels: () => set({ scopePanels: [] }),
+
+  // ADR-0045 §(1) Workspace JupyterLab Stage 1: multi-pane split state + actions。
+  // 永続化は各 mutator action 内で同期的に行う (= setLeftSidebarWidth と同じ慣例)。
+  workspaceLayout: DEFAULT_TREE,
+  loadWorkspaceLayout: (storedRaw, legacyRaw, hasVisibleScopes) =>
+    set({
+      workspaceLayout: chooseInitialTree(
+        storedRaw,
+        legacyRaw,
+        hasVisibleScopes,
+      ),
+    }),
+  splitPane: (paneId, orientation, newPaneId) =>
+    set((state) => {
+      const next = insertSplit(
+        state.workspaceLayout,
+        paneId,
+        orientation,
+        newPaneId,
+        "after",
+      );
+      if (next === state.workspaceLayout) return state;
+      persistWorkspaceLayoutFor(
+        state.workspaceHash,
+        state.activeTabFilePath,
+        next,
+      );
+      return { workspaceLayout: next };
+    }),
+  unsplitPane: (paneId) =>
+    set((state) => {
+      const removed = removeLeaf(state.workspaceLayout, paneId);
+      if (removed === null) {
+        // 残葉数 1 で唯一の葉を unsplit しようとした (UI 上到達不能、防御的処理)。
+        // 既に DEFAULT_TREE 相当 (= diagram 単独) なら no-op、それ以外は
+        // DEFAULT_TREE に差し戻す + 永続化。
+        if (
+          state.workspaceLayout.kind === "leaf" &&
+          state.workspaceLayout.paneId === "diagram"
+        ) {
+          return state;
+        }
+        persistWorkspaceLayoutFor(
+          state.workspaceHash,
+          state.activeTabFilePath,
+          DEFAULT_TREE,
+        );
+        return { workspaceLayout: DEFAULT_TREE };
+      }
+      if (removed === state.workspaceLayout) return state;
+      persistWorkspaceLayoutFor(
+        state.workspaceHash,
+        state.activeTabFilePath,
+        removed,
+      );
+      return { workspaceLayout: removed };
+    }),
+  setWorkspaceSplitRatio: (splitId, ratio) =>
+    set((state) => {
+      const next = splitTreeSetRatio(state.workspaceLayout, splitId, ratio);
+      if (next === state.workspaceLayout) return state;
+      persistWorkspaceLayoutFor(
+        state.workspaceHash,
+        state.activeTabFilePath,
+        next,
+      );
+      return { workspaceLayout: next };
+    }),
+  toggleWorkspaceSplitOrientation: (splitId) =>
+    set((state) => {
+      const next = splitTreeToggleOrientation(state.workspaceLayout, splitId);
+      if (next === state.workspaceLayout) return state;
+      persistWorkspaceLayoutFor(
+        state.workspaceHash,
+        state.activeTabFilePath,
+        next,
+      );
+      return { workspaceLayout: next };
+    }),
+  resetWorkspaceLayout: (hasVisibleScopes) =>
+    set((state) => {
+      const next = hasVisibleScopes ? DEFAULT_TREE_WITH_SCOPES : DEFAULT_TREE;
+      persistWorkspaceLayoutFor(
+        state.workspaceHash,
+        state.activeTabFilePath,
+        next,
+      );
+      return { workspaceLayout: next };
+    }),
 
   maximizedScopeId: null,
   setMaximizedScopeId: (id) => set({ maximizedScopeId: id }),

@@ -201,6 +201,15 @@
   "panel.inspector.collapse": "Hide Inspector",
   "panel.inspector.expand": "Show Inspector",
 
+  "workspace.pane.title.diagram": "Diagram",
+  "workspace.pane.title.scopes_stack": "Scopes",
+  "workspace.split.right": "Split right",
+  "workspace.split.down": "Split down",
+  "workspace.unsplit": "Close pane",
+  "workspace.split.handle.horizontal": "Resize horizontal split",
+  "workspace.split.handle.vertical": "Resize vertical split",
+  "workspace.scopes_stack.empty": "All Scopes are in separate panes (use \"Close pane\" on each to bring them back here)",
+
   "app.empty.title": "No file open",
   "app.empty.hint_new": "File → New (Ctrl+N) to create a model",
   "app.empty.hint_open": "File → Open… (Ctrl+O) to open an existing model",

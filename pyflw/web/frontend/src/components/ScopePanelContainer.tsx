@@ -129,6 +129,9 @@ export function ScopePanelContainer(): JSX.Element {
             // ADR-0044 §論点 6: 後にクリックされた panel が前面 (= z-index 順)
             style={{ zIndex: 40 + idx, pointerEvents: "auto" }}
             className="rounded border border-slate-400 bg-white shadow-2xl overflow-hidden"
+            // ADR-0045 NITS #7: CSS クラス依存の E2E セレクタを避けるため
+            // ``data-testid`` を付与 (= 共通の Rnd wrapper、scope_id ごとに id 化)
+            data-testid={`scope-floating-panel-${scopeId}`}
           >
             {/* React-rnd の inner wrapper は inline style で height: 100% を持つ。
                 内側の div は h-full / w-full で chain を繋ぐ。 */}

@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-05-11 — Workspace JupyterLab Stage 1 = multi-pane split (ADR-0045)
+
+ADR-0045 採択。**Phase 6c (Workspace JupyterLab convergence) Stage 1** として
+Workspace の multi-pane split を導入。`<main>` 内の Diagram + Scope を縦/横
+任意配置可能に、SplitTree state を localStorage に永続化する。新規依存追加なし
+(= 既存 `react-resizable-panels@4.11.0` のネスト split を活用)。
+
+### Added
+
+- **Multi-pane split layout** (ADR-0045 §(1)): 各 pane タイトルバーの
+  「split right」「split down」「unsplit」アクションで Diagram pane と Scope
+  群を縦/横自由配置。2 段ネスト split (= 3 ペイン構成) までサポート。
+- **SplitTree データ構造** (`src/lib/splitTree.ts`): `LeafNode` /
+  `SplitNode` 型と純関数 (`insertSplit` / `removeLeaf` / `normalizeTree` /
+  `serializeTree` / `deserializeTree` / `migrateFromScopeSplit` /
+  `chooseInitialTree`)。Vitest 全カバレッジ。
+- **`WorkspaceSplit` コンポーネント** (`src/components/WorkspaceSplit.tsx`):
+  SplitTree を再帰的に `<PanelGroup>` + `<Panel>` に展開し、Diagram pane に
+  対応する slot div を提供。
+- **`PaneTitleBar` プリミティブ** (`src/components/PaneTitleBar.tsx`):
+  Property Inspector 風の細バー (h-6) + split / unsplit icon button。
+- **localStorage 永続化キー** (`src/lib/storageKeys.ts`):
+  `pyflw.workspace_layout.<workspaceHash>.<b64url(modelPath)>` (= モデル別
+  粒度、ADR-0044 と同じ慣例)。ADR-0044 `pyflw.scope_panel.*` と共通の
+  `b64urlEncode` ヘルパーに統一。
+- **i18n 文字列** (ja/en): `workspace.pane.title.diagram` /
+  `.scopes_stack` / `workspace.split.right` / `.down` / `workspace.unsplit` /
+  `workspace.split.handle.{horizontal,vertical}`。
+- **E2E spec** (`tests/e2e/workspace-multipane.spec.ts`): 初期 layout 表示 /
+  split 操作 / unsplit / 永続化リロード / floating panel 並存 の 5 シナリオ。
+
+### Changed
+
+- **`DiagramCanvas`** (ADR-0045 §(6)): optional `portalTarget?: HTMLElement`
+  prop を追加。指定時は `createPortal` で DOM を当該要素に投影 (= React tree
+  上の親は `<ReactFlowProvider>` 直下のまま不変、viewport が SplitTree 再構造
+  でも保持される)。
+- **`App.tsx`**: `<main>` 内の `<PanelGroup id="pyflw.scope_split">` ブロックを
+  `<WorkspaceSplit>` に置換。`<DiagramCanvas portalTarget={diagramPortalEl}/>`
+  を `<ReactFlowProvider>` 直下に常時 mount。
+- **Zustand store**: `workspaceLayout: SplitTree` state と action
+  (`splitPane` / `unsplitPane` / `setWorkspaceSplitRatio` /
+  `toggleWorkspaceSplitOrientation` / `resetWorkspaceLayout`) +
+  `loadWorkspaceLayout` を追加。
+
+### Migration
+
+- **旧 `pyflw.scope_split` キーからの片方向 migration** (ADR-0045 §(3-D)):
+  起動時に旧キーが存在すれば `DEFAULT_TREE_WITH_SCOPES` (= 縦 60/40
+  Diagram + scopes-stack) で代用。旧キーは削除しない (= ロールバック対応)。
+
+### Confirmed out-of-scope (Stage 1)
+
+- キーボードショートカット (= Stage 2 で Launcher / activity bar と一括設計)
+- 3 段以上のネスト split (= Stage 2 で実需確認後)
+- Inspector / FileBrowser / Library palette の pane 化 (= Stage 2 候補)
+- drag-to-split-tab (= Stage 3)
+- ダークモード (= 永続的 out-of-scope、本リリースで 6 回目の再確定)
+
+### Verification
+
+- typecheck: clean
+- frontend vitest: 全 test pass (= splitTree.test.ts 新規 28 ケース含む)
+- ADR-0040 §Amendments §(1) で Phase 6c 新設 + Phase 6b ADR 番号繰り下げ
+  (旧 ADR-0045〜0049 → 新 ADR-0046〜0050) を確定
+- SPEC-0001 §機能要件 Phase 6+ §Phase 6c (N1〜N3) 節を新設
+
 ## [0.26.12] - 2026-05-11 — シミュレーション開始時にブロック図のビューポート (zoom + pan) がリセットされる問題を修正
 
 ### Fixed

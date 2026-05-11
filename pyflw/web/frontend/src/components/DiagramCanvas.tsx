@@ -16,6 +16,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { getLibraryEntry, listBlockMetadata } from "../api/client";
@@ -75,8 +76,20 @@ const PAN_BUTTONS = [1, 2];
  * v0.21.0: legacy ``modelId`` prop を撤去し、``editingModel`` を store から
  * 直接読む形に変更 (= FileBrowser onClick が ``editingModel`` を populate 済の
  * 前提、ADR-0041 §論点 8-A)。
+ *
+ * ADR-0045 §(6) Stage 1: ``portalTarget`` が指定された場合、本コンポーネントの
+ * DOM 出力を React Portal で当該要素に移動する。React tree 上の親
+ * (= ``<ReactFlowProvider>`` 直下) は不変なので、SplitTree 構造の変更で
+ * ``portalTarget`` が別の DOM ノードに切り替わっても ReactFlow / DiagramCanvas
+ * の内部 state (= viewport / nodes / edges) は維持される。
+ *
+ * @param portalTarget undefined: 親に直接 render (= legacy 挙動)。
+ *                     null: 何も render しない (= portal target 未確定の起動直後)。
+ *                     HTMLElement: そのノードに portal で投影。
  */
-export function DiagramCanvas(): JSX.Element {
+export function DiagramCanvas({
+  portalTarget,
+}: { portalTarget?: HTMLElement | null } = {}): JSX.Element {
   const { t } = useTranslation();
   const { data: registry } = useQuery({
     queryKey: ["blocks-registry"],
@@ -684,7 +697,10 @@ export function DiagramCanvas(): JSX.Element {
     });
   };
 
-  return (
+  // ADR-0045 §(6): portalTarget が指定されていれば、出力 DOM を React Portal で
+  // 移動する (= React tree 上の親は ``<ReactFlowProvider>`` 直下のまま不変、
+  // viewport / nodes / edges 等の internal state が SplitTree 構造変更でも維持)。
+  const content = (
     // ADR-0019 §(4.1): React Flow v12 では ``onDragOver`` / ``onDrop`` を
     // ``<ReactFlow>`` の props ではなく **wrapper div** に付けるのが公式推奨パターン。
     // wrapper に貼ることでイベントが内部 pane の pointer-event 処理に消費されずに
@@ -871,4 +887,8 @@ export function DiagramCanvas(): JSX.Element {
       )}
     </div>
   );
+
+  if (portalTarget === undefined) return content;
+  if (portalTarget === null) return <></>;
+  return <>{createPortal(content, portalTarget)}</>;
 }
