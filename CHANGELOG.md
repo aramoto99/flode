@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-05-11 — プロット設定 dialog UI リファイン
+
+### Changed
+
+- **ScopeSettingsDialog の UI を全面刷新** (= 旧版は素朴すぎたため):
+  - 2 列グリッド (Y/X/凡例/グリッド) で情報密度向上
+  - 各セクションに icon (Y軸 / X軸 / 凡例 / グリッド / 信号)
+  - segmented control (= active 強調 + shadow-inner) で軸モード / 凡例位置を選択
+  - **switch toggle** (= 旧 plain checkbox → モダンな pill switch) でグリッド on/off
+  - 信号行: color swatch + hex 表示 + 線幅 dropdown + **marker dropdown** (= 既定値 none / circle / square / cross、SignalSettings 型を完全活用)
+  - color picker: hex 入力フィールド追加、外側クリックで閉じる overlay
+  - footer に **「既定値に戻す」** ボタン追加 (= 当該 scope の scope_settings entry を完全削除)
+
+### Added
+
+- `useAppStore.resetScopeSettings(scopeId)` action — 当該 scope の設定を削除
+  (= 全フィールド既定値に戻す)。space 効率のため scope_settings dict が空に
+  なれば top-level キー自体を削除し JSON 出力を綺麗に保つ。
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 286 passed (回帰なし)
+
 ## [0.24.2] - 2026-05-11 — Scope floating panel 表示不具合修正
 
 ### Fixed

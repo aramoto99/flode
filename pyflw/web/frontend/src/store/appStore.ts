@@ -141,6 +141,8 @@ interface AppState {
     scopeId: string,
     partial: import("../types/api").ScopeSettings,
   ) => void;
+  /** ADR-0044 §論点 9: 当該 scope の全 settings をクリアして既定値に戻す。 */
+  resetScopeSettings: (scopeId: string) => void;
   /**
    * ファイルを新規 tab として開く、または既存 tab を active 化する。
    * @param path file path
@@ -331,6 +333,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         future: [],
       },
       lastMergeKey: `scope-settings:${scopeId}`,
+    }));
+  },
+  resetScopeSettings: (scopeId) => {
+    const current = get().editingModel;
+    if (!current) return;
+    const settings = { ...(current.scope_settings ?? {}) };
+    if (!(scopeId in settings)) return; // 既に default 状態なら no-op
+    delete settings[scopeId];
+    const next = {
+      ...current,
+      ...(Object.keys(settings).length > 0
+        ? { scope_settings: settings }
+        : (() => {
+            // 空 dict なら scope_settings キー自体を削除 (JSON 出力をクリーンに)
+            const { scope_settings: _drop, ...rest } = current;
+            void _drop;
+            return rest;
+          })()),
+    };
+    set((state) => ({
+      editingModel: next,
+      dirty: true,
+      history: {
+        past: [...state.history.past, JSON.parse(JSON.stringify(current))],
+        future: [],
+      },
+      lastMergeKey: null,
     }));
   },
   selectFilePath: (path) =>
