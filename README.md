@@ -6,10 +6,15 @@ with `scipy.solve_ivp` (default: RK45).
 
 **Stable as of v0.14.0** (2026-05-09, ADR-0039). Public API + JSON schema 0.8 +
 REST `/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) frozen under
-SemVer; subsequent breaking changes require v3.0. v1.0 was released the same
-day but ADR-0039 immediately corrected `Subsystem` port semantics (= internal
-`Inport` / `Outport` are SSOT, outer `n_inputs` / `n_outputs` derived) before
-PyPI publish.
+SemVer.
+
+**Active line: v3.5.x** (2026-05-11) — Phase 6+ UX additions on top of v2 core:
+JupyterLab-style local file editing (ADR-0041), Stop Time = `inf` with ring
+buffer scope (ADR-0042), workspace enhancement with multi-tab + Recent Files +
+fuzzy search (ADR-0043), scope plot settings + floating windows (ADR-0044), and
+a Simulink-Property-Inspector-style UI design system. All additions are
+backward-compatible — `.flw.json` schema 0.8 and the public Python API are
+preserved.
 
 ## Requirements
 
@@ -145,12 +150,43 @@ root (= directory containing your `.flw.json` files, ADR-0041):
 pyflw-server --workspace ./workspace --port 8770
 ```
 
-Then open `http://127.0.0.1:8770` in a browser. The browser UI gives you a
-JupyterLab-style file tree (= subdirectories supported, ADR-0041), a full
-diagram editor (React Flow + drag-and-drop), parameter editing, Run/Stop
-controls, and live scope / xy-graph plots fed by WebSocket. All file
-operations go through `/api/v1/files/*` (= JupyterLab contents API
-compatible).
+Then open `http://127.0.0.1:8770` in a browser.
+
+### What the browser UI gives you
+
+- **JupyterLab-style file tree** (subdirectories, rename / new / delete via
+  context menu, drag-and-drop reorder, ADR-0041 / ADR-0043).
+- **Multi-tab editor** with dirty indicator (`●`) + "Save all" + close-other
+  tabs, last-active tab restored across reload per workspace (ADR-0043).
+- **Recent Files** — most-recently-opened list scoped per workspace
+  (`localStorage`, top 20, ADR-0043).
+- **Fuzzy search** — `Ctrl+P` for path search (rapidfuzz `WRatio`),
+  `Ctrl+Shift+F` for content search across `.flw.json`. Hits jump straight
+  to the file in the editor.
+- **Block library** with category accordions + drag-and-drop onto the canvas.
+- **Auto-connect on edge drop** — drop a SISO block onto an existing edge
+  to splice it in place (= source → block → target, ADR-0044).
+- **Inspector panel** — Simulink Property Inspector-style parameter editor
+  for the selected block, with collapse-to-widen-canvas affordance.
+- **Workspace ↔ Library ↔ Canvas ↔ Scope split** — every divider is
+  drag-resizable, sizes persisted in localStorage.
+- **Run / Stop / Stop Time** controls. Stop Time = `inf` switches the
+  simulator into an open-ended `while True` loop with a ring buffer scope
+  (default `MAX_SAMPLES = 100_000`, ADR-0042).
+- **Scope** — live plots streamed over WebSocket. Each Scope block has a
+  gear icon for per-scope plot settings (Y/X axis auto/manual/log, legend
+  position, grid, per-signal line color & width — saved in `.flw.json`
+  under `scope_settings`, ADR-0044).
+- **Floating Scope** — double-click a Scope block to pop its plot into a
+  draggable / resizable floating window (`react-rnd`). Multiple scopes can
+  float simultaneously; positions persist in localStorage; switching models
+  closes all open scopes (ADR-0044).
+
+All file operations go through `/api/v1/files/*` (= JupyterLab contents API
+compatible). The model itself is just JSON in your workspace — open it in any
+editor and the changes appear in the UI on next focus (external-changes poll).
+
+### Migration from v2.x
 
 If you previously ran pyflw with the legacy `--model-dir DIR` (= v2.x),
 migrate the flat layout to a workspace once with:
@@ -162,14 +198,19 @@ pyflw-server --migrate-models-to=./workspace --legacy-models-dir=./old_models
 then start with `--workspace=./workspace`. The migration command is provided
 for one release only.
 
-Frontend development (Vite dev server) is documented in
-`pyflw/web/frontend/README.md`.
+### Notes
 
-Note: the bundled web GUI ships only with **wheel** artifacts produced by the
-release CI (which runs `npm run build` before `python -m build`). If you
-install pyflw from an **sdist** (or from a fresh `pip install -e .` without
-running `npm run build`), `pyflw/server/static/` is empty and the browser
-will show 404 at `/`. The REST/WebSocket API at `/api/v1/*` still works.
+- Frontend development (Vite dev server) is documented in
+  `pyflw/web/frontend/README.md`.
+- The bundled web GUI ships only with **wheel** artifacts produced by the
+  release CI (which runs `npm run build` before `python -m build`). If you
+  install pyflw from an **sdist** (or from a fresh `pip install -e .` without
+  running `npm run build`), `pyflw/server/static/` is empty and the browser
+  will show 404 at `/`. The REST/WebSocket API at `/api/v1/*` still works.
+- The `/api/v1/files/search` endpoint hard-excludes well-known credential
+  paths (`.env*`, `id_rsa`, `id_ed25519`, `.ssh/`, `.aws/`, `.gnupg/`,
+  `.docker/`, `.idea/`) regardless of workspace contents (= cannot return
+  bytes that could leak secrets, v0.26.11).
 
 ## Development
 
