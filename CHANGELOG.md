@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.8] - 2026-05-11 — 左サイドバーの横幅を drag resize 可能に
+
+### Added
+
+- **左サイドバー (Workspace + Library) と Canvas エリアの境界をマウスドラッグで
+  横方向 resize 可能に**: 従来は左サイドバーが 240 px 固定だったが、
+  ``react-resizable-panels`` の horizontal ``PanelGroup`` で 1 px 青ハンドルを
+  挟み、ユーザーが自由に幅を変えられるようになった。
+  - 左サイドバー: defaultSize 18 % / minSize **160 px** / maxSize 45 %
+  - Canvas: defaultSize 82 % / minSize **320 px**
+- 右側 Inspector はもう片方の collapse 機構を維持する都合で grid column のまま
+  (= state-controlled、24 px ↔ 280 px)。Inspector 横幅自体の drag resize は
+  Phase 7 以降の課題。
+
+これで window 内 3 種類の split が drag resize 可能:
+- 左サイドバー横幅 ↔ Canvas (本リリース、horizontal)
+- Workspace ↕ Library (v0.26.6、vertical 左サイド内)
+- Canvas ↕ Scope (v0.24.0、vertical 中央)
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 312 passed (回帰なし)
+
 ## [0.26.7] - 2026-05-11 — Workspace/Library 分割の最小サイズを pixel 指定 (ヘッダー以下に縮まない)
 
 ### Fixed

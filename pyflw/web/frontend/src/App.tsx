@@ -150,18 +150,30 @@ export default function App(): JSX.Element {
         {/* Tab strip */}
         <TabStrip />
 
-        {/* Main 3-column area */}
+        {/* Main 3-column area (v0.26.8: 左 sidebar+center は horizontal PanelGroup で
+            drag resize、右 Inspector は折り畳み state-controlled column のまま) */}
         <div
-          className={`grid min-h-0 overflow-hidden ${
-            inspectorCollapsed
-              ? "grid-cols-[240px_1fr_24px]"
-              : "grid-cols-[240px_1fr_280px]"
-          }`}
+          className="grid min-h-0 overflow-hidden"
+          style={{
+            gridTemplateColumns: `1fr ${inspectorCollapsed ? "24px" : "280px"}`,
+          }}
         >
+          <PanelGroup
+            orientation="horizontal"
+            id="pyflw.left_center_split"
+            className="min-h-0"
+          >
           {/* Left: Workspace tree (top) + Library palette (bottom)
               v0.20.4: workspace 折りたたみ時は header (24px) のみで残り全部
-              palette、展開時は 40%/60% で分割 */}
-          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+              palette、展開時は 40%/60% で分割
+              v0.26.8: 左 sidebar 自体が horizontal Panel として drag resize 可能 */}
+          <Panel
+            defaultSize={18}
+            minSize="160px"
+            maxSize={45}
+            id="pyflw.left_sidebar"
+          >
+          <aside className="flex h-full min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
             {workspaceCollapsed ? (
               // 折りたたみ時: FileBrowser 24 px header + Library が残り全部
               <>
@@ -201,9 +213,16 @@ export default function App(): JSX.Element {
               </PanelGroup>
             )}
           </aside>
+          </Panel>
+          <PanelResizeHandle className="w-1 bg-slate-300 transition-colors hover:bg-blue-300" />
 
           {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}
-          <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
+          <Panel
+            defaultSize={82}
+            minSize="320px"
+            id="pyflw.center"
+          >
+          <main className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-100">
             {hasOpenedModel ? (
               <>
                 <Breadcrumb />
@@ -258,8 +277,11 @@ export default function App(): JSX.Element {
               <EmptyState />
             )}
           </main>
+          </Panel>
+          </PanelGroup>
 
-          {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。 */}
+          {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。
+              左 + center とは別 grid column (state-controlled width)。 */}
           {inspectorCollapsed ? (
             <aside
               className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
