@@ -169,7 +169,7 @@ export default function App(): JSX.Element {
               v0.26.8: 左 sidebar 自体が horizontal Panel として drag resize 可能 */}
           <Panel
             defaultSize={18}
-            minSize="160px"
+            minSize={12}
             maxSize={45}
             id="pyflw.left_sidebar"
           >
@@ -201,7 +201,9 @@ export default function App(): JSX.Element {
                     <FileBrowser />
                   </div>
                 </Panel>
-                <PanelResizeHandle className="h-1 bg-slate-200 transition-colors hover:bg-blue-300" />
+                <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
+                  <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                </PanelResizeHandle>
                 <Panel defaultSize={60} minSize="48px">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden">
                     <PanelHeader>{t("panel.library")}</PanelHeader>
@@ -214,12 +216,17 @@ export default function App(): JSX.Element {
             )}
           </aside>
           </Panel>
-          <PanelResizeHandle className="w-1 bg-slate-300 transition-colors hover:bg-blue-300" />
+          {/* v0.26.9: 視覚は 2px の細線、左右に -4px の透明ヒットエリアを伸ばして
+              掴みやすくする (= React Flow に pointer event を奪われないよう、
+              ヒット部分は relative + z-10 + cursor で明示)。 */}
+          <PanelResizeHandle className="group relative z-10 w-0.5 cursor-col-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+          </PanelResizeHandle>
 
           {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}
           <Panel
             defaultSize={82}
-            minSize="320px"
+            minSize={30}
             id="pyflw.center"
           >
           <main className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-100">
@@ -240,7 +247,9 @@ export default function App(): JSX.Element {
                         <DiagramCanvas />
                       </div>
                     </Panel>
-                    <PanelResizeHandle className="h-1 bg-slate-200 hover:bg-blue-300 transition-colors" />
+                    <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
+                      <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                    </PanelResizeHandle>
                     <Panel defaultSize={40} minSize={10}>
                       <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
                         {Object.entries(scopes).map(([scopeId, buffer]) => {

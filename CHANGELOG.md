@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.9] - 2026-05-11 — Resize ハンドルが React Flow に pointer event を奪われていた問題を修正
+
+### Fixed
+
+- **左サイドバーの resize ハンドルをドラッグしても幅が変わらず、React Flow の
+  pane selection が発火していた問題**: ``PanelResizeHandle`` の視覚幅が 1 px
+  (`w-1` / `h-1`) と細すぎて、ユーザーが掴むつもりが隣接する React Flow canvas
+  領域を掴んでしまっていた。
+  - 視覚幅は **2 px** に縮小 (`w-0.5` / `h-0.5`)、目視は控えめだが明確
+  - その上下 / 左右に **-4 px ずつ拡張した透明な absolute child** を載せ、
+    実際の **ヒットエリアを 10 px** に確保 (= 視覚はそのままハンドルを掴みやすく)
+  - `z-10` + `cursor-col-resize` / `cursor-row-resize` で event 優先と cursor 表示
+  - drag 中は `data-[resize-handle-state=drag]:bg-blue-500` で青強調
+- 左 / Canvas 水平ハンドルだけでなく、Workspace ↕ Library と Canvas ↕ Scope の
+  vertical ハンドル 2 個も同じパターンに揃えた (= 3 ハンドル全部掴みやすく)。
+- 左 Panel の minSize を `"160px"` 文字列から ``12`` (= 12%) 番号に変更 (= 単位
+  混在を回避、library が一貫した percentage 計算で処理できる)。
+
+### Verification
+
+- typecheck + production build: clean
+
 ## [0.26.8] - 2026-05-11 — 左サイドバーの横幅を drag resize 可能に
 
 ### Added
