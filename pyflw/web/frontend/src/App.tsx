@@ -40,6 +40,8 @@ export default function App(): JSX.Element {
   // v0.20.4: Workspace 折りたたみで grid-rows を切替 (= collapsed 時 header 24px
   // のみ、それ以外は 40% 表示)
   const workspaceCollapsed = useAppStore((s) => s.workspaceCollapsed);
+  const inspectorCollapsed = useAppStore((s) => s.inspectorCollapsed);
+  const setInspectorCollapsed = useAppStore((s) => s.setInspectorCollapsed);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
@@ -149,7 +151,13 @@ export default function App(): JSX.Element {
         <TabStrip />
 
         {/* Main 3-column area */}
-        <div className="grid min-h-0 grid-cols-[240px_1fr_280px] overflow-hidden">
+        <div
+          className={`grid min-h-0 overflow-hidden ${
+            inspectorCollapsed
+              ? "grid-cols-[240px_1fr_24px]"
+              : "grid-cols-[240px_1fr_280px]"
+          }`}
+        >
           {/* Left: Workspace tree (top) + Library palette (bottom)
               v0.20.4: workspace 折りたたみ時は header (24px) のみで残り全部
               palette、展開時は 40%/60% で分割 */}
@@ -230,17 +238,75 @@ export default function App(): JSX.Element {
             )}
           </main>
 
-          {/* Right: Inspector */}
-          <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-slate-300 bg-white">
-            <PanelHeader>{t("panel.inspector")}</PanelHeader>
-            {hasOpenedModel ? (
-              <ParameterPanel modelId={selectedFilePath ?? ""} />
-            ) : (
-              <div className="p-3 text-[11px] text-slate-400">
-                {t("app.inspector.locked")}
+          {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。 */}
+          {inspectorCollapsed ? (
+            <aside
+              className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
+              onClick={() => setInspectorCollapsed(false)}
+              title={t("panel.inspector.expand", "Show Inspector")}
+              role="button"
+              aria-label={t("panel.inspector.expand", "Show Inspector")}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInspectorCollapsed(false);
+                }}
+                className="flex h-6 w-6 items-center justify-center text-slate-500 hover:text-slate-800"
+                title={t("panel.inspector.expand", "Show Inspector")}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <div className="flex-1 [writing-mode:vertical-rl] py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                {t("panel.inspector")}
               </div>
-            )}
-          </aside>
+            </aside>
+          ) : (
+            <aside className="flex min-h-0 flex-col overflow-hidden border-l border-slate-300 bg-white">
+              <div className="flex h-6 items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <span className="flex-1">{t("panel.inspector")}</span>
+                <button
+                  type="button"
+                  onClick={() => setInspectorCollapsed(true)}
+                  className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                  title={t("panel.inspector.collapse", "Hide Inspector")}
+                  aria-label={t("panel.inspector.collapse", "Hide Inspector")}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3 w-3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                {hasOpenedModel ? (
+                  <ParameterPanel modelId={selectedFilePath ?? ""} />
+                ) : (
+                  <div className="p-3 text-[11px] text-slate-400">
+                    {t("app.inspector.locked")}
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
         </div>
 
         {/* Status bar */}

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.5] - 2026-05-11 — Inspector の折りたたみ対応
+
+### Added
+
+- **Inspector パネル (右サイドバー) を折りたたんで描画エリアを広げる**:
+  Inspector header の "▶" ボタン (= chevron) で折りたたみ、Canvas が右側 280 px
+  分広がる。折りたたみ後は 24 px の細い垂直バーが右端に残り、そこをクリック or
+  内部の "◀" ボタンで再展開。バーには縦書きで "Inspector" ラベルも表示する。
+- localStorage `pyflw.inspector_collapsed` に永続化 (= `pyflw.workspace_collapsed`
+  と同じパターン)。
+
+`workspaceCollapsed` (= 左サイドバー上半分の折りたたみ) と同じ UX なので学習コスト
+ゼロ。
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 312 passed (回帰なし)
+
 ## [0.26.4] - 2026-05-11 — Inspector のラベル左寄せ + 入力欄が画面右半分に偏らない
 
 ### Fixed

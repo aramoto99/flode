@@ -45,6 +45,7 @@ function deepCloneModel(m: FlwModel): FlwModel {
 }
 
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
+const INSPECTOR_COLLAPSE_STORAGE_KEY = "pyflw.inspector_collapsed";
 
 /** localStorage から FileBrowser 折りたたみ状態を復元 (= 起動時 default)。 */
 function readWorkspaceCollapsed(): boolean {
@@ -61,6 +62,27 @@ function writeWorkspaceCollapsed(collapsed: boolean): void {
       window.localStorage.setItem(WORKSPACE_COLLAPSE_STORAGE_KEY, "1");
     } else {
       window.localStorage.removeItem(WORKSPACE_COLLAPSE_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage 不可環境では session 内のみ反映
+  }
+}
+
+/** localStorage から Inspector 折りたたみ状態を復元 (= 起動時 default)。 */
+function readInspectorCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(INSPECTOR_COLLAPSE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeInspectorCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) {
+      window.localStorage.setItem(INSPECTOR_COLLAPSE_STORAGE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(INSPECTOR_COLLAPSE_STORAGE_KEY);
     }
   } catch {
     // localStorage 不可環境では session 内のみ反映
@@ -224,6 +246,9 @@ interface AppState {
   // のみ表示、``false`` で tree 展開。
   workspaceCollapsed: boolean;
   setWorkspaceCollapsed: (collapsed: boolean) => void;
+  // v0.26.5: 右サイドバー (Inspector) の折りたたみ。Canvas を広げて使う用途。
+  inspectorCollapsed: boolean;
+  setInspectorCollapsed: (collapsed: boolean) => void;
 
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
@@ -660,6 +685,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastMergeKey: null,
 
   // v0.20.4: FileBrowser 折りたたみ (localStorage 連動)
+  inspectorCollapsed: readInspectorCollapsed(),
+  setInspectorCollapsed: (collapsed) => {
+    writeInspectorCollapsed(collapsed);
+    set({ inspectorCollapsed: collapsed });
+  },
   workspaceCollapsed: readWorkspaceCollapsed(),
   setWorkspaceCollapsed: (collapsed) => {
     writeWorkspaceCollapsed(collapsed);

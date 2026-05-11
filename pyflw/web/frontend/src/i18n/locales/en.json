@@ -198,6 +198,8 @@
 
   "panel.library": "Library",
   "panel.inspector": "Inspector",
+  "panel.inspector.collapse": "Hide Inspector",
+  "panel.inspector.expand": "Show Inspector",
 
   "app.empty.title": "No file open",
   "app.empty.hint_new": "File → New (Ctrl+N) to create a model",
