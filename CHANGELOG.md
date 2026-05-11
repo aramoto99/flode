@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.6] - 2026-05-11 — 「既定値に戻す」が機能しない不具合修正
+
+### Fixed
+
+- **`resetScopeSettings` が単一 scope の場合に動作しない問題**: object spread
+  の挙動を誤解した実装で、最後の 1 件を削除すると `editingModel.scope_settings`
+  が元の object 参照のまま残り、Dialog UI でも設定が消えたように見えなかった。
+  `delete next.scope_settings` を明示的に呼ぶよう修正。複数 scope の場合は
+  v0.24.5 までも動作していた (= 短い dict で上書きされていた)。
+- 回帰テスト 9 件を追加 (= ``updateScopeSettings`` の merge / dirty / history、
+  ``resetScopeSettings`` の単一 / 複数 / no-op / null model / undo 履歴 push)。
+
+### Verification
+
+- frontend vitest: **295 passed** (= 286 prior + 9 new)
+- typecheck + production build: clean
+
 ## [0.24.5] - 2026-05-11 — プロット設定 dialog のタブ切替時 window 寸法固定
 
 ### Fixed

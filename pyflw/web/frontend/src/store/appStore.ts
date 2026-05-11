@@ -338,20 +338,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetScopeSettings: (scopeId) => {
     const current = get().editingModel;
     if (!current) return;
-    const settings = { ...(current.scope_settings ?? {}) };
-    if (!(scopeId in settings)) return; // 既に default 状態なら no-op
-    delete settings[scopeId];
-    const next = {
-      ...current,
-      ...(Object.keys(settings).length > 0
-        ? { scope_settings: settings }
-        : (() => {
-            // 空 dict なら scope_settings キー自体を削除 (JSON 出力をクリーンに)
-            const { scope_settings: _drop, ...rest } = current;
-            void _drop;
-            return rest;
-          })()),
-    };
+    // 既に default 状態 (= entry 不在) なら no-op
+    if (!current.scope_settings || !(scopeId in current.scope_settings)) {
+      return;
+    }
+    // shallow copy して当該 scope を削除
+    const newSettings = { ...current.scope_settings };
+    delete newSettings[scopeId];
+    // 新 editingModel: 空 dict になったら ``scope_settings`` キーごと削除する
+    // (= JSON 出力をクリーンに保つ)。
+    // v0.24.6 fix: 旧実装は ``{ ...current, ...rest }`` で spread していたが、
+    // spread はキーを「持たない」ことを表現できないため scope_settings が残って
+    // しまっていた。明示的に ``delete next.scope_settings`` する必要がある。
+    const next = { ...current };
+    if (Object.keys(newSettings).length > 0) {
+      next.scope_settings = newSettings;
+    } else {
+      delete next.scope_settings;
+    }
     set((state) => ({
       editingModel: next,
       dirty: true,
