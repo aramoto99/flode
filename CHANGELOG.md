@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.10] - 2026-05-11 — 左サイドバー drag resize を自前実装に切替 (react-resizable-panels horizontal が grid 内で機能せず)
+
+### Fixed
+
+- **v0.26.8 / v0.26.9 で導入した左サイドバー横幅 drag resize が動作しなかった
+  問題**: ``react-resizable-panels`` の horizontal ``PanelGroup`` を CSS grid
+  セル内に置くと Panel の幅変化が反映されないケースがあったらしく、ハンドルを
+  ドラッグしても寸法が変わらず、ヒットエリアの拡張 (v0.26.9) でも解決しなかった。
+- **自前ドラッグハンドル** (`ResizeHandleX` コンポーネント) に切替:
+  - grid template columns に 5 px の専用 column を確保
+  - `pointerdown` で window-level `pointermove` / `pointerup` を bind、
+    開始時の `clientX` と `leftSidebarWidth` baseline から差分計算
+  - store action `setLeftSidebarWidth` で min 160 px / max 600 px にクランプ +
+    localStorage `pyflw.left_sidebar_width` に永続化
+  - drag 中は ``bg-blue-500`` で明確、`z-20` + `cursor-col-resize` で
+    React Flow に pointer event を奪われない
+  - 左右 ±4 px の透明ヒットエリアで 13 px 相当の grab zone
+- 縦方向の 2 split (Workspace ↕ Library、Canvas ↕ Scope) は引き続き
+  ``react-resizable-panels`` 使用 — そちらは flex 親内なので機能している。
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 312 passed (回帰なし)
+
 ## [0.26.9] - 2026-05-11 — Resize ハンドルが React Flow に pointer event を奪われていた問題を修正
 
 ### Fixed

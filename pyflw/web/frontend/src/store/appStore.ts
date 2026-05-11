@@ -89,6 +89,34 @@ function writeInspectorCollapsed(collapsed: boolean): void {
   }
 }
 
+const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "pyflw.left_sidebar_width";
+const LEFT_SIDEBAR_DEFAULT_PX = 240;
+const LEFT_SIDEBAR_MIN_PX = 160;
+const LEFT_SIDEBAR_MAX_PX = 600;
+
+function readLeftSidebarWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(LEFT_SIDEBAR_WIDTH_STORAGE_KEY);
+    if (!raw) return LEFT_SIDEBAR_DEFAULT_PX;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return LEFT_SIDEBAR_DEFAULT_PX;
+    return Math.max(LEFT_SIDEBAR_MIN_PX, Math.min(LEFT_SIDEBAR_MAX_PX, n));
+  } catch {
+    return LEFT_SIDEBAR_DEFAULT_PX;
+  }
+}
+
+function writeLeftSidebarWidth(px: number): void {
+  try {
+    window.localStorage.setItem(
+      LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
+      String(Math.round(px)),
+    );
+  } catch {
+    // 同上
+  }
+}
+
 /** Ctrl+C で蓄えるブロック群のコピー (Ctrl+V でオフセット位置に貼り付け)。 */
 export interface ClipboardPayload {
   blocks: BlockEntry[];
@@ -249,6 +277,9 @@ interface AppState {
   // v0.26.5: 右サイドバー (Inspector) の折りたたみ。Canvas を広げて使う用途。
   inspectorCollapsed: boolean;
   setInspectorCollapsed: (collapsed: boolean) => void;
+  // v0.26.10: 左サイドバー横幅 (px、drag で変更)。localStorage 永続。
+  leftSidebarWidth: number;
+  setLeftSidebarWidth: (px: number) => void;
 
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
@@ -689,6 +720,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setInspectorCollapsed: (collapsed) => {
     writeInspectorCollapsed(collapsed);
     set({ inspectorCollapsed: collapsed });
+  },
+  leftSidebarWidth: readLeftSidebarWidth(),
+  setLeftSidebarWidth: (px) => {
+    const clamped = Math.max(
+      LEFT_SIDEBAR_MIN_PX,
+      Math.min(LEFT_SIDEBAR_MAX_PX, px),
+    );
+    writeLeftSidebarWidth(clamped);
+    set({ leftSidebarWidth: clamped });
   },
   workspaceCollapsed: readWorkspaceCollapsed(),
   setWorkspaceCollapsed: (collapsed) => {

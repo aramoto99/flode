@@ -1,5 +1,5 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Group as PanelGroup,
@@ -42,6 +42,8 @@ export default function App(): JSX.Element {
   const workspaceCollapsed = useAppStore((s) => s.workspaceCollapsed);
   const inspectorCollapsed = useAppStore((s) => s.inspectorCollapsed);
   const setInspectorCollapsed = useAppStore((s) => s.setInspectorCollapsed);
+  const leftSidebarWidth = useAppStore((s) => s.leftSidebarWidth);
+  const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
@@ -150,30 +152,17 @@ export default function App(): JSX.Element {
         {/* Tab strip */}
         <TabStrip />
 
-        {/* Main 3-column area (v0.26.8: 左 sidebar+center は horizontal PanelGroup で
-            drag resize、右 Inspector は折り畳み state-controlled column のまま) */}
+        {/* Main 3-column area (v0.26.10: 左 sidebar 横幅は manual drag handle で
+            管理、grid template columns に直接埋め込む。react-resizable-panels の
+            horizontal は grid 内で動作不安定だったので自前実装に切替)。 */}
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            gridTemplateColumns: `1fr ${inspectorCollapsed ? "24px" : "280px"}`,
+            gridTemplateColumns: `${leftSidebarWidth}px 5px 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
           }}
         >
-          <PanelGroup
-            orientation="horizontal"
-            id="pyflw.left_center_split"
-            className="min-h-0"
-          >
-          {/* Left: Workspace tree (top) + Library palette (bottom)
-              v0.20.4: workspace 折りたたみ時は header (24px) のみで残り全部
-              palette、展開時は 40%/60% で分割
-              v0.26.8: 左 sidebar 自体が horizontal Panel として drag resize 可能 */}
-          <Panel
-            defaultSize={18}
-            minSize={12}
-            maxSize={45}
-            id="pyflw.left_sidebar"
-          >
-          <aside className="flex h-full min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+          {/* Left: Workspace tree (top) + Library palette (bottom) */}
+          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
             {workspaceCollapsed ? (
               // 折りたたみ時: FileBrowser 24 px header + Library が残り全部
               <>
@@ -215,21 +204,18 @@ export default function App(): JSX.Element {
               </PanelGroup>
             )}
           </aside>
-          </Panel>
-          {/* v0.26.9: 視覚は 2px の細線、左右に -4px の透明ヒットエリアを伸ばして
-              掴みやすくする (= React Flow に pointer event を奪われないよう、
-              ヒット部分は relative + z-10 + cursor で明示)。 */}
-          <PanelResizeHandle className="group relative z-10 w-0.5 cursor-col-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
-            <div className="absolute inset-y-0 -left-1 -right-1" />
-          </PanelResizeHandle>
+
+          {/* v0.26.10: 自前 drag handle (= 5 px wide grid column)。
+              pointer-down で window-level の pointermove / pointerup を取得し、
+              ローカル state を更新せず store action を呼ぶ。React Flow との
+              競合は z-index + cursor + capture で確実に勝つ。 */}
+          <ResizeHandleX
+            value={leftSidebarWidth}
+            onChange={setLeftSidebarWidth}
+          />
 
           {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}
-          <Panel
-            defaultSize={82}
-            minSize={30}
-            id="pyflw.center"
-          >
-          <main className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-100">
+          <main className="flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {hasOpenedModel ? (
               <>
                 <Breadcrumb />
@@ -286,8 +272,6 @@ export default function App(): JSX.Element {
               <EmptyState />
             )}
           </main>
-          </Panel>
-          </PanelGroup>
 
           {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。
               左 + center とは別 grid column (state-controlled width)。 */}
@@ -391,6 +375,62 @@ function GlobalScopeSettingsDialog(): JSX.Element | null {
       scopeId={editingScopeSettingsId}
       onClose={() => setEditingScopeSettingsId(null)}
     />
+  );
+}
+
+/**
+ * v0.26.10: 自前の horizontal drag handle (= grid column として 5 px 確保)。
+ *
+ * pointer-down で ``setPointerCapture`` し window-level の pointermove /
+ * pointerup を bind。React Flow に pointer event を奪われないよう ``z-10`` +
+ * ``cursor-col-resize`` を付与。``onChange`` は座標差分で呼ばれ、store action
+ * 内で min/max クランプ + localStorage 永続化。
+ */
+function ResizeHandleX({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (px: number) => void;
+}): JSX.Element {
+  const [dragging, setDragging] = useState(false);
+  const startRef = useRef<{ x: number; baseline: number } | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    startRef.current = { x: e.clientX, baseline: value };
+    setDragging(true);
+    const move = (me: PointerEvent): void => {
+      const s = startRef.current;
+      if (!s) return;
+      onChange(s.baseline + (me.clientX - s.x));
+    };
+    const up = (): void => {
+      startRef.current = null;
+      setDragging(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize left sidebar"
+      onPointerDown={onPointerDown}
+      className={`relative z-20 h-full w-full cursor-col-resize select-none ${
+        dragging ? "bg-blue-500" : "bg-slate-300 hover:bg-blue-400"
+      }`}
+    >
+      {/* 透明な広いヒットエリア (= 左右 ±4 px) で確実に掴める */}
+      <div className="absolute inset-y-0 -left-1 -right-1" />
+    </div>
   );
 }
 
