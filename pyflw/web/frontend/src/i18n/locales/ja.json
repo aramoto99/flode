@@ -213,6 +213,7 @@
   "workspace.split.disabled.scope_leaf": "Scope ペインはこれ以上分割できません",
   "workspace.split.disabled.run_simulation": "シミュレーションを実行すると Scope を別ペインに分離できます",
   "workspace.split.disabled.all_separated": "すべての Scope が既に別ペインに分離されています",
+  "workspace.scopes_stack.split_out_scope": "この Scope を個別ペインに分離",
 
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",

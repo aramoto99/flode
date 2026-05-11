@@ -306,6 +306,9 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
         blockTypeById={ctx.blockTypeById}
         splitOutAnyScope={ctx.splitOutAnyScope}
         hasScopeBlocks={ctx.hasScopeBlocks}
+        onSplitOutScope={(scopeId) =>
+          ctx.splitPane("scopes-stack", "vertical", `scope:${scopeId}`)
+        }
       />
     );
     titleKey = "workspace.pane.title.scopes_stack";
@@ -417,11 +420,15 @@ function ScopesStack({
   blockTypeById,
   splitOutAnyScope,
   hasScopeBlocks,
+  onSplitOutScope,
 }: {
   entries: Array<[string, ScopeBuffer]>;
   blockTypeById: Map<string, string>;
   splitOutAnyScope: boolean;
   hasScopeBlocks: boolean;
+  /** v0.27.2 UX-4: 各 ScopeView 横の「個別分離」ボタン押下時に呼ぶ。
+   * 引数は scope_id (= `scope:` prefix なし)。 */
+  onSplitOutScope: (scopeId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
   if (entries.length === 0) {
@@ -446,14 +453,59 @@ function ScopesStack({
     <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
       {entries.map(([scopeId, buffer]) => {
         const blockType = blockTypeById.get(scopeId) ?? "";
-        if (blockType.endsWith(".XYGraph")) {
-          return (
-            <XYGraphView key={scopeId} scopeId={scopeId} buffer={buffer} />
-          );
-        }
-        return <ScopeView key={scopeId} scopeId={scopeId} buffer={buffer} />;
+        const isXY = blockType.endsWith(".XYGraph");
+        return (
+          <div key={scopeId} className="flex flex-col border border-slate-200">
+            {/* v0.27.2 UX-4: stack 内の各 Scope に小型ヘッダーを付け、明示的な
+                「個別分離」ボタンを提供 (= scope_id 表示 + アイコンボタン)。
+                stack 全体の split-down で暗黙的に分離するより直感的。 */}
+            <div className="flex h-5 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 pl-2 pr-1 text-[10px] uppercase tracking-wider text-slate-500">
+              <span className="truncate font-mono" title={scopeId}>
+                {scopeId}
+              </span>
+              <SplitOutButton onClick={() => onSplitOutScope(scopeId)} />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden p-1">
+              {isXY ? (
+                <XYGraphView scopeId={scopeId} buffer={buffer} />
+              ) : (
+                <ScopeView scopeId={scopeId} buffer={buffer} />
+              )}
+            </div>
+          </div>
+        );
       })}
     </div>
+  );
+}
+
+function SplitOutButton({ onClick }: { onClick: () => void }): JSX.Element {
+  const { t } = useTranslation();
+  const label = t("workspace.scopes_stack.split_out_scope");
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="flex h-4 w-4 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+    >
+      {/* 矢印 + 枠: 「この要素を別 pane に出す」icon */}
+      <svg
+        viewBox="0 0 16 16"
+        className="h-3 w-3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2" y="2" width="9" height="9" />
+        <polyline points="8 6 12 2 14 4" />
+        <line x1="12" y1="2" x2="12" y2="6" />
+        <line x1="12" y1="2" x2="8" y2="2" />
+      </svg>
+    </button>
   );
 }
 

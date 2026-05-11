@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-05-12 — Workspace multi-pane Stage 1 UX: 個別 Scope 分離ボタン (UX-4)
+
+ADR-0045 §(1) 必須スコープ「個別 Scope を pane として独立分離する semantics」を
+**より直感的な操作** にする UX 改善。
+
+### Changed
+
+- **`scopes-stack` 内の各 Scope に小型ヘッダー + 「個別分離」ボタン** を追加 (UX-4):
+  - 従来: `scopes-stack` 全体の split-down ボタンを押すと「stack 内の最初の
+    scope が暗黙的に別 pane へ移動」する動作。ユーザーから見た intent と不一致
+    (= stack 自体を分割したつもりが、1 個の scope だけが移動)
+  - v0.27.2: 各 Scope の上に **scope_id + 「個別分離」アイコンボタン** が出る。
+    クリックすると **その scope** が `scope:<id>` 葉として独立分離される
+- ScopesStack のレイアウトを `flex-col gap-2` のシンプルな縦並びから、各 Scope を
+  `border border-slate-200` の小型カード化 (= ヘッダー 20 px + 本体)
+
+### Added
+
+- i18n キー: `workspace.scopes_stack.split_out_scope`
+  - ja: 「この Scope を個別ペインに分離」
+  - en: "Move this Scope to its own pane"
+- `ScopesStack` に `onSplitOutScope: (scopeId: string) => void` prop
+- `SplitOutButton` 小型コンポーネント (= アイコン + tooltip)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+- ADR-0045 §(1) 必須スコープ「個別 Scope を独立分離」は v0.27.0 で既に達成済、
+  本 hotfix は **同 semantics をより直感的な UI で達成** する追加改善
+
 ## [0.27.1] - 2026-05-12 — Workspace multi-pane Stage 1 の UX hotfix
 
 v0.27.0 リリース直後の UX 改善 2 点。実装範囲は ADR-0045 §(1) Stage 1 必須スコープ
