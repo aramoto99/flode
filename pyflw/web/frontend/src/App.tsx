@@ -161,24 +161,43 @@ export default function App(): JSX.Element {
           {/* Left: Workspace tree (top) + Library palette (bottom)
               v0.20.4: workspace 折りたたみ時は header (24px) のみで残り全部
               palette、展開時は 40%/60% で分割 */}
-          <aside
-            className={`grid min-h-0 overflow-hidden border-r border-slate-300 bg-white ${
-              workspaceCollapsed
-                ? "grid-rows-[24px_1fr]"
-                : "grid-rows-[40%_60%]"
-            }`}
-          >
-            {/* ADR-0041 §論点 7-A: workspace tree (`.flw.json` を直接開ける、JupyterLab 流儀) */}
-            <div className="flex min-h-0 flex-col overflow-hidden border-b border-slate-300">
-              <FileBrowser />
-            </div>
-            {/* Library palette (Phase 3 で導入、ADR-0019) */}
-            <div className="flex min-h-0 flex-col overflow-hidden">
-              <PanelHeader>{t("panel.library")}</PanelHeader>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <BlockPalette />
-              </div>
-            </div>
+          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+            {workspaceCollapsed ? (
+              // 折りたたみ時: FileBrowser 24 px header + Library が残り全部
+              <>
+                <div className="flex min-h-0 flex-col overflow-hidden border-b border-slate-300">
+                  <FileBrowser />
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <PanelHeader>{t("panel.library")}</PanelHeader>
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <BlockPalette />
+                  </div>
+                </div>
+              </>
+            ) : (
+              // 展開時: drag-resizable な縦分割 (v0.26.6、react-resizable-panels)
+              <PanelGroup
+                orientation="vertical"
+                id="pyflw.workspace_library_split"
+                className="flex-1"
+              >
+                <Panel defaultSize={40} minSize={15}>
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                    <FileBrowser />
+                  </div>
+                </Panel>
+                <PanelResizeHandle className="h-1 bg-slate-200 transition-colors hover:bg-blue-300" />
+                <Panel defaultSize={60} minSize={15}>
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                    <PanelHeader>{t("panel.library")}</PanelHeader>
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <BlockPalette />
+                    </div>
+                  </div>
+                </Panel>
+              </PanelGroup>
+            )}
           </aside>
 
           {/* Center: canvas + sim controls + scopes (drag-resizable split, ADR-0044 §論点 2) */}

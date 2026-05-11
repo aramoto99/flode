@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.6] - 2026-05-11 — Workspace / Library 分割比を drag resize 可能に
+
+### Changed
+
+- **左サイドバー (Workspace / Library) の上下分割比をマウスドラッグで変更可能に**:
+  従来は固定 40 % / 60 % だったが、``react-resizable-panels`` で **drag handle**
+  (= 上下境界に 1 px の青ホバー帯) を挿入し、ユーザーが直感的にリサイズできるよう
+  にした。最小サイズは各 15 %。
+- ワークスペースが折りたたみ状態 (`workspaceCollapsed`) のときは旧来の
+  「FileBrowser 24 px header + Library 残り全部」の固定レイアウトを維持。
+
+これで `Canvas / Scope` (= v0.24.0) と同じ手法で 3 種類の split が drag resize 可能:
+- 左サイドバー: Workspace ↕ Library (本リリース)
+- 中央: Canvas ↕ Scope (v0.24.0)
+
+### Verification
+
+- typecheck + production build: clean
+- frontend vitest: 312 passed (回帰なし)
+
 ## [0.26.5] - 2026-05-11 — Inspector の折りたたみ対応
 
 ### Added
