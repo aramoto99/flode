@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-05-12 — コマンドパレットに Block 追加コマンド (動的、registry 30+ 件)
+
+v0.29.0 コマンドパレットを更に拡張。`Ctrl+Shift+P` → 「Gain」「constant」「Sum」
+「ブロック」等で検索すると、backend block-registry の全ブロック (= 30+ 種)
+が動的コマンドとして表示され、Enter で **canvas に追加** できる。
+BlockPalette の drag-drop の代替経路として、キーボードのみで block 追加が
+可能に。
+
+### Added
+
+- **`Command.category` に "block" 追加**: 30+ 件の block を grouping、
+  category 表示順は最後 (= 初期表示で他 category を圧迫しない)
+- **`buildBlockAddCommands(blocks)`** (`src/lib/commands.ts`):
+  - 各 block_metadata に対し `block.add:<type_path>` command を生成
+  - 検索キーワード = `display_name` / `type_path` / `category` / `tags` を結合
+  - action: `addBlockToEditing(block, position)` を呼ぶ (= BlockPalette drag
+    と同じ store action)
+  - **位置決定**: 既存 block の bounding box の右下 + 140 px offset、無ければ
+    (100, 100)
+  - **enabled**: `editingModel !== null` (= ファイル未開時は disabled 灰色)
+- **CommandPalette が block-registry を tanstack-query で fetch**: 既存
+  BlockPalette / DiagramCanvas と同じ `queryKey: ["blocks-registry"]` を
+  共有、`staleTime: 60 min` で cache。
+- i18n: `command.category.block` (ja "ブロック" / en "Block") /
+  `command.block.add` (ja "ブロックを追加" / en "Add block")
+
+### 操作方法
+
+- `Ctrl+Shift+P` → "gain" 入力 → ↓ で選択 → Enter で Gain ブロックが canvas
+  に追加
+- `Ctrl+Shift+P` → "Sum" → 候補 1 件のみ表示 → Enter で即追加
+- 日本語検索も対応: "ブロック" でカテゴリ全体表示
+
+### 制約 (= 既知)
+
+- block 追加位置は **既存配置の右側 heuristics**、ユーザーが任意位置に置くには
+  追加後に手動ドラッグが必要 (= drag-drop なら drop 位置で決まる)
+- block の `display_name` は現状 ja/en に翻訳されない (= ADR-0028
+  `display_name_i18n` 未参照、英語の "Constant" "Gain" 等で表示)。検索は
+  日本語 keyword で引ける
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.29.1] - 2026-05-12 — コマンドパレットに Recent Files 動的コマンドを追加
 
 v0.29.0 コマンドパレットを拡張、現在のワークスペースの **Recent Files を動的

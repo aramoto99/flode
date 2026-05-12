@@ -12,7 +12,10 @@
 
 import { getFileContent } from "../api/filesApi";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
-import { useAppStore } from "../store/appStore";
+import { addBlockToEditing, useAppStore } from "../store/appStore";
+import { resolveBlocksAtPath } from "./pathResolver";
+import { buildDefaultParams, generateUniqueId } from "./idGenerator";
+import type { BlockMetadata } from "../types/api";
 
 /** category 別の並び順 (= UI 上の表示順、関係ない category は末尾)。 */
 export type CommandCategory =
@@ -20,7 +23,8 @@ export type CommandCategory =
   | "edit"
   | "simulation"
   | "view"
-  | "workspace";
+  | "workspace"
+  | "block";
 
 export interface Command {
   /** 一意 ID (= "file.new" 等の dot 区切り)、i18n key にも流用。 */
@@ -43,13 +47,15 @@ export interface Command {
   enabled?: () => boolean;
 }
 
-/** category の表示順序 (= ローカル UI 用、enum 列順を使う)。 */
+/** category の表示順序 (= ローカル UI 用、enum 列順を使う)。
+ * "block" は数 30+ で多いため最後にして、初期表示で他 category を見つけやすく。 */
 const CATEGORY_ORDER: CommandCategory[] = [
   "file",
   "edit",
   "simulation",
   "view",
   "workspace",
+  "block",
 ];
 
 /** category を比較 (= sort 用)。 */
@@ -261,6 +267,72 @@ export function buildRecentFileCommands(
         console.error("CommandPalette: open recent failed:", path, e);
         window.alert(`Open failed: ${(e as Error).message}`);
       }
+    },
+  }));
+}
+
+/** v0.29.2: block-registry を動的 command として展開。
+ *
+ * 各 block_metadata に対し ``block.add:<type_path>`` command を生成、
+ * Ctrl+Shift+P → 「Gain」「constant」「ブロック」等で検索 → Enter で canvas に
+ * デフォルト位置で追加。実装は BlockPalette の drag-drop と同じ路線
+ * (= ``addBlockToEditing(block, position)``)。
+ *
+ * **位置決定**: 既存 block の bounding box の右下 + 140 px offset、無ければ
+ * (100, 100)。React Flow の viewport center 取得は CommandPalette modal が
+ * focus を握っているため複雑なので、上記 heuristics で十分。
+ *
+ * **enabled**: ``editingModel !== null`` (= ファイル未開時は灰色表示)
+ *
+ * @param blocks backend ``listBlockMetadata()`` の結果配列
+ */
+export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
+  return blocks.map((meta) => ({
+    id: `block.add:${meta.type_path}`,
+    category: "block" as const,
+    labelKey: "command.block.add",
+    dynamicSuffix: meta.display_name,
+    // 検索キーワード: display_name / type_path / category / tags すべて
+    keywords: [
+      meta.display_name,
+      meta.display_name.toLowerCase(),
+      meta.type_path,
+      meta.type_path.toLowerCase(),
+      meta.category,
+      ...(meta.tags ?? []),
+    ],
+    enabled: () => useAppStore.getState().editingModel !== null,
+    action: () => {
+      const state = useAppStore.getState();
+      const model = state.editingModel;
+      if (!model) return;
+      let view;
+      try {
+        view = resolveBlocksAtPath(model, state.editingPath);
+      } catch {
+        return;
+      }
+      // 既存 ID 集合 + 一意 ID 採番
+      const existingIds = new Set(view.blocks.map((b) => b.id));
+      const newId = generateUniqueId(meta.type_path, existingIds);
+      // 位置決定: 既存 block の bounding box の右下 + offset
+      let x = 100;
+      let y = 100;
+      const positions = view.blocks
+        .map((b) => view.layout[b.id])
+        .filter((p): p is { x: number; y: number } => p != null);
+      if (positions.length > 0) {
+        x = Math.max(...positions.map((p) => p.x)) + 140;
+        y = Math.min(...positions.map((p) => p.y));
+      }
+      const newBlock = {
+        id: newId,
+        type: meta.type_path,
+        params: buildDefaultParams(meta.params_spec, {
+          isContainer: meta.is_container,
+        }),
+      };
+      addBlockToEditing(newBlock, { x, y });
     },
   }));
 }

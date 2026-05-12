@@ -7,11 +7,14 @@
 // **a11y**: focus は input に固定、↑↓ で selected index 移動、選択 command の
 // label を aria-live で読み上げる必要は無し (= 既存の Modal pattern と同水準)。
 
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { listBlockMetadata } from "../api/client";
 import {
   type Command,
+  buildBlockAddCommands,
   buildCommandRegistry,
   buildRecentFileCommands,
   commandMatches,
@@ -40,19 +43,28 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  // registry は static + dynamic Recent Files の結合 (v0.29.1)。
+  // registry は static + dynamic Recent Files + dynamic Block Add の結合
+  // (v0.29.1: Recent / v0.29.2: Block Add)。
   // 静的 registry は invokers 引数を撤去、synthetic keyboard event 経由で
   // 既存 shortcut path を再利用、複数 hook instance 化を避ける。
-  // 動的 Recent は workspaceHash + (modal open 時の最新 localStorage 状態) で
-  // 再計算するため、open フラグも dep に入れる (= modal を開く度に最新を読む)。
   const workspaceHash = useAppStore((s) => s.workspaceHash);
+  // v0.29.2: block-registry を tanstack-query で fetch (= 60 min cache、
+  // 既存 BlockPalette / DiagramCanvas と同じ queryKey で cache 共有)
+  const { data: blockRegistry } = useQuery({
+    queryKey: ["blocks-registry"],
+    queryFn: listBlockMetadata,
+    staleTime: 60 * 60 * 1000,
+  });
   const registry = useMemo(() => {
     const staticCmds = buildCommandRegistry();
     const recentCmds = buildRecentFileCommands(workspaceHash, 10);
-    return [...staticCmds, ...recentCmds];
+    const blockCmds = blockRegistry
+      ? buildBlockAddCommands(blockRegistry.blocks)
+      : [];
+    return [...staticCmds, ...recentCmds, ...blockCmds];
     // open を deps に含めて、毎回 modal を開くタイミングで Recent を再読込
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceHash, open]);
+  }, [workspaceHash, blockRegistry, open]);
 
   // open 時に input focus + 検索リセット
   useEffect(() => {

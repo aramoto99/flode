@@ -222,6 +222,8 @@
   "command.category.simulation": "Simulation",
   "command.category.view": "View",
   "command.category.workspace": "Workspace",
+  "command.category.block": "Block",
+  "command.block.add": "Add block",
   "command.file.new": "New file",
   "command.file.save": "Save",
   "command.file.open_recent": "Open recent",

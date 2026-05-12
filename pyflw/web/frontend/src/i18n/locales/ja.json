@@ -222,6 +222,8 @@
   "command.category.simulation": "シミュレーション",
   "command.category.view": "表示",
   "command.category.workspace": "ワークスペース",
+  "command.category.block": "ブロック",
+  "command.block.add": "ブロックを追加",
   "command.file.new": "新規ファイル",
   "command.file.save": "保存",
   "command.file.open_recent": "最近のファイルを開く",
