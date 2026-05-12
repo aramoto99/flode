@@ -43,6 +43,29 @@ interface ContextMenuState {
   isDirectory: boolean;
 }
 
+/** v0.28.1: drag-drop で workspace 内アイテムを移動する MIME type。
+ * 外部 ファイルの drop は受け付けない (= MIME 一致時のみ移動扱い)。 */
+const PYFLW_PATH_MIME = "application/x-pyflw-path";
+
+/** 親 path を抽出 (= "a/b/c.flw.json" → "a/b"、トップレベル → "")。 */
+function dirnameOf(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx < 0 ? "" : path.slice(0, idx);
+}
+
+/** basename を抽出 (= "a/b/c.flw.json" → "c.flw.json")。 */
+function basenameOf(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx < 0 ? path : path.slice(idx + 1);
+}
+
+/** ``childPath`` が ``ancestorPath`` の子孫 (= 移動禁止条件) か判定。
+ * 例: ancestorPath="a/b"、childPath="a/b/c" → true。両者一致は false。 */
+function isDescendantOf(childPath: string, ancestorPath: string): boolean {
+  if (ancestorPath === "") return childPath.length > 0; // root は全 path の祖先
+  return childPath.startsWith(ancestorPath + "/");
+}
+
 /**
  * 左サイドバーに置く workspace ツリービュー。React Query で 1 階層分の `tree`
  * 結果をキャッシュし、ディレクトリを開いた時点で個別 fetch する設計
@@ -187,6 +210,69 @@ export function FileBrowser(): JSX.Element {
     ],
   );
 
+  /** v0.28.1: drag-drop でファイル / フォルダを別ディレクトリへ移動する。
+   *
+   * - source = drag された path (file or dir)
+   * - targetDir = drop された先のディレクトリ path (root の場合は "")
+   *
+   * 以下のケースは no-op:
+   * - source と targetDir が同じ親ディレクトリ (= 移動先が同じ場所)
+   * - source 自身が targetDir (= dir を自分自身に drop)
+   * - source が targetDir の祖先 (= 自分のサブツリーに drop)
+   *
+   * 同名ファイルが targetDir に存在する場合、backend は 409 を返し alert で通知。
+   */
+  const handleMove = useCallback(
+    async (sourcePath: string, targetDir: string): Promise<void> => {
+      if (!sourcePath) return;
+      const base = basenameOf(sourcePath);
+      const parentOfSource = dirnameOf(sourcePath);
+      // 同じ親 dir 内 → 移動不要
+      if (parentOfSource === targetDir) return;
+      // dir を自分自身に drop
+      if (sourcePath === targetDir) return;
+      // 自分のサブツリーに drop (= 無限再帰防止)
+      if (isDescendantOf(targetDir, sourcePath)) {
+        window.alert(
+          t(
+            "filebrowser.move.descendant_forbidden",
+            "Cannot move into own subdirectory",
+          ),
+        );
+        return;
+      }
+      const newPath = targetDir ? `${targetDir}/${base}` : base;
+      try {
+        await renameFile(sourcePath, newPath);
+        await refresh();
+        // 移動した item が現在開いている tab の path と一致するか、その祖先なら
+        // tab path も追従させる (= rename と同じ semantics)
+        const state = useAppStore.getState();
+        for (const tab of state.tabs) {
+          if (tab.filePath === sourcePath) {
+            renameTabFilePath(sourcePath, newPath);
+          } else if (isDescendantOf(tab.filePath, sourcePath)) {
+            // dir 移動で配下 file の path も変わる
+            const suffix = tab.filePath.slice(sourcePath.length); // "/foo.flw.json"
+            const newTabPath = newPath + suffix;
+            renameTabFilePath(tab.filePath, newTabPath);
+          }
+        }
+        // 開いてるモデル本体も etag/mtime 再 fetch
+        const stillActive = useAppStore.getState().selectedFilePath;
+        if (stillActive) {
+          const data = await getFileContent(stillActive);
+          setEditingModel(data.content);
+          setEditingFileMeta(data.mtime, data.etag);
+        }
+      } catch (e) {
+        console.error("Move failed:", sourcePath, "->", targetDir, e);
+        window.alert(`Move failed: ${(e as Error).message}`);
+      }
+    },
+    [refresh, renameTabFilePath, setEditingFileMeta, setEditingModel, t],
+  );
+
   const handleDelete = useCallback(
     async (path: string) => {
       // confirm dialog (= browser native、SaveAsModal の作りと同じ自前 modal は
@@ -318,6 +404,19 @@ export function FileBrowser(): JSX.Element {
         <div
           className="min-h-0 flex-1 overflow-y-auto py-1"
           onContextMenu={(e) => handleContextMenu(e, "", true)}
+          // v0.28.1: container 全体を drop target にし、root への移動を許可
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(PYFLW_PATH_MIME)) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }
+          }}
+          onDrop={(e) => {
+            const source = e.dataTransfer.getData(PYFLW_PATH_MIME);
+            if (!source) return;
+            e.preventDefault();
+            void handleMove(source, "");
+          }}
         >
           <DirectoryNode
             path=""
@@ -326,6 +425,7 @@ export function FileBrowser(): JSX.Element {
             defaultExpanded
             onFileClick={handleOpen}
             onContextMenu={handleContextMenu}
+            onMove={handleMove}
             renamingPath={renamingPath}
             onSubmitRename={handleRename}
             onCancelRename={() => setRenamingPath(null)}
@@ -408,6 +508,8 @@ interface DirectoryNodeProps {
   defaultExpanded?: boolean;
   onFileClick: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  /** v0.28.1: drag-drop で移動する handler (sourcePath, targetDir) */
+  onMove: (sourcePath: string, targetDir: string) => Promise<void>;
   renamingPath: string | null;
   onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
   onCancelRename: () => void;
@@ -421,6 +523,7 @@ function DirectoryNode({
   defaultExpanded = false,
   onFileClick,
   onContextMenu,
+  onMove,
   renamingPath,
   onSubmitRename,
   onCancelRename,
@@ -428,6 +531,8 @@ function DirectoryNode({
 }: DirectoryNodeProps): JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
+  // v0.28.1: drag-over 中のハイライト state
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // root (depth=0) は強制展開、子ディレクトリは expanded=true 時のみ fetch
   const shouldFetch = depth === 0 || expanded;
@@ -480,6 +585,7 @@ function DirectoryNode({
             depth={1}
             onFileClick={onFileClick}
             onContextMenu={onContextMenu}
+            onMove={onMove}
             renamingPath={renamingPath}
             onSubmitRename={onSubmitRename}
             onCancelRename={onCancelRename}
@@ -490,14 +596,49 @@ function DirectoryNode({
     );
   }
 
+  // v0.28.1: directory は **drop target + drag source** 両対応。
+  // drop target: 自分の path を targetDir として move
+  // drag source: 自分の path を source として外に出す (= 別 dir へ移動可能)
+  const onDragStart = (e: React.DragEvent<HTMLButtonElement>): void => {
+    e.dataTransfer.setData(PYFLW_PATH_MIME, path);
+    e.dataTransfer.effectAllowed = "move";
+    e.stopPropagation();
+  };
+  const onDragOver = (e: React.DragEvent<HTMLLIElement>): void => {
+    if (!e.dataTransfer.types.includes(PYFLW_PATH_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setIsDragOver(true);
+  };
+  const onDragLeave = (): void => setIsDragOver(false);
+  const onDrop = (e: React.DragEvent<HTMLLIElement>): void => {
+    setIsDragOver(false);
+    const source = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    if (!source) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void onMove(source, path);
+  };
+
   // 子ディレクトリの場合: 行 + 折りたたみ children
   return (
-    <li role="treeitem" aria-expanded={expanded}>
+    <li
+      role="treeitem"
+      aria-expanded={expanded}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <button
         type="button"
+        draggable
+        onDragStart={onDragStart}
         onClick={() => setExpanded(!expanded)}
         onContextMenu={(e) => onContextMenu(e, path, true)}
-        className={`flex w-full items-center gap-1 py-0.5 text-left hover:bg-slate-100`}
+        className={`flex w-full items-center gap-1 py-0.5 text-left ${
+          isDragOver ? "bg-blue-100" : "hover:bg-slate-100"
+        }`}
         style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
       >
         <span className="w-3 text-[10px] text-slate-400">
@@ -516,6 +657,7 @@ function DirectoryNode({
               depth={depth + 1}
               onFileClick={onFileClick}
               onContextMenu={onContextMenu}
+              onMove={onMove}
               renamingPath={renamingPath}
               onSubmitRename={onSubmitRename}
               onCancelRename={onCancelRename}
@@ -534,6 +676,8 @@ interface TreeEntryProps {
   depth: number;
   onFileClick: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  /** v0.28.1: drag-drop で移動する handler */
+  onMove: (sourcePath: string, targetDir: string) => Promise<void>;
   renamingPath: string | null;
   onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
   onCancelRename: () => void;
@@ -546,6 +690,7 @@ function TreeEntry({
   depth,
   onFileClick,
   onContextMenu,
+  onMove,
   renamingPath,
   onSubmitRename,
   onCancelRename,
@@ -561,6 +706,7 @@ function TreeEntry({
         depth={depth}
         onFileClick={onFileClick}
         onContextMenu={onContextMenu}
+        onMove={onMove}
         renamingPath={renamingPath}
         onSubmitRename={onSubmitRename}
         onCancelRename={onCancelRename}
@@ -572,6 +718,14 @@ function TreeEntry({
   const isSelected = selectedFilePath === fullPath;
   const isFlw = entry.name.endsWith(".flw.json");
   const isRenaming = renamingPath === fullPath;
+
+  // v0.28.1: file は drag source として扱う (= drop target にはしない、
+  // file の上に file を drop する semantics は未定義)。
+  const onDragStart = (e: React.DragEvent<HTMLButtonElement>): void => {
+    e.dataTransfer.setData(PYFLW_PATH_MIME, fullPath);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
   return (
     <li role="treeitem">
       {isRenaming ? (
@@ -584,6 +738,8 @@ function TreeEntry({
       ) : (
         <button
           type="button"
+          draggable
+          onDragStart={onDragStart}
           onClick={() => isFlw && onFileClick(fullPath)}
           onContextMenu={(e) => onContextMenu(e, fullPath, false)}
           disabled={!isFlw}

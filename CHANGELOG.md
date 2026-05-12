@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-05-12 — FileBrowser drag-drop でフォルダ間移動
+
+ADR-0041 §論点 7-A で v0.19.0 送りとされていた drag-drop によるフォルダ間
+移動を実装 (SPEC-0001 §機能要件 Phase 6+ #56 stretch (e) を回収)。新規依存
+追加なし、HTML5 drag-drop API を自前で組む。ADR 不要 (= incremental UX 改善)。
+
+### Added
+
+- **FileBrowser tree item の drag source 化** (`TreeEntry` / `DirectoryNode`):
+  - **ファイル** = drag source として外に出せる、drop は受け付けない (= file
+    の上に file を置く semantics は未定義のため)
+  - **フォルダ** = drag source + drop target の両対応 (= 別のフォルダから
+    ここへ移動できる + 自分自身を他へ移動できる)
+- **drop target の視覚フィードバック**: drop 中のフォルダ行に `bg-blue-100`
+  ハイライト (= drag over の `<li>` で `isDragOver` state を切替)
+- **root への drop**: 左サイドバー container 全体を drop target にし、root
+  ディレクトリへの移動も可能 (= top-level に戻せる)
+- **MIME type `application/x-pyflw-path`**: 外部ファイル drop を排除するため
+  pyflw 固有 MIME を採用 (= ブラウザ標準 file drop は無視される)
+- i18n キー: `filebrowser.move.descendant_forbidden`
+
+### Changed
+
+- **`handleMove(sourcePath, targetDir)` 関数を `FileBrowser` 内に追加**:
+  - 同じ親 dir 内 → no-op
+  - 自分自身に drop → no-op
+  - 自分のサブツリーに drop → 禁止 (= 無限再帰防止、alert で通知)
+  - 既存 `POST /api/v1/files/rename` を流用 (= `from` / `to` 形式、UNIX `mv`
+    相当の semantics、別 dir への移動も受け付ける)
+  - 移動後の `tabs[]` path も追従 (= dir 移動なら配下 file の path も再構築)
+  - 開いてるモデルは etag/mtime を再 fetch
+
+### 操作方法
+
+- ファイル/フォルダを **マウスでドラッグ** → 別フォルダの上で **ドロップ**
+  → 移動完了
+- **root に戻す** = サイドバー内の空き領域 (= 一覧の末尾 / 全体) にドロップ
+- 同名ファイルが移動先に存在する場合は backend が 409 を返し alert で通知
+- 移動はサーバ側で atomic、失敗時は元の場所に残る
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.28.0] - 2026-05-12 — Workspace JupyterLab Stage 2 = Activity bar + Launcher (ADR-0051)
 
 ADR-0051 採択 (Phase 6c Stage 2)。Workspace UI を JupyterLab/VSCode 流の

@@ -195,6 +195,7 @@
   "filebrowser.menu.new_folder": "新規フォルダ",
   "filebrowser.menu.rename": "名前変更 (F2)",
   "filebrowser.menu.delete": "削除",
+  "filebrowser.move.descendant_forbidden": "自分のサブディレクトリには移動できません",
 
   "panel.library": "ライブラリ",
   "panel.inspector": "インスペクタ",

@@ -195,6 +195,7 @@
   "filebrowser.menu.new_folder": "New folder",
   "filebrowser.menu.rename": "Rename (F2)",
   "filebrowser.menu.delete": "Delete",
+  "filebrowser.move.descendant_forbidden": "Cannot move into own subdirectory",
 
   "panel.library": "Library",
   "panel.inspector": "Inspector",
