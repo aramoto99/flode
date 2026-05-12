@@ -22,6 +22,7 @@ import {
   findLeaf,
   insertSplit,
   removeLeaf,
+  renameLeaf as splitTreeRenameLeaf,
   serializeTree,
   setSplitRatio as splitTreeSetRatio,
   toggleSplitOrientation as splitTreeToggleOrientation,
@@ -826,6 +827,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   renameTabFilePath: (oldPath, newPath) =>
     set((state) => {
+      // ADR-0052 code-reviewer §SHOULD #2: SplitTree 内の tab:<oldPath> 葉も
+      // 追従させる (= rename 後に「このタブは閉じられています」表示を防ぐ)
+      const oldTabLeafId = `tab:${oldPath}`;
+      const newTabLeafId = `tab:${newPath}`;
+      let updatedLayout = state.workspaceLayout;
+      if (findLeaf(state.workspaceLayout, oldTabLeafId)) {
+        const renamed = splitTreeRenameLeaf(
+          state.workspaceLayout,
+          oldTabLeafId,
+          newTabLeafId,
+        );
+        if (renamed !== state.workspaceLayout) {
+          updatedLayout = renamed;
+          persistWorkspaceLayoutFor(
+            state.workspaceHash,
+            state.activeTabFilePath,
+            updatedLayout,
+          );
+        }
+      }
+
       const idx = state.tabs.findIndex((t) => t.filePath === oldPath);
       if (idx < 0) {
         // active path が rename された場合だけ反映
@@ -833,9 +855,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           return {
             activeTabFilePath: newPath,
             selectedFilePath: newPath,
+            workspaceLayout: updatedLayout,
           };
         }
-        return {};
+        return { workspaceLayout: updatedLayout };
       }
       const updated = state.tabs.map((t, i) =>
         i === idx ? { ...t, filePath: newPath } : t,
@@ -847,6 +870,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeTabFilePath: newActive,
         selectedFilePath:
           state.selectedFilePath === oldPath ? newPath : state.selectedFilePath,
+        workspaceLayout: updatedLayout,
       };
     }),
 

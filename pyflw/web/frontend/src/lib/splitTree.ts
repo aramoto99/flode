@@ -138,6 +138,39 @@ function insertSplitRecur(
   };
 }
 
+/** v0.30.0 (ADR-0052) code-reviewer §SHOULD #2: 葉の paneId をリネーム。
+ *
+ * tab:<oldPath> のような葉が SplitTree に存在し、ファイル rename で paneId が
+ * 旧 → 新に変わる場合に呼ぶ。``oldPaneId`` が tree に存在しないか
+ * ``newPaneId`` が既に tree に存在する場合は **何も変更せず元 tree を返す**
+ * (= 重複防止)。
+ */
+export function renameLeaf(
+  tree: SplitTree,
+  oldPaneId: string,
+  newPaneId: string,
+): SplitTree {
+  if (oldPaneId === newPaneId) return tree;
+  if (!findLeaf(tree, oldPaneId)) return tree;
+  if (findLeaf(tree, newPaneId)) return tree;
+  return renameLeafRecur(tree, oldPaneId, newPaneId);
+}
+
+function renameLeafRecur(
+  tree: SplitTree,
+  oldPaneId: string,
+  newPaneId: string,
+): SplitTree {
+  if (tree.kind === "leaf") {
+    return tree.paneId === oldPaneId ? { kind: "leaf", paneId: newPaneId } : tree;
+  }
+  return {
+    ...tree,
+    a: renameLeafRecur(tree.a, oldPaneId, newPaneId),
+    b: renameLeafRecur(tree.b, oldPaneId, newPaneId),
+  };
+}
+
 /** ``target`` 葉を tree から除去。
  *
  * 兄弟が単一葉の場合は親 split node が縮約され、その葉が親の位置に昇格する。

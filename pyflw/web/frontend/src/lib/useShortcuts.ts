@@ -324,6 +324,15 @@ export function useShortcuts(): void {
     };
 
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      // ADR-0052 §(6) code-reviewer §SHOULD #1: unmount 時に Ctrl+K prefix
+      // timeout が残留すると、unmount 後の callback で ref を書き換える
+      // 可能性 (= HMR 等の頻繁 remount で症状顕在化) があるため明示的に clear。
+      if (ctrlKPrefixTimeoutRef.current !== null) {
+        window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+        ctrlKPrefixTimeoutRef.current = null;
+      }
+    };
   }, [run, stop, registry]);
 }

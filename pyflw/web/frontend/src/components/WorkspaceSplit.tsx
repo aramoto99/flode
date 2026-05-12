@@ -508,7 +508,13 @@ function PaneLeafShell({
     const rect = e.currentTarget.getBoundingClientRect();
     setHoverZone(computeDropZone(rect, e.clientX, e.clientY));
   };
-  const onDragLeave = (): void => setHoverZone(null);
+  const onDragLeave = (e: React.DragEvent<HTMLDivElement>): void => {
+    // ADR-0052 code-reviewer §SHOULD #3: HTML5 drag event は子要素への移動
+    // でも dragleave を発火する。relatedTarget が自要素の内側なら無視 (=
+    // hover zone overlay のチラつき防止)。
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setHoverZone(null);
+  };
   const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
     const filePath = e.dataTransfer.getData(PYFLW_TAB_REF_MIME);
     setHoverZone(null);
@@ -617,16 +623,15 @@ function ScopesStack({
   const { t } = useTranslation();
   if (entries.length === 0) {
     // v0.27.1 UX-1: 空 stack の理由を出し分ける:
-    // - 個別 pane に分離済 (= splitOutAnyScope=true)         → "all separated"
-    // - sim 未実行 (= scope buffer 未受信、splitOutAnyScope=false かつ
-    //   hasScopeBlocks=true)                                 → "no data, run sim"
-    // - そもそも Scope ブロック無し (= hasScopeBlocks=false) → "no data, run sim"
-    //   (= scope ブロック無し時に scopes-stack pane に到達するのは UI 上稀)
+    // - 個別 pane に分離済 (= splitOutAnyScope=true) → "all separated"
+    // - それ以外 (= sim 未実行 or Scope ブロック無し) → "no data, run sim"
+    // 後者の 2 ケースは現状同じ文言なので 1 つに統合 (= v0.30.0 code-reviewer
+    // §NITS #4 で dead 三項演算子を解消)。
+    // 将来 Scope ブロック無しの状態を別文言にする場合は別 i18n キー化する。
+    void hasScopeBlocks; // 将来分岐用に keep
     const message = splitOutAnyScope
       ? t("workspace.scopes_stack.empty")
-      : hasScopeBlocks
-        ? t("workspace.scopes_stack.no_data")
-        : t("workspace.scopes_stack.no_data");
+      : t("workspace.scopes_stack.no_data");
     return (
       <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
         {message}

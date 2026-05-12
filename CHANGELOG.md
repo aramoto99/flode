@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-05-12 — v0.30.0 code-reviewer 指摘の hotfix
+
+v0.30.0 直後の code-reviewer agent 指摘 (= MUST 0 / SHOULD 3 / NITS 2) を全対処。
+
+### Fixed
+
+- **`useShortcuts` の cleanup で `Ctrl+K` prefix timeout が残留** (SHOULD #1):
+  unmount 時に `clearTimeout` を呼ぶよう `return () => {...}` を拡張。HMR 等の
+  頻繁 remount で symptom 顕在化リスクを排除
+- **`renameTabFilePath` で SplitTree の `tab:<oldPath>` 葉が追従しない**
+  (SHOULD #2): ファイル rename 後に SplitTree 内の pane 表示が「閉じられて
+  います」と誤表示される問題。新 helper `renameLeaf(tree, old, new)` を
+  `src/lib/splitTree.ts` に追加、`renameTabFilePath` action 内で連動呼出し
+- **`onDragLeave` が子要素への移動で発火** (SHOULD #3): drop indicator
+  overlay のチラつきを防止、`e.currentTarget.contains(e.relatedTarget)` で
+  内側への移動を無視
+
+### Changed
+
+- **`ScopesStack` の dead code 解消** (NITS #4): 三項演算子の両辺が同じキー
+  だった部分を平坦化、将来分岐の余地はコメントで明示
+- (NITS #5) `InspectorFloatPanel` の `rounded` は `ScopePanelContainer` と
+  既に統一済 (= 確認のみ、変更なし)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+- ADR-0052 §Confidence の判断者への問いに反する事項なし
+
 ## [0.30.0] - 2026-05-12 — Workspace JupyterLab Stage 3 = Drag-to-split-tab + Inspector pane 化 (ADR-0052)
 
 ADR-0052 採択 (Phase 6c Stage 3、Accepted 2026-05-12)。**Phase 6c の最終 Stage**:
