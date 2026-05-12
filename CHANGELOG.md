@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-05-12 — コマンドパレットに Recent Files 動的コマンドを追加
+
+v0.29.0 コマンドパレットを拡張、現在のワークスペースの **Recent Files を動的
+コマンドとして列挙** する。`Ctrl+Shift+P` 起動 → 「最近」「recent」「ファイル名」
+等で検索 → Enter で開ける。Launcher の Recent list と同じデータソース
+(`pyflw.recent.<workspaceHash>`) を共有。
+
+### Added
+
+- **`Command.dynamicSuffix?: string`** field 追加: 共通 labelKey で複数行を
+  出す動的 command 用 (= "最近のファイルを開く: models/foo.flw.json" 形式)
+- **`buildRecentFileCommands(workspaceHash, limit=10)`**: localStorage の
+  Recent Files を最大 10 件 (= Launcher 5 件より広く) 動的 command 化
+- 各 Recent command は **直接 REST 呼出し** (= `getFileContent` +
+  `openFileInTab`) で synthetic keyboard event を経由しない
+- 検索キーワード: `recent`, `open`, `最近`, `開く`, ファイルパス全体 +
+  小文字版 (= 「spring」「PID」等の partial match で引ける)
+- i18n: `command.file.open_recent` (ja: "最近のファイルを開く" / en: "Open recent")
+
+### Changed
+
+- **CommandPalette の `registry` を `useMemo(..., [workspaceHash, open])`** に変更:
+  modal を開くたびに最新の Recent を読み直す (= 別 modal 中に Recent 追加が
+  あっても次回 open 時に反映)
+- 表示ラベル組み立てを `${t(labelKey)}: ${dynamicSuffix}` 形式に対応 (= 静的
+  command は従来通り `t(labelKey)` のみ)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.29.0] - 2026-05-12 — コマンドパレット (Ctrl+Shift+P) を追加
 
 JupyterLab / VSCode 流のコマンドパレットを実装。`Ctrl+Shift+P` で modal 表示、

@@ -224,6 +224,7 @@
   "command.category.workspace": "ワークスペース",
   "command.file.new": "新規ファイル",
   "command.file.save": "保存",
+  "command.file.open_recent": "最近のファイルを開く",
   "command.edit.undo": "元に戻す",
   "command.edit.redo": "やり直し",
   "command.simulation.run": "シミュレーション実行",

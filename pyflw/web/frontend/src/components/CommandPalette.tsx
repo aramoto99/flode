@@ -13,9 +13,11 @@ import { useTranslation } from "react-i18next";
 import {
   type Command,
   buildCommandRegistry,
+  buildRecentFileCommands,
   commandMatches,
   compareCategory,
 } from "../lib/commands";
+import { useAppStore } from "../store/appStore";
 
 interface CommandPaletteProps {
   /** Modal の open/closed を制御する store action / state。 */
@@ -38,9 +40,19 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  // registry は static (= invokers 引数を撤去、synthetic keyboard event 経由で
-  // 既存 shortcut path を再利用、複数 hook instance 化を避ける)
-  const registry = useMemo(() => buildCommandRegistry(), []);
+  // registry は static + dynamic Recent Files の結合 (v0.29.1)。
+  // 静的 registry は invokers 引数を撤去、synthetic keyboard event 経由で
+  // 既存 shortcut path を再利用、複数 hook instance 化を避ける。
+  // 動的 Recent は workspaceHash + (modal open 時の最新 localStorage 状態) で
+  // 再計算するため、open フラグも dep に入れる (= modal を開く度に最新を読む)。
+  const workspaceHash = useAppStore((s) => s.workspaceHash);
+  const registry = useMemo(() => {
+    const staticCmds = buildCommandRegistry();
+    const recentCmds = buildRecentFileCommands(workspaceHash, 10);
+    return [...staticCmds, ...recentCmds];
+    // open を deps に含めて、毎回 modal を開くタイミングで Recent を再読込
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceHash, open]);
 
   // open 時に input focus + 検索リセット
   useEffect(() => {
@@ -50,13 +62,17 @@ export function CommandPalette({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
-  // commands を label 解決 + 検索フィルタ + category ソート
+  // commands を label 解決 + 検索フィルタ + category ソート。
+  // dynamicSuffix が指定されていれば "${t(labelKey)}: ${dynamicSuffix}" で連結。
   type Entry = { cmd: Command; label: string };
   const entries: Entry[] = useMemo(() => {
-    const labeled: Entry[] = registry.map((cmd) => ({
-      cmd,
-      label: tDynamic(cmd.labelKey),
-    }));
+    const labeled: Entry[] = registry.map((cmd) => {
+      const base = tDynamic(cmd.labelKey);
+      const label = cmd.dynamicSuffix
+        ? `${base}: ${cmd.dynamicSuffix}`
+        : base;
+      return { cmd, label };
+    });
     const filtered = labeled.filter((e) =>
       commandMatches(e.cmd, e.label, query),
     );

@@ -224,6 +224,7 @@
   "command.category.workspace": "Workspace",
   "command.file.new": "New file",
   "command.file.save": "Save",
+  "command.file.open_recent": "Open recent",
   "command.edit.undo": "Undo",
   "command.edit.redo": "Redo",
   "command.simulation.run": "Run simulation",

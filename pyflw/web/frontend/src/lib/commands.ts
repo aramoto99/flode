@@ -10,6 +10,8 @@
 // 等は KeyboardEvent を window.dispatchEvent で投げて、既存 ``useShortcuts``
 // / ``useAutoSave`` / ``MenuBar`` の listener に処理させる。
 
+import { getFileContent } from "../api/filesApi";
+import { addRecentFile, readRecentFiles } from "./recentFiles";
 import { useAppStore } from "../store/appStore";
 
 /** category 別の並び順 (= UI 上の表示順、関係ない category は末尾)。 */
@@ -27,6 +29,10 @@ export interface Command {
   category: CommandCategory;
   /** 表示ラベルの i18n key (= ``t(labelKey)`` で取得)。 */
   labelKey: string;
+  /** v0.29.1: 表示用 suffix (= ``t(labelKey)`` の後ろに ": <suffix>" 形式で
+   * 連結される)。動的 command (= Recent Files のように同じ labelKey で複数
+   * 行を出す) で path / 引数を表示するために使う。 */
+  dynamicSuffix?: string;
   /** キーボードショートカット表示 (= 任意、UI 右端に表示)。 */
   shortcut?: string;
   /** 検索対象キーワード (= label に加えて検索される、英日混在 OK)。 */
@@ -217,4 +223,44 @@ export function buildCommandRegistry(): Command[] {
       },
     },
   ];
+}
+
+/** v0.29.1: 現在のワークスペースの Recent Files を動的 command として展開。
+ *
+ * Launcher の Recent list と同じデータソース (= ``readRecentFiles(workspaceHash)``)
+ * から最大 ``limit`` 件 (= 既定 10) を生成。各 command は **直接 REST 呼出し**
+ * (= getFileContent + openFileInTab) で synthetic keyboard event を経由しない。
+ *
+ * 検索 query 例:
+ * - ja: 「最近 spring」 → 「最近: models/spring_mass_damper.flw.json」が match
+ * - en: "recent pid"   → "Recent: models/pid_controller.flw.json" が match
+ *
+ * @param workspaceHash 現在のワークスペース hash (= ``store.workspaceHash``)
+ * @param limit         最大件数 (= 既定 10、コマンドパレット視認性のため抑制)
+ */
+export function buildRecentFileCommands(
+  workspaceHash: string | null,
+  limit: number = 10,
+): Command[] {
+  if (!workspaceHash) return [];
+  const recent = readRecentFiles(workspaceHash).slice(0, limit);
+  return recent.map((path) => ({
+    id: `file.open_recent:${path}`,
+    category: "file" as const,
+    // 共通 labelKey で "最近のファイル" / "Recent file" を表示、suffix で path を連結
+    labelKey: "command.file.open_recent",
+    dynamicSuffix: path,
+    keywords: ["recent", "open", "最近", "開く", path, path.toLowerCase()],
+    action: async () => {
+      try {
+        const data = await getFileContent(path);
+        const state = useAppStore.getState();
+        state.openFileInTab(path, data.content, data.mtime, data.etag);
+        addRecentFile(workspaceHash, path);
+      } catch (e) {
+        console.error("CommandPalette: open recent failed:", path, e);
+        window.alert(`Open failed: ${(e as Error).message}`);
+      }
+    },
+  }));
 }
