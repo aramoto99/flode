@@ -279,12 +279,14 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
     return null;
   })();
 
+  // v0.30.2: Diagram pane (= isDiagram) からの split は禁止 (ユーザー要望: 6)。
+  // Diagram は常に 1 pane で運用、Scope との分割は scopes-stack タイトルバーで操作。
   const onSplitRight =
-    nextNewLeaf !== null
+    !isDiagram && nextNewLeaf !== null
       ? () => ctx.splitPane(paneId, "horizontal", nextNewLeaf)
       : null;
   const onSplitDown =
-    nextNewLeaf !== null
+    !isDiagram && nextNewLeaf !== null
       ? () => ctx.splitPane(paneId, "vertical", nextNewLeaf)
       : null;
 
@@ -296,17 +298,15 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       ? () => ctx.unsplitPane(paneId)
       : null;
 
-  // v0.27.1 UX-3: split が無効 (= nextNewLeaf===null) のとき、ボタンを hide ではなく
-  // disabled で表示し、tooltip で理由を伝える。理由は paneId と状況で出し分け:
-  // - scope:<id> 葉 → "Scope 葉はこれ以上分割できない"
-  // - diagram / stack で stack 空 (= sim 未実行 or 全分離済) → "実行 or 別 pane 戻し待ち"
+  // v0.27.1 UX-3 + v0.30.2: split が無効のとき disabled で表示。
+  // ただし Diagram pane (v0.30.2 で split 禁止) は **完全 hide** とする
+  // (= ユーザー要望「ダイアグラムの分割表示はいらない」)。
   const disabledSplitReason = ((): string | null => {
-    if (nextNewLeaf !== null) return null; // enabled、disabled 表示不要
-    if (!isDiagram && !isStack) {
-      // scope:<id> 葉: これ以上 split できない (Stage 1 仕様)
+    if (nextNewLeaf !== null) return null;
+    if (isDiagram) return null; // v0.30.2: Diagram は disabled 表示も hide
+    if (!isStack) {
       return ctx.t_scopeLeafCannotSplit;
     }
-    // diagram / stack で stack 空: sim 未実行 or 全分離済
     return ctx.splitOutAnyScope
       ? ctx.t_allScopesSeparated
       : ctx.t_runSimulationToSplit;
@@ -407,6 +407,9 @@ function handleTabDrop(
   zone: "center" | "top" | "right" | "bottom" | "left",
   filePath: string,
 ): void {
+  // v0.30.2: Diagram pane への drop は no-op (= 「Diagram の分割表示はいらない」
+  // 要望、ボタンと semantics 統一)
+  if (targetPaneId === "diagram") return;
   const op = dropZoneToSplit(zone);
   if (op === null) {
     // center drop: Stage 3 MVP では no-op、Stage 4+ で「タブ追加」semantics
@@ -616,11 +619,20 @@ function ScopesStack({
   blockTypeById: Map<string, string>;
   splitOutAnyScope: boolean;
   hasScopeBlocks: boolean;
-  /** v0.27.2 UX-4: 各 ScopeView 横の「個別分離」ボタン押下時に呼ぶ。
-   * 引数は scope_id (= `scope:` prefix なし)。 */
+  /** v0.27.2 UX-4 → v0.30.2: タブ切替化のため未使用、interface は維持。 */
   onSplitOutScope: (scopeId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
+  // v0.30.2: タブ切替で 1 個ずつ表示 (= Simulink Scope 風)。
+  // 現 active scope_id は local state、entries の最初を default。
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // entries 変化で active が消えたら自動切替
+  const validActiveId =
+    activeId !== null && entries.some(([id]) => id === activeId)
+      ? activeId
+      : (entries[0]?.[0] ?? null);
+  // 未使用 prop warning suppression (= interface 維持のため)
+  void onSplitOutScope;
   if (entries.length === 0) {
     // v0.27.1 UX-1: 空 stack の理由を出し分ける:
     // - 個別 pane に分離済 (= splitOutAnyScope=true) → "all separated"
@@ -638,63 +650,51 @@ function ScopesStack({
       </div>
     );
   }
+  // v0.30.2: タブ切替で 1 Scope を表示 (Simulink Scope 風)。
+  const activeEntry =
+    entries.find(([id]) => id === validActiveId) ?? entries[0]!;
+  const [activeScopeId, activeBuffer] = activeEntry;
+  const activeBlockType = blockTypeById.get(activeScopeId) ?? "";
+  const isXY = activeBlockType.endsWith(".XYGraph");
   return (
-    <div className="flex h-full flex-col gap-2 overflow-y-auto bg-white p-2">
-      {entries.map(([scopeId, buffer]) => {
-        const blockType = blockTypeById.get(scopeId) ?? "";
-        const isXY = blockType.endsWith(".XYGraph");
-        return (
-          <div key={scopeId} className="flex flex-col border border-slate-200">
-            {/* v0.27.2 UX-4: stack 内の各 Scope に小型ヘッダーを付け、明示的な
-                「個別分離」ボタンを提供 (= scope_id 表示 + アイコンボタン)。
-                stack 全体の split-down で暗黙的に分離するより直感的。 */}
-            <div className="flex h-5 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 pl-2 pr-1 text-[10px] uppercase tracking-wider text-slate-500">
-              <span className="truncate font-mono" title={scopeId}>
-                {scopeId}
-              </span>
-              <SplitOutButton onClick={() => onSplitOutScope(scopeId)} />
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden p-1">
-              {isXY ? (
-                <XYGraphView scopeId={scopeId} buffer={buffer} />
-              ) : (
-                <ScopeView scopeId={scopeId} buffer={buffer} />
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SplitOutButton({ onClick }: { onClick: () => void }): JSX.Element {
-  const { t } = useTranslation();
-  const label = t("workspace.scopes_stack.split_out_scope");
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="flex h-4 w-4 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-    >
-      {/* 矢印 + 枠: 「この要素を別 pane に出す」icon */}
-      <svg
-        viewBox="0 0 16 16"
-        className="h-3 w-3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    <div className="flex h-full flex-col overflow-hidden bg-white">
+      {/* タブヘッダー: 各 Scope の scope_id ボタンを横並べ。
+          幅が足りない場合は overflow-x-auto で横スクロール。 */}
+      <div
+        role="tablist"
+        aria-label={t("workspace.scopes_stack.tablist")}
+        className="flex h-6 shrink-0 items-center gap-0 overflow-x-auto border-b border-slate-200 bg-slate-50"
       >
-        <rect x="2" y="2" width="9" height="9" />
-        <polyline points="8 6 12 2 14 4" />
-        <line x1="12" y1="2" x2="12" y2="6" />
-        <line x1="12" y1="2" x2="8" y2="2" />
-      </svg>
-    </button>
+        {entries.map(([scopeId]) => {
+          const isActive = scopeId === validActiveId;
+          return (
+            <button
+              key={scopeId}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveId(scopeId)}
+              className={`shrink-0 border-r border-slate-200 px-2 py-0.5 font-mono text-[10px] ${
+                isActive
+                  ? "bg-white text-slate-800"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              }`}
+              title={scopeId}
+            >
+              {scopeId}
+            </button>
+          );
+        })}
+      </div>
+      {/* active scope の uPlot 描画 */}
+      <div className="min-h-0 flex-1 overflow-hidden p-1">
+        {isXY ? (
+          <XYGraphView scopeId={activeScopeId} buffer={activeBuffer} />
+        ) : (
+          <ScopeView scopeId={activeScopeId} buffer={activeBuffer} />
+        )}
+      </div>
+    </div>
   );
 }
 

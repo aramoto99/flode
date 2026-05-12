@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-05-12 — v0.30.0 ユーザー要望反映 (revert 中心、6 件対応)
+
+v0.30.0 リリース直後のユーザー動作確認フィードバック 6 件を全対処。Stage 3 で
+導入した一部変更を **revert** + 新仕様 (Scopes pane タブ切替) を追加。
+
+### Fixed
+
+- **バグ修正: sidebar 閉じると Diagram / Scope / Inspector も消える** (要望 #4):
+  原因 = grid 5 列定義に対し JSX が collapsed 時に 3 子要素しか描画せず、
+  main / Inspector が左詰めで列 2-3 (= 0 px) に流れ込んでいた。Column 1
+  (`<aside>`) と Column 2 (drag handle) を **常時描画**、内容のみ条件付きに
+  修正
+
+### Changed
+
+- **FileBrowser: depth 1 まで自動展開** (要望 #5): 旧 v0.30.1 までは root のみ
+  自動展開、ユーザーから「階層表示がない」フィードバック。`TreeEntry` の
+  `defaultExpanded` を `depth <= 1` に変更し、root 直下のフォルダも起動時に
+  展開。深い階層はユーザー click で展開
+- **Inspector を sidebar 単独 UX に revert** (要望 #1): ADR-0052 §(2) で
+  追加した **3 mode (sidebar/pane/float) を撤去**、v3.8.x までの「列 4 で
+  折りたたみ 2 値」に戻す。`InspectorFloatPanel` + mode 切替 select を撤去、
+  store の `inspectorDockMode` state は無効化 (= UI からは触れない、localStorage
+  キーは互換のため残置)
+- **Scope ダブルクリック挙動を float 即開きに revert** (要望 #2): ADR-0052
+  §(3) で「docked split 昇格」に変更したが、v0.30.2 で **ADR-0044 当初挙動
+  (= `openScopePanel`)** に戻す。pane タイトルバーの detach ボタンは残置
+  (= scope:<id> 葉が SplitTree に既に存在する場合の経路として温存)
+- **`ScopesStack` をタブ切替化** (要望 #3): 旧 = 縦並べで全 Scope 表示、
+  新 = **タブヘッダー + 単一 Scope 表示** (Simulink Scope 風)。`<button
+  role="tab">` で scope_id を横並びに、active scope のみ uPlot 描画。
+  active scope は local state で管理 (= 永続化なし、entries 変化で先頭に
+  fallback)
+- **Diagram pane の split right / split down ボタンを hide** (要望 #6):
+  Diagram は常に 1 pane で運用、分割系アクションは scopes-stack タイトル
+  バーで操作。Diagram pane への drag-drop の 4 端 split も **no-op** に追加
+
+### Test update
+
+- `tests/fileBrowser.test.tsx`: `defaultExpanded={depth <= 1}` 仕様に
+  合わせて test 名と assertion を更新 (= fetch 回数 1 → 2、`""` + `"controllers"`)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.30.1] - 2026-05-12 — v0.30.0 code-reviewer 指摘の hotfix
 
 v0.30.0 直後の code-reviewer agent 指摘 (= MUST 0 / SHOULD 3 / NITS 2) を全対処。

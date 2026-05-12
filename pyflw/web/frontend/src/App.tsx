@@ -1,7 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Rnd } from "react-rnd";
 
 import { getWorkspaceInfo } from "./api/filesApi";
 
@@ -48,9 +47,6 @@ export default function App(): JSX.Element {
   const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
   // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
   const sidebarMode = useAppStore((s) => s.sidebarMode);
-  // ADR-0052 §(2) Stage 3: Inspector dock mode (sidebar / pane / float)
-  const inspectorDockMode = useAppStore((s) => s.inspectorDockMode);
-  const setInspectorDockMode = useAppStore((s) => s.setInspectorDockMode);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
@@ -242,42 +238,38 @@ export default function App(): JSX.Element {
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${
-              // ADR-0052 §(2) Stage 3: sidebar mode 以外は列 4 を 0 px に潰す
-              // (= pane mode は WorkspaceSplit に統合、float mode は Rnd で
-              // overlay 描画、列 4 は描画コストゼロ)
-              inspectorDockMode !== "sidebar"
-                ? "0px"
-                : inspectorCollapsed
-                  ? "24px"
-                  : "280px"
-            }`,
+            // v0.30.2: ADR-0052 §(2) Inspector 3 mode を撤去、v3.8.x の
+            // 「sidebar 単独 + 折りたたみ 2 値」UX に revert (= 列 4 の
+            // 幅は inspectorCollapsed のみで決定)。
+            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
           }}
         >
           {/* Column 0: Activity bar (ADR-0051 §(1)) */}
           <ActivityBar />
 
-          {/* Column 1: Left sidebar (mode に応じた切替、collapsed 時は非表示) */}
-          {!workspaceCollapsed && (
-            <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
-              {sidebarMode === "file" && <FileBrowser />}
-              {sidebarMode === "library" && (
-                <>
-                  <PanelHeader>{t("panel.library")}</PanelHeader>
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    <BlockPalette />
-                  </div>
-                </>
-              )}
-              {sidebarMode === "search" && <SearchPanel />}
-            </aside>
-          )}
+          {/* Column 1: Left sidebar (mode に応じた切替)。collapsed 時は内容
+              のみ非表示にし、aside 自体は **column placeholder として常時描画**
+              する (= v0.30.2 hotfix: 空にすると grid 子要素が左詰めになって
+              main が列 2 = 0px に流れ込むバグ修正)。 */}
+          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+            {!workspaceCollapsed && sidebarMode === "file" && <FileBrowser />}
+            {!workspaceCollapsed && sidebarMode === "library" && (
+              <>
+                <PanelHeader>{t("panel.library")}</PanelHeader>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <BlockPalette />
+                </div>
+              </>
+            )}
+            {!workspaceCollapsed && sidebarMode === "search" && <SearchPanel />}
+          </aside>
 
-          {/* Column 2: 自前 drag handle (= 5 px wide grid column、collapsed 時は非表示)。
-              v0.26.10: pointer-down で window-level の pointermove / pointerup を
-              取得し、ローカル state を更新せず store action を呼ぶ。React Flow との
-              競合は z-index + cursor + capture で確実に勝つ。 */}
-          {!workspaceCollapsed && (
+          {/* Column 2: 自前 drag handle (= 5 px wide grid column)。collapsed 時は
+              不可視 (= 内側 grid template で 0 px) だが grid placeholder として常時
+              描画 (= v0.30.2 hotfix と同じ理由)。 */}
+          {workspaceCollapsed ? (
+            <div aria-hidden="true" />
+          ) : (
             <ResizeHandleX
               value={leftSidebarWidth}
               onChange={setLeftSidebarWidth}
@@ -314,10 +306,9 @@ export default function App(): JSX.Element {
           </main>
 
           {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。
-              ADR-0052 §(2) Stage 3: inspectorDockMode === "sidebar" のときだけ
-              列 4 を描画 (= pane / float では非表示、WorkspaceSplit or Rnd 経由)。
-              左 + center とは別 grid column (state-controlled width)。 */}
-          {inspectorDockMode !== "sidebar" ? null : inspectorCollapsed ? (
+              左 + center とは別 grid column (state-controlled width)。
+              v0.30.2: ADR-0052 §(2) の 3 mode 切替を撤去、sidebar 単独に revert。 */}
+          {inspectorCollapsed ? (
             <aside
               className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
               onClick={() => setInspectorCollapsed(false)}
@@ -352,31 +343,8 @@ export default function App(): JSX.Element {
             </aside>
           ) : (
             <aside className="flex min-h-0 flex-col overflow-hidden border-l border-slate-300 bg-white">
-              <div className="flex h-6 items-center gap-1 border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="flex h-6 items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 <span className="flex-1">{t("panel.inspector")}</span>
-                {/* ADR-0052 §(2) Stage 3: Inspector mode 切替 select。
-                    既存 SELECT_CLS 風スタイル、segment 風 button は使わない。 */}
-                <select
-                  value={inspectorDockMode}
-                  onChange={(e) =>
-                    setInspectorDockMode(
-                      e.target.value as "sidebar" | "pane" | "float",
-                    )
-                  }
-                  title={t("workspace.inspector.mode.label")}
-                  aria-label={t("workspace.inspector.mode.label")}
-                  className="border border-slate-300 bg-white px-1 py-0 text-[10px] text-slate-700 focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="sidebar">
-                    {t("workspace.inspector.mode.sidebar")}
-                  </option>
-                  <option value="pane">
-                    {t("workspace.inspector.mode.pane")}
-                  </option>
-                  <option value="float">
-                    {t("workspace.inspector.mode.float")}
-                  </option>
-                </select>
                 <button
                   type="button"
                   onClick={() => setInspectorCollapsed(true)}
@@ -420,16 +388,8 @@ export default function App(): JSX.Element {
             mode に統合済 (= 列 1 内 inline)、overlay は廃止 */}
 
         {/* ADR-0044 §論点 6: floating Scope panel (= Scope ダブルクリックで開く)。
-            ADR-0052 §(3) Stage 3: 役割再定義済 (= detach 経由のみ float 化、
-            ダブルクリックは docked split 昇格に変更) */}
+            v0.30.2: ダブルクリック挙動を float 即開きに revert (ユーザー要望) */}
         <ScopePanelContainer />
-
-        {/* ADR-0052 §(2) Stage 3: Inspector Float mode で Rnd 描画 */}
-        {hasOpenedModel && inspectorDockMode === "float" && (
-          <InspectorFloatPanel
-            onClose={() => setInspectorDockMode("sidebar")}
-          />
-        )}
 
         {/* ADR-0044 §論点 4: per-Scope プロット設定 dialog (= gear アイコンで開く) */}
         <GlobalScopeSettingsDialog />
@@ -469,53 +429,8 @@ function GlobalCommandPalette(): JSX.Element {
   return <CommandPalette open={open} onClose={() => setOpen(false)} />;
 }
 
-/** ADR-0052 §(2) Stage 3: Inspector を float mode で表示する Rnd wrapper。
- * ScopePanelContainer (= ADR-0044 react-rnd) と同じ pattern を再利用。
- * geometry は localStorage に永続化 (= workspaceHash 単位、ADR-0044 と同様)。 */
-function InspectorFloatPanel({ onClose }: { onClose: () => void }): JSX.Element {
-  const { t } = useTranslation();
-  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
-  return (
-    <Rnd
-      default={{ x: 200, y: 120, width: 320, height: 480 }}
-      minWidth={240}
-      minHeight={240}
-      bounds="window"
-      dragHandleClassName="inspector-float-drag-handle"
-      style={{ zIndex: 50, pointerEvents: "auto" }}
-      className="rounded border border-slate-400 bg-white shadow-2xl overflow-hidden"
-      data-testid="inspector-float-panel"
-    >
-      <div className="flex h-full w-full flex-col">
-        <div className="inspector-float-drag-handle flex h-6 cursor-move items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          <span className="flex-1">{t("panel.inspector")}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("panel.inspector.collapse", "Hide Inspector")}
-            title={t("panel.inspector.collapse", "Hide Inspector")}
-            className="flex h-5 w-5 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <ParameterPanel modelId={selectedFilePath ?? ""} />
-        </div>
-      </div>
-    </Rnd>
-  );
-}
+// v0.30.2: ADR-0052 §(2) で追加した InspectorFloatPanel は撤去 (= sidebar 単独
+// UX に revert)。Rnd / ParameterPanel import も unused に。
 
 /**
  * v0.26.10: 自前の horizontal drag handle (= grid column として 5 px 確保)。

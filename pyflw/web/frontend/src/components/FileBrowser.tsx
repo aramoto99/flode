@@ -797,6 +797,9 @@ function TreeEntry({
         path={fullPath}
         name={entry.name}
         depth={depth}
+        // v0.30.2: 起動時 depth 1 (= root 直下) まで自動展開 (= 階層が見えない
+        // 印象を改善、深い階層はユーザークリックで expand)
+        defaultExpanded={depth <= 1}
         onFileClick={onFileClick}
         onContextMenu={onContextMenu}
         onMove={onMove}

@@ -118,7 +118,7 @@ describe("FileBrowser tree rendering", () => {
     expect(screen.getByText("beta.flw.json")).toBeTruthy();
   });
 
-  it("renders directory entries with collapse arrow", async () => {
+  it("renders directory entries with auto-expanded depth 1 (v0.30.2)", async () => {
     const { fileTree } = await getMocks();
     fileTree.mockResolvedValue({
       path: "",
@@ -133,9 +133,11 @@ describe("FileBrowser tree rendering", () => {
     });
     renderWithProvider(<FileBrowser />);
     await screen.findByText("controllers");
-    // collapsed by default — fetch は controllers path に対しては走らない
-    expect(fileTree).toHaveBeenCalledTimes(1);
+    // v0.30.2: TreeEntry の defaultExpanded={depth <= 1} で depth=1 (= root 直下)
+    // の directory が auto-expand される。fetch は root ("") + controllers の 2 回。
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(fileTree).toHaveBeenCalledWith("");
+    expect(fileTree).toHaveBeenCalledWith("controllers");
   });
 });
 
