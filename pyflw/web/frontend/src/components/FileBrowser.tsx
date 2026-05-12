@@ -44,7 +44,9 @@ interface ContextMenuState {
 }
 
 /** v0.28.1: drag-drop で workspace 内アイテムを移動する MIME type。
- * 外部 ファイルの drop は受け付けない (= MIME 一致時のみ移動扱い)。 */
+ * 外部 ファイルの drop は受け付けない (= MIME 一致時のみ移動扱い)。
+ * v0.28.2: 値は JSON 配列 ``["path1", "path2", ...]`` (= multi-select 対応、
+ * 1 個でも配列で統一)。 */
 const PYFLW_PATH_MIME = "application/x-pyflw-path";
 
 /** 親 path を抽出 (= "a/b/c.flw.json" → "a/b"、トップレベル → "")。 */
@@ -66,6 +68,28 @@ function isDescendantOf(childPath: string, ancestorPath: string): boolean {
   return childPath.startsWith(ancestorPath + "/");
 }
 
+/** v0.28.2: drag MIME に格納された JSON 配列を解析。失敗時は単一文字列として
+ * 解釈 (= 1 個の path として後方互換)。 */
+function parsePathsMime(raw: string): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x): x is string => typeof x === "string");
+    }
+    if (typeof parsed === "string") return [parsed];
+  } catch {
+    // 旧形式 (= JSON でない単純な path 文字列) もサポート
+    return [raw];
+  }
+  return [];
+}
+
+/** v0.28.2: drag MIME に格納するための JSON シリアライズ。 */
+function serializePathsMime(paths: string[]): string {
+  return JSON.stringify(paths);
+}
+
 /**
  * 左サイドバーに置く workspace ツリービュー。React Query で 1 階層分の `tree`
  * 結果をキャッシュし、ディレクトリを開いた時点で個別 fetch する設計
@@ -85,6 +109,8 @@ export function FileBrowser(): JSX.Element {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // v0.28.2: multi-select state (= Ctrl+クリックで追加選択、drag-drop で複数移動)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   // v0.20.4: 折りたたみ状態 (localStorage 連動、appStore 経由)
   const collapsed = useAppStore((s) => s.workspaceCollapsed);
   const setCollapsed = useAppStore((s) => s.setWorkspaceCollapsed);
@@ -210,64 +236,89 @@ export function FileBrowser(): JSX.Element {
     ],
   );
 
-  /** v0.28.1: drag-drop でファイル / フォルダを別ディレクトリへ移動する。
+  /** v0.28.1 + v0.28.2: drag-drop でファイル / フォルダを別ディレクトリへ移動。
    *
-   * - source = drag された path (file or dir)
+   * - sources = drag された path (1 個または複数、v0.28.2 から配列形式)
    * - targetDir = drop された先のディレクトリ path (root の場合は "")
    *
-   * 以下のケースは no-op:
+   * 各 source ごとに以下のケースは no-op:
    * - source と targetDir が同じ親ディレクトリ (= 移動先が同じ場所)
    * - source 自身が targetDir (= dir を自分自身に drop)
-   * - source が targetDir の祖先 (= 自分のサブツリーに drop)
+   * - source が targetDir の祖先 (= 自分のサブツリーに drop、禁止 alert)
    *
-   * 同名ファイルが targetDir に存在する場合、backend は 409 を返し alert で通知。
+   * 同名ファイルが targetDir に存在する場合、backend は 409 を返し alert で通知
+   * (= 各 source を順次処理、いずれかで失敗しても残りを処理)。
    */
   const handleMove = useCallback(
-    async (sourcePath: string, targetDir: string): Promise<void> => {
-      if (!sourcePath) return;
-      const base = basenameOf(sourcePath);
-      const parentOfSource = dirnameOf(sourcePath);
-      // 同じ親 dir 内 → 移動不要
-      if (parentOfSource === targetDir) return;
-      // dir を自分自身に drop
-      if (sourcePath === targetDir) return;
-      // 自分のサブツリーに drop (= 無限再帰防止)
-      if (isDescendantOf(targetDir, sourcePath)) {
+    async (sources: string[], targetDir: string): Promise<void> => {
+      if (sources.length === 0) return;
+
+      // v0.28.2: 禁止条件チェックを最初に集める (= 1 つでも禁止条件があれば
+      // user に明示してから処理続行)
+      const forbiddenForOwnSubtree: string[] = [];
+      const moveTargets: string[] = [];
+      for (const sourcePath of sources) {
+        if (!sourcePath) continue;
+        const parentOfSource = dirnameOf(sourcePath);
+        if (parentOfSource === targetDir) continue;
+        if (sourcePath === targetDir) continue;
+        if (isDescendantOf(targetDir, sourcePath)) {
+          forbiddenForOwnSubtree.push(sourcePath);
+          continue;
+        }
+        moveTargets.push(sourcePath);
+      }
+      if (forbiddenForOwnSubtree.length > 0) {
         window.alert(
           t(
             "filebrowser.move.descendant_forbidden",
             "Cannot move into own subdirectory",
           ),
         );
-        return;
       }
-      const newPath = targetDir ? `${targetDir}/${base}` : base;
-      try {
-        await renameFile(sourcePath, newPath);
-        await refresh();
-        // 移動した item が現在開いている tab の path と一致するか、その祖先なら
-        // tab path も追従させる (= rename と同じ semantics)
-        const state = useAppStore.getState();
-        for (const tab of state.tabs) {
-          if (tab.filePath === sourcePath) {
-            renameTabFilePath(sourcePath, newPath);
-          } else if (isDescendantOf(tab.filePath, sourcePath)) {
-            // dir 移動で配下 file の path も変わる
-            const suffix = tab.filePath.slice(sourcePath.length); // "/foo.flw.json"
-            const newTabPath = newPath + suffix;
-            renameTabFilePath(tab.filePath, newTabPath);
+      if (moveTargets.length === 0) return;
+
+      const failures: Array<{ path: string; error: string }> = [];
+      for (const sourcePath of moveTargets) {
+        const base = basenameOf(sourcePath);
+        const newPath = targetDir ? `${targetDir}/${base}` : base;
+        try {
+          await renameFile(sourcePath, newPath);
+          // tabs[] の path 追従 (= 1 件ずつ、tree 全体 refresh は後でまとめて)
+          const state = useAppStore.getState();
+          for (const tab of state.tabs) {
+            if (tab.filePath === sourcePath) {
+              renameTabFilePath(sourcePath, newPath);
+            } else if (isDescendantOf(tab.filePath, sourcePath)) {
+              const suffix = tab.filePath.slice(sourcePath.length);
+              renameTabFilePath(tab.filePath, newPath + suffix);
+            }
           }
+        } catch (e) {
+          failures.push({ path: sourcePath, error: (e as Error).message });
+          console.error("Move failed:", sourcePath, "->", targetDir, e);
         }
-        // 開いてるモデル本体も etag/mtime 再 fetch
-        const stillActive = useAppStore.getState().selectedFilePath;
-        if (stillActive) {
+      }
+      await refresh();
+      // 開いてるモデルの etag/mtime を再 fetch (= tab path 更新後の最新)
+      const stillActive = useAppStore.getState().selectedFilePath;
+      if (stillActive) {
+        try {
           const data = await getFileContent(stillActive);
           setEditingModel(data.content);
           setEditingFileMeta(data.mtime, data.etag);
+        } catch {
+          // 移動失敗 + active path 無効化のケース、refresh で UI 復元される
         }
-      } catch (e) {
-        console.error("Move failed:", sourcePath, "->", targetDir, e);
-        window.alert(`Move failed: ${(e as Error).message}`);
+      }
+      // 移動完了で選択クリア (= multi-select した state を引きずらない)
+      setSelectedPaths(new Set());
+
+      if (failures.length > 0) {
+        const summary = failures
+          .map((f) => `  - ${f.path}: ${f.error}`)
+          .join("\n");
+        window.alert(`Move failed for ${failures.length} item(s):\n${summary}`);
       }
     },
     [refresh, renameTabFilePath, setEditingFileMeta, setEditingModel, t],
@@ -412,10 +463,11 @@ export function FileBrowser(): JSX.Element {
             }
           }}
           onDrop={(e) => {
-            const source = e.dataTransfer.getData(PYFLW_PATH_MIME);
-            if (!source) return;
+            const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+            if (!raw) return;
             e.preventDefault();
-            void handleMove(source, "");
+            const sources = parsePathsMime(raw);
+            void handleMove(sources, "");
           }}
         >
           <DirectoryNode
@@ -430,6 +482,15 @@ export function FileBrowser(): JSX.Element {
             onSubmitRename={handleRename}
             onCancelRename={() => setRenamingPath(null)}
             selectedFilePath={selectedFilePath}
+            selectedPaths={selectedPaths}
+            onToggleSelection={(path) =>
+              setSelectedPaths((prev) => {
+                const next = new Set(prev);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              })
+            }
           />
         </div>
       )}
@@ -508,12 +569,15 @@ interface DirectoryNodeProps {
   defaultExpanded?: boolean;
   onFileClick: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
-  /** v0.28.1: drag-drop で移動する handler (sourcePath, targetDir) */
-  onMove: (sourcePath: string, targetDir: string) => Promise<void>;
+  /** v0.28.1 + v0.28.2: drag-drop で移動する handler (sources, targetDir) */
+  onMove: (sources: string[], targetDir: string) => Promise<void>;
   renamingPath: string | null;
   onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
   onCancelRename: () => void;
   selectedFilePath: string | null;
+  /** v0.28.2: multi-select 集合 (Ctrl+クリックで追加) */
+  selectedPaths: Set<string>;
+  onToggleSelection: (path: string) => void;
 }
 
 function DirectoryNode({
@@ -528,6 +592,8 @@ function DirectoryNode({
   onSubmitRename,
   onCancelRename,
   selectedFilePath,
+  selectedPaths,
+  onToggleSelection,
 }: DirectoryNodeProps): JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -590,17 +656,19 @@ function DirectoryNode({
             onSubmitRename={onSubmitRename}
             onCancelRename={onCancelRename}
             selectedFilePath={selectedFilePath}
+            selectedPaths={selectedPaths}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </ul>
     );
   }
 
-  // v0.28.1: directory は **drop target + drag source** 両対応。
-  // drop target: 自分の path を targetDir として move
-  // drag source: 自分の path を source として外に出す (= 別 dir へ移動可能)
+  // v0.28.1 + v0.28.2: directory は **drop target + drag source** 両対応。
+  // drag source: selectedPaths.has(自分) なら集合全体、それ以外は自分単体
   const onDragStart = (e: React.DragEvent<HTMLButtonElement>): void => {
-    e.dataTransfer.setData(PYFLW_PATH_MIME, path);
+    const sources = selectedPaths.has(path) ? Array.from(selectedPaths) : [path];
+    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
     e.dataTransfer.effectAllowed = "move";
     e.stopPropagation();
   };
@@ -614,12 +682,26 @@ function DirectoryNode({
   const onDragLeave = (): void => setIsDragOver(false);
   const onDrop = (e: React.DragEvent<HTMLLIElement>): void => {
     setIsDragOver(false);
-    const source = e.dataTransfer.getData(PYFLW_PATH_MIME);
-    if (!source) return;
+    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    if (!raw) return;
     e.preventDefault();
     e.stopPropagation();
-    void onMove(source, path);
+    const sources = parsePathsMime(raw);
+    void onMove(sources, path);
   };
+
+  // v0.28.2: Ctrl+クリックで selection toggle (= 既存の click =
+  // expand/collapse は通常クリックのまま)
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>): void => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      onToggleSelection(path);
+      return;
+    }
+    setExpanded(!expanded);
+  };
+
+  const isMultiSelected = selectedPaths.has(path);
 
   // 子ディレクトリの場合: 行 + 折りたたみ children
   return (
@@ -634,10 +716,15 @@ function DirectoryNode({
         type="button"
         draggable
         onDragStart={onDragStart}
-        onClick={() => setExpanded(!expanded)}
+        onClick={onClick}
         onContextMenu={(e) => onContextMenu(e, path, true)}
+        aria-selected={isMultiSelected || undefined}
         className={`flex w-full items-center gap-1 py-0.5 text-left ${
-          isDragOver ? "bg-blue-100" : "hover:bg-slate-100"
+          isDragOver
+            ? "bg-blue-200"
+            : isMultiSelected
+              ? "bg-blue-100"
+              : "hover:bg-slate-100"
         }`}
         style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
       >
@@ -662,6 +749,8 @@ function DirectoryNode({
               onSubmitRename={onSubmitRename}
               onCancelRename={onCancelRename}
               selectedFilePath={selectedFilePath}
+              selectedPaths={selectedPaths}
+              onToggleSelection={onToggleSelection}
             />
           ))}
         </ul>
@@ -676,12 +765,14 @@ interface TreeEntryProps {
   depth: number;
   onFileClick: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
-  /** v0.28.1: drag-drop で移動する handler */
-  onMove: (sourcePath: string, targetDir: string) => Promise<void>;
+  /** v0.28.1 + v0.28.2: drag-drop で移動する handler (sources, targetDir) */
+  onMove: (sources: string[], targetDir: string) => Promise<void>;
   renamingPath: string | null;
   onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
   onCancelRename: () => void;
   selectedFilePath: string | null;
+  selectedPaths: Set<string>;
+  onToggleSelection: (path: string) => void;
 }
 
 function TreeEntry({
@@ -695,6 +786,8 @@ function TreeEntry({
   onSubmitRename,
   onCancelRename,
   selectedFilePath,
+  selectedPaths,
+  onToggleSelection,
 }: TreeEntryProps): JSX.Element {
   const fullPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
 
@@ -711,19 +804,37 @@ function TreeEntry({
         onSubmitRename={onSubmitRename}
         onCancelRename={onCancelRename}
         selectedFilePath={selectedFilePath}
+        selectedPaths={selectedPaths}
+        onToggleSelection={onToggleSelection}
       />
     );
   }
 
-  const isSelected = selectedFilePath === fullPath;
+  const isActive = selectedFilePath === fullPath;
   const isFlw = entry.name.endsWith(".flw.json");
   const isRenaming = renamingPath === fullPath;
+  const isMultiSelected = selectedPaths.has(fullPath);
 
-  // v0.28.1: file は drag source として扱う (= drop target にはしない、
-  // file の上に file を drop する semantics は未定義)。
+  // v0.28.1 + v0.28.2: file は drag source (drop target にはしない)。
+  // selectedPaths.has(自分) なら集合全体を MIME に乗せる。
   const onDragStart = (e: React.DragEvent<HTMLButtonElement>): void => {
-    e.dataTransfer.setData(PYFLW_PATH_MIME, fullPath);
+    const sources = selectedPaths.has(fullPath)
+      ? Array.from(selectedPaths)
+      : [fullPath];
+    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
     e.dataTransfer.effectAllowed = "move";
+  };
+
+  // v0.28.2: Ctrl+クリック = 選択 toggle + ファイル開かない、通常クリック =
+  // open + multi-select クリア (= 暗黙的に selectedPaths を空にしない、Ctrl で
+  // 明示的に組み立てる)
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>): void => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      onToggleSelection(fullPath);
+      return;
+    }
+    if (isFlw) onFileClick(fullPath);
   };
 
   return (
@@ -740,15 +851,18 @@ function TreeEntry({
           type="button"
           draggable
           onDragStart={onDragStart}
-          onClick={() => isFlw && onFileClick(fullPath)}
+          onClick={onClick}
           onContextMenu={(e) => onContextMenu(e, fullPath, false)}
-          disabled={!isFlw}
+          // file 自体は disable しない (Ctrl+click で .flw.json 以外も multi-select 候補)
+          aria-selected={isMultiSelected || undefined}
           className={`flex w-full items-center gap-1 py-0.5 text-left ${
-            isSelected
+            isMultiSelected
               ? "bg-blue-100 text-blue-800"
-              : isFlw
-                ? "text-slate-700 hover:bg-slate-100"
-                : "text-slate-400"
+              : isActive
+                ? "bg-blue-100 text-blue-800"
+                : isFlw
+                  ? "text-slate-700 hover:bg-slate-100"
+                  : "text-slate-400 hover:bg-slate-100"
           }`}
           style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 8 }}
           title={fullPath}

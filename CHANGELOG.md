@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-05-12 — FileBrowser multi-select (Ctrl+クリックで複数選択 + drag-drop 一括移動)
+
+ADR-0041 §論点 7-A で v0.19.0 送りとされていた multi-select (Shift / Ctrl)
+リストのうち **Ctrl+クリック** を実装。v0.28.1 の drag-drop と組み合わせると
+**複数アイテムを一括で別フォルダへ移動** できる。ADR 不要 (= incremental
+UX 改善)、新規依存追加なし。
+
+### Added
+
+- **Ctrl+クリック (Cmd+クリック on macOS) で選択 toggle**: ファイル / フォルダ
+  どちらにも対応。Ctrl+クリック時はファイルを開かず / フォルダを展開せず、
+  selection 集合に追加 or 削除のみ
+- **複数アイテムの drag-drop 一括移動**: drag start 時 selectedPaths に
+  drag source が含まれていれば集合全体を移動、含まれていなければ単体を移動
+  (= VSCode 流儀)
+- **multi-select の視覚フィードバック**: selected アイテムは `bg-blue-100`
+  ハイライト、drag-over 中のフォルダ行は `bg-blue-200` (= drop target は
+  multi-select より強調)
+- **a11y**: 選択中アイテムに `aria-selected={true}` 付与
+
+### Changed
+
+- **drag MIME 形式を JSON 配列化**: 旧 v0.28.1 = 単一 path 文字列 / 新 v0.28.2 =
+  JSON 配列 `["path1", "path2"]`。旧形式 (= JSON parse 失敗で単一文字列扱い)
+  も読み取り fallback で後方互換
+- **`handleMove(sources: string[], targetDir)` に拡張**: 各 source を順次処理、
+  禁止条件 (= 自分のサブツリーへの drop) は 1 件でもあれば最初に alert、
+  各 source の失敗は記録して最後に集計 alert
+- **移動完了後に selectedPaths をクリア** (= multi-select state を引きずらない)
+- **通常クリック (= modifier なし)** は従来挙動を維持 (= ファイル開く /
+  フォルダ展開)、selectedPaths は明示的に Ctrl+クリックで組み立てる
+
+### Out of scope (Stage 3 候補へ送り)
+
+- **Shift+クリック** = 範囲選択 (= 直前 anchor から連続選択): tree 構造での
+  実装が複雑なため Stage 3 で再評価
+- **キーボード `Ctrl+A` で sidebar 全選択**: 既存 `Ctrl+A` は Diagram canvas
+  の「全 block 選択」に bind 済、conflict のため未実装
+- **Esc で selection クリア**: 既存 `Esc` は drillUp / selection クリアに
+  bind 済、FileBrowser scope での micro-action は別 ADR で整理
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.28.1] - 2026-05-12 — FileBrowser drag-drop でフォルダ間移動
 
 ADR-0041 §論点 7-A で v0.19.0 送りとされていた drag-drop によるフォルダ間
