@@ -32,7 +32,7 @@ export function CommandPalette({
   open,
   onClose,
 }: CommandPaletteProps): JSX.Element | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // i18next strict-typed ``t()`` は dynamic key を拒否するため、command の
   // labelKey / category key を動的に解決するヘルパー (= 22 個の key を union
   // 化するより runtime warning に任せる方が保守性が高い、ja/en の key 集合
@@ -62,9 +62,11 @@ export function CommandPalette({
       ? buildBlockAddCommands(blockRegistry.blocks)
       : [];
     return [...staticCmds, ...recentCmds, ...blockCmds];
-    // open を deps に含めて、毎回 modal を開くタイミングで Recent を再読込
+    // open を deps に含めて、毎回 modal を開くタイミングで Recent を再読込。
+    // i18n.language を deps に含めて、言語切替時に Block display_name が新言語で
+    // 再 resolve される (= localizedDisplayName が currentLanguage を読む)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceHash, blockRegistry, open]);
+  }, [workspaceHash, blockRegistry, open, i18n.language]);
 
   // open 時に input focus + 検索リセット
   useEffect(() => {

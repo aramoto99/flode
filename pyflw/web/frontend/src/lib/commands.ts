@@ -13,6 +13,10 @@
 import { getFileContent } from "../api/filesApi";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
 import {
+  localizedDisplayName,
+  searchableDisplayNames,
+} from "./blockI18n";
+import {
   addBlockToEditing,
   addConnectionToEditing,
   useAppStore,
@@ -295,11 +299,14 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
     id: `block.add:${meta.type_path}`,
     category: "block" as const,
     labelKey: "command.block.add",
-    dynamicSuffix: meta.display_name,
-    // 検索キーワード: display_name / type_path / category / tags すべて
+    // v0.29.4: ADR-0028 display_name_i18n 経由で現在 locale の表示名を使用。
+    // 言語切替時は CommandPalette の useMemo deps (i18n.language) で再構築。
+    dynamicSuffix: localizedDisplayName(meta),
+    // v0.29.4: searchableDisplayNames は両言語 (ja/en) + type_path 末尾を返す
+    // ため、ja 環境でも英語名 "Sum" で検索可能 (= Simulink 経験者向けセーフネット、
+    // ADR-0028 §(4))。type_path / category / tags は補助検索用に併用。
     keywords: [
-      meta.display_name,
-      meta.display_name.toLowerCase(),
+      ...searchableDisplayNames(meta),
       meta.type_path,
       meta.type_path.toLowerCase(),
       meta.category,

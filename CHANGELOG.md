@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.4] - 2026-05-12 — CommandPalette Block 追加: display_name の i18n 対応 (ADR-0028)
+
+v0.29.2 で追加した Block 追加コマンドの **表示名と検索キーワードを現在 locale
+に対応** させる。ADR-0028 で定義済の `display_name_i18n` (= blocks schema v2)
+と既存 `searchableDisplayNames` helper を再利用、コード追加は最小。
+
+### Changed
+
+- **CommandPalette Block 追加コマンドのラベル表示**:
+  - 旧 v0.29.2: `meta.display_name` を直接表示 (= 常に英語 "Constant" "Gain" 等)
+  - 新 v0.29.4: `localizedDisplayName(meta)` 経由で現在 locale の翻訳を表示
+    (= ja UI なら「定数」「ゲイン」等、未翻訳なら英語フォールバック)
+- **検索キーワードを両言語対応**:
+  - 旧 v0.29.2: `display_name` + lowercase 版
+  - 新 v0.29.4: `searchableDisplayNames(meta)` で **ja + en + type_path 末尾**
+    を全て検索対象に (= ja UI でも英語名 "Sum" で検索可能、Simulink 経験者の
+    セーフネット、ADR-0028 §(4))
+- **CommandPalette `useMemo` deps に `i18n.language` を追加**: 言語切替で
+  registry が再構築され、Block コマンドのラベルが新言語で再 resolve される
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.29.3] - 2026-05-12 — CommandPalette Block 追加: Quick Insert (選択中 block の右に配置 + auto-connect)
 
 v0.29.2 の block 追加コマンドを **Simulink "Quick Insert" 流儀** に強化。
