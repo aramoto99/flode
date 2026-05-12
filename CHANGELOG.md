@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.5] - 2026-05-12 — sidebar / Inspector の境界線を細く (1px)
+
+ユーザーから「Inspector / Workspace とダイアグラムの境界線が太すぎる」
+フィードバック。visual 5 px + aside border 1 px = 計 6 px の二重境界を解消し、
+**1 px の細い境界**に統一。drag のヒットエリアは ResizeHandleX の overlay
+(= ±4 px) で確保済なので、操作性は変わらない。
+
+### Changed
+
+- App.tsx の grid template columns で **drag handle 列を 5 px → 1 px** に縮小
+  (= 列 2 = sidebar handle、列 4 = inspector handle 両方)
+- 左 sidebar の `<aside>` から **`border-r border-slate-300`** を撤去
+  (= ResizeHandleX が境界の役割、二重境界排除)
+- 右 Inspector の `<aside>` (展開時 + 折りたたみ時両方) から
+  **`border-l border-slate-300`** を撤去 (= 同上)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.30.4] - 2026-05-12 — Inspector 横幅を drag で可変に
 
 v0.26.10 で左サイドバーに導入した自前 drag handle と同じ pattern を Inspector

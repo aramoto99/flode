@@ -241,12 +241,14 @@ export default function App(): JSX.Element {
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            // v0.30.4: 列 3 (main) と列 5 (Inspector) の境界に新規 5 px drag
-            // handle (= 列 4) を追加して Inspector 横幅を drag 可変化。
+            // v0.30.4: 列 3 (main) と列 5 (Inspector) の境界に drag handle
+            // (= 列 4) を追加して Inspector 横幅を drag 可変化。
+            // v0.30.5: 境界線の visual width を 5px → 1px に縮小 (ユーザー要望)。
+            // drag hit area は ResizeHandleX の overlay (= ±4px) で確保。
             // collapsed 時は handle を 0 px に潰す。
             // 6 列構成: activity bar / sidebar / sidebar-handle / main /
             //          inspector-handle / inspector
-            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "0px" : "5px"} ${inspectorCollapsed ? "24px" : `${inspectorWidth}px`}`,
+            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "1px"} 1fr ${inspectorCollapsed ? "0px" : "1px"} ${inspectorCollapsed ? "24px" : `${inspectorWidth}px`}`,
           }}
         >
           {/* Column 0: Activity bar (ADR-0051 §(1)) */}
@@ -256,7 +258,9 @@ export default function App(): JSX.Element {
               のみ非表示にし、aside 自体は **column placeholder として常時描画**
               する (= v0.30.2 hotfix: 空にすると grid 子要素が左詰めになって
               main が列 2 = 0px に流れ込むバグ修正)。 */}
-          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+          {/* v0.30.5: sidebar の border-r を撤去 (= ResizeHandleX が境界の役割を
+              担うため、二重境界線を排除) */}
+          <aside className="flex min-h-0 flex-col overflow-hidden bg-white">
             {!workspaceCollapsed && sidebarMode === "file" && <FileBrowser />}
             {!workspaceCollapsed && sidebarMode === "library" && (
               <>
@@ -330,7 +334,7 @@ export default function App(): JSX.Element {
               v0.30.4: 横幅を drag で可変に。 */}
           {inspectorCollapsed ? (
             <aside
-              className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
+              className="flex min-h-0 cursor-pointer flex-col items-center bg-slate-50 hover:bg-slate-100"
               onClick={() => setInspectorCollapsed(false)}
               title={t("panel.inspector.expand", "Show Inspector")}
               role="button"
@@ -362,7 +366,7 @@ export default function App(): JSX.Element {
               </div>
             </aside>
           ) : (
-            <aside className="flex min-h-0 flex-col overflow-hidden border-l border-slate-300 bg-white">
+            <aside className="flex min-h-0 flex-col overflow-hidden bg-white">
               <div className="flex h-6 items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 <span className="flex-1">{t("panel.inspector")}</span>
                 <button
