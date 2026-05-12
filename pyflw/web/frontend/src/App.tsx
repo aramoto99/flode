@@ -7,6 +7,7 @@ import { getWorkspaceInfo } from "./api/filesApi";
 import { ActivityBar } from "./components/ActivityBar";
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
+import { CommandPalette } from "./components/CommandPalette";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { FileBrowser } from "./components/FileBrowser";
 import { Launcher } from "./components/Launcher";
@@ -386,6 +387,9 @@ export default function App(): JSX.Element {
         {/* ADR-0044 §論点 4: per-Scope プロット設定 dialog (= gear アイコンで開く) */}
         <GlobalScopeSettingsDialog />
 
+        {/* v0.29.0: コマンドパレット (Ctrl+Shift+P で open) */}
+        <GlobalCommandPalette />
+
         {/* ADR-0045 §(6): DiagramCanvas を ReactFlowProvider 直下に常時 mount。
             実体 DOM は WorkspaceSplit 内の Diagram slot div に React Portal で
             投影される (= SplitTree 再構造で slot DOM 位置が変わっても、
@@ -410,6 +414,12 @@ function GlobalScopeSettingsDialog(): JSX.Element | null {
       onClose={() => setEditingScopeSettingsId(null)}
     />
   );
+}
+
+function GlobalCommandPalette(): JSX.Element {
+  const open = useAppStore((s) => s.commandPaletteOpen);
+  const setOpen = useAppStore((s) => s.setCommandPaletteOpen);
+  return <CommandPalette open={open} onClose={() => setOpen(false)} />;
 }
 
 /**

@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-05-12 — コマンドパレット (Ctrl+Shift+P) を追加
+
+JupyterLab / VSCode 流のコマンドパレットを実装。`Ctrl+Shift+P` で modal 表示、
+検索 input + コマンドリスト + キーボード操作で **既存機能を名前検索で発火**
+できる。ADR 不要 (= 既存機能の発見性向上、新規機能追加ではない)、新規依存
+追加なし。
+
+### Added
+
+- **`Ctrl+Shift+P` でコマンドパレット起動** (= 新規 shortcut)
+- **`CommandPalette` modal** (`src/components/CommandPalette.tsx`):
+  - 検索 input (= 上部) + コマンドリスト (= 下部、最大 400 px 高)
+  - **substring match 検索** (= label + keywords を結合して contains 判定、
+    大文字小文字無視、英日混在対応)
+  - **↑/↓ で選択移動、Enter で実行、Esc で閉じる**
+  - 選択中は青ハイライト (`bg-blue-600 text-white`)、disabled command は灰色
+  - **マウス hover で selection 移動** + クリックで実行
+- **Command registry** (`src/lib/commands.ts`): 12 個の主要コマンドを登録
+  - File: New / Save
+  - Edit: Undo / Redo (= `canUndo` / `canRedo` で disabled 判定)
+  - Simulation: Run / Stop
+  - View: Sidebar toggle / File mode / Library mode / Search (path / content) /
+    Inspector toggle
+- **i18n キー 19 個追加** (ja/en): `command.palette.{title,placeholder,no_match}` /
+  `command.category.{file,edit,simulation,view,workspace}` /
+  `command.{file.new,file.save,edit.undo,edit.redo,simulation.run,...}`
+- **store state `commandPaletteOpen: boolean`** + `setCommandPaletteOpen` action
+
+### 実装方針
+
+- 各 command の `action` は **store action 直接呼出し** か **synthetic
+  `KeyboardEvent` を `window.dispatchEvent`** で既存 shortcut path を再利用
+  (= `useSimulation` / `useAutoSave` 等の hook を CommandPalette 内部で
+  重複 instance 化しない、`setTimeout(0)` で modal close 後に発火)
+- 検索は **fuzzy ライブラリ追加なし** (= substring contains で MVP、ライブラリ
+  追加は bundle 増分要因なので避ける、利用者数 12 個では substring で十分)
+- `keywords` field で **英日両言語の検索ワード** を併用可能
+  (例: `["new", "新規", "作成"]`)
+
+### 出し分け表示
+
+- コマンド行は `[CATEGORY] Label ............... Ctrl+Shortcut` の 3 領域
+- category は左の uppercase 表示 (= タグ風)、shortcut は右寄せ (= mono font)
+- 検索結果無し時は「該当するコマンドがありません」/ "No matching commands"
+
+### a11y
+
+- modal は `role="dialog" aria-modal="true" aria-label="コマンドパレット"`
+- list は `role="listbox"`、行は `role="option" aria-selected={isSelected}`
+- 検索 input に `aria-label` 付与
+- ↑/↓ ナビゲーション中も focus は input から外れない (= スクリーンリーダーが
+  追従可能、`scrollIntoView({block: "nearest"})` で選択行を可視範囲に)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.28.2] - 2026-05-12 — FileBrowser multi-select (Ctrl+クリックで複数選択 + drag-drop 一括移動)
 
 ADR-0041 §論点 7-A で v0.19.0 送りとされていた multi-select (Shift / Ctrl)

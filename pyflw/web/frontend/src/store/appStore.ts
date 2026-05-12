@@ -360,6 +360,11 @@ interface AppState {
   // localStorage "pyflw.sidebar_mode" に永続化。
   sidebarMode: "file" | "library" | "search";
   setSidebarMode: (mode: "file" | "library" | "search") => void;
+
+  // v0.29.0: コマンドパレット (Ctrl+Shift+P) modal の open / closed state。
+  // 永続化なし (= セッション内のみ)、Ctrl+Shift+P で open、Esc / 行クリックで close。
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
   // v0.26.5: 右サイドバー (Inspector) の折りたたみ。Canvas を広げて使う用途。
   inspectorCollapsed: boolean;
   setInspectorCollapsed: (collapsed: boolean) => void;
@@ -916,6 +921,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeSidebarMode(mode);
     set({ sidebarMode: mode });
   },
+  // v0.29.0: コマンドパレット modal state
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
   undo: () => {

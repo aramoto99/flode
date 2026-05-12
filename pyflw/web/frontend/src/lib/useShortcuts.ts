@@ -178,6 +178,13 @@ export function useShortcuts(): void {
         return;
       }
 
+      // v0.29.0: Ctrl+Shift+P = コマンドパレットを open (= JupyterLab / VSCode 流)
+      if (ctrl && e.shiftKey && key.toLowerCase() === "p") {
+        e.preventDefault();
+        useAppStore.getState().setCommandPaletteOpen(true);
+        return;
+      }
+
       // Esc: 階層を上に / 選択解除
       // Subsystem の中にいるなら drillUp、それ以外は選択解除。Simulink でも
       // Esc は段階的に「外向き」のキャンセル動作。
