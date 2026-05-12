@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-05-12 — Inspector 横幅を drag で可変に
+
+v0.26.10 で左サイドバーに導入した自前 drag handle と同じ pattern を Inspector
+にも適用。Inspector の左境界を drag で横幅変更可能。localStorage に永続化。
+
+### Added
+
+- **store `inspectorWidth: number`** + `setInspectorWidth(px)` action +
+  localStorage `pyflw.inspector_width` 永続化
+- **`ResizeHandleX` に `direction?: "left" | "right"` prop**: 旧 = 左サイドバー
+  (= 右 drag で拡大、direction="left" 既定) / 新 = Inspector (= 右 drag で
+  縮小、direction="right" で delta 反転)
+- **App.tsx grid template 6 列構成**:
+  `activity-bar / sidebar / sidebar-handle / main / inspector-handle / inspector`
+  collapsed 時は対応 handle を 0 px に潰す
+- 既定値: 200 〜 600 px の range、初期 280 px (= 旧固定値と同じ)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.30.3] - 2026-05-12 — scopes-stack を × で閉じた後の復活経路を追加
 
 v0.30.2 で Diagram pane の split ボタンを hide した結果、ユーザーが scopes-stack

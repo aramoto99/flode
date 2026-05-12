@@ -45,6 +45,9 @@ export default function App(): JSX.Element {
   const setInspectorCollapsed = useAppStore((s) => s.setInspectorCollapsed);
   const leftSidebarWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  // v0.30.4: Inspector 横幅 (drag で変更)
+  const inspectorWidth = useAppStore((s) => s.inspectorWidth);
+  const setInspectorWidth = useAppStore((s) => s.setInspectorWidth);
   // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
@@ -238,10 +241,12 @@ export default function App(): JSX.Element {
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            // v0.30.2: ADR-0052 §(2) Inspector 3 mode を撤去、v3.8.x の
-            // 「sidebar 単独 + 折りたたみ 2 値」UX に revert (= 列 4 の
-            // 幅は inspectorCollapsed のみで決定)。
-            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
+            // v0.30.4: 列 3 (main) と列 5 (Inspector) の境界に新規 5 px drag
+            // handle (= 列 4) を追加して Inspector 横幅を drag 可変化。
+            // collapsed 時は handle を 0 px に潰す。
+            // 6 列構成: activity bar / sidebar / sidebar-handle / main /
+            //          inspector-handle / inspector
+            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "0px" : "5px"} ${inspectorCollapsed ? "24px" : `${inspectorWidth}px`}`,
           }}
         >
           {/* Column 0: Activity bar (ADR-0051 §(1)) */}
@@ -305,9 +310,24 @@ export default function App(): JSX.Element {
             )}
           </main>
 
-          {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。
+          {/* Column 5: Inspector 左端の drag handle (v0.30.4)。
+              v0.26.10 と同じ self-implemented horizontal handle、direction="right"
+              で delta 反転 (= drag 右移動で Inspector 縮小)。collapsed 時は
+              0 px placeholder で grid を維持。 */}
+          {inspectorCollapsed ? (
+            <div aria-hidden="true" />
+          ) : (
+            <ResizeHandleX
+              value={inspectorWidth}
+              onChange={setInspectorWidth}
+              direction="right"
+            />
+          )}
+
+          {/* Column 6: Inspector — 折りたたみ可能 (v0.26.5)。
               左 + center とは別 grid column (state-controlled width)。
-              v0.30.2: ADR-0052 §(2) の 3 mode 切替を撤去、sidebar 単独に revert。 */}
+              v0.30.2: ADR-0052 §(2) の 3 mode 切替を撤去、sidebar 単独に revert。
+              v0.30.4: 横幅を drag で可変に。 */}
           {inspectorCollapsed ? (
             <aside
               className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
@@ -443,9 +463,13 @@ function GlobalCommandPalette(): JSX.Element {
 function ResizeHandleX({
   value,
   onChange,
+  direction = "left",
 }: {
   value: number;
   onChange: (px: number) => void;
+  /** v0.30.4: drag delta の符号。"left" = 左 sidebar (= 右に drag で拡大) /
+   *  "right" = Inspector (= 右に drag で縮小、= 左に drag で拡大)。 */
+  direction?: "left" | "right";
 }): JSX.Element {
   const [dragging, setDragging] = useState(false);
   const startRef = useRef<{ x: number; baseline: number } | null>(null);
@@ -453,8 +477,6 @@ function ResizeHandleX({
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
     e.stopPropagation();
-    // code-reviewer SHOULD: setPointerCapture で高速 drag + window 外への
-    // ポインタ離脱でも pointerup を取りこぼさないように。
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -465,7 +487,10 @@ function ResizeHandleX({
     const move = (me: PointerEvent): void => {
       const s = startRef.current;
       if (!s) return;
-      onChange(s.baseline + (me.clientX - s.x));
+      // v0.30.4: direction="right" は右に drag → Inspector 縮小 (= delta 反転)
+      const delta =
+        direction === "right" ? -(me.clientX - s.x) : me.clientX - s.x;
+      onChange(s.baseline + delta);
     };
     const up = (): void => {
       startRef.current = null;
@@ -483,13 +508,14 @@ function ResizeHandleX({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize left sidebar"
+      aria-label={
+        direction === "right" ? "Resize inspector" : "Resize left sidebar"
+      }
       onPointerDown={onPointerDown}
       className={`relative z-20 h-full w-full cursor-col-resize select-none ${
         dragging ? "bg-blue-500" : "bg-slate-300 hover:bg-blue-400"
       }`}
     >
-      {/* 透明な広いヒットエリア (= 左右 ±4 px) で確実に掴める */}
       <div className="absolute inset-y-0 -left-1 -right-1" />
     </div>
   );

@@ -167,6 +167,12 @@ const LEFT_SIDEBAR_DEFAULT_PX = 240;
 const LEFT_SIDEBAR_MIN_PX = 160;
 const LEFT_SIDEBAR_MAX_PX = 600;
 
+// v0.30.4: Inspector 横幅永続化 + clamp 値。
+const INSPECTOR_WIDTH_STORAGE_KEY = "pyflw.inspector_width";
+const INSPECTOR_DEFAULT_PX = 280;
+const INSPECTOR_MIN_PX = 200;
+const INSPECTOR_MAX_PX = 600;
+
 function readLeftSidebarWidth(): number {
   try {
     const raw = window.localStorage.getItem(LEFT_SIDEBAR_WIDTH_STORAGE_KEY);
@@ -187,6 +193,30 @@ function writeLeftSidebarWidth(px: number): void {
     );
   } catch {
     // 同上
+  }
+}
+
+// v0.30.4: Inspector 横幅 localStorage helper。
+function readInspectorWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(INSPECTOR_WIDTH_STORAGE_KEY);
+    if (!raw) return INSPECTOR_DEFAULT_PX;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return INSPECTOR_DEFAULT_PX;
+    return Math.max(INSPECTOR_MIN_PX, Math.min(INSPECTOR_MAX_PX, n));
+  } catch {
+    return INSPECTOR_DEFAULT_PX;
+  }
+}
+
+function writeInspectorWidth(px: number): void {
+  try {
+    window.localStorage.setItem(
+      INSPECTOR_WIDTH_STORAGE_KEY,
+      String(Math.round(px)),
+    );
+  } catch {
+    // quota / private mode は session のみ反映
   }
 }
 
@@ -402,6 +432,10 @@ interface AppState {
   // v0.26.10: 左サイドバー横幅 (px、drag で変更)。localStorage 永続。
   leftSidebarWidth: number;
   setLeftSidebarWidth: (px: number) => void;
+  // v0.30.4: Inspector (= 列 4) 横幅 (px、drag で変更)。localStorage 永続。
+  // collapsed 時は無視され、grid template columns で 24 px に潰す。
+  inspectorWidth: number;
+  setInspectorWidth: (px: number) => void;
 
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
@@ -978,6 +1012,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
     writeLeftSidebarWidth(clamped);
     set({ leftSidebarWidth: clamped });
+  },
+  // v0.30.4: Inspector 横幅 (drag で変更、localStorage 永続)
+  inspectorWidth: readInspectorWidth(),
+  setInspectorWidth: (px) => {
+    const clamped = Math.max(
+      INSPECTOR_MIN_PX,
+      Math.min(INSPECTOR_MAX_PX, px),
+    );
+    writeInspectorWidth(clamped);
+    set({ inspectorWidth: clamped });
   },
   workspaceCollapsed: readWorkspaceCollapsed(),
   setWorkspaceCollapsed: (collapsed) => {
