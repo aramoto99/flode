@@ -10,7 +10,7 @@
 // **永続化**: drag resize の最終 ratio は ``<PanelGroup onLayout>`` で受け取り、
 // `store.setWorkspaceSplitRatio` で localStorage に書き出す (ADR §(1))。
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Group as PanelGroup,
@@ -24,6 +24,12 @@ import {
   useAppStore,
 } from "../store/appStore";
 import {
+  computeDropZone,
+  type DropZone,
+  dropZoneToSplit,
+  PYFLW_TAB_REF_MIME,
+} from "../lib/dnd";
+import {
   findLeaf,
   getLeafPaneIds,
   makeSplitId,
@@ -31,6 +37,7 @@ import {
   type SplitTree,
 } from "../lib/splitTree";
 import { PaneTitleBar } from "./PaneTitleBar";
+import { ParameterPanel } from "./ParameterPanel";
 import { ScopeView } from "./ScopeView";
 import { XYGraphView } from "./XYGraphView";
 
@@ -59,6 +66,9 @@ export function WorkspaceSplit({
   const splitPane = useAppStore((s) => s.splitPane);
   const unsplitPane = useAppStore((s) => s.unsplitPane);
   const setRatio = useAppStore((s) => s.setWorkspaceSplitRatio);
+  // ADR-0052 §(3): Scope detach (= Rnd float に切替) で再利用
+  const openScopePanel = useAppStore((s) => s.openScopePanel);
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
 
   // SplitTree 内で独立分離されている scope:<id> 葉の集合
   const splitOutScopeIds = useMemo(() => {
@@ -106,6 +116,10 @@ export function WorkspaceSplit({
     t_scopeLeafCannotSplit: t("workspace.split.disabled.scope_leaf"),
     t_runSimulationToSplit: t("workspace.split.disabled.run_simulation"),
     t_allScopesSeparated: t("workspace.split.disabled.all_separated"),
+    openScopePanel,
+    InspectorBody: () => (
+      <ParameterPanel modelId={selectedFilePath ?? ""} />
+    ),
   };
 
   return (
@@ -127,6 +141,7 @@ interface RenderContext {
     paneId: string,
     orientation: "horizontal" | "vertical",
     newPaneId: string,
+    position?: "after" | "before",
   ) => void;
   unsplitPane: (paneId: string) => void;
   /** v0.27.1 UX-1: scopes-stack 空表示の文言出し分け用。 */
@@ -136,6 +151,10 @@ interface RenderContext {
   t_scopeLeafCannotSplit: string;
   t_runSimulationToSplit: string;
   t_allScopesSeparated: string;
+  /** ADR-0052 §(3) Stage 3: Scope detach (= float に切替) action。 */
+  openScopePanel: (scopeId: string) => void;
+  /** ADR-0052 §(2) Stage 3: Inspector pane 葉の body component (= ParameterPanel)。 */
+  InspectorBody: () => JSX.Element;
 }
 
 function renderTree(
@@ -293,9 +312,14 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       : ctx.t_runSimulationToSplit;
   })();
 
-  // 本体描画
+  // 本体描画 + paneId 種別判定 (= ADR-0052 §(1)(2)(3) 新葉対応)
+  const isScopeLeaf = !isDiagram && !isStack && paneId.startsWith("scope:");
+  const isTabLeaf = paneId.startsWith("tab:");
+  const isInspectorLeaf = paneId === "inspector";
+
   let body: JSX.Element;
   let titleKey: PaneTitleKey;
+  let titleRaw: string | null = null;
   if (isDiagram) {
     body = <DiagramSlot setDiagramSlot={ctx.setDiagramSlot} />;
     titleKey = "workspace.pane.title.diagram";
@@ -312,7 +336,19 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       />
     );
     titleKey = "workspace.pane.title.scopes_stack";
-  } else {
+  } else if (isInspectorLeaf) {
+    // ADR-0052 §(2): inspector 葉は ParameterPanel を描画
+    body = <ctx.InspectorBody />;
+    titleKey = "workspace.pane.title.inspector";
+  } else if (isTabLeaf) {
+    // ADR-0052 §(1): tab:<filePath> 葉は別タブのモデル view (= 別 file の
+    // 読み取り専用 viewport)。Stage 3 MVP では「タブ名表示 + open ボタン」の
+    // 軽量プレースホルダーで開始 (= 本格的 multi-edit は Stage 4+)。
+    const filePath = paneId.slice("tab:".length);
+    body = <TabLeafBody filePath={filePath} />;
+    titleKey = "";
+    titleRaw = filePath.split("/").pop() ?? filePath;
+  } else if (isScopeLeaf) {
     const scopeId = paneId.slice("scope:".length);
     const buffer = ctx.allScopes.get(scopeId);
     const blockType = ctx.blockTypeById.get(scopeId) ?? "";
@@ -323,26 +359,100 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
         blockType={blockType}
       />
     );
-    titleKey = ""; // scope leaf はタイトル = scope_id を直接表示
+    titleKey = "";
+    titleRaw = scopeId;
+  } else {
+    // 未知 paneId: empty fallback
+    body = <div className="h-full w-full bg-white" />;
+    titleKey = "";
+    titleRaw = paneId;
   }
+
+  // ADR-0052 §(3): Scope 葉に「detach」アクション (= Rnd float に切替)
+  const onDetach = isScopeLeaf
+    ? () => {
+        const scopeId = paneId.slice("scope:".length);
+        ctx.unsplitPane(paneId);
+        ctx.openScopePanel(scopeId);
+      }
+    : null;
 
   return (
     <PaneLeafShell
       titleKey={titleKey}
-      titleRaw={isDiagram || isStack ? null : paneId.slice("scope:".length)}
+      titleRaw={titleRaw}
       onSplitRight={onSplitRight}
       onSplitDown={onSplitDown}
       onUnsplit={onUnsplit}
+      onDetach={onDetach}
       disabledSplitReason={disabledSplitReason}
+      paneId={paneId}
+      onTabDrop={(zone, filePath) => handleTabDrop(ctx, paneId, zone, filePath)}
     >
       {body}
     </PaneLeafShell>
   );
 }
 
+/** ADR-0052 §(1): drop event → SplitTree 操作 dispatch helper。
+ *
+ * - zone="center" → no-op (= タブ追加 semantics は Stage 4+、Stage 3 では skip)
+ * - zone=top/right/bottom/left → splitPane(target, orientation, "tab:<filePath>", position)
+ *
+ * filePath が既に SplitTree 内に `tab:<filePath>` 葉として存在する場合、
+ * insertSplit は no-op (= 重複検出、splitTree.ts §insertSplit の規約)。 */
+function handleTabDrop(
+  ctx: RenderContext,
+  targetPaneId: string,
+  zone: "center" | "top" | "right" | "bottom" | "left",
+  filePath: string,
+): void {
+  const op = dropZoneToSplit(zone);
+  if (op === null) {
+    // center drop: Stage 3 MVP では no-op、Stage 4+ で「タブ追加」semantics
+    return;
+  }
+  ctx.splitPane(
+    targetPaneId,
+    op.orientation,
+    `tab:${filePath}`,
+    op.position,
+  );
+}
+
+/** v0.30.0 ADR-0052: tab:<filePath> 葉の本体 (Stage 3 MVP、軽量プレースホルダー)。
+ *
+ * 別タブのモデルを別 pane で簡易表示。「このファイルを active 編集に切替」
+ * ボタンを提示するだけ (= 真の multi-edit viewport は Stage 4 候補)。 */
+function TabLeafBody({ filePath }: { filePath: string }): JSX.Element {
+  const { t } = useTranslation();
+  const switchTab = useAppStore((s) => s.switchTab);
+  const tabs = useAppStore((s) => s.tabs);
+  const exists = tabs.some((tab) => tab.filePath === filePath);
+  return (
+    <div className="flex h-full flex-col items-center justify-center bg-slate-50 p-4 text-center text-[11px] text-slate-500">
+      <div className="font-mono">{filePath}</div>
+      {exists ? (
+        <button
+          type="button"
+          onClick={() => switchTab(filePath)}
+          className="mt-2 border border-slate-400 bg-white px-3 py-0.5 text-[11px] hover:bg-slate-100"
+        >
+          {t("workspace.tab_leaf.switch_to")}
+        </button>
+      ) : (
+        <div className="mt-2 text-[10px] text-slate-400">
+          {t("workspace.tab_leaf.not_open")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type PaneTitleKey =
   | "workspace.pane.title.diagram"
   | "workspace.pane.title.scopes_stack"
+  | "workspace.pane.title.inspector"
   | "";
 
 function PaneLeafShell({
@@ -351,22 +461,33 @@ function PaneLeafShell({
   onSplitRight,
   onSplitDown,
   onUnsplit,
+  onDetach,
   disabledSplitReason,
+  paneId,
+  onTabDrop,
   children,
 }: {
   /** i18n キー (= 翻訳して title に使う)。``""`` ならスキップ。
-   * Stage 1 では diagram / scopes_stack の 2 値のみ。 */
+   * Stage 3 で diagram / scopes_stack / inspector の 3 値に拡張。 */
   titleKey: PaneTitleKey;
-  /** raw 表示用 (= scope_id 等、翻訳しない)。``null`` なら titleKey 経由。 */
+  /** raw 表示用 (= scope_id / filePath 等、翻訳しない)。``null`` なら titleKey 経由。 */
   titleRaw: string | null;
   onSplitRight: (() => void) | null;
   onSplitDown: (() => void) | null;
   onUnsplit: (() => void) | null;
+  /** ADR-0052 §(3) Stage 3: Scope detach action (= float に切替)。null で hide。 */
+  onDetach: (() => void) | null;
   /** v0.27.1 UX-3: split 無効時の tooltip 文言。 */
   disabledSplitReason: string | null;
+  /** ADR-0052 §(1) Stage 3: drop target identification。 */
+  paneId: string;
+  /** ADR-0052 §(1) Stage 3: drop event handler (zone, filePath)。 */
+  onTabDrop: (zone: DropZone, filePath: string) => void;
   children: React.ReactNode;
 }): JSX.Element {
   const { t } = useTranslation();
+  // ADR-0052 §(1) Stage 3: drag over 中の hover zone (= 5 領域 visual feedback)
+  const [hoverZone, setHoverZone] = useState<DropZone | null>(null);
   // titleKey が limited union なので t() の strict-typed signature を満たす
   const title =
     titleRaw ??
@@ -374,18 +495,81 @@ function PaneLeafShell({
       ? t("workspace.pane.title.diagram")
       : titleKey === "workspace.pane.title.scopes_stack"
         ? t("workspace.pane.title.scopes_stack")
-        : "");
+        : titleKey === "workspace.pane.title.inspector"
+          ? t("workspace.pane.title.inspector")
+          : "");
+
+  // ADR-0052 §(1) §(3): drop event handlers。Scope pane / Diagram pane / Inspector
+  // pane / scopes-stack に drop 可能、tab:<filePath> 葉自身への drop も可。
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!e.dataTransfer.types.includes(PYFLW_TAB_REF_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHoverZone(computeDropZone(rect, e.clientX, e.clientY));
+  };
+  const onDragLeave = (): void => setHoverZone(null);
+  const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    const filePath = e.dataTransfer.getData(PYFLW_TAB_REF_MIME);
+    setHoverZone(null);
+    if (!filePath) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // tab:<filePath> 葉自身を自分自身に drop は no-op
+    if (paneId === `tab:${filePath}`) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const zone = computeDropZone(rect, e.clientX, e.clientY);
+    onTabDrop(zone, filePath);
+  };
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+    <div
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <PaneTitleBar
         title={title}
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
         onUnsplit={onUnsplit}
+        onDetach={onDetach}
         disabledSplitReason={disabledSplitReason}
       />
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      {/* ADR-0052 §(1) Stage 3: drag-over 中の drop zone overlay (= 5 領域
+          visual feedback、`pointer-events: none` で drop event を阻害しない) */}
+      {hoverZone !== null && (
+        <DropZoneOverlay zone={hoverZone} />
+      )}
     </div>
+  );
+}
+
+/** ADR-0052 §(1): drop zone overlay。pane 内 absolute 配置、bg-blue-200/40。 */
+function DropZoneOverlay({ zone }: { zone: DropZone }): JSX.Element {
+  // pane 内相対比率で 5 領域を描画 (= dropZoneOverlayRect は absolute 座標版、
+  // ここでは parent relative + Tailwind class で簡素化)
+  const cls = ((): string => {
+    switch (zone) {
+      case "center":
+        return "absolute inset-1/4 bg-blue-200/50";
+      case "top":
+        return "absolute inset-x-0 top-0 h-1/2 bg-blue-200/50";
+      case "bottom":
+        return "absolute inset-x-0 bottom-0 h-1/2 bg-blue-200/50";
+      case "left":
+        return "absolute inset-y-0 left-0 w-1/2 bg-blue-200/50";
+      case "right":
+        return "absolute inset-y-0 right-0 w-1/2 bg-blue-200/50";
+    }
+  })();
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none ${cls} border-2 border-blue-500/60`}
+    />
   );
 }
 

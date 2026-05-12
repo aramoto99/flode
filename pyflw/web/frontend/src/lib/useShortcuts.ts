@@ -3,7 +3,7 @@
 // (= Ctrl+A はテキスト全選択、Ctrl+C はテキストコピーが OS / ブラウザ動作)。
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { listBlockMetadata } from "../api/client";
 import {
@@ -33,6 +33,9 @@ export function useShortcuts(): void {
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });
+  // ADR-0052 §(6): Ctrl+K 2-stroke prefix の active 状態 (= 1.5 秒 timeout)
+  const ctrlKPrefixActiveRef = useRef(false);
+  const ctrlKPrefixTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -183,6 +186,102 @@ export function useShortcuts(): void {
         e.preventDefault();
         useAppStore.getState().setCommandPaletteOpen(true);
         return;
+      }
+
+      // ADR-0052 §(6) Stage 3: Ctrl+\ = active tab を右に split (= drag-to-
+      // split-tab の代替キーボード操作)。activeTabFilePath を tab:<filePath>
+      // 葉として diagram pane の右に horizontal split で追加。
+      if (ctrl && !e.shiftKey && key === "\\") {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        const path = state.activeTabFilePath;
+        if (!path) return;
+        const tabLeafId = `tab:${path}`;
+        // 既に SplitTree 内に存在するなら no-op
+        const layout = state.workspaceLayout;
+        const leaves = new Set<string>();
+        const collect = (t: typeof layout): void => {
+          if (t.kind === "leaf") leaves.add(t.paneId);
+          else {
+            collect(t.a);
+            collect(t.b);
+          }
+        };
+        collect(layout);
+        if (leaves.has(tabLeafId)) return;
+        state.splitPane("diagram", "horizontal", tabLeafId, "after");
+        return;
+      }
+
+      // ADR-0052 §(6) Stage 3: Ctrl+K prefix の 2-stroke shortcut。
+      // K を押した後 次の keydown を待ち、I = Inspector mode cycle / Z = Zen mode
+      // (= sidebar 折りたたみ + Inspector sidebar 折りたたみ) を発火。
+      // prefix mode は 1.5 秒で timeout (= 利用者が他キーを押す前に解除)。
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "k") {
+        e.preventDefault();
+        ctrlKPrefixActiveRef.current = true;
+        if (ctrlKPrefixTimeoutRef.current !== null) {
+          window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+        }
+        ctrlKPrefixTimeoutRef.current = window.setTimeout(() => {
+          ctrlKPrefixActiveRef.current = false;
+        }, 1500);
+        return;
+      }
+      if (ctrlKPrefixActiveRef.current) {
+        const k = key.toLowerCase();
+        if (k === "i") {
+          e.preventDefault();
+          ctrlKPrefixActiveRef.current = false;
+          if (ctrlKPrefixTimeoutRef.current !== null) {
+            window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+            ctrlKPrefixTimeoutRef.current = null;
+          }
+          // Inspector mode cycle: sidebar → pane → float → sidebar
+          const s = useAppStore.getState();
+          const next: "sidebar" | "pane" | "float" =
+            s.inspectorDockMode === "sidebar"
+              ? "pane"
+              : s.inspectorDockMode === "pane"
+                ? "float"
+                : "sidebar";
+          s.setInspectorDockMode(next);
+          return;
+        }
+        if (k === "z") {
+          e.preventDefault();
+          ctrlKPrefixActiveRef.current = false;
+          if (ctrlKPrefixTimeoutRef.current !== null) {
+            window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+            ctrlKPrefixTimeoutRef.current = null;
+          }
+          // Zen mode toggle: sidebar + inspector の両方を折りたたむ / 戻す
+          const s = useAppStore.getState();
+          const isZen = s.workspaceCollapsed && s.inspectorCollapsed;
+          s.setWorkspaceCollapsed(!isZen);
+          s.setInspectorCollapsed(!isZen);
+          return;
+        }
+        if (key === "\\" && ctrl) {
+          // Ctrl+K Ctrl+\ = split down (= 上下分割で tab leaf 追加)
+          e.preventDefault();
+          ctrlKPrefixActiveRef.current = false;
+          if (ctrlKPrefixTimeoutRef.current !== null) {
+            window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+            ctrlKPrefixTimeoutRef.current = null;
+          }
+          const s = useAppStore.getState();
+          const path = s.activeTabFilePath;
+          if (!path) return;
+          s.splitPane("diagram", "vertical", `tab:${path}`, "after");
+          return;
+        }
+        // Prefix mode 中の他キー = prefix 解除のみ
+        ctrlKPrefixActiveRef.current = false;
+        if (ctrlKPrefixTimeoutRef.current !== null) {
+          window.clearTimeout(ctrlKPrefixTimeoutRef.current);
+          ctrlKPrefixTimeoutRef.current = null;
+        }
       }
 
       // Esc: 階層を上に / 選択解除

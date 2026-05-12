@@ -19,6 +19,7 @@ import {
   chooseInitialTree,
   DEFAULT_TREE,
   DEFAULT_TREE_WITH_SCOPES,
+  findLeaf,
   insertSplit,
   removeLeaf,
   serializeTree,
@@ -59,8 +60,10 @@ function deepCloneModel(m: FlwModel): FlwModel {
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
 const INSPECTOR_COLLAPSE_STORAGE_KEY = "pyflw.inspector_collapsed";
 const SIDEBAR_MODE_STORAGE_KEY = "pyflw.sidebar_mode";
+const INSPECTOR_DOCK_MODE_STORAGE_KEY = "pyflw.inspector_dock_mode";
 
 type SidebarMode = "file" | "library" | "search";
+type InspectorDockMode = "sidebar" | "pane" | "float";
 
 function readSidebarMode(): SidebarMode {
   try {
@@ -77,6 +80,25 @@ function writeSidebarMode(mode: SidebarMode): void {
     window.localStorage.setItem(SIDEBAR_MODE_STORAGE_KEY, mode);
   } catch {
     // quota / private mode は黙って失敗
+  }
+}
+
+// ADR-0052 §(2) Stage 3: Inspector dock mode の localStorage 永続化。
+function readInspectorDockMode(): InspectorDockMode {
+  try {
+    const v = window.localStorage.getItem(INSPECTOR_DOCK_MODE_STORAGE_KEY);
+    if (v === "pane" || v === "float") return v;
+    return "sidebar"; // default (= 現状温存、利用者の慣行)
+  } catch {
+    return "sidebar";
+  }
+}
+
+function writeInspectorDockMode(mode: InspectorDockMode): void {
+  try {
+    window.localStorage.setItem(INSPECTOR_DOCK_MODE_STORAGE_KEY, mode);
+  } catch {
+    // 同上
   }
 }
 
@@ -236,11 +258,13 @@ interface AppState {
     legacyRaw: string | null,
     hasVisibleScopes: boolean,
   ) => void;
-  /** 既存 pane を split (= 新葉を b 側 / right or down に追加)。 */
+  /** 既存 pane を split。v0.30.0 (ADR-0052): position で新葉の挿入位置を制御
+   * (= "after" = 右/下、"before" = 左/上)、既定 "after" で従来挙動。 */
   splitPane: (
     paneId: string,
     orientation: "horizontal" | "vertical",
     newPaneId: string,
+    position?: "after" | "before",
   ) => void;
   /** 既存 pane を tree から除去 (= 兄弟が親位置に昇格)。
    * tree 全体が 1 葉のみのとき呼ぶと ``DEFAULT_TREE`` (= ``diagram`` 単独) に戻る。 */
@@ -365,6 +389,12 @@ interface AppState {
   // 永続化なし (= セッション内のみ)、Ctrl+Shift+P で open、Esc / 行クリックで close。
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+
+  // ADR-0052 §(2) Stage 3: Inspector の dock mode (= "sidebar" | "pane" | "float")。
+  // localStorage `pyflw.inspector_dock_mode` に永続化、workspace 横断 (= モデル
+  // 切替で変更しない)。
+  inspectorDockMode: "sidebar" | "pane" | "float";
+  setInspectorDockMode: (mode: "sidebar" | "pane" | "float") => void;
   // v0.26.5: 右サイドバー (Inspector) の折りたたみ。Canvas を広げて使う用途。
   inspectorCollapsed: boolean;
   setInspectorCollapsed: (collapsed: boolean) => void;
@@ -464,14 +494,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         hasVisibleScopes,
       ),
     }),
-  splitPane: (paneId, orientation, newPaneId) =>
+  splitPane: (paneId, orientation, newPaneId, position = "after") =>
     set((state) => {
       const next = insertSplit(
         state.workspaceLayout,
         paneId,
         orientation,
         newPaneId,
-        "after",
+        position,
       );
       if (next === state.workspaceLayout) return state;
       persistWorkspaceLayoutFor(
@@ -703,8 +733,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (idx < 0) return {};
       const remaining = state.tabs.filter((_, i) => i !== idx);
       const wasActive = state.activeTabFilePath === path;
+      // ADR-0052 §(1): タブ閉じで SplitTree から `tab:<filePath>` 葉も除去
+      // (= drag-to-split-tab で pane 化していた場合の cleanup)
+      const tabPaneId = `tab:${path}`;
+      let updatedLayout = state.workspaceLayout;
+      if (findLeaf(state.workspaceLayout, tabPaneId)) {
+        const removed = removeLeaf(state.workspaceLayout, tabPaneId);
+        updatedLayout = removed ?? DEFAULT_TREE;
+        persistWorkspaceLayoutFor(
+          state.workspaceHash,
+          state.activeTabFilePath,
+          updatedLayout,
+        );
+      }
       if (!wasActive) {
-        return { tabs: remaining };
+        return { tabs: remaining, workspaceLayout: updatedLayout };
       }
       // active を閉じた: 隣接 tab に switchTab。なければ全 clear。
       if (remaining.length === 0) {
@@ -725,6 +768,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           simulationId: null,
           status: "idle",
           scopes: {},
+          workspaceLayout: updatedLayout,
         };
       }
       // 右側の tab を優先、無ければ左側
@@ -747,6 +791,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         simulationId: null,
         status: "idle",
         scopes: {},
+        workspaceLayout: updatedLayout,
       };
     }),
   switchTab: (path) =>
@@ -924,6 +969,53 @@ export const useAppStore = create<AppState>((set, get) => ({
   // v0.29.0: コマンドパレット modal state
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+
+  // ADR-0052 §(2) Stage 3: Inspector dock mode
+  inspectorDockMode: readInspectorDockMode(),
+  setInspectorDockMode: (mode) => {
+    writeInspectorDockMode(mode);
+    // Stage 3 §(2): mode 切替時の SplitTree side-effect
+    // - sidebar → pane: SplitTree に "inspector" 葉を split 挿入
+    // - pane → sidebar: SplitTree から "inspector" 葉を removeLeaf
+    // - * → float / float → *: SplitTree 操作なし (Rnd で独立描画)
+    const state = get();
+    const prev = state.inspectorDockMode;
+    set({ inspectorDockMode: mode });
+    if (prev !== "pane" && mode === "pane") {
+      // sidebar/float → pane: SplitTree に inspector 葉を split 挿入
+      const layout = state.workspaceLayout;
+      if (!findLeaf(layout, "inspector")) {
+        // diagram 葉を horizontal split で右に inspector を追加
+        const next = insertSplit(
+          layout,
+          "diagram",
+          "horizontal",
+          "inspector",
+          "after",
+        );
+        if (next !== layout) {
+          persistWorkspaceLayoutFor(
+            state.workspaceHash,
+            state.activeTabFilePath,
+            next,
+          );
+          set({ workspaceLayout: next });
+        }
+      }
+    } else if (prev === "pane" && mode !== "pane") {
+      // pane → sidebar/float: SplitTree から inspector 葉を除去
+      const removed = removeLeaf(state.workspaceLayout, "inspector");
+      if (removed !== state.workspaceLayout) {
+        const next = removed ?? DEFAULT_TREE;
+        persistWorkspaceLayoutFor(
+          state.workspaceHash,
+          state.activeTabFilePath,
+          next,
+        );
+        set({ workspaceLayout: next });
+      }
+    }
+  },
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
   undo: () => {

@@ -1,6 +1,7 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Rnd } from "react-rnd";
 
 import { getWorkspaceInfo } from "./api/filesApi";
 
@@ -47,6 +48,9 @@ export default function App(): JSX.Element {
   const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
   // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
   const sidebarMode = useAppStore((s) => s.sidebarMode);
+  // ADR-0052 §(2) Stage 3: Inspector dock mode (sidebar / pane / float)
+  const inspectorDockMode = useAppStore((s) => s.inspectorDockMode);
+  const setInspectorDockMode = useAppStore((s) => s.setInspectorDockMode);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
@@ -238,7 +242,16 @@ export default function App(): JSX.Element {
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
+            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${
+              // ADR-0052 §(2) Stage 3: sidebar mode 以外は列 4 を 0 px に潰す
+              // (= pane mode は WorkspaceSplit に統合、float mode は Rnd で
+              // overlay 描画、列 4 は描画コストゼロ)
+              inspectorDockMode !== "sidebar"
+                ? "0px"
+                : inspectorCollapsed
+                  ? "24px"
+                  : "280px"
+            }`,
           }}
         >
           {/* Column 0: Activity bar (ADR-0051 §(1)) */}
@@ -301,8 +314,10 @@ export default function App(): JSX.Element {
           </main>
 
           {/* Right: Inspector — 折りたたみ可能 (v0.26.5)。
+              ADR-0052 §(2) Stage 3: inspectorDockMode === "sidebar" のときだけ
+              列 4 を描画 (= pane / float では非表示、WorkspaceSplit or Rnd 経由)。
               左 + center とは別 grid column (state-controlled width)。 */}
-          {inspectorCollapsed ? (
+          {inspectorDockMode !== "sidebar" ? null : inspectorCollapsed ? (
             <aside
               className="flex min-h-0 cursor-pointer flex-col items-center border-l border-slate-300 bg-slate-50 hover:bg-slate-100"
               onClick={() => setInspectorCollapsed(false)}
@@ -337,8 +352,31 @@ export default function App(): JSX.Element {
             </aside>
           ) : (
             <aside className="flex min-h-0 flex-col overflow-hidden border-l border-slate-300 bg-white">
-              <div className="flex h-6 items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="flex h-6 items-center gap-1 border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 <span className="flex-1">{t("panel.inspector")}</span>
+                {/* ADR-0052 §(2) Stage 3: Inspector mode 切替 select。
+                    既存 SELECT_CLS 風スタイル、segment 風 button は使わない。 */}
+                <select
+                  value={inspectorDockMode}
+                  onChange={(e) =>
+                    setInspectorDockMode(
+                      e.target.value as "sidebar" | "pane" | "float",
+                    )
+                  }
+                  title={t("workspace.inspector.mode.label")}
+                  aria-label={t("workspace.inspector.mode.label")}
+                  className="border border-slate-300 bg-white px-1 py-0 text-[10px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="sidebar">
+                    {t("workspace.inspector.mode.sidebar")}
+                  </option>
+                  <option value="pane">
+                    {t("workspace.inspector.mode.pane")}
+                  </option>
+                  <option value="float">
+                    {t("workspace.inspector.mode.float")}
+                  </option>
+                </select>
                 <button
                   type="button"
                   onClick={() => setInspectorCollapsed(true)}
@@ -381,8 +419,17 @@ export default function App(): JSX.Element {
         {/* ADR-0043 §論点 5-A → ADR-0051 §(2-A): Search panel は sidebar
             mode に統合済 (= 列 1 内 inline)、overlay は廃止 */}
 
-        {/* ADR-0044 §論点 6: floating Scope panel (= Scope ダブルクリックで開く) */}
+        {/* ADR-0044 §論点 6: floating Scope panel (= Scope ダブルクリックで開く)。
+            ADR-0052 §(3) Stage 3: 役割再定義済 (= detach 経由のみ float 化、
+            ダブルクリックは docked split 昇格に変更) */}
         <ScopePanelContainer />
+
+        {/* ADR-0052 §(2) Stage 3: Inspector Float mode で Rnd 描画 */}
+        {hasOpenedModel && inspectorDockMode === "float" && (
+          <InspectorFloatPanel
+            onClose={() => setInspectorDockMode("sidebar")}
+          />
+        )}
 
         {/* ADR-0044 §論点 4: per-Scope プロット設定 dialog (= gear アイコンで開く) */}
         <GlobalScopeSettingsDialog />
@@ -420,6 +467,54 @@ function GlobalCommandPalette(): JSX.Element {
   const open = useAppStore((s) => s.commandPaletteOpen);
   const setOpen = useAppStore((s) => s.setCommandPaletteOpen);
   return <CommandPalette open={open} onClose={() => setOpen(false)} />;
+}
+
+/** ADR-0052 §(2) Stage 3: Inspector を float mode で表示する Rnd wrapper。
+ * ScopePanelContainer (= ADR-0044 react-rnd) と同じ pattern を再利用。
+ * geometry は localStorage に永続化 (= workspaceHash 単位、ADR-0044 と同様)。 */
+function InspectorFloatPanel({ onClose }: { onClose: () => void }): JSX.Element {
+  const { t } = useTranslation();
+  const selectedFilePath = useAppStore((s) => s.selectedFilePath);
+  return (
+    <Rnd
+      default={{ x: 200, y: 120, width: 320, height: 480 }}
+      minWidth={240}
+      minHeight={240}
+      bounds="window"
+      dragHandleClassName="inspector-float-drag-handle"
+      style={{ zIndex: 50, pointerEvents: "auto" }}
+      className="rounded border border-slate-400 bg-white shadow-2xl overflow-hidden"
+      data-testid="inspector-float-panel"
+    >
+      <div className="flex h-full w-full flex-col">
+        <div className="inspector-float-drag-handle flex h-6 cursor-move items-center border-b border-slate-200 bg-slate-100 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          <span className="flex-1">{t("panel.inspector")}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("panel.inspector.collapse", "Hide Inspector")}
+            title={t("panel.inspector.collapse", "Hide Inspector")}
+            className="flex h-5 w-5 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ParameterPanel modelId={selectedFilePath ?? ""} />
+        </div>
+      </div>
+    </Rnd>
+  );
 }
 
 /**

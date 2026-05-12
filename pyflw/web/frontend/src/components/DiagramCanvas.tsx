@@ -30,6 +30,7 @@ import {
 } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
+import { findLeaf } from "../lib/splitTree";
 import {
   indexRegistry,
   validatePortShapeConnection,
@@ -650,8 +651,13 @@ export function DiagramCanvas({
 
   // ADR-0021 §(4): is_container=true なノード (= Subsystem サブクラス) を
   // ダブルクリックでドリルダウンする。registry の `is_container` を参照。
-  // ADR-0044 §論点 8-A: Scope / XYGraph をダブルクリックで floating panel を開く。
-  const openScopePanel = useAppStore((s) => s.openScopePanel);
+  // ADR-0044 §論点 8-A → ADR-0052 §(3) Stage 3 で semantics 変更:
+  // 旧 v3.8.x: Scope ダブルクリック = float panel を即開く
+  // 新 v0.30.0: Scope ダブルクリック = docked split pane に昇格
+  //           (= scope:<id> 葉として WorkspaceSplit に追加、Stage 1 と同 path)
+  //           float モードは pane タイトルバーの「detach」ボタンで明示切替
+  const splitPane = useAppStore((s) => s.splitPane);
+  const layout = useAppStore((s) => s.workspaceLayout);
   const onNodeDoubleClick = (
     _event: React.MouseEvent,
     node: BlockNode,
@@ -663,7 +669,11 @@ export function DiagramCanvas({
     }
     const t = node.data.blockType;
     if (t.endsWith(".Scope") || t.endsWith(".XYGraph")) {
-      openScopePanel(node.id);
+      const scopeLeafId = `scope:${node.id}`;
+      // 既に SplitTree 内に存在するなら no-op (= 重複表示防止)
+      if (findLeaf(layout, scopeLeafId)) return;
+      // diagram pane の右に horizontal split で scope leaf を追加
+      splitPane("diagram", "horizontal", scopeLeafId, "after");
     }
   };
 

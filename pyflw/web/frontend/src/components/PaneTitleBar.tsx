@@ -18,6 +18,10 @@ interface PaneTitleBarProps {
   /** unsplit (= 分割解除、この pane を閉じる) アクション。``null`` で hide
    * (= tree 内最後の葉なら閉じられないため hide)。 */
   onUnsplit: (() => void) | null;
+  /** ADR-0052 §(3) Stage 3: detach (= float に切替) アクション。``null`` で hide。
+   * Scope pane のみで提供 (= Inspector float は別 UI = App.tsx の Inspector
+   * sidebar header で切替)。 */
+  onDetach?: (() => void) | null;
   /** v0.27.1 UX-3: split 系ボタンを **hide ではなく disabled** で表示する。
    * onSplitRight / onSplitDown が ``null`` でも、本 prop が非 null なら button を
    * 描画して disabled + title=disabledReason に「なぜ押せないか」を出す。 */
@@ -29,6 +33,7 @@ export function PaneTitleBar({
   onSplitRight,
   onSplitDown,
   onUnsplit,
+  onDetach,
   disabledSplitReason,
 }: PaneTitleBarProps): JSX.Element {
   const { t } = useTranslation();
@@ -78,6 +83,28 @@ export function PaneTitleBar({
             >
               <rect x="2" y="1.5" width="12" height="13" />
               <line x1="2" y1="8" x2="14" y2="8" />
+            </svg>
+          </PaneActionButton>
+        )}
+        {onDetach !== undefined && onDetach !== null && (
+          <PaneActionButton
+            label={t("workspace.detach")}
+            onClick={onDetach}
+            disabledReason={null}
+          >
+            {/* detach icon: 枠から斜め矢印が外に出る形 (= float に分離) */}
+            <svg
+              viewBox="0 0 16 16"
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="2" y="6" width="8" height="8" />
+              <polyline points="9 7 14 2" />
+              <polyline points="10 2 14 2 14 6" />
             </svg>
           </PaneActionButton>
         )}

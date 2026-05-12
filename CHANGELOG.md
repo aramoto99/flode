@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-05-12 — Workspace JupyterLab Stage 3 = Drag-to-split-tab + Inspector pane 化 (ADR-0052)
+
+ADR-0052 採択 (Phase 6c Stage 3、Accepted 2026-05-12)。**Phase 6c の最終 Stage**:
+タブを drag → 別 pane に split / Inspector を 3 mode (sidebar/pane/float) で
+配置 / Scope ダブルクリックを docked split 昇格に semantics 変更。Option A
+中範囲、新規依存追加なし、ADR-0044 `react-rnd` 共用継続 (Scope detach +
+Inspector float)。
+
+### Added
+
+- **Drag-to-split-tab** (`src/lib/dnd.ts`):
+  - `application/x-pyflw-tab-ref` MIME で TabStrip のタブを drag 可能
+  - WorkspaceSplit 内で drop 位置 (= 5 領域: center + 4 端) 判定 + drop
+    indicator overlay (青半透明)
+  - 4 端 drop で `splitPane(target, orientation, "tab:<filePath>", position)`
+    を呼んで新 pane 化
+  - center drop は Stage 3 MVP で no-op (= タブ追加 semantics は Stage 4+)
+- **新 paneId**: `"tab:<filePath>"` / `"inspector"` の 2 種 (= ADR-0052 §(2)(3))
+- **Inspector pane 化** (3 mode):
+  - **`sidebar`** (= 既定、現状温存): 列 4 で 24/280 px 折りたたみ
+  - **`pane`**: WorkspaceSplit 内に `inspector` 葉として配置、列 4 を 0 px に
+  - **`float`**: react-rnd で main 上に浮かせる
+  - 列 4 ヘッダに mode 切替 `<select>` を追加 (`Property Inspector` primitives
+    準拠、segment 風 button は使わない)
+- **`InspectorFloatPanel` コンポーネント** (`src/App.tsx` 内): Inspector を
+  Rnd wrapper で float 描画 (= ScopePanelContainer と同じ pattern を再利用)
+- **PaneTitleBar に「detach」ボタン** (`src/components/PaneTitleBar.tsx`):
+  Scope pane で Rnd float に切替 (= 既存 ADR-0044 openScopePanel を再利用)
+- **キーボードショートカット 4 種**:
+  - `Ctrl+\` = active tab を右に split (= 現タブの `tab:<filePath>` 葉を
+    diagram pane の右に horizontal split で追加)
+  - `Ctrl+K Ctrl+\` = 同上、上下分割で
+  - `Ctrl+K I` = Inspector mode を cycle (sidebar → pane → float → sidebar)
+  - `Ctrl+K Z` = Zen mode toggle (= sidebar / inspector 両折りたたみ)
+  - `Ctrl+K` は **1.5 秒 prefix mode** (= VSCode 流の 2-stroke shortcut)
+- **store state 追加**:
+  - `inspectorDockMode: "sidebar" | "pane" | "float"` + `setInspectorDockMode`
+  - localStorage `pyflw.inspector_dock_mode` に永続化 (= workspace 横断、
+    モデル切替で変更しない)
+- **`splitPane` action に `position?: "after" | "before"` 引数追加**: 既定
+  `"after"` で従来挙動温存、drag-drop の left/top drop で `"before"` を使う
+- **`closeTab` action 拡張**: タブ閉じで SplitTree の `tab:<filePath>` 葉も
+  クリーンアップ (= dangling leaf 防止)
+- **i18n キー 14 個追加** (ja/en):
+  - `workspace.pane.title.inspector`
+  - `workspace.detach`
+  - `workspace.inspector.mode.{label,sidebar,pane,float}`
+  - `workspace.tab_leaf.{switch_to,not_open}`
+  - `workspace.shortcut.{split_right,split_down,zen_mode,inspector_mode}`
+
+### Changed
+
+- **Scope ダブルクリック挙動 (= semantics 変更、breaking)** (ADR-0044
+  §Amendments §(1)):
+  - **旧 v3.8.x**: Scope ダブルクリック → react-rnd float panel が即開く
+  - **新 v0.30.0**: Scope ダブルクリック → `scope:<id>` 葉として
+    WorkspaceSplit に追加 (= docked split 昇格、Stage 1 と同 path)。float は
+    pane タイトルバーの **「detach」ボタン** で明示切替
+- ADR-0040 §Amendments §(3) で Phase 6c Stage 3 = ADR-0052 確定、Phase 6c
+  完了マッピング (= Stage 1 + 2 + 3 すべて Accepted + 実装完了)
+
+### Migration
+
+- **既存 localStorage キー破壊なし**: `pyflw.workspace_layout.*` /
+  `pyflw.scope_panel.*` / `pyflw.workspace_collapsed` /
+  `pyflw.inspector_collapsed` / 等 全て維持
+- 新規追加キー: `pyflw.inspector_dock_mode` (= 既定値 `"sidebar"`、未設定なら
+  従来挙動)
+- ロールバック互換: v3.8.x への戻しで動作可能
+
+### Out of scope (Stage 3 で実装しない)
+
+- **タブ追加 semantics** (= center drop): Stage 3 MVP では no-op、Stage 4+ で
+  タブ群 (tab group) 化を再評価
+- **`pyflw.inspector_float_geometry.<hash>`** 永続化: 初期は Rnd default
+  geometry のみ、利用者要望で hotfix 候補
+- **Inspector mode dropdown の `<PaneTitleBar>` 内表示** (= ADR-0052 §(2) で
+  予告): Stage 3 v0.30.0 では列 4 ヘッダのみ、pane mode 時の pane タイトル
+  バー内 dropdown は v3.9.x で追加候補
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass (= v0.29.4 と同件数)
+- bundle 実測は build 時、+20-30 KB gzip 目標
+- ADR-0040 §Amendments §(3) で Phase 6c Stage 3 = ADR-0052 確定、Phase 6c の
+  3 段すべて Accepted + 実装完了 (= Phase 6c 概ね完了)
+- ADR-0044 §Amendments §(1) で Scope dblclick semantics 変更 + Rnd 役割再定義
+- **Phase 6c 完了** (= ADR-0045 + 0051 + 0052 すべて Accepted + リリース済)
+
+### Phase 6c 完了
+
+本 release で **Phase 6c (Workspace JupyterLab convergence)** の 3 段階すべて
+が Accepted + 実装完了。Stage 4 以降の予約はなし (= 目標 JupyterLab UX
+converge は概ね達成)。Phase 6 全体の完了は **Phase 6b (Codegen + GPU)** の
+完了 (= 新 ADR-0050) 待ち、別系列。
+
 ## [0.29.4] - 2026-05-12 — CommandPalette Block 追加: display_name の i18n 対応 (ADR-0028)
 
 v0.29.2 で追加した Block 追加コマンドの **表示名と検索キーワードを現在 locale
