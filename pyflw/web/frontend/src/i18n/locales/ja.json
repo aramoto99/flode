@@ -264,6 +264,8 @@
   "workspace.split.disabled.all_separated": "すべての Scope が既に別ペインに分離されています",
   "workspace.scopes_stack.split_out_scope": "この Scope を個別ペインに分離",
   "workspace.scopes_stack.tablist": "スコープタブ切替",
+  "workspace.show_scopes_area": "Scope エリアを表示 (下に追加)",
+  "workspace.show_scopes_area.short": "Scope",
 
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",

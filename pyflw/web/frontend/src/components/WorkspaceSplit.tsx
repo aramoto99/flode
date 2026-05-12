@@ -377,6 +377,14 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       }
     : null;
 
+  // v0.30.3: Diagram pane で scopes-stack 葉が tree に無く、かつ Scope ブロックを
+  // 持つモデルのとき「Scope エリアを表示」ボタンを提供 (= × で閉じた後の復活
+  // 経路、ユーザー要望)
+  const onShowScopes =
+    isDiagram && !ctx.hasScopesStackLeaf && ctx.hasScopeBlocks
+      ? () => ctx.splitPane("diagram", "vertical", "scopes-stack", "after")
+      : null;
+
   return (
     <PaneLeafShell
       titleKey={titleKey}
@@ -385,6 +393,7 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       onSplitDown={onSplitDown}
       onUnsplit={onUnsplit}
       onDetach={onDetach}
+      onShowScopes={onShowScopes}
       disabledSplitReason={disabledSplitReason}
       paneId={paneId}
       onTabDrop={(zone, filePath) => handleTabDrop(ctx, paneId, zone, filePath)}
@@ -465,6 +474,7 @@ function PaneLeafShell({
   onSplitDown,
   onUnsplit,
   onDetach,
+  onShowScopes,
   disabledSplitReason,
   paneId,
   onTabDrop,
@@ -480,6 +490,8 @@ function PaneLeafShell({
   onUnsplit: (() => void) | null;
   /** ADR-0052 §(3) Stage 3: Scope detach action (= float に切替)。null で hide。 */
   onDetach: (() => void) | null;
+  /** v0.30.3: Diagram pane 専用「Scope エリアを表示」action。null で hide。 */
+  onShowScopes: (() => void) | null;
   /** v0.27.1 UX-3: split 無効時の tooltip 文言。 */
   disabledSplitReason: string | null;
   /** ADR-0052 §(1) Stage 3: drop target identification。 */
@@ -544,6 +556,7 @@ function PaneLeafShell({
         onSplitDown={onSplitDown}
         onUnsplit={onUnsplit}
         onDetach={onDetach}
+        onShowScopes={onShowScopes}
         disabledSplitReason={disabledSplitReason}
       />
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>

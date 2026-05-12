@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-05-12 — scopes-stack を × で閉じた後の復活経路を追加
+
+v0.30.2 で Diagram pane の split ボタンを hide した結果、ユーザーが scopes-stack
+を × で閉じた後に **再表示する手段が消失** していたバグを修正。
+
+### Added
+
+- **Diagram pane に「+ Scope」ボタンを追加** (= `PaneTitleBar.onShowScopes`):
+  - 表示条件: **scopes-stack 葉が SplitTree に存在しない** かつ **モデルが
+    Scope/XYGraph ブロックを持つ** 場合のみ
+  - クリックで `splitPane("diagram", "vertical", "scopes-stack", "after")` を
+    実行、scopes-stack pane が下に復活
+  - 表示位置: Diagram pane タイトルバー右、split/unsplit/detach の各 icon
+    button より目立つ「+ Scope」ラベル付きボタン (= 復活経路の発見性を高める)
+- i18n: `workspace.show_scopes_area` / `workspace.show_scopes_area.short`
+  (ja/en)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.30.2] - 2026-05-12 — v0.30.0 ユーザー要望反映 (revert 中心、6 件対応)
 
 v0.30.0 リリース直後のユーザー動作確認フィードバック 6 件を全対処。Stage 3 で
