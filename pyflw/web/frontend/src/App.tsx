@@ -1,18 +1,15 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Group as PanelGroup,
-  Panel,
-  Separator as PanelResizeHandle,
-} from "react-resizable-panels";
 
 import { getWorkspaceInfo } from "./api/filesApi";
 
+import { ActivityBar } from "./components/ActivityBar";
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { FileBrowser } from "./components/FileBrowser";
+import { Launcher } from "./components/Launcher";
 import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopePanelContainer } from "./components/ScopePanelContainer";
@@ -47,6 +44,8 @@ export default function App(): JSX.Element {
   const setInspectorCollapsed = useAppStore((s) => s.setInspectorCollapsed);
   const leftSidebarWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
+  const sidebarMode = useAppStore((s) => s.sidebarMode);
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
@@ -227,67 +226,49 @@ export default function App(): JSX.Element {
         {/* Tab strip */}
         <TabStrip />
 
-        {/* Main 3-column area (v0.26.10: 左 sidebar 横幅は manual drag handle で
-            管理、grid template columns に直接埋め込む。react-resizable-panels の
-            horizontal は grid 内で動作不安定だったので自前実装に切替)。 */}
+        {/* Main 5-column area (ADR-0051 §(1): 列 0 = activity bar 新規追加)
+            v0.26.10: 左 sidebar 横幅は manual drag handle で管理、grid template
+            columns に直接埋め込む。react-resizable-panels の horizontal は
+            grid 内で動作不安定だったので自前実装に切替。
+            ADR-0051 §(1): 列 0 = activity bar (32 px 固定幅)、列 1 = sidebar
+            (mode に応じて FileBrowser / BlockPalette / SearchPanel 切替)、列 2
+            = 5 px drag handle、列 3 = main、列 4 = Inspector (折りたたみ 2 値)。
+            workspaceCollapsed 時は列 1 を 0 px に潰し、activity bar のみ表示。 */}
         <div
           className="grid min-h-0 overflow-hidden"
           style={{
-            gridTemplateColumns: `${leftSidebarWidth}px 5px 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
+            gridTemplateColumns: `32px ${workspaceCollapsed ? "0px" : `${leftSidebarWidth}px`} ${workspaceCollapsed ? "0px" : "5px"} 1fr ${inspectorCollapsed ? "24px" : "280px"}`,
           }}
         >
-          {/* Left: Workspace tree (top) + Library palette (bottom) */}
-          <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
-            {workspaceCollapsed ? (
-              // 折りたたみ時: FileBrowser 24 px header + Library が残り全部
-              <>
-                <div className="flex min-h-0 flex-col overflow-hidden border-b border-slate-300">
-                  <FileBrowser />
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* Column 0: Activity bar (ADR-0051 §(1)) */}
+          <ActivityBar />
+
+          {/* Column 1: Left sidebar (mode に応じた切替、collapsed 時は非表示) */}
+          {!workspaceCollapsed && (
+            <aside className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300 bg-white">
+              {sidebarMode === "file" && <FileBrowser />}
+              {sidebarMode === "library" && (
+                <>
                   <PanelHeader>{t("panel.library")}</PanelHeader>
                   <div className="min-h-0 flex-1 overflow-hidden">
                     <BlockPalette />
                   </div>
-                </div>
-              </>
-            ) : (
-              // 展開時: drag-resizable な縦分割 (v0.26.6、react-resizable-panels)
-              <PanelGroup
-                orientation="vertical"
-                id="pyflw.workspace_library_split"
-                className="flex-1"
-              >
-                {/* v0.26.7: minSize を pixel 指定 (= ヘッダー 24 px より下に縮まない)。
-                    v4 の minSize は CSS 単位文字列を受ける ("32px" / "2rem" 等)。 */}
-                <Panel defaultSize={40} minSize="48px">
-                  <div className="flex h-full min-h-0 flex-col overflow-hidden">
-                    <FileBrowser />
-                  </div>
-                </Panel>
-                <PanelResizeHandle className="group relative z-10 h-0.5 cursor-row-resize bg-slate-300 transition-colors hover:bg-blue-400 data-[resize-handle-state=drag]:bg-blue-500">
-                  <div className="absolute inset-x-0 -top-1 -bottom-1" />
-                </PanelResizeHandle>
-                <Panel defaultSize={60} minSize="48px">
-                  <div className="flex h-full min-h-0 flex-col overflow-hidden">
-                    <PanelHeader>{t("panel.library")}</PanelHeader>
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      <BlockPalette />
-                    </div>
-                  </div>
-                </Panel>
-              </PanelGroup>
-            )}
-          </aside>
+                </>
+              )}
+              {sidebarMode === "search" && <SearchPanel />}
+            </aside>
+          )}
 
-          {/* v0.26.10: 自前 drag handle (= 5 px wide grid column)。
-              pointer-down で window-level の pointermove / pointerup を取得し、
-              ローカル state を更新せず store action を呼ぶ。React Flow との
+          {/* Column 2: 自前 drag handle (= 5 px wide grid column、collapsed 時は非表示)。
+              v0.26.10: pointer-down で window-level の pointermove / pointerup を
+              取得し、ローカル state を更新せず store action を呼ぶ。React Flow との
               競合は z-index + cursor + capture で確実に勝つ。 */}
-          <ResizeHandleX
-            value={leftSidebarWidth}
-            onChange={setLeftSidebarWidth}
-          />
+          {!workspaceCollapsed && (
+            <ResizeHandleX
+              value={leftSidebarWidth}
+              onChange={setLeftSidebarWidth}
+            />
+          )}
 
           {/* Center: canvas + sim controls + scopes
               ADR-0045 §(1) §(6): v0.26.12 の「Panel id="canvas" 常時描画 +
@@ -312,7 +293,9 @@ export default function App(): JSX.Element {
                 <SimulationControls modelId={selectedFilePath ?? ""} />
               </>
             ) : (
-              <EmptyState />
+              // ADR-0051 §(3): 旧 EmptyState を Launcher に置換 (= New / Open
+              // tile + Recent 上位 5 件、`EmptyState` 関数は撤去)
+              <Launcher />
             )}
           </main>
 
@@ -394,8 +377,8 @@ export default function App(): JSX.Element {
         {/* ADR-0030: グローバル toast container (fixed positioning なので grid 末尾でも OK)。 */}
         <ToastContainer />
 
-        {/* ADR-0043 §論点 5-A: Search panel (Ctrl+P / Ctrl+Shift+F で開く) */}
-        <SearchPanel />
+        {/* ADR-0043 §論点 5-A → ADR-0051 §(2-A): Search panel は sidebar
+            mode に統合済 (= 列 1 内 inline)、overlay は廃止 */}
 
         {/* ADR-0044 §論点 6: floating Scope panel (= Scope ダブルクリックで開く) */}
         <ScopePanelContainer />
@@ -500,18 +483,4 @@ function PanelHeader({ children }: { children: React.ReactNode }): JSX.Element {
   );
 }
 
-function EmptyState(): JSX.Element {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-1 items-center justify-center bg-slate-50">
-      <div className="max-w-sm rounded border border-slate-200 bg-white px-6 py-5 text-center text-[12px] text-slate-600">
-        <div className="mb-2 font-semibold text-slate-700">{t("app.empty.title")}</div>
-        <div className="text-slate-500">
-          {t("app.empty.hint_new")}
-          <br />
-          {t("app.empty.hint_open")}
-        </div>
-      </div>
-    </div>
-  );
-}
+// ADR-0051 §(3): 旧 EmptyState は Launcher に置換、本関数は撤去

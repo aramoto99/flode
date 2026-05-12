@@ -201,6 +201,18 @@
   "panel.inspector.collapse": "Hide Inspector",
   "panel.inspector.expand": "Show Inspector",
 
+  "activity.aria.tablist": "Sidebar mode",
+  "activity.file": "Files",
+  "activity.library": "Library",
+  "activity.search": "Search",
+
+  "launcher.section.start": "Start",
+  "launcher.section.recent": "Recent",
+  "launcher.tile.new": "New",
+  "launcher.tile.open": "Open",
+  "launcher.recent.empty": "No recent files",
+  "launcher.recent.show_all": "Show all...",
+
   "workspace.pane.title.diagram": "Diagram",
   "workspace.pane.title.scopes_stack": "Scopes",
   "workspace.split.right": "Split right",

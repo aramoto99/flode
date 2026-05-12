@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-05-12 — Workspace JupyterLab Stage 2 = Activity bar + Launcher (ADR-0051)
+
+ADR-0051 採択 (Phase 6c Stage 2)。Workspace UI を JupyterLab/VSCode 流の
+「activity bar + sidebar mode 切替 + Launcher」構造に刷新する大規模改修。
+**見た目が大きく変わる初の Stage** (= Stage 1 = v0.27.0〜3.6.2 は内部レイアウト
+機能の追加で見た目変化は限定的だった)。
+
+### Added
+
+- **左端 activity bar** (`src/components/ActivityBar.tsx`): 32 px 固定幅、
+  File / Library / Search の 3 mode をアイコンで切替。selected mode に左
+  2 px の青い accent bar 表示 (= VSCode 風)。`<button role="tab">` で a11y
+  確保 (= ADR-0030 規律継承)
+- **Launcher** (`src/components/Launcher.tsx`): ファイル未選択時に旧
+  EmptyState を置換。Start tile (New / Open) + Recent 上位 5 件 list +
+  「Show all...」リンク (= sidebar mode を file に遷移)
+- **sidebar mode state** (`store.sidebarMode`): `"file" | "library" |
+  "search"`、localStorage `pyflw.sidebar_mode` に永続化、起動時復元
+- **キーボードショートカット 2 件追加**:
+  - `Ctrl+B` = sidebar 全体 toggle (= `workspaceCollapsed` 反転、VSCode 流)
+  - `Ctrl+Shift+E` = sidebar mode を file に切替 + sidebar 展開
+- **i18n キー 10 個追加** (ja/en): `activity.aria.tablist` /
+  `activity.{file,library,search}` / `launcher.section.{start,recent}` /
+  `launcher.tile.{new,open}` / `launcher.recent.{empty,show_all}`
+
+### Changed
+
+- **App.tsx grid 4 列 → 5 列**: 列 0 = activity bar (32 px 固定) を新規追加。
+  `workspaceCollapsed` 時は列 1〜2 を 0 px に潰し activity bar のみ表示
+- **左 sidebar 列 1 の中身を mode で切替**: 旧「FileBrowser 上 + Library
+  palette 下の縦分割」(= `react-resizable-panels` の `id="pyflw.workspace_library_split"`)
+  を撤去、`sidebarMode` 値に応じて FileBrowser / BlockPalette / SearchPanel
+  のいずれか 100% 表示。旧 localStorage キーは温存 (= ロールバック互換)
+- **`SearchPanel` を overlay → sidebar mode inline 描画に refactor**:
+  ADR-0043 で確立した overlay (= `Ctrl+P` / `Ctrl+Shift+F` で開く modal) を
+  撤去、sidebar 列 1 内に inline 描画。`pyflw:open-search` event は維持
+  (= kind 切替 + input focus のみ)
+- **`Ctrl+P` / `Ctrl+Shift+F` semantics 変更** (= ADR-0043 §Amendments §(1)):
+  旧 = overlay 起動 / 新 = sidebar mode を search に切替 + sidebar 展開 +
+  検索 kind 設定 + input focus
+
+### Out of scope (Stage 2 では実装しない)
+
+- **Inspector pane 化** (= 列 4 折りたたみ 2 値を WorkspaceSplit 統合):
+  Stage 3 で drag-to-split-tab と一括設計 (= ADR-0052 予約)
+- **Launcher を別タブで開ける拡張** = Stage 3 候補
+- **Activity bar Running mode** (= 実行中 sim プロセス管理) = Phase 6b 完了後
+- **Templates セクション** = 内蔵テンプレ機能が未実装、別 ADR 必要
+- **`Ctrl+Shift+L` を Library mode 切替に充てる候補** = ブラウザ shortcut
+  との誤押しリスクで棄却、Library mode は activity bar クリックのみ
+- **ダークモード** = **7 回目の永続的 out-of-scope 再確定**
+
+### Migration
+
+- **既存 localStorage キーは破壊なし**: `pyflw.workspace_collapsed` /
+  `pyflw.inspector_collapsed` / `pyflw.left_sidebar_width` /
+  `pyflw.workspace_library_split` (= 休眠だが温存) /
+  `pyflw.last_active.<hash>` / `pyflw.recent.<workspaceHash>` /
+  `pyflw.workspace_layout.*` / `pyflw.scope_panel.*` 等 全て維持
+- 新規追加キー: `pyflw.sidebar_mode` (= 既定値 `"file"`)
+- **ロールバック互換**: v3.6.x への戻しで動作可能 (= 新キーは無視される、
+  旧キーは温存)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass (= v3.6.x と同件数)
+- bundle 増分は本 release で実測予定 (= +20-30 KB gzip 目標、累積 ~270 KB)
+- ADR-0040 §Amendments §(2) で Phase 6c Stage 2 = ADR-0051 確定、ADR-0043
+  §Amendments §(1) で Search panel semantics 変更を永続化
+
+### Phase 6c 残: Stage 3 = ADR-0052 予約
+
+Stage 2 リリース後の利用者フィードバックを 1〜2 週間収集後、Stage 3
+(= drag-to-split-tab + Inspector pane 化 + `ScopePanelContainer` (Rnd) 廃止
+/ 統合判断) に着手。
+
 ## [0.27.2] - 2026-05-12 — Workspace multi-pane Stage 1 UX: 個別 Scope 分離ボタン (UX-4)
 
 ADR-0045 §(1) 必須スコープ「個別 Scope を pane として独立分離する semantics」を

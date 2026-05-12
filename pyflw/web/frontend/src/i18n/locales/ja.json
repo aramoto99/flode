@@ -201,6 +201,18 @@
   "panel.inspector.collapse": "インスペクタを隠す",
   "panel.inspector.expand": "インスペクタを表示",
 
+  "activity.aria.tablist": "サイドバーモード切替",
+  "activity.file": "ファイル",
+  "activity.library": "ライブラリ",
+  "activity.search": "検索",
+
+  "launcher.section.start": "スタート",
+  "launcher.section.recent": "最近開いたファイル",
+  "launcher.tile.new": "新規",
+  "launcher.tile.open": "開く",
+  "launcher.recent.empty": "最近開いたファイルはありません",
+  "launcher.recent.show_all": "すべて表示...",
+
   "workspace.pane.title.diagram": "ダイアグラム",
   "workspace.pane.title.scopes_stack": "スコープ",
   "workspace.split.right": "左右に分割",

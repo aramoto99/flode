@@ -134,11 +134,17 @@ export function useShortcuts(): void {
         return;
       }
 
-      // ADR-0043 §論点 5-A: Ctrl+P (path 検索) / Ctrl+Shift+F (内容検索) は
-      // Search panel を開く。実装は SearchPanel 側 (= 開く / focus を
-      // window-level event で受ける形)。本 hook では preventDefault のみ。
+      // ADR-0043 §論点 5-A → ADR-0051 §(2-A): Ctrl+P (path 検索) /
+      // Ctrl+Shift+F (内容検索) の semantics 変更。
+      // 旧: overlay を開く
+      // 新: activity bar sidebar mode を ``search`` に切替 + sidebar 展開 +
+      //     kind を SearchPanel に伝達 (= ``pyflw:open-search`` event は維持、
+      //     SearchPanel が kind を受けて state 更新 + input focus)
       if (ctrl && !e.shiftKey && key.toLowerCase() === "p") {
         e.preventDefault();
+        const state = useAppStore.getState();
+        state.setSidebarMode("search");
+        if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
         window.dispatchEvent(
           new CustomEvent("pyflw:open-search", { detail: { kind: "path" } }),
         );
@@ -146,9 +152,29 @@ export function useShortcuts(): void {
       }
       if (ctrl && e.shiftKey && key.toLowerCase() === "f") {
         e.preventDefault();
+        const state = useAppStore.getState();
+        state.setSidebarMode("search");
+        if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
         window.dispatchEvent(
           new CustomEvent("pyflw:open-search", { detail: { kind: "content" } }),
         );
+        return;
+      }
+
+      // ADR-0051 §(7): Ctrl+B = sidebar 全体 toggle (= VSCode 流)
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "b") {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        state.setWorkspaceCollapsed(!state.workspaceCollapsed);
+        return;
+      }
+
+      // ADR-0051 §(7): Ctrl+Shift+E = sidebar mode を file に切替 + open
+      if (ctrl && e.shiftKey && key.toLowerCase() === "e") {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        state.setSidebarMode("file");
+        if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
         return;
       }
 

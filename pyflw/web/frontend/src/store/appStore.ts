@@ -58,6 +58,27 @@ function deepCloneModel(m: FlwModel): FlwModel {
 
 const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
 const INSPECTOR_COLLAPSE_STORAGE_KEY = "pyflw.inspector_collapsed";
+const SIDEBAR_MODE_STORAGE_KEY = "pyflw.sidebar_mode";
+
+type SidebarMode = "file" | "library" | "search";
+
+function readSidebarMode(): SidebarMode {
+  try {
+    const v = window.localStorage.getItem(SIDEBAR_MODE_STORAGE_KEY);
+    if (v === "library" || v === "search") return v;
+    return "file"; // default
+  } catch {
+    return "file";
+  }
+}
+
+function writeSidebarMode(mode: SidebarMode): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_MODE_STORAGE_KEY, mode);
+  } catch {
+    // quota / private mode は黙って失敗
+  }
+}
 
 /** ADR-0045 §(3-B): Workspace SplitTree を localStorage に永続化する。
  * ``workspaceHash`` / ``activeTabFilePath`` のいずれかが未確定なら no-op
@@ -332,6 +353,13 @@ interface AppState {
   // のみ表示、``false`` で tree 展開。
   workspaceCollapsed: boolean;
   setWorkspaceCollapsed: (collapsed: boolean) => void;
+
+  // ADR-0051 §(1) §(2): activity bar (列 0) で切替される sidebar mode。
+  // 列 1 (left sidebar) の中身を mode に応じて切替: file = FileBrowser /
+  // library = BlockPalette / search = SearchPanel inline 描画。
+  // localStorage "pyflw.sidebar_mode" に永続化。
+  sidebarMode: "file" | "library" | "search";
+  setSidebarMode: (mode: "file" | "library" | "search") => void;
   // v0.26.5: 右サイドバー (Inspector) の折りたたみ。Canvas を広げて使う用途。
   inspectorCollapsed: boolean;
   setInspectorCollapsed: (collapsed: boolean) => void;
@@ -881,6 +909,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWorkspaceCollapsed: (collapsed) => {
     writeWorkspaceCollapsed(collapsed);
     set({ workspaceCollapsed: collapsed });
+  },
+  // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
+  sidebarMode: readSidebarMode(),
+  setSidebarMode: (mode) => {
+    writeSidebarMode(mode);
+    set({ sidebarMode: mode });
   },
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
