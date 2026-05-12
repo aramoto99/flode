@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.3] - 2026-05-12 — CommandPalette Block 追加: Quick Insert (選択中 block の右に配置 + auto-connect)
+
+v0.29.2 の block 追加コマンドを **Simulink "Quick Insert" 流儀** に強化。
+キャンバスで block を 1 個選択した状態で `Ctrl+Shift+P` → 「Gain」→ Enter で
+**選択中 block の右に Gain を配置 + 自動連結** + 新 Gain を選択状態に。
+更に `Ctrl+Shift+P` → 「Scope」→ Enter で **Gain → Scope** 直列追加。
+キーボードのみで「Constant → Gain → Scope」のような信号フロー連鎖が組める。
+
+### Added
+
+- **selectedNodeIds が 1 個のとき**:
+  - 新 block の position = selected block の **右 +140 px、同 y 座標**
+  - 新 block の `default_n_inputs > 0` かつ `is_container=false` のとき
+    **auto-connect**: `selected.out[0] → new.in[0]` の edge を追加
+  - 新 block を **selection に切替** (= 連続 Quick Insert で直列に追加可能)
+- **selectedNodeIds が 0 or 複数のとき**:
+  - 従来の bounding box heuristics で配置 (= 既存 block の右下 +140 px)
+  - auto-connect は無し
+
+### 操作シナリオ
+
+```
+[初期 canvas に Source ブロック 1 個]
+1. Source を選択 (single click)
+2. Ctrl+Shift+P → "Gain" → Enter
+   → Source の右に Gain 配置 + Source.out[0] → Gain.in[0] 接続 + Gain 選択
+3. Ctrl+Shift+P → "Scope" → Enter
+   → Gain の右に Scope 配置 + Gain.out[0] → Scope.in[0] 接続 + Scope 選択
+
+結果: Source → Gain → Scope の直列接続が完成 (= マウスドラッグ不要)
+```
+
+### 制約
+
+- Source 系ブロック (= n_inputs=0) を追加する場合は auto-connect 無効
+- Subsystem (is_container=true) は内部接続が複雑なので auto-connect 対象外
+  (= 通常通り bounding box heuristics で配置のみ)
+- src_idx / dst_idx は固定で 0 のみ (= multi-port block は最初の port を使う、
+  ユーザーが別 port に繋ぎ直すには手動で edge を引き直す)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.29.2] - 2026-05-12 — コマンドパレットに Block 追加コマンド (動的、registry 30+ 件)
 
 v0.29.0 コマンドパレットを更に拡張。`Ctrl+Shift+P` → 「Gain」「constant」「Sum」

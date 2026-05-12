@@ -12,7 +12,11 @@
 
 import { getFileContent } from "../api/filesApi";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
-import { addBlockToEditing, useAppStore } from "../store/appStore";
+import {
+  addBlockToEditing,
+  addConnectionToEditing,
+  useAppStore,
+} from "../store/appStore";
 import { resolveBlocksAtPath } from "./pathResolver";
 import { buildDefaultParams, generateUniqueId } from "./idGenerator";
 import type { BlockMetadata } from "../types/api";
@@ -315,16 +319,36 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
       // 既存 ID 集合 + 一意 ID 採番
       const existingIds = new Set(view.blocks.map((b) => b.id));
       const newId = generateUniqueId(meta.type_path, existingIds);
-      // 位置決定: 既存 block の bounding box の右下 + offset
+
+      // v0.29.3: Quick Insert (= Simulink 流)。selectedNodeIds が 1 個なら
+      // **その block の右側 (+140 px) に配置 + auto-connect** (= src.out[0]
+      // → new.in[0])。複数選択 / 未選択時は従来の bounding box heuristics。
+      const selectedIds = state.selectedNodeIds;
+      const singleSelected =
+        selectedIds.length === 1
+          ? view.blocks.find((b) => b.id === selectedIds[0])
+          : undefined;
+
       let x = 100;
       let y = 100;
-      const positions = view.blocks
-        .map((b) => view.layout[b.id])
-        .filter((p): p is { x: number; y: number } => p != null);
-      if (positions.length > 0) {
-        x = Math.max(...positions.map((p) => p.x)) + 140;
-        y = Math.min(...positions.map((p) => p.y));
+      if (singleSelected) {
+        // single selection: 右隣に並べる
+        const pos = view.layout[singleSelected.id];
+        if (pos) {
+          x = pos.x + 140;
+          y = pos.y;
+        }
+      } else {
+        // 通常: 既存 block の bounding box の右下 + offset
+        const positions = view.blocks
+          .map((b) => view.layout[b.id])
+          .filter((p): p is { x: number; y: number } => p != null);
+        if (positions.length > 0) {
+          x = Math.max(...positions.map((p) => p.x)) + 140;
+          y = Math.min(...positions.map((p) => p.y));
+        }
       }
+
       const newBlock = {
         id: newId,
         type: meta.type_path,
@@ -333,6 +357,28 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
         }),
       };
       addBlockToEditing(newBlock, { x, y });
+
+      // v0.29.3 Quick Insert: 新 block が入力を持ち、かつ singleSelected が
+      // 出力を持つなら auto-connect (= source.out[0] → new.in[0])
+      if (
+        singleSelected !== undefined &&
+        meta.default_n_inputs > 0 &&
+        !meta.is_container // Subsystem は内部接続が複雑なので skip
+      ) {
+        // ADR-0039 派生 property: Subsystem の n_outputs は registry の
+        // default_n_outputs ではなく内部 Outport 数で決まるが、Quick Insert
+        // 元の selectedSource は通常ブロック想定 (= subsystem を source に
+        // 選んでいる場合も view.blocks に居るので connect 自体は OK)
+        addConnectionToEditing({
+          src: singleSelected.id,
+          src_idx: 0,
+          dst: newId,
+          dst_idx: 0,
+        });
+        // selection を新 block に移す (= 連続 Quick Insert で「→ Gain →
+        // Scope」のように直列追加できる、Simulink 流儀)
+        state.selectNode(newId);
+      }
     },
   }));
 }
