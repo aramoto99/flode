@@ -327,13 +327,16 @@ class TestDelete:
 
 class TestMkdir:
     def test_creates_new_directory(self, client: TestClient, workspace: Path) -> None:
+        # v0.31.4: 204 No Content (= delete と同じ pattern、201 + 空 body は
+        # frontend `_fetch` の `response.json()` で「Unexpected end of JSON
+        # input」エラーになっていたため統一)
         r = client.post("/api/v1/files/mkdir", params={"path": "new_dir"})
-        assert r.status_code == 201
+        assert r.status_code == 204
         assert (workspace / "new_dir").is_dir()
 
     def test_creates_nested_directory(self, client: TestClient, workspace: Path) -> None:
         r = client.post("/api/v1/files/mkdir", params={"path": "a/b/c"})
-        assert r.status_code == 201
+        assert r.status_code == 204
         assert (workspace / "a" / "b" / "c").is_dir()
 
     def test_409_for_existing_directory(self, client: TestClient, workspace: Path) -> None:

@@ -482,11 +482,16 @@ def mkdir(request: Request, path: str) -> Response:
     ``exist_ok=False`` (= 既存なら 409)。
 
     Status:
-        * 201: 作成成功
+        * 204: 作成成功 (body なし、DELETE と同じ pattern)
         * 400: workspace root を作成しようとした
         * 403: path traversal
         * 409: 既存
         * 500: I/O エラー
+
+    v0.31.4: 旧 v0.31.3 まで 201 Created + 空 body を返していたが、frontend の
+    ``_fetch`` が 204 のみ空 body を許容する仕様 (= ``response.json()`` を呼ぶ)
+    で「Unexpected end of JSON input」エラー → エラーで catch されて
+    ``refresh()`` が走らず、画面更新されないバグ。204 に統一して解消。
     """
     workspace_root = _workspace_root(request)
     resolved = _resolve(workspace_root, path)
@@ -501,7 +506,7 @@ def mkdir(request: Request, path: str) -> Response:
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Cannot create directory: {e}") from e
 
-    return Response(status_code=201)
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-05-13 — `mkdir` API の status code を 204 に統一 (フォルダ作成後の自動更新を修正)
+
+v0.31.3 で「新規フォルダ」アイコンを追加した直後にユーザーが発見した bug:
+
+```
+Mkdir failed: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+```
+
+フォルダ自体は作成されるが、エラー dialog が出て、`refresh()` も呼ばれないため
+FileBrowser が自動更新されない (= 手動で 🔄 を押すまで反映されない)。
+
+### 根本原因
+
+- backend `POST /api/v1/files/mkdir` が **`Response(status_code=201)` + 空 body** を返却
+- frontend `_fetch` は **204 No Content のみ** 空 body を許容 (= `response.json()`
+  を呼ぶ)、201 を受けると JSON parse で「Unexpected end of JSON input」エラー
+- エラーで `await refresh()` がスキップ → 画面更新されない連鎖
+
+### Fixed
+
+- **backend `mkdir` を `Response(status_code=204)` に変更** (= 既存 `DELETE` と
+  同じ pattern に統一)。frontend `_fetch` は 204 で undefined を return するため
+  エラーが起きず、`await refresh()` が走り FileBrowser が自動更新される
+- 対応する `tests/server/test_files_api.py` の `TestMkdir` を 201 → 204 に更新
+
+### Verification
+
+- pytest: TestMkdir 6 件全 pass
+- (frontend mkdir API client は変更なし、`_fetch` が undefined 早期 return)
+
 ## [0.31.3] - 2026-05-13 — FileBrowser ヘッダーに新規ファイル/フォルダ アイコン追加 + 右クリック context menu の発火範囲修正
 
 JupyterLab 流の FileBrowser に寄せる UX 改善。ユーザー指摘:
