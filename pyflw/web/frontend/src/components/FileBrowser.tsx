@@ -400,9 +400,10 @@ export function FileBrowser(): JSX.Element {
 
   const handleNewFolder = useCallback(
     async (parentPath: string) => {
+      // v0.31.5: prompt のデフォルト値 "subdir" を削除 (= ユーザー要望、
+      // 何も書かれていない空欄から入力させる)
       const name = window.prompt(
         t("filebrowser.prompt_new_folder", "New folder name:"),
-        "subdir",
       );
       if (!name) return;
       const fullPath = parentPath ? `${parentPath}/${name}` : name;

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.5] - 2026-05-13 — 新規フォルダ prompt のデフォルト値 "subdir" を削除
+
+ユーザー要望: 新規フォルダ作成 prompt のデフォルト文字列 "subdir" が
+入っているのは邪魔 (= 全選択して消してから打ち直す必要があり面倒)。
+
+### Changed
+
+- `handleNewFolder` の `window.prompt` 第 2 引数 (= デフォルト値) を削除し、
+  空欄から入力させる動線に変更
+- `handleNewFile` 側は `untitled.flw.json` を据え置く (= `.flw.json` 拡張子の
+  タイピング省略テンプレートとしての価値を維持、untitled 自体は v0.31.1 で
+  prompt 化済のためディスク汚染問題はない)
+
 ## [0.31.4] - 2026-05-13 — `mkdir` API の status code を 204 に統一 (フォルダ作成後の自動更新を修正)
 
 v0.31.3 で「新規フォルダ」アイコンを追加した直後にユーザーが発見した bug:
