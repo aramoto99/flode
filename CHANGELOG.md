@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-05-13 — New file の untitled 自動連番を廃止 + 一括クリーンアップ
+
+v0.31.0 までは `Launcher` / `MenuBar` の "New file" 押下で `nextUntitledFilePath`
+経由で `untitled1, untitled2, ... .flw.json` がディスクに自動連番で書き込まれ、
+削除しないと無制限に蓄積するバグ (= ADR-0041「ファイル自身が真実」の副作用)。
+ユーザー要望で A + C の修正:
+
+### Changed (A: 自動連番廃止)
+
+- **Launcher.handleNew / MenuBar.handleNew** の挙動を変更:
+  - 旧 v0.31.0: `nextUntitledFilePath()` で N+1 を取り即 putFileContent
+  - 新 v0.31.1: **`window.prompt` でファイル名をユーザーに明示要求**、空 /
+    Cancel で **no-op** (= ディスク書き込みなし)
+  - 入力ファイル名が `.flw.json` で終わっていない場合は自動付与
+  - 作成先は **現在の cwd** (= FileBrowser breadcrumb に従う、JupyterLab 流)
+- `nextUntitledFilePath` の import を撤去 (backend API は残置、不要)
+
+### Added (C: 一括クリーンアップコマンド)
+
+- **CommandPalette に新規コマンド**: 「未使用の untitled ファイルを整理」/
+  "Clean up unused untitled files" (Category: Workspace)
+- 動作:
+  1. `fileTree("")` で workspace root の直下を列挙
+  2. `^untitled\d*\.flw\.json$` にマッチし、かつ **現在 tabs[] に開かれていない**
+     ファイルを抽出
+  3. 個数 + 先頭 20 件を確認 dialog で表示、ユーザー承認で順次 `deleteFile`
+  4. 成功 / 失敗を集計 alert
+- 安全策: workspace root の直下のみ対象 (= サブフォルダ内の untitled は除外)、
+  開いている tab は除外
+- i18n: `command.workspace.cleanup_untitled` (ja/en)
+
+### 操作シナリオ
+
+```
+# 既存の大量 untitled を掃除:
+1. Ctrl+Shift+P でコマンドパレット
+2. 「未使用の untitled」or "cleanup" で検索
+3. Enter → 「Delete 113 unused untitled file(s)?」 confirm
+4. OK → 全削除
+
+# 今後の untitled 増殖を防止:
+- Launcher / MenuBar の「New」を押す → prompt で名前を要求
+- 空入力 or Cancel = 何も作成されない
+```
+
+### 既知の制約 (= 次の minor 候補)
+
+- **真の解決 = JupyterLab 流の memory-only unsaved** は別途 ADR で扱う (=
+  本 hotfix では即決ファイル化を維持、prompt で明示化に留める)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.31.0] - 2026-05-13 — FileBrowser を JupyterLab 流 cwd フォーカス型に書き換え
 
 ユーザー要望「ワークスペースのカレントディレクトリ移動」に対応。FileBrowser を

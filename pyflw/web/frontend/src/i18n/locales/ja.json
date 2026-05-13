@@ -216,6 +216,7 @@
   "launcher.tile.open": "開く",
   "launcher.recent.empty": "最近開いたファイルはありません",
   "launcher.recent.show_all": "すべて表示...",
+  "launcher.prompt_new": "新規ファイル名 (.flw.json):",
 
   "command.palette.title": "コマンドパレット",
   "command.palette.placeholder": "コマンドを入力 (上下キーで選択、Enter で実行)",
@@ -227,6 +228,7 @@
   "command.category.workspace": "ワークスペース",
   "command.category.block": "ブロック",
   "command.block.add": "ブロックを追加",
+  "command.workspace.cleanup_untitled": "未使用の untitled ファイルを整理",
   "command.file.new": "新規ファイル",
   "command.file.save": "保存",
   "command.file.open_recent": "最近のファイルを開く",

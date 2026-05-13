@@ -216,6 +216,7 @@
   "launcher.tile.open": "Open",
   "launcher.recent.empty": "No recent files",
   "launcher.recent.show_all": "Show all...",
+  "launcher.prompt_new": "New file name (.flw.json):",
 
   "command.palette.title": "Command Palette",
   "command.palette.placeholder": "Type a command (↑/↓ to navigate, Enter to run)",
@@ -227,6 +228,7 @@
   "command.category.workspace": "Workspace",
   "command.category.block": "Block",
   "command.block.add": "Add block",
+  "command.workspace.cleanup_untitled": "Clean up unused untitled files",
   "command.file.new": "New file",
   "command.file.save": "Save",
   "command.file.open_recent": "Open recent",

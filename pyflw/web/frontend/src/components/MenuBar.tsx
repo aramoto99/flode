@@ -12,7 +12,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   deleteFile,
   getFileContent,
-  nextUntitledFilePath,
   putFileContent,
 } from "../api/filesApi";
 import {
@@ -112,9 +111,18 @@ export function MenuBar(): JSX.Element {
 
   const handleNew = async (): Promise<void> => {
     setOpenMenu(null);
+    // v0.31.1: 自動連番 (= nextUntitledFilePath) を廃止、prompt でファイル名を
+    // ユーザーに明示要求 (Launcher と同じ挙動)。
+    const input = window.prompt(
+      t("launcher.prompt_new", "New file name (.flw.json):"),
+      "untitled.flw.json",
+    );
+    if (!input) return;
+    const name = input.endsWith(".flw.json") ? input : `${input}.flw.json`;
+    const fileBrowserCwd = useAppStore.getState().fileBrowserCwd;
+    const path = fileBrowserCwd ? `${fileBrowserCwd}/${name}` : name;
     try {
-      const path = await nextUntitledFilePath();
-      const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
+      const empty = emptyModel(name.replace(/\.flw\.json$/, ""));
       await putFileContent(path, empty);
       const data = await getFileContent(path);
       // ADR-0043 §論点 2: tab に追加 + active 化を 1 アクションで

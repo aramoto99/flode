@@ -19,7 +19,6 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import {
   getFileContent,
-  nextUntitledFilePath,
   putFileContent,
 } from "../api/filesApi";
 import { readRecentFiles } from "../lib/recentFiles";
@@ -69,9 +68,20 @@ export function Launcher(): JSX.Element {
   }, [workspaceHash]);
 
   const handleNew = async (): Promise<void> => {
+    // v0.31.1: 自動連番 (= nextUntitledFilePath) を廃止、prompt でファイル名を
+    // ユーザーに明示要求 (= untitled1, untitled2, ... がディスクに溜まる
+    // バグの根本対策)。空 / キャンセルで no-op。
+    const input = window.prompt(
+      t("launcher.prompt_new", "New file name (.flw.json):"),
+      "untitled.flw.json",
+    );
+    if (!input) return;
+    const name = input.endsWith(".flw.json") ? input : `${input}.flw.json`;
+    // cwd 配下に作成 (= JupyterLab 流、breadcrumb で見えてる場所に作る)
+    const fileBrowserCwd = useAppStore.getState().fileBrowserCwd;
+    const path = fileBrowserCwd ? `${fileBrowserCwd}/${name}` : name;
     try {
-      const path = await nextUntitledFilePath();
-      const empty = emptyModel(path.replace(/\.flw\.json$/, ""));
+      const empty = emptyModel(name.replace(/\.flw\.json$/, ""));
       await putFileContent(path, empty);
       const data = await getFileContent(path);
       openFileInTab(path, data.content, data.mtime, data.etag);

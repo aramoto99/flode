@@ -10,7 +10,7 @@
 // 等は KeyboardEvent を window.dispatchEvent で投げて、既存 ``useShortcuts``
 // / ``useAutoSave`` / ``MenuBar`` の listener に処理させる。
 
-import { getFileContent } from "../api/filesApi";
+import { deleteFile, fileTree, getFileContent } from "../api/filesApi";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
 import {
   localizedDisplayName,
@@ -236,7 +236,78 @@ export function buildCommandRegistry(): Command[] {
         s.setInspectorCollapsed(!s.inspectorCollapsed);
       },
     },
+
+    // v0.31.1: 不要な untitled* を一括削除 (= ADR-0041 副作用バグの後始末)
+    {
+      id: "workspace.cleanup_untitled",
+      category: "workspace",
+      labelKey: "command.workspace.cleanup_untitled",
+      keywords: ["cleanup", "untitled", "整理", "削除", "クリーンアップ"],
+      action: async () => {
+        await cleanupUntitled();
+      },
+    },
   ];
+}
+
+/** v0.31.1: workspace 直下の `untitled*.flw.json` のうち、現在のタブ群に
+ * 開かれていないもの **すべて** を順次削除する。confirm dialog で個数を確認。
+ *
+ * 安全策:
+ * - 現在 active な tab の path は除外
+ * - 開いている tabs[] の path も除外
+ * - workspace root の **直下のみ** 対象 (= サブフォルダの untitled は対象外、
+ *   サブフォルダ内の作業データを誤削除しないため)
+ */
+async function cleanupUntitled(): Promise<void> {
+  const state = useAppStore.getState();
+  const openPaths = new Set(state.tabs.map((tab) => tab.filePath));
+  if (state.activeTabFilePath) openPaths.add(state.activeTabFilePath);
+  let listing;
+  try {
+    listing = await fileTree("");
+  } catch (e) {
+    window.alert(`Cleanup failed: ${(e as Error).message}`);
+    return;
+  }
+  const targets = listing.children
+    .filter(
+      (entry) =>
+        entry.type === "file" &&
+        /^untitled\d*\.flw\.json$/.test(entry.name) &&
+        !openPaths.has(entry.name),
+    )
+    .map((entry) => entry.name);
+  if (targets.length === 0) {
+    window.alert(
+      "No unused untitled files found at workspace root.\n" +
+        "(現在 tab で開かれていない untitled*.flw.json は見つかりませんでした)",
+    );
+    return;
+  }
+  const ok = window.confirm(
+    `Delete ${targets.length} unused untitled file(s) at workspace root?\n\n` +
+      targets.slice(0, 20).join("\n") +
+      (targets.length > 20 ? `\n... and ${targets.length - 20} more` : ""),
+  );
+  if (!ok) return;
+  let success = 0;
+  const failures: string[] = [];
+  for (const path of targets) {
+    try {
+      await deleteFile(path);
+      success++;
+    } catch (e) {
+      failures.push(`${path}: ${(e as Error).message}`);
+    }
+  }
+  if (failures.length > 0) {
+    window.alert(
+      `Cleaned ${success} / ${targets.length}.\nFailed:\n${failures.slice(0, 10).join("\n")}`,
+    );
+  } else {
+    window.alert(`Cleaned ${success} untitled files.`);
+  }
 }
 
 /** v0.29.1: 現在のワークスペースの Recent Files を動的 command として展開。
