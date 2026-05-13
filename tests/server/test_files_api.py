@@ -358,6 +358,63 @@ class TestMkdir:
         assert r.status_code == 403
 
 
+# ---------------------------------------------------------------------------
+# POST /copy (v0.31.9)
+# ---------------------------------------------------------------------------
+
+
+class TestCopy:
+    def test_copies_file(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "src.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "src.flw.json", "to": "dst.flw.json"})
+        assert r.status_code == 204
+        assert (workspace / "src.flw.json").is_file()  # 元は残る
+        assert (workspace / "dst.flw.json").is_file()
+
+    def test_copies_directory_recursively(self, client: TestClient, workspace: Path) -> None:
+        (workspace / "src_dir").mkdir()
+        _seed_flw_json(workspace, "src_dir/a.flw.json")
+        _seed_flw_json(workspace, "src_dir/b.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "src_dir", "to": "dst_dir"})
+        assert r.status_code == 204
+        assert (workspace / "dst_dir" / "a.flw.json").is_file()
+        assert (workspace / "dst_dir" / "b.flw.json").is_file()
+
+    def test_404_for_missing_source(self, client: TestClient) -> None:
+        r = client.post("/api/v1/files/copy", params={"from": "nope.flw.json", "to": "x.flw.json"})
+        assert r.status_code == 404
+
+    def test_409_for_existing_destination(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "src.flw.json")
+        _seed_flw_json(workspace, "dst.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "src.flw.json", "to": "dst.flw.json"})
+        assert r.status_code == 409
+
+    def test_400_for_same_source_and_destination(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "x.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "x.flw.json", "to": "x.flw.json"})
+        assert r.status_code == 400
+
+    def test_400_for_workspace_root_as_source(self, client: TestClient) -> None:
+        r = client.post("/api/v1/files/copy", params={"from": "", "to": "anywhere"})
+        assert r.status_code == 400
+
+    def test_403_for_path_traversal_source(self, client: TestClient) -> None:
+        r = client.post("/api/v1/files/copy", params={"from": "../escape", "to": "x"})
+        assert r.status_code == 403
+
+    def test_403_for_path_traversal_destination(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "x.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "x.flw.json", "to": "../escape"})
+        assert r.status_code == 403
+
+    def test_creates_destination_parent(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "src.flw.json")
+        r = client.post("/api/v1/files/copy", params={"from": "src.flw.json", "to": "new_dir/sub/dst.flw.json"})
+        assert r.status_code == 204
+        assert (workspace / "new_dir" / "sub" / "dst.flw.json").is_file()
+
+
 # ADR-0043 §論点 1-A / §論点 8-A: workspace_info endpoint
 class TestWorkspaceInfo:
     def test_returns_absolute_path_and_hash(self, client: TestClient, workspace: Path) -> None:

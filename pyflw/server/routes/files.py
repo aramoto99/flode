@@ -14,6 +14,7 @@ JupyterLab ``jupyter_server.contents`` API 互換の 6 endpoint を提供する�
 | ``POST`` | ``/files/rename`` body ``{from, to}`` | リネーム / 移動 |
 | ``DELETE`` | ``/files?path=<rel>`` | ファイル / 空ディレクトリ削除 |
 | ``POST`` | ``/files/mkdir?path=<rel>`` | ディレクトリ作成 (mkdir -p、末尾 segment は ``exist_ok=False``) |
+| ``POST`` | ``/files/copy?from=<rel>&to=<rel>`` | ファイル / ディレクトリ複製 (v0.31.9、末尾は ``exist_ok=False``) |
 
 Path traversal 防御は ``pyflw.server.security.resolve_workspace_path`` (ADR-0041
 §2) に集約。本モジュールは business logic のみ。
@@ -25,13 +26,14 @@ import errno
 import hashlib
 import json
 import logging
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pathspec
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from rapidfuzz import fuzz
 
@@ -505,6 +507,63 @@ def mkdir(request: Request, path: str) -> Response:
         resolved.mkdir(parents=True, exist_ok=False)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Cannot create directory: {e}") from e
+
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# POST /copy (v0.31.9)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/copy")
+def copy_path(
+    request: Request,
+    from_: str = Query(alias="from"),
+    to: str = Query(),
+) -> Response:
+    """ファイル / ディレクトリを複製 (= JupyterLab "Duplicate" の汎用版)。
+
+    Frontend の Ctrl+C / Ctrl+V (v0.31.9) から呼ばれる。同一 workspace 内の
+    src → dst 複製のみサポート (workspace 越え禁止は ``_resolve`` の path
+    traversal 防御で担保)。``dst`` の親ディレクトリは ``parents=True`` で
+    auto-create、``dst`` 自身は ``exist_ok=False`` (= 既存なら 409)。
+
+    引数名は ``from`` が Python 予約語のため ``from_`` を内部名にし、FastAPI
+    の query parameter は ``from`` のまま使えるよう関数シグネチャ上の名前
+    だけを変えている。
+
+    Status:
+        * 204: 複製成功 (body なし)
+        * 400: src と dst が同一、または workspace root を src/dst にしようとした
+        * 403: path traversal
+        * 404: src が存在しない
+        * 409: dst が既存
+        * 500: I/O エラー
+    """
+    workspace_root = _workspace_root(request)
+    src = _resolve(workspace_root, from_)
+    dst = _resolve(workspace_root, to)
+
+    if _is_same_as_workspace_root(src, workspace_root):
+        raise HTTPException(status_code=400, detail="Cannot copy workspace root")
+    if _is_same_as_workspace_root(dst, workspace_root):
+        raise HTTPException(status_code=400, detail="Cannot overwrite workspace root")
+    if src == dst:
+        raise HTTPException(status_code=400, detail="Source and destination are the same")
+    if not src.exists():
+        raise HTTPException(status_code=404, detail=f"Source not found: {from_}")
+    if dst.exists():
+        raise HTTPException(status_code=409, detail=f"Destination already exists: {to}")
+
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Cannot copy: {e}") from e
 
     return Response(status_code=204)
 

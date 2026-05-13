@@ -159,6 +159,16 @@ export async function mkdir(path: string): Promise<void> {
   await _fetch<void>(`${API_BASE}/mkdir?${_query(path)}`, { method: "POST" });
 }
 
+/**
+ * POST /api/v1/files/copy?from=<rel>&to=<rel> — ファイル / ディレクトリを複製
+ * (v0.31.9、Ctrl+C / Ctrl+V から呼ばれる)。``to`` の親ディレクトリは
+ * auto-create、``to`` 自身は ``exist_ok=False`` (= 既存なら 409)。
+ */
+export async function copyFile(from: string, to: string): Promise<void> {
+  const params = new URLSearchParams({ from, to });
+  await _fetch<void>(`${API_BASE}/copy?${params.toString()}`, { method: "POST" });
+}
+
 // ADR-0043 §論点 1-A / §論点 8-A: workspace_info
 export interface WorkspaceInfoResponse {
   absolute_path: string;

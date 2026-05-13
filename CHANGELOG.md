@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.9] - 2026-05-13 — FileBrowser のコピー / 貼り付け (Ctrl+C / Ctrl+V) + backend `/files/copy` API
+
+ユーザー要望「全選択 / 矩形選択 / コピー」の Phase 3 (= 最終)。
+
+### Added — Backend
+
+- **`POST /api/v1/files/copy?from=<rel>&to=<rel>`** を新設。`shutil.copy2` /
+  `shutil.copytree` で同一 workspace 内 src → dst 複製。`dst` の親は
+  `parents=True` で auto-create、`dst` 自身は `exist_ok=False`。
+  - 204: 成功 (body なし)
+  - 400: src/dst が workspace root、src == dst
+  - 403: path traversal
+  - 404: src 不在
+  - 409: dst 既存
+  - 500: I/O エラー
+- `TestCopy` 9 件 (= ファイル単体 / ディレクトリ再帰 / 各エラー分岐 / 親 auto-create)
+
+### Added — Frontend
+
+- **`copyFile(from, to)`** API client (`src/api/filesApi.ts`)
+- **クリップボード state** (FileBrowser 内 `useState<string[]>`)。OS clipboard
+  とは独立。`preventDefault` で OS 操作と非干渉
+- **Ctrl+C / Cmd+C**: selectedPaths (空なら selectedFilePath) をクリップボードに
+  保存
+- **Ctrl+V / Cmd+V**: クリップボードの各 path を現在の cwd 配下に複製。複製名は
+  `generateCopyName` で衝突回避 (= `model.flw.json` → `model (copy).flw.json` →
+  `model (copy 2).flw.json` …)。二重拡張子 `.flw.json` を 1 つの ext として扱う
+
+### 使い方
+
+```
+1. アイテムを Ctrl+クリック or 矩形ドラッグで複数選択
+2. Ctrl+C  ← クリップボードに記憶
+3. (任意) breadcrumb で別フォルダへ cd
+4. Ctrl+V  ← 現在の cwd に複製
+```
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+- pytest: 66 全 pass (TestCopy 9 件追加 + 既存 57)
+
 ## [0.31.8] - 2026-05-13 — FileBrowser に marquee (矩形ドラッグ) 選択を追加
 
 ユーザー要望「全選択 / 矩形選択 / コピー (削除を便利にするため)」の Phase 2。

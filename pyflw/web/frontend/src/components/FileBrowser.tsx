@@ -27,6 +27,7 @@ import {
   type FileTreeResponse,
   fileTree,
   FileApiUnavailableError,
+  copyFile,
   deleteFile,
   getFileContent,
   mkdir,
@@ -92,6 +93,31 @@ function serializePathsMime(paths: string[]): string {
   return JSON.stringify(paths);
 }
 
+/** v0.31.9: copy/paste で衝突しない複製名を生成する。
+ *
+ * 例:
+ * - "model.flw.json" + existing={"model.flw.json"} → "model (copy).flw.json"
+ * - 上記がさらに衝突 → "model (copy 2).flw.json"
+ * - "no_ext" + existing={"no_ext"} → "no_ext (copy)"
+ *
+ * 拡張子は **最初の `.` 以降** 全体を「拡張子」とみなす (= ".flw.json" の
+ * 二重拡張子を 1 つの ext として保つ)。
+ */
+function generateCopyName(originalName: string, existing: Set<string>): string {
+  if (!existing.has(originalName)) return originalName;
+  const dotIdx = originalName.indexOf(".");
+  const base = dotIdx >= 0 ? originalName.slice(0, dotIdx) : originalName;
+  const ext = dotIdx >= 0 ? originalName.slice(dotIdx) : "";
+  for (let i = 1; i < 1000; i++) {
+    const candidate = i === 1
+      ? `${base} (copy)${ext}`
+      : `${base} (copy ${i})${ext}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  // フォールバック: タイムスタンプで一意性を確保
+  return `${base} (copy ${Date.now()})${ext}`;
+}
+
 /**
  * 左サイドバーに置く workspace ツリービュー。React Query で 1 階層分の `tree`
  * 結果をキャッシュし、ディレクトリを開いた時点で個別 fetch する設計
@@ -114,6 +140,10 @@ export function FileBrowser(): JSX.Element {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // v0.31.9: copy/paste クリップボード。Ctrl+C で selectedPaths (空なら
+  // selectedFilePath) をセット、Ctrl+V で現在の cwd 直下に順次複製 (= API
+  // copyFile)。OS clipboard とは独立 (= preventDefault で誤介入を抑止)。
+  const [clipboard, setClipboard] = useState<string[]>([]);
   // v0.28.2: multi-select state (= Ctrl+クリックで追加選択、drag-drop で複数移動)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   // v0.20.4: 折りたたみ状態 (localStorage 連動、appStore 経由)
@@ -466,11 +496,51 @@ export function FileBrowser(): JSX.Element {
     ],
   );
 
+  // v0.31.9: Ctrl+V 貼り付け。クリップボードの各 path を現在の cwd 配下に
+  // copyFile で複製。target name は basename 衝突を回避するため "(copy)" suffix を
+  // 動的に付与 (= JupyterLab 流の "Duplicate" と同じ挙動)。
+  const handlePaste = useCallback(async () => {
+    if (clipboard.length === 0) return;
+    const treeData = queryClient.getQueryData<FileTreeResponse>([
+      "files-tree",
+      fileBrowserCwd,
+    ]);
+    if (!treeData) {
+      window.alert("Paste failed: file listing not loaded yet");
+      return;
+    }
+    const existing = new Set(treeData.children.map((e) => e.name));
+    const failures: { from: string; error: string }[] = [];
+    const createdPaths: string[] = [];
+    for (const src of clipboard) {
+      const base = src.split("/").pop() ?? src;
+      const newName = generateCopyName(base, existing);
+      existing.add(newName);
+      const dst = fileBrowserCwd ? `${fileBrowserCwd}/${newName}` : newName;
+      try {
+        await copyFile(src, dst);
+        createdPaths.push(dst);
+      } catch (e) {
+        failures.push({ from: src, error: (e as Error).message });
+      }
+    }
+    await refresh();
+    if (failures.length > 0) {
+      const summary = failures
+        .map((f) => `  - ${f.from}: ${f.error}`)
+        .join("\n");
+      window.alert(
+        `Paste failed for ${failures.length} / ${clipboard.length}:\n${summary}`,
+      );
+    }
+  }, [clipboard, fileBrowserCwd, queryClient, refresh]);
+
   // v0.31.6: ファイル操作ショートカット handler (= focus が FileBrowser 内に
   // ある時のみ発火)。F2 = rename / Delete・Backspace = 削除 / Enter = 開く /
   // Escape = 選択クリア。
   // v0.31.7: Ctrl+A 全選択 + multi-delete (= selectedPaths.size > 0 なら一括削除)
   // を追加。
+  // v0.31.9: Ctrl+C コピー / Ctrl+V 貼り付け。
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
       // rename 用 input にフォーカスがあるときは何もしない (= ブラウザネイティブの
@@ -497,6 +567,29 @@ export function FileBrowser(): JSX.Element {
           fileBrowserCwd ? `${fileBrowserCwd}/${entry.name}` : entry.name,
         );
         setSelectedPaths(new Set(allPaths));
+        return;
+      }
+
+      // v0.31.9: Ctrl+C / Cmd+C: 選択中アイテムをクリップボードに保存。
+      // selectedPaths が非空ならそれを、空なら selectedFilePath 単独を保存。
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        const targets =
+          selectedPaths.size > 0
+            ? Array.from(selectedPaths)
+            : selectedFilePath !== null
+              ? [selectedFilePath]
+              : [];
+        if (targets.length === 0) return;
+        e.preventDefault();
+        setClipboard(targets);
+        return;
+      }
+
+      // v0.31.9: Ctrl+V / Cmd+V: クリップボードの各 path を現在の cwd 配下に複製
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (clipboard.length === 0) return;
+        e.preventDefault();
+        void handlePaste();
         return;
       }
 
@@ -545,6 +638,8 @@ export function FileBrowser(): JSX.Element {
       handleDelete,
       handleDeleteMany,
       handleOpen,
+      handlePaste,
+      clipboard,
       queryClient,
       fileBrowserCwd,
     ],
