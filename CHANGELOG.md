@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.8] - 2026-05-13 — FileBrowser に marquee (矩形ドラッグ) 選択を追加
+
+ユーザー要望「全選択 / 矩形選択 / コピー (削除を便利にするため)」の Phase 2。
+複数アイテムを drag-rectangle で囲んで一括選択し、Delete で一括削除できる。
+
+### Added
+
+- **空白部分から左マウスドラッグ → 矩形選択**: drag 中は半透明の青枠
+  (`border-blue-500/60 bg-blue-300/20`) overlay を描画、mouseup で矩形と
+  各 row の `getBoundingClientRect()` が重なる path を `selectedPaths` に
+  まとめて設定 (= 既存集合を置換)
+- **空白クリック (= drag 距離 < 4 px) で選択クリア** (JupyterLab 流)
+
+### Implementation Notes
+
+- marquee state は `CwdView` 内に保持 (`marqueeStart` / `marqueeCurrent`)、
+  document-level の `mousemove` / `mouseup` listener を `useEffect` で
+  attach。drag が FileBrowser 外に出ても追従する
+- 各 `CwdEntryRow` の `<li>` に `data-pyflw-path` 属性を付与、
+  `querySelectorAll('li[data-pyflw-path]')` で衝突判定対象を取得
+- 既存の HTML5 file drag-drop (= `selectedPaths` 集合まとめて移動) は li 内
+  でしか開始しないため、空白からの marquee と非干渉
+- 新規 prop `CwdView.onReplaceSelection: (paths: string[]) => void` を導入、
+  FileBrowser 側で `setSelectedPaths(new Set(paths))` に bind
+
+### Verification
+
+- typecheck: clean
+- vitest (fileBrowser.test): 全 pass
+
 ## [0.31.7] - 2026-05-13 — Ctrl+A 全選択 + Delete で multi-delete
 
 ユーザー要望「コピー / 全選択 / 矩形選択 (削除を便利にするため)」のうち、

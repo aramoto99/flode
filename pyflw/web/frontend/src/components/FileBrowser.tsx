@@ -636,6 +636,7 @@ export function FileBrowser(): JSX.Element {
               return next;
             })
           }
+          onReplaceSelection={(paths) => setSelectedPaths(new Set(paths))}
         />
       )}
       {pendingOpenPath !== null && (
@@ -1278,6 +1279,8 @@ interface CwdViewProps {
   selectedFilePath: string | null;
   selectedPaths: Set<string>;
   onToggleSelection: (path: string) => void;
+  /** v0.31.8: marquee (矩形ドラッグ) 選択完了時に呼ばれる。引数は新しい選択集合。 */
+  onReplaceSelection: (paths: string[]) => void;
 }
 
 function CwdView({
@@ -1290,6 +1293,7 @@ function CwdView({
   selectedFilePath,
   selectedPaths,
   onToggleSelection,
+  onReplaceSelection,
 }: CwdViewProps): JSX.Element {
   const { t } = useTranslation();
   const cwd = useAppStore((s) => s.fileBrowserCwd);
@@ -1326,6 +1330,84 @@ function CwdView({
     const sources = parsePathsMime(raw);
     void onMove(sources, cwd);
   };
+
+  // v0.31.8: marquee (矩形ドラッグ) 選択。空白部分から mouseDown → ドラッグ →
+  // mouseUp で、矩形と各 row の bounding box が重なる行を `onReplaceSelection`
+  // に通知。row 上 (= li 要素内) で開始した場合は HTML5 drag-drop に譲るため
+  // marquee 起動しない (= 既存の「ファイル間移動」drag-drop と非干渉)。
+  const listBodyRef = useRef<HTMLDivElement>(null);
+  const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const [marqueeCurrent, setMarqueeCurrent] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const onListBodyMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return; // 左クリックのみ
+    const target = e.target as HTMLElement;
+    if (target.closest('li[data-pyflw-path]')) return; // row の上は drag-drop に譲る
+    setMarqueeStart({ x: e.clientX, y: e.clientY });
+    setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+  };
+
+  useEffect(() => {
+    if (!marqueeStart) return;
+    const onMove = (e: MouseEvent): void => {
+      setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+    };
+    const onUp = (_e: MouseEvent): void => {
+      const list = listBodyRef.current;
+      if (list && marqueeStart && marqueeCurrent) {
+        const x1 = Math.min(marqueeStart.x, marqueeCurrent.x);
+        const y1 = Math.min(marqueeStart.y, marqueeCurrent.y);
+        const x2 = Math.max(marqueeStart.x, marqueeCurrent.x);
+        const y2 = Math.max(marqueeStart.y, marqueeCurrent.y);
+        const distance = Math.hypot(x2 - x1, y2 - y1);
+        if (distance < 4) {
+          // 移動距離が極小 = 単なる空白クリックとして扱い、選択をクリア
+          onReplaceSelection([]);
+        } else {
+          const rows = list.querySelectorAll<HTMLElement>("li[data-pyflw-path]");
+          const hits: string[] = [];
+          rows.forEach((row) => {
+            const r = row.getBoundingClientRect();
+            if (r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1) {
+              const p = row.dataset.pyflwPath;
+              if (p) hits.push(p);
+            }
+          });
+          onReplaceSelection(hits);
+        }
+      }
+      setMarqueeStart(null);
+      setMarqueeCurrent(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [marqueeStart, marqueeCurrent, onReplaceSelection]);
+
+  // marquee overlay の `position: absolute` 値 (= list body 相対座標)
+  const marqueeRect = ((): {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null => {
+    if (!marqueeStart || !marqueeCurrent || !listBodyRef.current) return null;
+    const listRect = listBodyRef.current.getBoundingClientRect();
+    const x1 = Math.min(marqueeStart.x, marqueeCurrent.x) - listRect.left;
+    const y1 = Math.min(marqueeStart.y, marqueeCurrent.y) - listRect.top;
+    const x2 = Math.max(marqueeStart.x, marqueeCurrent.x) - listRect.left;
+    const y2 = Math.max(marqueeStart.y, marqueeCurrent.y) - listRect.top;
+    if (x2 - x1 < 2 && y2 - y1 < 2) return null; // 描画閾値
+    return { left: x1, top: y1, width: x2 - x1, height: y2 - y1 };
+  })();
 
   return (
     <div
@@ -1401,11 +1483,13 @@ function CwdView({
           </span>
         ))}
       </div>
-      {/* flat list 本体 */}
+      {/* flat list 本体 (= marquee overlay の anchor として relative にする) */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto py-1"
+        ref={listBodyRef}
+        className="relative min-h-0 flex-1 overflow-y-auto py-1"
         onDragOver={onCwdDragOver}
         onDrop={onCwdDrop}
+        onMouseDown={onListBodyMouseDown}
       >
         {error instanceof FileApiUnavailableError && (
           <div className="px-3 py-2 text-[11px] text-amber-600">
@@ -1456,6 +1540,20 @@ function CwdView({
                 />
               ))}
           </ul>
+        )}
+        {/* v0.31.8: marquee overlay。pointer-events-none で配下 row のクリックを
+            妨げない (= mousemove は document に attach 済) */}
+        {marqueeRect && (
+          <div
+            className="pointer-events-none absolute border border-blue-500/60 bg-blue-300/20"
+            style={{
+              left: marqueeRect.left,
+              top: marqueeRect.top,
+              width: marqueeRect.width,
+              height: marqueeRect.height,
+            }}
+            aria-hidden
+          />
         )}
       </div>
     </div>
@@ -1549,6 +1647,8 @@ function CwdEntryRow({
   return (
     <li
       role="listitem"
+      // v0.31.8: data attribute で marquee 衝突判定の対象を識別
+      data-pyflw-path={fullPath}
       draggable={!isRenaming}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
