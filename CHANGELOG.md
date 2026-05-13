@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.7] - 2026-05-13 — Ctrl+A 全選択 + Delete で multi-delete
+
+ユーザー要望「コピー / 全選択 / 矩形選択 (削除を便利にするため)」のうち、
+**削除に直結する全選択 + multi-delete** を先行リリース。marquee (矩形ドラッグ
+選択) と copy/paste は後続 release で別途対応。
+
+### Added
+
+- **Ctrl+A (Cmd+A)**: 現在の cwd 内の全 entry を `selectedPaths` に追加
+  (= React Query cache から即時取得、再 fetch なし)
+- **Delete (multi 対応)**: `selectedPaths` が非空なら一括削除、空なら
+  `selectedFilePath` を単一削除に fallback。一括削除は **1 回の confirm**
+  で「N 個のアイテムを削除しますか?」と表示、OK で順次 `deleteFile` 実行、
+  途中失敗は summary alert
+- i18n キー: `filebrowser.confirm_delete_many` (ja/en)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
+### 次の release
+
+- v0.31.8 (予定): ドラッグで矩形選択 (marquee selection)
+- v0.31.9 (予定): Ctrl+C / Ctrl+V でコピー / ペースト (backend copy API 追加)
+
 ## [0.31.6] - 2026-05-13 — FileBrowser のファイル操作ショートカットキー (Delete / Enter / Escape) 追加
 
 ユーザー要望: ワークスペースでアイテム選択中に F2 以外のキー

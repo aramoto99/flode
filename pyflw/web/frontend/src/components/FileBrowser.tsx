@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   type FileEntry,
+  type FileTreeResponse,
   fileTree,
   FileApiUnavailableError,
   deleteFile,
@@ -414,9 +415,62 @@ export function FileBrowser(): JSX.Element {
     [refresh, t],
   );
 
+  // v0.31.7: multi-select 削除 (= Ctrl+クリックや Ctrl+A で集めた selectedPaths
+  // を一括で削除する)。confirm dialog は **1 回だけ** 個数を提示して、OK なら
+  // 順次 deleteFile。途中失敗は summary alert で報告。
+  const handleDeleteMany = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) return;
+      const ok = window.confirm(
+        t("filebrowser.confirm_delete_many", "Delete {{count}} item(s)?", {
+          count: paths.length,
+        }),
+      );
+      if (!ok) return;
+      const failures: { path: string; error: string }[] = [];
+      for (const p of paths) {
+        try {
+          await deleteFile(p);
+          // 開いていた tab を閉じる (= 単一 handleDelete と同じセマンティクス)
+          const state = useAppStore.getState();
+          if (state.tabs.some((tab) => tab.filePath === p)) {
+            closeTab(p);
+          } else if (selectedFilePath === p) {
+            selectFilePath(null);
+            setEditingModel(null);
+            setDirty(false);
+          }
+        } catch (e) {
+          failures.push({ path: p, error: (e as Error).message });
+        }
+      }
+      await refresh();
+      setSelectedPaths(new Set());
+      if (failures.length > 0) {
+        const summary = failures
+          .map((f) => `  - ${f.path}: ${f.error}`)
+          .join("\n");
+        window.alert(
+          `Delete failed for ${failures.length} / ${paths.length}:\n${summary}`,
+        );
+      }
+    },
+    [
+      closeTab,
+      refresh,
+      selectFilePath,
+      selectedFilePath,
+      setDirty,
+      setEditingModel,
+      t,
+    ],
+  );
+
   // v0.31.6: ファイル操作ショートカット handler (= focus が FileBrowser 内に
   // ある時のみ発火)。F2 = rename / Delete・Backspace = 削除 / Enter = 開く /
   // Escape = 選択クリア。
+  // v0.31.7: Ctrl+A 全選択 + multi-delete (= selectedPaths.size > 0 なら一括削除)
+  // を追加。
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
       // rename 用 input にフォーカスがあるときは何もしない (= ブラウザネイティブの
@@ -430,6 +484,22 @@ export function FileBrowser(): JSX.Element {
       }
       if (renamingPath !== null) return;
 
+      // Ctrl+A / Cmd+A: 現在の cwd 内の全 entry を selectedPaths に追加
+      // (= React Query cache から entries を取得、再 fetch せず即時)
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        const data = queryClient.getQueryData<FileTreeResponse>([
+          "files-tree",
+          fileBrowserCwd,
+        ]);
+        if (!data) return;
+        e.preventDefault();
+        const allPaths = data.children.map((entry) =>
+          fileBrowserCwd ? `${fileBrowserCwd}/${entry.name}` : entry.name,
+        );
+        setSelectedPaths(new Set(allPaths));
+        return;
+      }
+
       switch (e.key) {
         case "F2":
           if (selectedFilePath !== null) {
@@ -441,7 +511,11 @@ export function FileBrowser(): JSX.Element {
         case "Backspace":
           // ※ Backspace = 親ディレクトリ移動とする UI もあるが、pyflw では
           // breadcrumb の ↑ ボタンを別途用意しているため Backspace も削除に bind。
-          if (selectedFilePath !== null) {
+          // selectedPaths が非空なら一括削除、空なら selectedFilePath を単一削除
+          if (selectedPaths.size > 0) {
+            e.preventDefault();
+            void handleDeleteMany(Array.from(selectedPaths));
+          } else if (selectedFilePath !== null) {
             e.preventDefault();
             void handleDelete(selectedFilePath);
           }
@@ -469,7 +543,10 @@ export function FileBrowser(): JSX.Element {
       selectedPaths,
       selectFilePath,
       handleDelete,
+      handleDeleteMany,
       handleOpen,
+      queryClient,
+      fileBrowserCwd,
     ],
   );
 

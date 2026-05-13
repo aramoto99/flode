@@ -187,6 +187,7 @@
   "filebrowser.loading": "Loading…",
   "filebrowser.empty": "(empty workspace)",
   "filebrowser.confirm_delete": "Delete \"{{path}}\"?",
+  "filebrowser.confirm_delete_many": "Delete {{count}} item(s)?",
   "filebrowser.confirm_discard": "Discard unsaved changes and open {{path}}?",
   "filebrowser.prompt_new_file": "New file name (.flw.json):",
   "filebrowser.prompt_new_folder": "New folder name:",
