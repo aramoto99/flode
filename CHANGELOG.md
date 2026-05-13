@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.11] - 2026-05-13 — FileBrowser ヘッダーの click toggle を撤去
+
+ユーザー要望: ヘッダーの「ワークスペース」テキストをクリックするとペインが
+閉じるが、同じ機能が左端 Activity Bar の File アイコンにあり冗長 (誤操作の元)。
+
+### Changed
+
+- FileBrowser ヘッダーのテキスト button を `<span>` (= 表示のみ) に変更
+- ▸ / ▾ の折りたたみインジケータを撤去
+- `!collapsed && (...)` の内部 guard を撤去 (= App.tsx 側の
+  `{!workspaceCollapsed && sidebarMode === "file" && <FileBrowser />}` で
+  既に外側 guard 済、二重ガードだった)
+
+### Note
+
+`workspaceCollapsed` state 自体は撤去しない。`ActivityBar` / `useShortcuts` /
+`commands` から引き続き制御するための共有 state として維持。
+
 ## [0.31.10] - 2026-05-13 — Shift+クリックも個別 toggle 動作に
 
 ユーザー要望: Shift を押しながら個別クリックで selectedPaths に追加・解除

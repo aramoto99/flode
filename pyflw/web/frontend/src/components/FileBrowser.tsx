@@ -146,9 +146,11 @@ export function FileBrowser(): JSX.Element {
   const [clipboard, setClipboard] = useState<string[]>([]);
   // v0.28.2: multi-select state (= Ctrl+クリックで追加選択、drag-drop で複数移動)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
-  // v0.20.4: 折りたたみ状態 (localStorage 連動、appStore 経由)
-  const collapsed = useAppStore((s) => s.workspaceCollapsed);
-  const setCollapsed = useAppStore((s) => s.setWorkspaceCollapsed);
+  // v0.31.11: 折りたたみ操作は Activity Bar (左端) の File アイコン側に一元化。
+  // FileBrowser のヘッダーテキスト click toggle / ▸▾ アイコンは撤去した
+  // (= 同じ機能が 2 ヶ所にあると誤操作の元、ユーザー要望)。store 側の
+  // `workspaceCollapsed` state 自体は残し、ActivityBar / useShortcuts /
+  // commands から引き続き制御する。
   // ADR-0041 §論点 9-A: dirty 状態で別ファイルを開こうとしたら 3-button モーダル
   // (Discard / Save & Open / Cancel) で確認。``pendingOpenPath`` が non-null の
   // 間は ``DirtyConfirmDialog`` が開く。
@@ -661,79 +663,61 @@ export function FileBrowser(): JSX.Element {
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-6 items-center justify-between border-b border-slate-200 bg-slate-100 px-2">
-        {/* v0.20.4: header 全体クリックで折りたたみ。アクション ボタン群は右側。 */}
-        <button
-          type="button"
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex flex-1 items-center gap-1 text-left hover:text-slate-700"
-          title={
-            collapsed
-              ? t("filebrowser.expand", "Expand workspace")
-              : t("filebrowser.collapse", "Collapse workspace")
-          }
-          aria-expanded={!collapsed}
-        >
-          <span className="w-3 text-[10px] text-slate-500" aria-hidden>
-            {collapsed ? "▸" : "▾"}
-          </span>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            {t("filebrowser.title", "Workspace")}
-          </span>
-        </button>
-        {!collapsed && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            {/* v0.31.3: 新規ファイル / 新規フォルダ アイコンボタン (= JupyterLab 流) */}
-            <button
-              type="button"
-              onClick={() => void handleNewFile(fileBrowserCwd)}
-              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-              title={t("filebrowser.action.new_file", "New file")}
-              aria-label={t("filebrowser.action.new_file", "New file")}
-            >
-              <NewFileIcon />
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleNewFolder(fileBrowserCwd)}
-              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-              title={t("filebrowser.action.new_folder", "New folder")}
-              aria-label={t("filebrowser.action.new_folder", "New folder")}
-            >
-              <NewFolderIcon />
-            </button>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-              title={t("filebrowser.refresh", "Refresh")}
-              aria-label={t("filebrowser.refresh", "Refresh")}
-            >
-              <RefreshIcon />
-            </button>
-          </div>
-        )}
+        {/* v0.31.11: ヘッダーラベルは表示のみ (= click toggle 撤去)。
+            折りたたみ操作は左端 Activity Bar の File アイコンに一元化。 */}
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          {t("filebrowser.title", "Workspace")}
+        </span>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {/* v0.31.3: 新規ファイル / 新規フォルダ アイコンボタン (= JupyterLab 流) */}
+          <button
+            type="button"
+            onClick={() => void handleNewFile(fileBrowserCwd)}
+            className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+            title={t("filebrowser.action.new_file", "New file")}
+            aria-label={t("filebrowser.action.new_file", "New file")}
+          >
+            <NewFileIcon />
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleNewFolder(fileBrowserCwd)}
+            className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+            title={t("filebrowser.action.new_folder", "New folder")}
+            aria-label={t("filebrowser.action.new_folder", "New folder")}
+          >
+            <NewFolderIcon />
+          </button>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+            title={t("filebrowser.refresh", "Refresh")}
+            aria-label={t("filebrowser.refresh", "Refresh")}
+          >
+            <RefreshIcon />
+          </button>
+        </div>
       </div>
-      {!collapsed && (
-        <CwdView
-          onFileClick={handleOpen}
-          onContextMenu={handleContextMenu}
-          onMove={handleMove}
-          renamingPath={renamingPath}
-          onSubmitRename={handleRename}
-          onCancelRename={() => setRenamingPath(null)}
-          selectedFilePath={selectedFilePath}
-          selectedPaths={selectedPaths}
-          onToggleSelection={(path) =>
-            setSelectedPaths((prev) => {
-              const next = new Set(prev);
-              if (next.has(path)) next.delete(path);
-              else next.add(path);
-              return next;
-            })
-          }
-          onReplaceSelection={(paths) => setSelectedPaths(new Set(paths))}
-        />
-      )}
+      <CwdView
+        onFileClick={handleOpen}
+        onContextMenu={handleContextMenu}
+        onMove={handleMove}
+        renamingPath={renamingPath}
+        onSubmitRename={handleRename}
+        onCancelRename={() => setRenamingPath(null)}
+        selectedFilePath={selectedFilePath}
+        selectedPaths={selectedPaths}
+        onToggleSelection={(path) =>
+          setSelectedPaths((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          })
+        }
+        onReplaceSelection={(paths) => setSelectedPaths(new Set(paths))}
+      />
       {pendingOpenPath !== null && (
         <DirtyConfirmDialog
           currentName={selectedFilePath ?? "(untitled)"}
