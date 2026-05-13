@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-05-13 — FileBrowser を JupyterLab 流 cwd フォーカス型に書き換え
+
+ユーザー要望「ワークスペースのカレントディレクトリ移動」に対応。FileBrowser を
+**展開ツリー → cwd フォーカス型 flat list** に書き換え。JupyterLab の
+FileBrowser 流儀 (= フォルダクリックで cd、breadcrumb で上に戻る) に統一。
+
+### Added
+
+- **store `fileBrowserCwd: string`** + `setFileBrowserCwd` action (= 現在
+  表示中のフォルダ相対パス、root は `""`、session 内のみで永続化なし)
+- **`CwdView` 新規 component** (`src/components/FileBrowser.tsx` 内):
+  - **breadcrumb 行** (上部): home icon (= root へ) + ↑ (= 上へ) + segment
+    クリックで cd
+  - **flat list 本体**: cwd 配下の entries を 1 階層表示、directory を先頭・
+    file を後ろにソート
+  - フォルダクリック = **cd (= cwd 切替)**、ファイルクリック = 開く (既存挙動)
+  - drag-drop / Ctrl+クリック multi-select / 右クリック context menu /
+    inline rename はすべて維持
+- **`CwdEntryRow` 新規 component**: 各 entry を 1 行で描画、folder と file の
+  挙動を統合
+- i18n: `filebrowser.breadcrumb.root` / `filebrowser.breadcrumb.up` /
+  `filebrowser.empty_folder` (ja/en)
+
+### Changed
+
+- **FileBrowser のメンテナンスモデル**: 旧 v3.9.x の `<DirectoryNode>`
+  自己再帰ツリーを撤去 (= component は維持するが import から外し dead code 化、
+  ロールバック互換のため温存)
+- フォルダの **自動展開** (= v0.30.2 の `defaultExpanded={depth <= 1}`) は
+  撤去 (= flat list では概念が無い)
+- test 更新: `tests/fileBrowser.test.tsx` の auto-expand 期待を「v0.31.0
+  flat list なので auto-expand しない」に更新
+
+### 操作感の変化
+
+- 旧 v3.9.x: フォルダの ▸ 矢印クリックで展開 / ▾ で折りたたみ、深い階層は
+  入れ子ツリー表示
+- 新 v0.31.0: フォルダをクリックすると **中に入る** (= Finder / Explorer
+  と同じ感覚)、breadcrumb で上に戻る、root へワンクリック (home icon)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.30.5] - 2026-05-12 — sidebar / Inspector の境界線を細く (1px)
 
 ユーザーから「Inspector / Workspace とダイアグラムの境界線が太すぎる」

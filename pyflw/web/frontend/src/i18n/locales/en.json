@@ -196,6 +196,9 @@
   "filebrowser.menu.rename": "Rename (F2)",
   "filebrowser.menu.delete": "Delete",
   "filebrowser.move.descendant_forbidden": "Cannot move into own subdirectory",
+  "filebrowser.breadcrumb.root": "Go to workspace root",
+  "filebrowser.breadcrumb.up": "Go up one folder",
+  "filebrowser.empty_folder": "(empty folder)",
 
   "panel.library": "Library",
   "panel.inspector": "Inspector",

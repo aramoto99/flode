@@ -437,6 +437,12 @@ interface AppState {
   inspectorWidth: number;
   setInspectorWidth: (px: number) => void;
 
+  // v0.31.0: FileBrowser の cwd (= 現在表示中のフォルダ相対パス、JupyterLab
+  // 流儀)。``""`` で root。permanent 永続化なし (= session 内のみ、起動時は
+  // root) — workspace 切替で root reset したいため localStorage 不適。
+  fileBrowserCwd: string;
+  setFileBrowserCwd: (path: string) => void;
+
   // ADR-0019 §(5): dirty flag と debounce 用 timer
   dirty: boolean;
   setDirty: (dirty: boolean) => void;
@@ -1023,6 +1029,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeInspectorWidth(clamped);
     set({ inspectorWidth: clamped });
   },
+  // v0.31.0: FileBrowser cwd (= JupyterLab 流儀の「中に入る」ナビゲーション)
+  fileBrowserCwd: "",
+  setFileBrowserCwd: (path) => set({ fileBrowserCwd: path }),
   workspaceCollapsed: readWorkspaceCollapsed(),
   setWorkspaceCollapsed: (collapsed) => {
     writeWorkspaceCollapsed(collapsed);

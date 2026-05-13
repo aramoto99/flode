@@ -452,47 +452,24 @@ export function FileBrowser(): JSX.Element {
         )}
       </div>
       {!collapsed && (
-        <div
-          className="min-h-0 flex-1 overflow-y-auto py-1"
-          onContextMenu={(e) => handleContextMenu(e, "", true)}
-          // v0.28.1: container 全体を drop target にし、root への移動を許可
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(PYFLW_PATH_MIME)) {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-            }
-          }}
-          onDrop={(e) => {
-            const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
-            if (!raw) return;
-            e.preventDefault();
-            const sources = parsePathsMime(raw);
-            void handleMove(sources, "");
-          }}
-        >
-          <DirectoryNode
-            path=""
-            name="(root)"
-            depth={0}
-            defaultExpanded
-            onFileClick={handleOpen}
-            onContextMenu={handleContextMenu}
-            onMove={handleMove}
-            renamingPath={renamingPath}
-            onSubmitRename={handleRename}
-            onCancelRename={() => setRenamingPath(null)}
-            selectedFilePath={selectedFilePath}
-            selectedPaths={selectedPaths}
-            onToggleSelection={(path) =>
-              setSelectedPaths((prev) => {
-                const next = new Set(prev);
-                if (next.has(path)) next.delete(path);
-                else next.add(path);
-                return next;
-              })
-            }
-          />
-        </div>
+        <CwdView
+          onFileClick={handleOpen}
+          onContextMenu={handleContextMenu}
+          onMove={handleMove}
+          renamingPath={renamingPath}
+          onSubmitRename={handleRename}
+          onCancelRename={() => setRenamingPath(null)}
+          selectedFilePath={selectedFilePath}
+          selectedPaths={selectedPaths}
+          onToggleSelection={(path) =>
+            setSelectedPaths((prev) => {
+              const next = new Set(prev);
+              if (next.has(path)) next.delete(path);
+              else next.add(path);
+              return next;
+            })
+          }
+        />
       )}
       {pendingOpenPath !== null && (
         <DirtyConfirmDialog
@@ -1054,5 +1031,338 @@ function FileIcon({ flw }: { flw: boolean }): JSX.Element {
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
     </svg>
+  );
+}
+
+// v0.31.0: JupyterLab 流の cwd フォーカス型 FileBrowser。
+// 旧 v3.9.x まで: 階層ツリー展開 (DirectoryNode で再帰)
+// 新 v0.31.0: 1 階層 flat list + breadcrumb + フォルダクリックで cd
+// 既存 DirectoryNode / TreeEntry は dead code (= 削除せず温存、ロールバック用)。
+
+interface CwdViewProps {
+  onFileClick: (path: string) => void;
+  onContextMenu: (
+    e: React.MouseEvent,
+    path: string,
+    isDirectory: boolean,
+  ) => void;
+  onMove: (sources: string[], targetDir: string) => Promise<void>;
+  renamingPath: string | null;
+  onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
+  onCancelRename: () => void;
+  selectedFilePath: string | null;
+  selectedPaths: Set<string>;
+  onToggleSelection: (path: string) => void;
+}
+
+function CwdView({
+  onFileClick,
+  onContextMenu,
+  onMove,
+  renamingPath,
+  onSubmitRename,
+  onCancelRename,
+  selectedFilePath,
+  selectedPaths,
+  onToggleSelection,
+}: CwdViewProps): JSX.Element {
+  const { t } = useTranslation();
+  const cwd = useAppStore((s) => s.fileBrowserCwd);
+  const setCwd = useAppStore((s) => s.setFileBrowserCwd);
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: ["files-tree", cwd],
+    queryFn: () => fileTree(cwd),
+    enabled: true,
+  });
+
+  // breadcrumb 用に cwd を segments に分解
+  const segments: Array<{ name: string; path: string }> = [];
+  if (cwd) {
+    const parts = cwd.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      segments.push({
+        name: parts[i]!,
+        path: parts.slice(0, i + 1).join("/"),
+      });
+    }
+  }
+
+  const onCwdDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (e.dataTransfer.types.includes(PYFLW_PATH_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+  };
+  const onCwdDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    if (!raw) return;
+    e.preventDefault();
+    const sources = parsePathsMime(raw);
+    void onMove(sources, cwd);
+  };
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      onContextMenu={(e) => onContextMenu(e, cwd, true)}
+    >
+      {/* Breadcrumb 行 (JupyterLab 風) */}
+      <div className="flex h-6 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-slate-50 px-1 text-[11px] text-slate-600">
+        <button
+          type="button"
+          onClick={() => setCwd("")}
+          title={t("filebrowser.breadcrumb.root")}
+          aria-label={t("filebrowser.breadcrumb.root")}
+          className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+        >
+          {/* home icon */}
+          <svg
+            viewBox="0 0 24 24"
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 12 12 3l9 9" />
+            <path d="M5 10v10h14V10" />
+          </svg>
+        </button>
+        {cwd && (
+          <button
+            type="button"
+            onClick={() => {
+              const idx = cwd.lastIndexOf("/");
+              setCwd(idx < 0 ? "" : cwd.slice(0, idx));
+            }}
+            title={t("filebrowser.breadcrumb.up")}
+            aria-label={t("filebrowser.breadcrumb.up")}
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            {/* up arrow */}
+            <svg
+              viewBox="0 0 24 24"
+              className="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 12 12 6 18 12" />
+              <line x1="12" y1="6" x2="12" y2="20" />
+            </svg>
+          </button>
+        )}
+        {segments.map((seg, i) => (
+          <span key={seg.path} className="flex shrink-0 items-center gap-0.5">
+            <span className="text-slate-400" aria-hidden>
+              /
+            </span>
+            <button
+              type="button"
+              onClick={() => setCwd(seg.path)}
+              className={`shrink-0 px-1 ${
+                i === segments.length - 1
+                  ? "font-semibold text-slate-700"
+                  : "text-slate-500 hover:text-slate-800 hover:underline"
+              }`}
+              title={seg.path}
+            >
+              {seg.name}
+            </button>
+          </span>
+        ))}
+      </div>
+      {/* flat list 本体 */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto py-1"
+        onDragOver={onCwdDragOver}
+        onDrop={onCwdDrop}
+      >
+        {error instanceof FileApiUnavailableError && (
+          <div className="px-3 py-2 text-[11px] text-amber-600">
+            {t(
+              "filebrowser.disabled",
+              "File API not enabled. Restart pyflw-server with --workspace=PATH.",
+            )}
+          </div>
+        )}
+        {isLoading && (
+          <div className="px-3 py-2 text-[11px] text-slate-400">
+            {t("filebrowser.loading", "Loading…")}
+          </div>
+        )}
+        {error && !(error instanceof FileApiUnavailableError) && (
+          <div className="px-3 py-2 text-[11px] text-rose-600">
+            {String((error as Error).message)}
+          </div>
+        )}
+        {data && data.children.length === 0 && (
+          <div className="px-3 py-2 text-[11px] text-slate-400">
+            {t("filebrowser.empty_folder", "(empty folder)")}
+          </div>
+        )}
+        {data && data.children.length > 0 && (
+          <ul role="list" className="select-none">
+            {/* directory を先頭、file を後ろにソート (= 一般的なファイラー慣習) */}
+            {[...data.children]
+              .sort((a, b) => {
+                if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+                return a.name.localeCompare(b.name);
+              })
+              .map((entry) => (
+                <CwdEntryRow
+                  key={entry.name}
+                  entry={entry}
+                  parentPath={cwd}
+                  onFileClick={onFileClick}
+                  onFolderClick={(path) => setCwd(path)}
+                  onContextMenu={onContextMenu}
+                  onMove={onMove}
+                  renamingPath={renamingPath}
+                  onSubmitRename={onSubmitRename}
+                  onCancelRename={onCancelRename}
+                  selectedFilePath={selectedFilePath}
+                  selectedPaths={selectedPaths}
+                  onToggleSelection={onToggleSelection}
+                />
+              ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface CwdEntryRowProps {
+  entry: FileEntry;
+  parentPath: string;
+  onFileClick: (path: string) => void;
+  onFolderClick: (path: string) => void;
+  onContextMenu: (
+    e: React.MouseEvent,
+    path: string,
+    isDirectory: boolean,
+  ) => void;
+  onMove: (sources: string[], targetDir: string) => Promise<void>;
+  renamingPath: string | null;
+  onSubmitRename: (oldPath: string, newName: string) => Promise<void>;
+  onCancelRename: () => void;
+  selectedFilePath: string | null;
+  selectedPaths: Set<string>;
+  onToggleSelection: (path: string) => void;
+}
+
+function CwdEntryRow({
+  entry,
+  parentPath,
+  onFileClick,
+  onFolderClick,
+  onContextMenu,
+  onMove,
+  renamingPath,
+  onSubmitRename,
+  onCancelRename,
+  selectedFilePath,
+  selectedPaths,
+  onToggleSelection,
+}: CwdEntryRowProps): JSX.Element {
+  const fullPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+  const isDir = entry.type === "directory";
+  const isFlw = !isDir && entry.name.endsWith(".flw.json");
+  const isRenaming = renamingPath === fullPath;
+  const isActive = !isDir && selectedFilePath === fullPath;
+  const isMultiSelected = selectedPaths.has(fullPath);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const onDragStart = (e: React.DragEvent<HTMLLIElement>): void => {
+    const sources = selectedPaths.has(fullPath)
+      ? Array.from(selectedPaths)
+      : [fullPath];
+    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const onDragOver = (e: React.DragEvent<HTMLLIElement>): void => {
+    if (!isDir) return;
+    if (!e.dataTransfer.types.includes(PYFLW_PATH_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setIsDragOver(true);
+  };
+  const onDragLeave = (e: React.DragEvent<HTMLLIElement>): void => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsDragOver(false);
+  };
+  const onDrop = (e: React.DragEvent<HTMLLIElement>): void => {
+    if (!isDir) return;
+    setIsDragOver(false);
+    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    if (!raw) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const sources = parsePathsMime(raw);
+    void onMove(sources, fullPath);
+  };
+
+  const onClick = (e: React.MouseEvent): void => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      onToggleSelection(fullPath);
+      return;
+    }
+    if (isDir) {
+      onFolderClick(fullPath);
+    } else if (isFlw) {
+      onFileClick(fullPath);
+    }
+  };
+
+  return (
+    <li
+      role="listitem"
+      draggable={!isRenaming}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onContextMenu={(e) => onContextMenu(e, fullPath, isDir)}
+    >
+      {isRenaming ? (
+        <InlineRename
+          initialValue={entry.name}
+          depth={0}
+          onSubmit={(newName) => void onSubmitRename(fullPath, newName)}
+          onCancel={onCancelRename}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={!isDir && !isFlw}
+          className={`flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[12px] ${
+            isDragOver
+              ? "bg-blue-200"
+              : isMultiSelected
+                ? "bg-blue-100 text-blue-800"
+                : isActive
+                  ? "bg-blue-100 text-blue-800"
+                  : isDir
+                    ? "text-slate-700 hover:bg-slate-100"
+                    : isFlw
+                      ? "text-slate-700 hover:bg-slate-100"
+                      : "text-slate-400 hover:bg-slate-100"
+          }`}
+          title={fullPath}
+          aria-selected={isMultiSelected || undefined}
+        >
+          {isDir ? <FolderIcon /> : <FileIcon flw={isFlw} />}
+          <span className="truncate">{entry.name}</span>
+        </button>
+      )}
+    </li>
   );
 }

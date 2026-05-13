@@ -196,6 +196,9 @@
   "filebrowser.menu.rename": "名前変更 (F2)",
   "filebrowser.menu.delete": "削除",
   "filebrowser.move.descendant_forbidden": "自分のサブディレクトリには移動できません",
+  "filebrowser.breadcrumb.root": "ワークスペースのルートへ",
+  "filebrowser.breadcrumb.up": "上のフォルダへ",
+  "filebrowser.empty_folder": "(空のフォルダ)",
 
   "panel.library": "ライブラリ",
   "panel.inspector": "インスペクタ",
