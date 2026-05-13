@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-05-13 — cleanup コマンド後の FileBrowser 自動 refresh
+
+v0.31.1 で追加した「untitled 整理」コマンドは backend で delete したが、
+**frontend の FileBrowser cache を invalidate していなかった** ため、
+削除後に画面が更新されず手動 🔄 が必要だった。修正。
+
+### Fixed
+
+- **`cleanupUntitled` 内で `queryClient.invalidateQueries({ queryKey:
+  ["files-tree"] })` を呼ぶ**: 削除完了後に FileBrowser が自動で再 fetch、
+  画面が即座に更新される
+
+### Changed
+
+- **`src/lib/queryClient.ts` を新規作成**: `new QueryClient(...)` を module
+  export に切り出し、React component 外 (= `commands.ts` 等) からも
+  invalidate できるようにする
+- `src/main.tsx` から `queryClient` 定義を削除、`./lib/queryClient` から
+  import するように変更 (= QueryClientProvider に渡す唯一インスタンス)
+
+### Verification
+
+- typecheck: clean
+- vitest: 349 全 pass
+
 ## [0.31.1] - 2026-05-13 — New file の untitled 自動連番を廃止 + 一括クリーンアップ
 
 v0.31.0 までは `Launcher` / `MenuBar` の "New file" 押下で `nextUntitledFilePath`

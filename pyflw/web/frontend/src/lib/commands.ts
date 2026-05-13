@@ -11,6 +11,7 @@
 // / ``useAutoSave`` / ``MenuBar`` の listener に処理させる。
 
 import { deleteFile, fileTree, getFileContent } from "../api/filesApi";
+import { queryClient } from "./queryClient";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
 import {
   localizedDisplayName,
@@ -301,6 +302,9 @@ async function cleanupUntitled(): Promise<void> {
       failures.push(`${path}: ${(e as Error).message}`);
     }
   }
+  // v0.31.2: 削除後に FileBrowser の React Query cache を invalidate
+  // (= 自動 refresh、ユーザーが手動で 🔄 を押さなくて済む)
+  await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
   if (failures.length > 0) {
     window.alert(
       `Cleaned ${success} / ${targets.length}.\nFailed:\n${failures.slice(0, 10).join("\n")}`,
