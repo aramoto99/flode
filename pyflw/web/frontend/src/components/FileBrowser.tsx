@@ -18,6 +18,7 @@
 //   - multi-select (Shift / Ctrl)
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -166,25 +167,20 @@ export function FileBrowser(): JSX.Element {
     void refresh();
   }, [refresh]);
 
-  // F2 で選択ファイルを inline rename
-  useEffect(() => {
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === "F2" && selectedFilePath !== null && renamingPath === null) {
-        // input フォーカス中は trigger しない (= ブラウザネイティブの編集を妨げない)
-        const ae = document.activeElement;
-        if (
-          ae instanceof HTMLInputElement ||
-          ae instanceof HTMLTextAreaElement
-        ) {
-          return;
-        }
-        e.preventDefault();
-        setRenamingPath(selectedFilePath);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [selectedFilePath, renamingPath]);
+  // v0.31.6: ルート div のショートカット handler。
+  // 旧 v0.31.5 まで: F2 のみグローバル `window.addEventListener("keydown")` で
+  // 拾っていた → Diagram canvas など FileBrowser 外でも誤発火するリスク。
+  // 新 v0.31.6: FileBrowser ルート div を tabIndex={-1} で focusable にし、
+  // onKeyDown で F2 / Delete (Backspace) / Enter / Escape を処理する。
+  // CwdView 内の click 時に root div へ focus を移す (= onMouseDown で focus()
+  // 呼出し)。これで JupyterLab 流の「アイテム選択中はファイル操作ショートカットが
+  // 有効」UX が成立する。
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusRoot = useCallback(() => {
+    rootRef.current?.focus({ preventScroll: true });
+  }, []);
+  // handleKeyDown 本体は handleDelete / handleNewFolder の宣言後 (= 下方) で
+  // 定義する (= TDZ 回避)。
 
   // クリック outside で context menu を閉じる
   useEffect(() => {
@@ -418,12 +414,79 @@ export function FileBrowser(): JSX.Element {
     [refresh, t],
   );
 
+  // v0.31.6: ファイル操作ショートカット handler (= focus が FileBrowser 内に
+  // ある時のみ発火)。F2 = rename / Delete・Backspace = 削除 / Enter = 開く /
+  // Escape = 選択クリア。
+  const handleKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      // rename 用 input にフォーカスがあるときは何もしない (= ブラウザネイティブの
+      // 編集を妨げない)
+      const ae = document.activeElement;
+      if (
+        ae instanceof HTMLInputElement ||
+        ae instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (renamingPath !== null) return;
+
+      switch (e.key) {
+        case "F2":
+          if (selectedFilePath !== null) {
+            e.preventDefault();
+            setRenamingPath(selectedFilePath);
+          }
+          return;
+        case "Delete":
+        case "Backspace":
+          // ※ Backspace = 親ディレクトリ移動とする UI もあるが、pyflw では
+          // breadcrumb の ↑ ボタンを別途用意しているため Backspace も削除に bind。
+          if (selectedFilePath !== null) {
+            e.preventDefault();
+            void handleDelete(selectedFilePath);
+          }
+          return;
+        case "Enter":
+          if (selectedFilePath !== null) {
+            e.preventDefault();
+            void handleOpen(selectedFilePath);
+          }
+          return;
+        case "Escape":
+          if (selectedFilePath !== null || selectedPaths.size > 0) {
+            e.preventDefault();
+            selectFilePath(null);
+            setSelectedPaths(new Set());
+          }
+          return;
+        default:
+          return;
+      }
+    },
+    [
+      selectedFilePath,
+      renamingPath,
+      selectedPaths,
+      selectFilePath,
+      handleDelete,
+      handleOpen,
+    ],
+  );
+
   return (
     <div
-      className="flex min-h-0 flex-col bg-white text-[12px]"
+      ref={rootRef}
+      tabIndex={-1}
+      className="flex min-h-0 flex-col bg-white text-[12px] outline-none"
       // v0.31.3: ヘッダー / 余白で右クリックしてもブラウザ context menu を
       // 抑止して、現在の cwd を対象にカスタム context menu を出す。
       onContextMenu={(e) => handleContextMenu(e, fileBrowserCwd, true)}
+      // v0.31.6: クリックで root div に focus を移し、F2/Delete/Enter/Escape の
+      // ショートカットを有効化する (= JupyterLab 流 "アイテム選択中はキーが有効")。
+      // tabIndex=-1 にしているため Tab navigation には現れず、mousedown 経由のみで
+      // フォーカスが当たる。
+      onMouseDown={focusRoot}
+      onKeyDown={handleKeyDown}
     >
       <div className="flex h-6 items-center justify-between border-b border-slate-200 bg-slate-100 px-2">
         {/* v0.20.4: header 全体クリックで折りたたみ。アクション ボタン群は右側。 */}

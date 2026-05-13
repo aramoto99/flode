@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.6] - 2026-05-13 — FileBrowser のファイル操作ショートカットキー (Delete / Enter / Escape) 追加
+
+ユーザー要望: ワークスペースでアイテム選択中に F2 以外のキー
+(Delete / Enter / Escape) も動くようにしたい。
+
+### Added
+
+- **Delete / Backspace**: 選択中ファイルを削除 (= 既存の `handleDelete` を呼ぶ、
+  confirm dialog 経由)
+- **Enter**: 選択中ファイルを開く (= 既存の `handleOpen` を呼ぶ。dirty 時は
+  `DirtyConfirmDialog` 経由)
+- **Escape**: 選択クリア (selectedFilePath = null, selectedPaths = ∅)
+- F2 = 既存どおり rename
+
+### Changed
+
+- **F2 を含むキーボード handler を global `window.addEventListener("keydown")`
+  から FileBrowser ルート div の `onKeyDown` に移管**。ルート div を
+  `tabIndex={-1}` + `outline-none` で focusable にし、`onMouseDown` で focus
+  を取る。これにより
+  - Diagram canvas など FileBrowser 外でキーを押しても誤発火しない
+  - JupyterLab 流「アイテム選択中はファイル操作ショートカットが有効」UX が成立
+  - `document.activeElement` が input/textarea のときは全ショートカット無効
+    (= 既存 F2 の振る舞いを継承)
+
+### Verification
+
+- typecheck: clean
+- vitest (fileBrowser.test): 全 pass
+
 ## [0.31.5] - 2026-05-13 — 新規フォルダ prompt のデフォルト値 "subdir" を削除
 
 ユーザー要望: 新規フォルダ作成 prompt のデフォルト文字列 "subdir" が
