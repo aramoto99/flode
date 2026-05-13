@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.3] - 2026-05-13 — FileBrowser ヘッダーに新規ファイル/フォルダ アイコン追加 + 右クリック context menu の発火範囲修正
+
+JupyterLab 流の FileBrowser に寄せる UX 改善。ユーザー指摘:
+
+1. サブフォルダ作成の動線が**右クリック context menu の中だけ**で発見性が低い
+2. **FileBrowser のヘッダーや余白で右クリックすると、ブラウザのデフォルト
+   context menu が出てしまう** (= カスタム menu の発火範囲が `CwdView` の
+   outer div に限定されており、ヘッダー / 折り畳み時の div では拾えなかった)
+
+### Added
+
+- **FileBrowser ヘッダーに「新規ファイル」「新規フォルダ」アイコンボタン**
+  (= Refresh アイコンと並ぶ 3 つの SVG アイコン)。クリックすると `prompt` を
+  経て現在の `fileBrowserCwd` 直下にエントリ作成、JupyterLab toolbar と同じ動線
+- **Refresh ボタンを SVG アイコン化** (`⟳` テキスト → `RefreshIcon`)。
+  3 ボタンの視覚的一貫性を確保
+- i18n キー追加: `filebrowser.action.new_file` / `filebrowser.action.new_folder`
+  (ja/en)
+
+### Fixed
+
+- **FileBrowser ルート div に `onContextMenu` を付与**し、ヘッダー / 余白で
+  右クリックしてもカスタム context menu が出るように修正。`handleContextMenu`
+  が `preventDefault` + `stopPropagation` するため、ブラウザのデフォルト
+  context menu は確実に抑止される。発火時の対象 path は現在の
+  `fileBrowserCwd` (= ディレクトリ扱い)
+
+### Verification
+
+- typecheck: clean
+- vitest: 全 pass
+
 ## [0.31.2] - 2026-05-13 — cleanup コマンド後の FileBrowser 自動 refresh
 
 v0.31.1 で追加した「untitled 整理」コマンドは backend で delete したが、

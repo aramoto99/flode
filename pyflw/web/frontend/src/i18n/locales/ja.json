@@ -193,6 +193,8 @@
   "filebrowser.prompt_save_as": "名前を付けて保存 (ワークスペース相対パス):",
   "filebrowser.menu.new_file": "新規ファイル",
   "filebrowser.menu.new_folder": "新規フォルダ",
+  "filebrowser.action.new_file": "新規ファイル",
+  "filebrowser.action.new_folder": "新規フォルダ",
   "filebrowser.menu.rename": "名前変更 (F2)",
   "filebrowser.menu.delete": "削除",
   "filebrowser.move.descendant_forbidden": "自分のサブディレクトリには移動できません",

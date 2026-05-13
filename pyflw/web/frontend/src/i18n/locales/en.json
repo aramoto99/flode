@@ -193,6 +193,8 @@
   "filebrowser.prompt_save_as": "Save As (workspace-relative path):",
   "filebrowser.menu.new_file": "New file",
   "filebrowser.menu.new_folder": "New folder",
+  "filebrowser.action.new_file": "New file",
+  "filebrowser.action.new_folder": "New folder",
   "filebrowser.menu.rename": "Rename (F2)",
   "filebrowser.menu.delete": "Delete",
   "filebrowser.move.descendant_forbidden": "Cannot move into own subdirectory",

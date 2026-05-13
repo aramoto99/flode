@@ -105,6 +105,9 @@ export function FileBrowser(): JSX.Element {
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setEditingFileMeta = useAppStore((s) => s.setEditingFileMeta);
   const setDirty = useAppStore((s) => s.setDirty);
+  // v0.31.3: ヘッダーの「新規ファイル」「新規フォルダ」アイコンボタンが現在の
+  // cwd 直下に作成するため、FileBrowser 本体でも cwd を購読する。
+  const fileBrowserCwd = useAppStore((s) => s.fileBrowserCwd);
   const queryClient = useQueryClient();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -415,9 +418,14 @@ export function FileBrowser(): JSX.Element {
   );
 
   return (
-    <div className="flex min-h-0 flex-col bg-white text-[12px]">
+    <div
+      className="flex min-h-0 flex-col bg-white text-[12px]"
+      // v0.31.3: ヘッダー / 余白で右クリックしてもブラウザ context menu を
+      // 抑止して、現在の cwd を対象にカスタム context menu を出す。
+      onContextMenu={(e) => handleContextMenu(e, fileBrowserCwd, true)}
+    >
       <div className="flex h-6 items-center justify-between border-b border-slate-200 bg-slate-100 px-2">
-        {/* v0.20.4: header 全体クリックで折りたたみ。Refresh ボタンは右側に分離。 */}
+        {/* v0.20.4: header 全体クリックで折りたたみ。アクション ボタン群は右側。 */}
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
@@ -429,10 +437,7 @@ export function FileBrowser(): JSX.Element {
           }
           aria-expanded={!collapsed}
         >
-          <span
-            className="w-3 text-[10px] text-slate-500"
-            aria-hidden
-          >
+          <span className="w-3 text-[10px] text-slate-500" aria-hidden>
             {collapsed ? "▸" : "▾"}
           </span>
           <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -440,15 +445,36 @@ export function FileBrowser(): JSX.Element {
           </span>
         </button>
         {!collapsed && (
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200"
-            title={t("filebrowser.refresh", "Refresh")}
-            aria-label={t("filebrowser.refresh", "Refresh")}
-          >
-            ⟳
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {/* v0.31.3: 新規ファイル / 新規フォルダ アイコンボタン (= JupyterLab 流) */}
+            <button
+              type="button"
+              onClick={() => void handleNewFile(fileBrowserCwd)}
+              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+              title={t("filebrowser.action.new_file", "New file")}
+              aria-label={t("filebrowser.action.new_file", "New file")}
+            >
+              <NewFileIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleNewFolder(fileBrowserCwd)}
+              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+              title={t("filebrowser.action.new_folder", "New folder")}
+              aria-label={t("filebrowser.action.new_folder", "New folder")}
+            >
+              <NewFolderIcon />
+            </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+              title={t("filebrowser.refresh", "Refresh")}
+              aria-label={t("filebrowser.refresh", "Refresh")}
+            >
+              <RefreshIcon />
+            </button>
+          </div>
         )}
       </div>
       {!collapsed && (
@@ -1030,6 +1056,64 @@ function FileIcon({ flw }: { flw: boolean }): JSX.Element {
     >
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+
+// v0.31.3: FileBrowser ヘッダーのアクション アイコン (= JupyterLab toolbar 風)
+function NewFileIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9" />
+      <polyline points="14 3 14 9 20 9" />
+      <line x1="17" y1="14" x2="17" y2="20" />
+      <line x1="14" y1="17" x2="20" y2="17" />
+    </svg>
+  );
+}
+
+function NewFolderIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+      <line x1="12" y1="11" x2="12" y2="17" />
+      <line x1="9" y1="14" x2="15" y2="14" />
+    </svg>
+  );
+}
+
+function RefreshIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="20 6 20 11 15 11" />
+      <path d="M20 11A8 8 0 1 0 18 18" />
     </svg>
   );
 }
