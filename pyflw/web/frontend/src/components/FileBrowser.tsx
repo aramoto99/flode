@@ -1727,7 +1727,9 @@ function CwdEntryRow({
   };
 
   const onClick = (e: React.MouseEvent): void => {
-    if (e.ctrlKey || e.metaKey) {
+    // v0.31.10: Shift+click も Ctrl+click と同じ toggle 動作にする
+    // (= ユーザー要望「Shift で個別選択を複数選択状態にする」)
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
       e.preventDefault();
       onToggleSelection(fullPath);
       return;

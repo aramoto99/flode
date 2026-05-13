@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.10] - 2026-05-13 — Shift+クリックも個別 toggle 動作に
+
+ユーザー要望: Shift を押しながら個別クリックで selectedPaths に追加・解除
+できるようにしたい。
+
+### Changed
+
+- **CwdEntryRow.onClick**: 既存の `Ctrl/Cmd` 判定を `Ctrl/Cmd/Shift` に拡張
+  (= 1 行変更)。Shift+クリックでも Ctrl+クリックと同じ toggle 動作
+  (= `onToggleSelection` 呼出し) になる
+
+### Note
+
+旧 `DirectoryNode` / `TreeEntry` (= v0.31.0 で flat list 化したときに残置した
+dead code) は対象外。実機で render されていないため触らない。
+
 ## [0.31.9] - 2026-05-13 — FileBrowser のコピー / 貼り付け (Ctrl+C / Ctrl+V) + backend `/files/copy` API
 
 ユーザー要望「全選択 / 矩形選択 / コピー」の Phase 3 (= 最終)。
