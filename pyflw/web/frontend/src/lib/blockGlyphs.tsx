@@ -84,9 +84,10 @@ const PulseGeneratorGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Math
 // =============================================================================
 
+// v0.33.3: 旧版は 15% opacity の塗りつぶしで「再生ボタン ▶」感が出ていた
+// (ユーザー指摘)。Simulink Gain と整合する **輪郭線のみ** に変更。
 const GainGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polygon points="4,4 4,20 20,12" fill="currentColor" opacity="0.15" />
     <polygon points="4,4 4,20 20,12" />
   </svg>
 );

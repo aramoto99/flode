@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.3] - 2026-05-14 — Gain アイコンが「再生ボタン」に見える問題を修正
+
+ユーザー指摘「ライブラリの Gain が再生マークみたいになっている」。
+
+### Root Cause
+
+`GainGlyph` ([blockGlyphs.tsx:87-92](pyflw/web/frontend/src/lib/blockGlyphs.tsx#L87))
+が三角形 polygon を **`fill="currentColor" opacity="0.15"` で薄く塗りつぶし** +
+輪郭線、の二重描画にしていた。塗りつぶしがあるため YouTube 等の再生ボタン
+▶ に見えていた。
+
+### Fixed
+
+- 塗りつぶし polygon を削除し、Sum / Product 等と同じく **輪郭線のみ** に統一。
+  Simulink の Gain ブロックも線画 (三角形枠 + 中央の `k` 値) なので整合性が
+  向上
+
 ## [0.33.2] - 2026-05-14 — BlockPalette のエントリの角丸を撤廃
 
 ユーザー要望「ライブラリ表示のブロックの角の丸みを完全に削除、角ばった
