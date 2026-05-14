@@ -29,7 +29,9 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // -------- 円 --------
   "pyflw.blocks.mathops.Sum":     { kind: "circle", width: 44, height: 44 },
   "pyflw.blocks.mathops.Product": { kind: "circle", width: 44, height: 44 },
-  "pyflw.blocks.mathops.Divide":  { kind: "circle", width: 44, height: 44 },
+  // v0.35.4: Divide を矩形化 (ユーザー要望)。signs ("*/") の per-port 表示が
+  // 円形より矩形の方が見やすい (Add / Sum と統一)。
+  "pyflw.blocks.mathops.Divide":  { kind: "rect", width: 48, height: 48 },
 
   // -------- 縦長バー (Simulink 風: 細い black bar) --------
   "pyflw.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },

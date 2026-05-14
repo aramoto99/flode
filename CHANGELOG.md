@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.4] - 2026-05-15 — Divide を矩形化 + per-port `×`/`÷` 表示
+
+ユーザー要望「Divide は四角形のほうがいいね」。Divide は `signs="*/"` の
+per-port 仕様を持つにも関わらず、円形 + 中央 `÷` 1 個表示で「どの入力が
+乗算でどの入力が除算か」が見えなかった。
+
+### Changed
+
+- `blockShapes.ts`: Divide を `kind: "circle" 44×44` → `kind: "rect" 48×48`
+- `BlockNodeView.tsx`: Divide 専用 render を追加、`signs` の各文字
+  (`*` → `×` / `/` → `÷`) を入力ポート位置に分散表示 (Add / Sum と統一)
+- `tests/blockShapes.test.ts`: Divide の expected kind を `circle` → `rect`
+  に更新
+
+### 関係するブロックの最終整理
+
+| ブロック | 形状 | 中央 / per-port |
+|---|---|---|
+| **Sum** | 円形 ○ | per-port `+` `−` |
+| **Add** | 矩形 □ | per-port `+` `−` |
+| **Divide** | **矩形 □** (v0.35.4) | per-port **`×` `÷`** |
+| Product | 円形 ○ | 中央 `×` (= signs 無し) |
+| Logical / Relational | 矩形 □ | 中央 1 演算子 (= 2 入力に共通) |
+
 ## [0.35.3] - 2026-05-15 — Sum (円) も Add と同様に per-port signs 表示に統一
 
 ユーザー指摘「同じことを適用しないといけないブロックがほかにもあるのでは?」。

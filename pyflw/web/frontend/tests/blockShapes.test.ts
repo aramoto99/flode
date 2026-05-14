@@ -12,10 +12,11 @@ describe("blockShapes", () => {
     expect(getBlockShape("pyflw.blocks.mathops.Gain").kind).toBe("triangle-r");
   });
 
-  it("returns circle for Sum / Product / Divide", () => {
+  it("returns circle for Sum / Product (Divide became rect in v0.35.4)", () => {
     expect(getBlockShape("pyflw.blocks.mathops.Sum").kind).toBe("circle");
     expect(getBlockShape("pyflw.blocks.mathops.Product").kind).toBe("circle");
-    expect(getBlockShape("pyflw.blocks.mathops.Divide").kind).toBe("circle");
+    // v0.35.4: Divide はユーザー要望で矩形に変更
+    expect(getBlockShape("pyflw.blocks.mathops.Divide").kind).toBe("rect");
   });
 
   it("returns bar for Mux / Demux", () => {
