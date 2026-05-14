@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.3] - 2026-05-15 — Sum (円) も Add と同様に per-port signs 表示に統一
+
+ユーザー指摘「同じことを適用しないといけないブロックがほかにもあるのでは?」。
+`Sum` も `signs` パラメータを持ちながら、表示は **中央に signs 文字列を 1 個ベタっと**
+出していた (= 各入力ポートのどれが + でどれが - なのか視覚的に分からなかった)。
+Add (v0.35.2) と同じく **各入力ポート位置に対応する +/− を分散表示** する。
+
+### Changed
+
+- `BlockNodeView.tsx` の `ShapeContent` の `circle` 分岐に Sum 専用の per-port
+  signs 表示を追加。y 位置は `inputHandlePosition` と一致する `(i+1)/(n+1)%`、
+  x は円の左寄り `22%` (= chevron 真横、円の輪郭内側)
+- Product (`×`) / Divide (`÷`) は中央 1 個表示のまま (= signs を持たないため変更なし)
+
+### Note
+
+`LogicalOperator` / `RelationalOperator` も中央に operator 1 個を表示しているが、
+これは Simulink でも「2 入力に共通する 1 つの演算」を中央表示する仕様なので
+変更不要。
+
 ## [0.35.2] - 2026-05-14 — Add ブロックを Simulink 流「各入力ポート位置に signs 表示」に
 
 ユーザー要望: Simulink Add ブロックのように、各入力ポートのすぐ内側に

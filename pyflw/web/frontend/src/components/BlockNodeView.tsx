@@ -322,9 +322,35 @@ function ShapeContent({
     );
   }
 
-  // 円 (Sum, Product, Divide): 中央に signs / × / ÷ を大きく。
+  // 円 (Sum, Product, Divide): 中央に × / ÷、Sum は per-port signs 表示 (v0.35.3)。
   if (kind === "circle") {
-    let symbol = param ?? "";
+    // v0.35.3: Sum は Add と同じく **各入力ポート位置に signs を表示**。
+    // 旧版は signs 文字列 ("+-+" 等) を中央 1 か所にベタっと表示していた。
+    if (typePath.endsWith(".Sum")) {
+      const signs =
+        typeof (paramsRaw as Record<string, unknown>).signs === "string"
+          ? ((paramsRaw as Record<string, unknown>).signs as string)
+          : "++";
+      const n = signs.length;
+      return (
+        <div className="pointer-events-none absolute inset-0">
+          {Array.from(signs).map((s, i) => (
+            <span
+              key={i}
+              className="absolute -translate-y-1/2 font-mono text-[10px] font-bold leading-none text-slate-800"
+              style={{
+                top: `${((i + 1) * 100) / (n + 1)}%`,
+                // 円の輪郭の内側、左寄せ (= ポート chevron の真横)
+                left: "22%",
+              }}
+            >
+              {s === "-" ? "−" : "+"}
+            </span>
+          ))}
+        </div>
+      );
+    }
+    let symbol = "";
     if (typePath.endsWith(".Product")) symbol = "×";
     if (typePath.endsWith(".Divide")) symbol = "÷";
     return (
