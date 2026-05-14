@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-05-14 — Add ブロック新規追加 (Sum の矩形版)
+
+ユーザー要望「ADD ブロックを新規作成」。Simulink の Add ブロック (= Sum と
+機能同等で形が矩形) と同じ位置付け。
+
+### Added — Backend
+
+- **`pyflw.blocks.mathops.Add`** クラス: `signs` パラメータで符号付き加算
+  (`y = Σ sign_i × u_i`)、`Sum` と機能同等。違いは形状のみ (矩形 vs 円)
+- `_BUILTIN_METADATA` に `("mathops", "Add", "math.add")` を登録
+- `registry_translations.py` で en/ja 翻訳追加 (display_name: Add / 加算 (矩形))
+- 単体テスト 11 件 (`tests/blocks/test_add.py`): construction / output / Sum 同等性
+
+### Added — Frontend
+
+- `blockGlyphs.tsx` に `AddGlyph` (= 矩形枠 + 中央「+」)
+- `blockShapes.ts` で Add の shape を `rect 48×48` に設定
+
+### Note (scope)
+
+ユーザーは仕様確認時に「SM-A + SM-B 両対応」を選択したが、本 release は
+SM-A (= スカラー port) のみ対応。SM-B (= ベクトル / テンソル port) 対応は
+別 release で予定 (= 設計検討 + テスト網羅が必要なため別途扱う)。
+
+### Verification
+
+- backend pytest: 812 全 pass (新規 11 件含む)
+- typecheck: clean
+- vitest: 361 全 pass
+
 ## [0.34.0] - 2026-05-14 — glyph 中心ブロック 18 個を正方形 48×48 に
 
 ユーザー要望「配置したブロックは長方形が多いが、正四角形のほうが都合の

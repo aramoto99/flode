@@ -100,6 +100,15 @@ const SumGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.35.0: Add (Sum の矩形版) 用 glyph。矩形枠 + 中央「+」。
+const AddGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <rect x="4" y="5" width="16" height="14" />
+    <line x1="12" y1="9" x2="12" y2="15" />
+    <line x1="9" y1="12" x2="15" y2="12" />
+  </svg>
+);
+
 const ProductGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <circle cx="12" cy="12" r="8" />
@@ -667,6 +676,7 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   // math
   "pyflw.blocks.mathops.Gain": GainGlyph,
   "pyflw.blocks.mathops.Sum": SumGlyph,
+  "pyflw.blocks.mathops.Add": AddGlyph,
   "pyflw.blocks.mathops.Product": ProductGlyph,
   "pyflw.blocks.mathops.Saturation": SaturationGlyph,
   "pyflw.blocks.mathops.Abs": AbsGlyph,

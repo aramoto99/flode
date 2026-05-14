@@ -55,6 +55,48 @@ class Sum(Block):
         return np.array([float(np.dot(self.signs, u))])
 
 
+class Add(Block):
+    """符号付き加算 (矩形版) ``y = Σ sign_i * u_i`` (v0.35.0)。
+
+    ``Sum`` (= 円形 ○) と機能同等だが、形状が **矩形 □** で描画される。
+    Simulink の Add ブロック (vs Sum) と同じ使い分け: 図面上で「加算ノード」を
+    丸 / 角どちらで表現したいかの好みで選ぶ。
+
+    入力ポート数は ``len(signs)``。``signs`` の各文字は ``"+"`` または ``"-"``。
+
+    Note:
+        v0.35.0 では SM-A (スカラー port) のみ対応。SM-B (ベクトル / テンソル
+        port) 対応は後続 release で予定。
+
+    Args:
+        signs: 符号文字列。例: ``"++-"`` で ``y = u[0] + u[1] - u[2]``。
+            空文字または ``"+"``/``"-"`` 以外を含むと ``BlockSpecError``。
+
+    Raises:
+        BlockSpecError: signs が空または不正文字を含む。
+    """
+
+    def __init__(
+        self,
+        signs: str = "++",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if not signs:
+            raise BlockSpecError("Add: signs must be non-empty")
+        if any(c not in "+-" for c in signs):
+            raise BlockSpecError(
+                f"Add: signs must contain only '+'/'-', got {signs!r}"
+            )
+        super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
+        self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
+        self._params = {"signs": signs}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([float(np.dot(self.signs, u))])
+
+
 class Product(Block):
     """全入力の乗算 ``y = Π u_i``。
 

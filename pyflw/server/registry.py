@@ -115,6 +115,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # math
     "pyflw.blocks.mathops.Gain": ("mathops", "Gain", "math.gain"),
     "pyflw.blocks.mathops.Sum": ("mathops", "Sum", "math.sum"),
+    # v0.35.0: Add (= Sum の矩形版、signs 文字列で符号指定)
+    "pyflw.blocks.mathops.Add": ("mathops", "Add", "math.add"),
     "pyflw.blocks.mathops.Product": ("mathops", "Product", "math.product"),
     "pyflw.blocks.mathops.Saturation": ("mathops", "Saturation", "math.saturation"),
     "pyflw.blocks.mathops.Abs": ("mathops", "Abs", "math.abs"),

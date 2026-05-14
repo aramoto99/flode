@@ -114,6 +114,17 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "符号付き入力の重み付き和 (ポートごとに +/- を指定)。",
         },
     },
+    # v0.35.0: Add ブロック (Sum の矩形版、機能同等)
+    "pyflw.blocks.mathops.Add": {
+        "en": {
+            "display_name": "Add",
+            "docstring_summary": "Sum block in rectangular shape (signed sum with per-port +/-).",
+        },
+        "ja": {
+            "display_name": "加算 (矩形)",
+            "docstring_summary": "符号付き加算 (矩形版、機能は Sum と同じ)。",
+        },
+    },
     "pyflw.blocks.mathops.Product": {
         "en": {
             "display_name": "Product",

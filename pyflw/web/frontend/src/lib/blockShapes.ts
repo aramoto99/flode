@@ -53,6 +53,9 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // -------- Display は live 数値を大きく表示するため広め --------
   "pyflw.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
 
+  // -------- v0.35.0: Add (Sum の矩形版) --------
+  "pyflw.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },
+
   // -------- v0.34.0: glyph 中心ブロック = 正方形 48×48 --------
   // ユーザー要望「正四角形のほうが都合のいいブロックもある」。glyph のみで
   // 値表示が不要なシンボリックブロックを正方形化する。横長が必要な
