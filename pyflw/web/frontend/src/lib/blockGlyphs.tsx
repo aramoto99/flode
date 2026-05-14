@@ -100,12 +100,14 @@ const SumGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// v0.35.0: Add (Sum の矩形版) 用 glyph。矩形枠 + 中央「+」。
+// v0.35.0: Add (Sum の矩形版) 用 glyph。
+// v0.35.1: 中央の矩形枠を削除。Diagram 上の Add ブロックは shape="rect" で
+// 外枠の矩形が既に描かれており、glyph の矩形と二重表示になっていた (ユーザー
+// 指摘)。「+」記号のみで Simulink の Add ブロック内表示と整合。
 const AddGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="4" y="5" width="16" height="14" />
-    <line x1="12" y1="9" x2="12" y2="15" />
-    <line x1="9" y1="12" x2="15" y2="12" />
+    <line x1="6" y1="12" x2="18" y2="12" />
+    <line x1="12" y1="6" x2="12" y2="18" />
   </svg>
 );
 

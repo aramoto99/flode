@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-05-14 — Add ブロックの「二重矩形」問題を修正
+
+ユーザー指摘: Diagram に配置した Add ブロックが二重線になっていた。
+
+### Root Cause
+
+`AddGlyph` が中央に `<rect ... />` を描画していたが、Diagram 上の Add ブロックは
+`shape="rect"` で外枠の矩形が既に描かれており、結果として **外枠 + glyph 矩形
+の二重矩形**になっていた。
+
+### Fixed
+
+- `AddGlyph` から中央の `<rect>` を削除し、**「+」記号のみ** に。Simulink の
+  Add ブロック内表示と整合 (= ブロック枠 + 中央に算術記号のみ)
+
 ## [0.35.0] - 2026-05-14 — Add ブロック新規追加 (Sum の矩形版)
 
 ユーザー要望「ADD ブロックを新規作成」。Simulink の Add ブロック (= Sum と
