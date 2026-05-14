@@ -90,6 +90,105 @@ export function UPlotChart({
     return () => ro.disconnect();
   }, []);
 
+  // v0.32.1: middle button (= ホイールクリック) hold + drag で X/Y 軸 pan。
+  // プロット領域の表示範囲をマウス移動距離分だけスライドする (= グラフを掴んで
+  // 引っ張る感覚)。Simulink の Scope は pan tool ボタン経由だが、pyflw では
+  // ホイールクリックを「即時 pan」に bind する (= ユーザー要望)。
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    type PanState = {
+      startClientX: number;
+      startClientY: number;
+      xMin: number;
+      xMax: number;
+      yMin: number;
+      yMax: number;
+    };
+    let panState: PanState | null = null;
+
+    const onMouseDown = (e: MouseEvent): void => {
+      if (e.button !== 1) return; // 1 = middle (= ホイール) ボタンのみ
+      const inst = instanceRef.current;
+      if (!inst) return;
+      const xs = inst.scales.x;
+      const ys = inst.scales.y;
+      if (
+        !xs ||
+        !ys ||
+        xs.min == null ||
+        xs.max == null ||
+        ys.min == null ||
+        ys.max == null
+      ) {
+        return;
+      }
+      // middle button のデフォルト (= ブラウザ auto-scroll cursor) を抑止
+      e.preventDefault();
+      panState = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        xMin: xs.min,
+        xMax: xs.max,
+        yMin: ys.min,
+        yMax: ys.max,
+      };
+      root.style.cursor = "grabbing";
+    };
+
+    const onMouseMove = (e: MouseEvent): void => {
+      if (!panState) return;
+      const inst = instanceRef.current;
+      if (!inst) return;
+      // uPlot の bbox は plot 領域 (= axes を除いた部分) の px 寸法。
+      // 画面 1 px あたりの data 単位 = (max - min) / bbox.{width,height}
+      const plotWidth = inst.bbox?.width ?? root.getBoundingClientRect().width;
+      const plotHeight = inst.bbox?.height ?? root.getBoundingClientRect().height;
+      if (plotWidth <= 0 || plotHeight <= 0) return;
+      const dxPx = e.clientX - panState.startClientX;
+      const dyPx = e.clientY - panState.startClientY;
+      const xPerPx = (panState.xMax - panState.xMin) / plotWidth;
+      const yPerPx = (panState.yMax - panState.yMin) / plotHeight;
+      // ドラッグ方向: 「コンテンツを掴んで引っ張る」感覚
+      // - 右に動かす (dxPx > 0) → xMin/xMax が減る (= 左方向に表示が動く)
+      // - 下に動かす (dyPx > 0) → yMin/yMax が増える (= y 軸は画面下が小さい値)
+      const xShift = -dxPx * xPerPx;
+      const yShift = dyPx * yPerPx;
+      inst.setScale("x", {
+        min: panState.xMin + xShift,
+        max: panState.xMax + xShift,
+      });
+      inst.setScale("y", {
+        min: panState.yMin + yShift,
+        max: panState.yMax + yShift,
+      });
+    };
+
+    const onMouseUp = (_e: MouseEvent): void => {
+      if (panState === null) return;
+      panState = null;
+      root.style.cursor = "";
+    };
+
+    // middle-click は通常ブラウザの auto-scroll を出すので、auxclick / mousedown
+    // 両方で preventDefault する。mousemove / mouseup は document に attach し、
+    // plot 領域外までドラッグが続いても追従させる。
+    const onAuxClick = (e: MouseEvent): void => {
+      if (e.button === 1) e.preventDefault();
+    };
+    root.addEventListener("mousedown", onMouseDown);
+    root.addEventListener("auxclick", onAuxClick);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      root.removeEventListener("mousedown", onMouseDown);
+      root.removeEventListener("auxclick", onAuxClick);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   // ADR-0044 §論点 7: マウスホイールで X 軸 zoom (カーソル位置を中心に拡大/縮小)。
   // Shift 押下時は Y 軸 zoom。Ctrl 押下時はブラウザのページズームに譲る。
   useEffect(() => {

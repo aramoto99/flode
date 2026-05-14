@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-05-14 — Scope のホイールクリック (middle button) ドラッグで pan
+
+ユーザー要望: グラフをホイールクリック (= middle button hold) で掴んで動かすと、
+ウィンドウ移動ではなく**プロット領域**を pan できるようにしたい。Simulink の
+Scope は pan tool ボタン経由だが pyflw では即時 pan に bind (= simulink には
+合わせない、明示的なユーザー判断)。
+
+### Added
+
+- **`UPlotChart.tsx`** に middle button (`button === 1`) hold + drag の pan
+  handler を追加 (= `mousedown` 開始 + document-level `mousemove`/`mouseup`)
+- 画面 px 差分を `bbox.width/height` ベースで data 単位に変換、X / Y 両軸の
+  `setScale` を同時更新 (= 「コンテンツを掴んで引っ張る」感覚)
+- ブラウザの middle-click auto-scroll カーソルを `preventDefault` + `auxclick`
+  抑止で完全に殺す
+- ドラッグ中は `cursor: grabbing`
+
+### Verification
+
+- typecheck: clean
+- vitest (uPlotChart.test): 13 件全 pass
+
 ## [0.32.0] - 2026-05-14 — ブラウザネイティブ alert/confirm/prompt をデスクトップ風モーダルに置換
 
 ユーザー要望: `window.alert/confirm/prompt` を出すと chrome のネイティブ
