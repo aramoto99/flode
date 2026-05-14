@@ -731,6 +731,10 @@ export function DiagramCanvas({
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         fitView
+        // v0.32.3: fitView は既定で zoom 上限なしのため、ノードが少ないモデルで
+        // 過度に拡大されていた (= ユーザー指摘「デフォルトの拡大率が少し大きい」)。
+        // maxZoom=1.0 で 100% を超えないように制限、padding は描画余白
+        fitViewOptions={{ maxZoom: 1.0, padding: 0.2 }}
         nodesDraggable
         defaultEdgeOptions={{
           // Simulink 風: 90° 折れ線 (step) + 黒系細線 + 終点矢印 head。

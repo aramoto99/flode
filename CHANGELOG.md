@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-05-14 — Diagram の初期表示で過度な拡大を抑制
+
+ユーザー指摘「ダイアグラムのデフォルトの拡大率が少し大きい」。React Flow の
+`fitView` は zoom 上限なしのため、ノードが少ないモデルだと過剰に拡大される
+傾向があった。
+
+### Changed
+
+- `DiagramCanvas.tsx` で `fitViewOptions={{ maxZoom: 1.0, padding: 0.2 }}` を
+  指定。100% を超えないように zoom を制限し、ノード周囲に 20% の余白を確保
+
 ## [0.32.2] - 2026-05-14 — Scope のデフォルト見た目を UI design system に合わせて整理
 
 ユーザー指摘「グラフのデフォルトがダサい」。旧デフォルトは tick label が
