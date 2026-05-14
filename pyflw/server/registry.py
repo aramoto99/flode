@@ -5,15 +5,19 @@
 組み立てた registry を構築する。
 
 メタデータ取得方針 (ADR-0019 §(2) META-A の実用版):
-  1. 各クラスに ``_block_category`` / ``_block_display_name`` / ``_block_icon`` /
-     ``_block_color`` の class attribute があればそれを優先する
+  1. 各クラスに ``_block_category`` / ``_block_display_name`` / ``_block_icon``
+     の class attribute があればそれを優先する
   2. 無ければ built-in 33 ブロック向けの中央テーブル ``_BUILTIN_METADATA`` を fallback
      として使う
   3. それも無ければ ``uncategorized`` カテゴリ + class 名から派生した default
 
-これによりコア 33 クラスはコード変更なしで category / icon / color が解決でき、
+これによりコア 33 クラスはコード変更なしで category / icon が解決でき、
 かつサードパーティ拡張は ``_block_*`` class 属性で自己定義できる (= ADR-0019 §(2)
 META-A の精神を尊重しつつ実装コストを抑える)。
+
+v0.33.0: 旧 per-block color field を撤廃。category 増加時の palette 管理コスト
+削減 + 色覚多様性配慮 + design system 整合のため。glyph 色は frontend 側で
+slate-600 一色固定。
 """
 
 from __future__ import annotations
@@ -70,7 +74,11 @@ class BlockMetadata:
     display_name: str
     category: str
     icon: str
-    color: str
+    # v0.33.0: per-block の color フィールドを撤廃。
+    # 旧版では category 単位で色を hardcode していたが、(1) category が
+    # 増えたときの palette 管理コスト (2) 色覚多様性への配慮 (3) Simulink
+    # Property Inspector 風 design system との整合 を理由に廃止。glyph 色は
+    # frontend 側で slate-600 固定。
     docstring_summary: str
     docstring_full: str
     params_spec: list[ParamSpec]
@@ -92,155 +100,85 @@ class BlockMetadata:
 # Built-in metadata table (ADR-0019 §(2))
 # ---------------------------------------------------------------------------
 #
-# (category, display_name, icon, color) のタプル。
+# (category, display_name, icon) のタプル。
 # class attribute (`_block_category` 等) が定義されていればそちらが優先。
-_BUILTIN_METADATA: dict[str, tuple[str, str, str, str]] = {
+# v0.33.0: 旧 4 番目要素 (= per-block color) を撤廃。BlockMetadata.color 自体を
+# 削除したため、frontend 側の glyph は slate-600 一色で描画される。
+_BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # sources
-    "pyflw.blocks.sources.Constant": ("sources", "Constant", "sources.constant", "#10b981"),
-    "pyflw.blocks.sources.Step": ("sources", "Step", "sources.step", "#10b981"),
-    "pyflw.blocks.sources.Sine": ("sources", "Sine", "sources.sine", "#10b981"),
-    "pyflw.blocks.sources.Ramp": ("sources", "Ramp", "sources.ramp", "#10b981"),
-    "pyflw.blocks.sources.Clock": ("sources", "Clock", "sources.clock", "#10b981"),
-    "pyflw.blocks.sources.PulseGenerator": (
-        "sources",
-        "Pulse Generator",
-        "sources.pulse",
-        "#10b981",
-    ),
+    "pyflw.blocks.sources.Constant": ("sources", "Constant", "sources.constant"),
+    "pyflw.blocks.sources.Step": ("sources", "Step", "sources.step"),
+    "pyflw.blocks.sources.Sine": ("sources", "Sine", "sources.sine"),
+    "pyflw.blocks.sources.Ramp": ("sources", "Ramp", "sources.ramp"),
+    "pyflw.blocks.sources.Clock": ("sources", "Clock", "sources.clock"),
+    "pyflw.blocks.sources.PulseGenerator": ("sources", "Pulse Generator", "sources.pulse"),
     # math
-    "pyflw.blocks.mathops.Gain": ("mathops", "Gain", "math.gain", "#3b82f6"),
-    "pyflw.blocks.mathops.Sum": ("mathops", "Sum", "math.sum", "#3b82f6"),
-    "pyflw.blocks.mathops.Product": ("mathops", "Product", "math.product", "#3b82f6"),
-    "pyflw.blocks.mathops.Saturation": (
-        "mathops",
-        "Saturation",
-        "math.saturation",
-        "#3b82f6",
-    ),
-    "pyflw.blocks.mathops.Abs": ("mathops", "Abs", "math.abs", "#3b82f6"),
-    "pyflw.blocks.mathops.Sign": ("mathops", "Sign", "math.sign", "#3b82f6"),
-    "pyflw.blocks.mathops.MinMax": ("mathops", "MinMax", "math.minmax", "#3b82f6"),
-    "pyflw.blocks.mathops.Divide": ("mathops", "Divide", "math.divide", "#3b82f6"),
+    "pyflw.blocks.mathops.Gain": ("mathops", "Gain", "math.gain"),
+    "pyflw.blocks.mathops.Sum": ("mathops", "Sum", "math.sum"),
+    "pyflw.blocks.mathops.Product": ("mathops", "Product", "math.product"),
+    "pyflw.blocks.mathops.Saturation": ("mathops", "Saturation", "math.saturation"),
+    "pyflw.blocks.mathops.Abs": ("mathops", "Abs", "math.abs"),
+    "pyflw.blocks.mathops.Sign": ("mathops", "Sign", "math.sign"),
+    "pyflw.blocks.mathops.MinMax": ("mathops", "MinMax", "math.minmax"),
+    "pyflw.blocks.mathops.Divide": ("mathops", "Divide", "math.divide"),
     # continuous
-    "pyflw.blocks.continuous.Integrator": (
-        "continuous",
-        "Integrator",
-        "cont.integrator",
-        "#a855f7",
-    ),
-    "pyflw.blocks.continuous.Derivative": (
-        "continuous",
-        "Derivative",
-        "cont.derivative",
-        "#a855f7",
-    ),
-    "pyflw.blocks.continuous.TransferFunction": (
-        "continuous",
-        "Transfer Fcn",
-        "cont.tf",
-        "#a855f7",
-    ),
-    "pyflw.blocks.continuous.StateSpace": (
-        "continuous",
-        "State Space",
-        "cont.ss",
-        "#a855f7",
-    ),
+    "pyflw.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
+    "pyflw.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),
+    "pyflw.blocks.continuous.TransferFunction": ("continuous", "Transfer Fcn", "cont.tf"),
+    "pyflw.blocks.continuous.StateSpace": ("continuous", "State Space", "cont.ss"),
     "pyflw.blocks.continuous.MimoTransferFunction": (
         "continuous",
         "MIMO TF",
         "cont.mimo_tf",
-        "#a855f7",
     ),
     # discrete
-    "pyflw.blocks.discrete.UnitDelay": (
-        "discrete",
-        "Unit Delay",
-        "disc.unit_delay",
-        "#f59e0b",
-    ),
+    "pyflw.blocks.discrete.UnitDelay": ("discrete", "Unit Delay", "disc.unit_delay"),
     "pyflw.blocks.discrete.DiscreteIntegrator": (
         "discrete",
         "Discrete Integrator",
         "disc.integrator",
-        "#f59e0b",
     ),
-    "pyflw.blocks.discrete.ZeroOrderHoldDirect": (
-        "discrete",
-        "ZOH",
-        "disc.zoh_direct",
-        "#f59e0b",
-    ),
+    "pyflw.blocks.discrete.ZeroOrderHoldDirect": ("discrete", "ZOH", "disc.zoh_direct"),
     "pyflw.blocks.discrete.RateTransition": (
         "discrete",
         "Rate Transition",
         "disc.rate_transition",
-        "#f59e0b",
     ),
     "pyflw.blocks.discrete.DiscreteStateSpace": (
         "discrete",
         "Discrete State Space",
         "disc.ss",
-        "#f59e0b",
     ),
     "pyflw.blocks.discrete.DiscreteTransferFunction": (
         "discrete",
         "Discrete Transfer Fcn",
         "disc.tf",
-        "#f59e0b",
     ),
     # logic
-    "pyflw.blocks.logic.RelationalOperator": (
-        "logic",
-        "Relational",
-        "logic.relational",
-        "#ef4444",
-    ),
-    "pyflw.blocks.logic.LogicalOperator": (
-        "logic",
-        "Logical",
-        "logic.logical",
-        "#ef4444",
-    ),
+    "pyflw.blocks.logic.RelationalOperator": ("logic", "Relational", "logic.relational"),
+    "pyflw.blocks.logic.LogicalOperator": ("logic", "Logical", "logic.logical"),
     # routing
-    "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch", "#06b6d4"),
-    "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux", "#06b6d4"),
-    "pyflw.blocks.routing.Demux": ("routing", "Demux", "routing.demux", "#06b6d4"),
+    "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
+    "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),
+    "pyflw.blocks.routing.Demux": ("routing", "Demux", "routing.demux"),
     # sinks
-    "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope", "#64748b"),
-    "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display", "#0ea5e9"),
-    "pyflw.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph", "#0ea5e9"),
-    "pyflw.blocks.sinks.Terminator": (
-        "sinks",
-        "Terminator",
-        "sinks.terminator",
-        "#64748b",
-    ),
+    "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
+    "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
+    "pyflw.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
+    "pyflw.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
     # subsystems
     "pyflw.subsystems.subsystem.Subsystem": (
         "subsystems",
         "Subsystem",
         "subsys.subsystem",
-        "#8b5cf6",
     ),
     "pyflw.subsystems.triggered.TriggeredSubsystem": (
         "subsystems",
         "Triggered Subsystem",
         "subsys.triggered",
-        "#a855f7",
     ),
-    "pyflw.subsystems.ports.Inport": (
-        "subsystems",
-        "Inport",
-        "subsys.inport",
-        "#8b5cf6",
-    ),
-    "pyflw.subsystems.ports.Outport": (
-        "subsystems",
-        "Outport",
-        "subsys.outport",
-        "#8b5cf6",
-    ),
+    "pyflw.subsystems.ports.Inport": ("subsystems", "Inport", "subsys.inport"),
+    "pyflw.subsystems.ports.Outport": ("subsystems", "Outport", "subsys.outport"),
 }
 
 
@@ -422,8 +360,12 @@ def _derive_tags(blk: Block | None) -> list[str]:
     return tags
 
 
-def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str, str]:
-    """class attribute → built-in テーブル → default の順でメタを解決する。"""
+def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str]:
+    """class attribute → built-in テーブル → default の順でメタを解決する。
+
+    v0.33.0: 旧 4th 戻り値 (per-block color) を撤廃。詳細は BlockMetadata の
+    docstring 参照。
+    """
     type_path = block_type_path(cls)
     fallback = _BUILTIN_METADATA.get(type_path)
     category = getattr(cls, "_block_category", None) or (
@@ -433,8 +375,7 @@ def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str, str]:
         fallback[1] if fallback else cls.__name__
     )
     icon = getattr(cls, "_block_icon", None) or (fallback[2] if fallback else "default")
-    color = getattr(cls, "_block_color", None) or (fallback[3] if fallback else "#94a3b8")
-    return category, display_name, icon, color
+    return category, display_name, icon
 
 
 def build_metadata(cls: type) -> BlockMetadata:
@@ -444,7 +385,7 @@ def build_metadata(cls: type) -> BlockMetadata:
     from .registry_translations import SUPPORTED_LOCALES, get_translations
 
     type_path = block_type_path(cls)
-    category, display_name, icon, color = _resolve_metadata_fallback(cls)
+    category, display_name, icon = _resolve_metadata_fallback(cls)
     docstring = inspect.getdoc(cls) or ""
     docstring_summary = docstring.split("\n\n", 1)[0].split("\n")[0] if docstring else ""
 
@@ -484,7 +425,6 @@ def build_metadata(cls: type) -> BlockMetadata:
         display_name=display_name,
         category=category,
         icon=icon,
-        color=color,
         docstring_summary=docstring_summary,
         docstring_full=docstring,
         params_spec=_build_params_spec(cls),
@@ -567,7 +507,6 @@ def metadata_to_dict(
         "display_name_i18n": dict(meta.display_name_i18n),
         "category": meta.category,
         "icon": meta.icon,
-        "color": meta.color,
         "docstring_summary": meta.docstring_summary,
         "docstring_summary_i18n": dict(meta.docstring_summary_i18n),
         "params_spec": [

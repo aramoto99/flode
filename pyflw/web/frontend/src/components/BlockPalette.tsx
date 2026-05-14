@@ -208,8 +208,9 @@ export function BlockPalette(): JSX.Element {
                           title={summary ? `${dispName} — ${summary}` : dispName}
                         >
                           <div
-                            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 transition-colors group-hover:border-blue-400"
-                            style={{ color: b.color }}
+                            // v0.33.0: per-block color 撤廃。glyph は CSS で
+                            // slate-600 を継承 (= 全カテゴリ統一の中性色)。
+                            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400"
                           >
                             <BlockGlyph typePath={b.type_path} />
                           </div>

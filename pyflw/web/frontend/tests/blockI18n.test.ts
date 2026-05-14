@@ -21,7 +21,6 @@ const FULL: BlockMetadata = {
   display_name_i18n: { en: "Constant", ja: "定数" },
   category: "sources",
   icon: "sources.constant",
-  color: "#10b981",
   docstring_summary: "Constant value source y(t) = value.",
   docstring_summary_i18n: {
     en: "Constant value source y(t) = value.",

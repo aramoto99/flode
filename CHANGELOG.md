@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-05-14 — per-block color を撤廃 (= ライブラリのジャンル別色付け廃止)
+
+ユーザー討議「ジャンルが増えたら color palette をどう管理する? そもそも色は
+必要か?」→ **撤廃**を決定。理由:
+
+1. **メンテナンスコスト**: 旧 `_BUILTIN_METADATA` は entry 行ごとに color を
+   hardcode しており、同カテゴリで揃えるのは暗黙の慣習 (= drift しがち)
+2. **palette 管理問題**: 新カテゴリ追加時に既存と衝突しない色を考える必要
+3. **色覚多様性 (a11y)**: 8 色 palette は緑/紫/青/赤が見分けにくい組み合わせ
+4. **design system 整合**: Simulink Property Inspector 風は「白 + 黒線 icon」
+   が基調。色付き glyph は web-app 然とした見た目になっていた
+
+### Removed — Backend (API 後方互換性破壊)
+
+- **`BlockMetadata.color` field を削除** (`pyflw/server/registry.py`)
+- **`_BUILTIN_METADATA` の tuple を 4 要素 (cat, name, icon, color) → 3 要素**
+  (cat, name, icon) に縮小
+- **`_resolve_metadata_fallback` の戻り値も 3-tuple** に変更
+- **`metadata_to_dict` から `"color"` key 削除** → `GET /api/v1/blocks` の
+  response から消える (= 旧 frontend は color が undefined になる、撤廃)
+- `_block_color` class attribute サポートも廃止 (3rd-party 拡張は影響あり)
+
+### Changed — Frontend
+
+- `types/api.ts` の `BlockMetadata.color` を削除
+- `BlockPalette.tsx`: glyph 色を `text-slate-600` Tailwind class で固定
+  (旧 `style={{ color: b.color }}` 撤去)
+- `BlockNodeView.tsx`: `color = "#475569"` 固定 (= slate-600)
+- `diagramConverter.ts`: node data に color を流さない
+- `QuickAdd.tsx`: 非 active 行を slate-600 固定
+
+カテゴリの視覚的区別は `BlockPalette` の **section header + collapse** で
+引き続き機能 (= 色なしでも判別性は十分)。
+
+### Test 修正
+
+- `tests/server/test_blocks_registry.py`: `"color"` key の存在チェックを削除し、
+  逆に **`"color" not in entry`** をアサート (= 撤廃を恒久化)
+- frontend mock fixture 4 ファイル (`autoSplice.test.ts` /
+  `blockI18n.test.ts` / `dynamicPorts.test.ts` /
+  `portShapeValidate.test.ts`) から `color: "..."` 行を削除
+
+### Verification
+
+- backend pytest (server + core): 578 全 pass
+- typecheck: clean
+- vitest: 361 全 pass
+
 ## [0.32.3] - 2026-05-14 — Diagram の初期表示で過度な拡大を抑制
 
 ユーザー指摘「ダイアグラムのデフォルトの拡大率が少し大きい」。React Flow の

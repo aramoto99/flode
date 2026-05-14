@@ -112,7 +112,7 @@ export function modelToDiagram(
       data: {
         blockType: b.type,
         params: b.params,
-        color: meta?.color,
+        // v0.33.0: per-block color は撤廃 (BlockNodeView 内で slate-600 固定)
         nInputs: ports.nInputs,
         nOutputs: ports.nOutputs,
         isContainer: meta?.is_container ?? false,

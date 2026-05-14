@@ -212,7 +212,8 @@ export function QuickAdd({
                     ? "border-blue-300 bg-white/20"
                     : "border-slate-200 bg-white"
                 }`}
-                style={{ color: i === activeIdx ? "white" : m.color }}
+                // v0.33.0: per-block color 撤廃、active 行は白、それ以外は slate-600 固定
+                style={{ color: i === activeIdx ? "white" : "#475569" }}
               >
                 <BlockGlyph typePath={m.type_path} />
               </div>

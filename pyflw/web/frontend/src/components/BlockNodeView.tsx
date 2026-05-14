@@ -40,7 +40,8 @@ export function BlockNodeView({
 }: BlockNodeViewProps): JSX.Element {
   const nIn = (data.nInputs as number | undefined) ?? 1;
   const nOut = (data.nOutputs as number | undefined) ?? 1;
-  const color = (data.color as string | undefined) ?? "#475569";
+  // v0.33.0: per-block color 撤廃。slate-600 固定 (全カテゴリ統一)。
+  const color = "#475569";
   // v0.15.0: Simulink "Flip Block" 相当の左右反転。SVG ShapeOutline のみ
   // scaleX(-1) で鏡像化 (= 三角形 ▶→◀)。Handle は flipPosition で position prop
   // 反転 (= chevron 向きと data-handlepos が反転して edge anchor が追従)。

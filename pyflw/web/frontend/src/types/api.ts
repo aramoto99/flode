@@ -141,7 +141,9 @@ export interface BlockMetadata {
   display_name_i18n?: Partial<Record<Locale, string>>;
   category: string;
   icon: string;
-  color: string;
+  // v0.33.0: per-block color は撤廃 (= category 増加時の palette 管理コスト
+  // 削減 + 色覚多様性配慮 + design system 整合)。glyph 色は frontend 側で
+  // slate-600 一色固定。
   docstring_summary: string;
   // ADR-0028: docstring 1 行説明の翻訳 (palette tooltip 等で使用)。
   docstring_summary_i18n?: Partial<Record<Locale, string>>;

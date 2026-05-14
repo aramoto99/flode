@@ -17,7 +17,6 @@ const GAIN_META: BlockMetadata = {
   display_name: "Gain",
   category: "Math Operations",
   icon: "",
-  color: "",
   docstring_summary: "",
   params_spec: [],
   default_n_inputs: 1,

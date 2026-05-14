@@ -14,7 +14,6 @@ const META = (defaultIn: number, defaultOut: number): BlockMetadata => ({
   display_name: "x",
   category: "x",
   icon: "x",
-  color: "#000",
   docstring_summary: "",
   params_spec: [],
   default_n_inputs: defaultIn,

@@ -49,7 +49,6 @@ class TestListBlocks:
                 "display_name_i18n",
                 "category",
                 "icon",
-                "color",
                 "docstring_summary",
                 "docstring_summary_i18n",
                 "params_spec",
@@ -62,6 +61,8 @@ class TestListBlocks:
                 assert key in entry, f"missing {key} in {entry['type_path']}"
             # full docstring は list レスポンスに含めない (ADR-0019 §1.3)
             assert "docstring_full" not in entry
+            # v0.33.0: per-block color は撤廃済 (= frontend 側で slate-600 固定)
+            assert "color" not in entry
 
     def test_i18n_translations_for_builtin_blocks(self, client: TestClient) -> None:
         """ADR-0028: built-in 全 33+ ブロックが ja/en 両方の翻訳を持つ。"""
