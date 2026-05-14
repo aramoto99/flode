@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-05-14 — Add ブロックを Simulink 流「各入力ポート位置に signs 表示」に
+
+ユーザー要望: Simulink Add ブロックのように、各入力ポートのすぐ内側に
+対応する `+` / `-` 記号を表示してほしい。
+
+### Changed
+
+- `BlockNodeView.tsx` の `ShapeContent` に Add 専用の render を追加:
+  - `paramsRaw.signs` を読み、各文字 (= 各ポートの符号) を **入力ポート位置に
+    揃えて** 左寄せで描画
+  - y 位置は `((i+1) * 100) / (n+1)%` で計算 (= `inputHandlePosition` と完全一致)
+  - `-` は U+2212 (math minus) で表示 (= ハイフンより太く読みやすい)
+- 中央の `<AddGlyph>` (= 「+」記号) は Diagram 上では呼ばれなくなる
+  (BlockPalette / QuickAdd では引き続き AddGlyph が表示される)
+
+例:
+
+```
+signs="++"  → 入力2本 + +
+signs="+-"  → 入力2本 + −
+signs="+-+" → 入力3本 + − +
+```
+
 ## [0.35.1] - 2026-05-14 — Add ブロックの「二重矩形」問題を修正
 
 ユーザー指摘: Diagram に配置した Add ブロックが二重線になっていた。

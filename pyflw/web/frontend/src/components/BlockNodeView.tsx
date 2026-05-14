@@ -487,6 +487,30 @@ function ShapeContent({
       </div>
     );
   }
+  // v0.35.2: Add: Simulink 流に **各入力ポート位置に signs を表示**。
+  // signs="++" なら + + / "+-" なら + - 等。入力ポートの y 位置は
+  // ``inputHandlePosition`` と同じ ``(i+1)/(n+1)`` 等分配で揃える。
+  if (typePath.endsWith(".Add")) {
+    const signs =
+      typeof (paramsRaw as Record<string, unknown>).signs === "string"
+        ? ((paramsRaw as Record<string, unknown>).signs as string)
+        : "++";
+    const n = signs.length;
+    return (
+      <div className="pointer-events-none absolute inset-0">
+        {Array.from(signs).map((s, i) => (
+          <span
+            key={i}
+            className="absolute left-1 -translate-y-1/2 font-mono text-[12px] font-bold leading-none text-slate-800"
+            style={{ top: `${((i + 1) * 100) / (n + 1)}%` }}
+          >
+            {s === "-" ? "−" : "+"}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   // Logical / Relational: param.operator をそのまま中央表示
   if (
     typePath.endsWith(".LogicalOperator") ||
