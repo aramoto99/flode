@@ -17,6 +17,7 @@ import {
   vi,
 } from "vitest";
 
+import { dialog } from "../src/lib/dialogService";
 import { useExternalChangesPoll } from "../src/lib/useExternalChangesPoll";
 import { useAppStore } from "../src/store/appStore";
 
@@ -117,7 +118,8 @@ describe("useExternalChangesPoll: silent reload (dirty=false)", () => {
 });
 
 describe("useExternalChangesPoll: dirty + external change → confirm", () => {
-  it("prompts user via window.confirm when dirty and etag differs", async () => {
+  // v0.32.0: window.confirm を dialog.confirm に置換したのに合わせて test も spy 化
+  it("prompts user via dialog.confirm when dirty and etag differs", async () => {
     const { getFileContent } = await getMocks();
     useAppStore.setState({
       selectedFilePath: "demo.flw.json",
@@ -131,10 +133,13 @@ describe("useExternalChangesPoll: dirty + external change → confirm", () => {
       mtime: "2026-05-10T00:01:00Z",
       etag: 'W/"200-2"',
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = vi.spyOn(dialog, "confirm").mockResolvedValue(true);
 
     renderHook(() => useExternalChangesPoll());
     await vi.advanceTimersByTimeAsync(5100);
+    // dialog.confirm は async resolve なので microtask flush を待つ
+    await vi.runAllTicks();
+    await Promise.resolve();
 
     expect(confirmSpy).toHaveBeenCalled();
     // OK 選択 → 外部変更を取り込み
@@ -159,10 +164,12 @@ describe("useExternalChangesPoll: dirty + external change → confirm", () => {
       mtime: "2026-05-10T00:01:00Z",
       etag: 'W/"200-2"',
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmSpy = vi.spyOn(dialog, "confirm").mockResolvedValue(false);
 
     renderHook(() => useExternalChangesPoll());
     await vi.advanceTimersByTimeAsync(5100);
+    await vi.runAllTicks();
+    await Promise.resolve();
 
     expect(confirmSpy).toHaveBeenCalled();
     // Cancel → editingModel は保持、dirty も維持

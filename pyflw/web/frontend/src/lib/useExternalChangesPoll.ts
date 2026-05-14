@@ -23,6 +23,7 @@
 import { useEffect, useRef } from "react";
 
 import { getFileContent } from "../api/filesApi";
+import { dialog } from "./dialogService";
 import { useAppStore } from "../store/appStore";
 
 export const EXTERNAL_POLL_INTERVAL_MS = 5000;
@@ -70,10 +71,11 @@ export function useExternalChangesPoll(): void {
           latestState.setDirty(false);
           return;
         }
-        // dirty + 外部変更 → 利用者に確認 (window.confirm 簡易版)
-        // confirm ダイアログは alert と違って blocking、polling tick の
-        // setInterval は呼び出されない (= 多重ダイアログ防止)。
-        const accept = window.confirm(
+        // dirty + 外部変更 → 利用者に確認 (v0.32.0: dialog.confirm に置換、
+        // 旧 window.confirm は blocking で polling tick を停止していたが、
+        // dialog.confirm は非 blocking。複数 dialog の同時表示を防ぐため、
+        // dialogService 内部の queue が順次表示してくれる)。
+        const accept = await dialog.confirm(
           `"${path}" was modified externally.\n` +
             "OK: discard your unsaved changes and reload\n" +
             "Cancel: keep your version (next save will overwrite the external changes)",

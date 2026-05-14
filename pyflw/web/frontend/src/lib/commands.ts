@@ -11,6 +11,7 @@
 // / ``useAutoSave`` / ``MenuBar`` の listener に処理させる。
 
 import { deleteFile, fileTree, getFileContent } from "../api/filesApi";
+import { dialog } from "./dialogService";
 import { queryClient } from "./queryClient";
 import { addRecentFile, readRecentFiles } from "./recentFiles";
 import {
@@ -268,7 +269,7 @@ async function cleanupUntitled(): Promise<void> {
   try {
     listing = await fileTree("");
   } catch (e) {
-    window.alert(`Cleanup failed: ${(e as Error).message}`);
+    await dialog.alert(`Cleanup failed: ${(e as Error).message}`);
     return;
   }
   const targets = listing.children
@@ -280,16 +281,17 @@ async function cleanupUntitled(): Promise<void> {
     )
     .map((entry) => entry.name);
   if (targets.length === 0) {
-    window.alert(
+    await dialog.alert(
       "No unused untitled files found at workspace root.\n" +
         "(現在 tab で開かれていない untitled*.flw.json は見つかりませんでした)",
     );
     return;
   }
-  const ok = window.confirm(
+  const ok = await dialog.confirm(
     `Delete ${targets.length} unused untitled file(s) at workspace root?\n\n` +
       targets.slice(0, 20).join("\n") +
       (targets.length > 20 ? `\n... and ${targets.length - 20} more` : ""),
+    { variant: "danger" },
   );
   if (!ok) return;
   let success = 0;
@@ -306,11 +308,11 @@ async function cleanupUntitled(): Promise<void> {
   // (= 自動 refresh、ユーザーが手動で 🔄 を押さなくて済む)
   await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
   if (failures.length > 0) {
-    window.alert(
+    await dialog.alert(
       `Cleaned ${success} / ${targets.length}.\nFailed:\n${failures.slice(0, 10).join("\n")}`,
     );
   } else {
-    window.alert(`Cleaned ${success} untitled files.`);
+    await dialog.alert(`Cleaned ${success} untitled files.`);
   }
 }
 
@@ -348,7 +350,7 @@ export function buildRecentFileCommands(
         addRecentFile(workspaceHash, path);
       } catch (e) {
         console.error("CommandPalette: open recent failed:", path, e);
-        window.alert(`Open failed: ${(e as Error).message}`);
+        await dialog.alert(`Open failed: ${(e as Error).message}`);
       }
     },
   }));

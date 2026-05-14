@@ -24,6 +24,7 @@ import {
   readRecentFiles,
   removeRecentFile,
 } from "../lib/recentFiles";
+import { dialog } from "../lib/dialogService";
 import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import {
@@ -78,7 +79,9 @@ export function MenuBar(): JSX.Element {
   const lang = currentLanguage();
   void _i18n;
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<DialogKind>(null);
+  // v0.32.0: dialogService の `dialog` import と shadowing しないよう
+  // ローカル state は `modal` / `setModal` に rename。
+  const [modal, setModal] = useState<DialogKind>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   const selectedFilePath = useAppStore((s) => s.selectedFilePath);
@@ -113,9 +116,9 @@ export function MenuBar(): JSX.Element {
     setOpenMenu(null);
     // v0.31.1: 自動連番 (= nextUntitledFilePath) を廃止、prompt でファイル名を
     // ユーザーに明示要求 (Launcher と同じ挙動)。
-    const input = window.prompt(
+    const input = await dialog.prompt(
       t("launcher.prompt_new", "New file name (.flw.json):"),
-      "untitled.flw.json",
+      { defaultValue: "untitled.flw.json" },
     );
     if (!input) return;
     const name = input.endsWith(".flw.json") ? input : `${input}.flw.json`;
@@ -130,7 +133,7 @@ export function MenuBar(): JSX.Element {
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("New file failed:", e);
-      window.alert(`Create failed: ${(e as Error).message}`);
+      await dialog.alert(`Create failed: ${(e as Error).message}`);
     }
   };
 
@@ -155,12 +158,12 @@ export function MenuBar(): JSX.Element {
   const handleSaveAs = (): void => {
     setOpenMenu(null);
     if (selectedFilePath === null) return;
-    setDialog({ kind: "save-as-path" });
+    setModal({ kind: "save-as-path" });
   };
 
   const performSaveAsPath = async (newPath: string): Promise<void> => {
     if (!editingModel) {
-      setDialog(null);
+      setModal(null);
       return;
     }
     try {
@@ -170,20 +173,21 @@ export function MenuBar(): JSX.Element {
       // 元 tab は dirty/未保存のまま残す)。ユーザーが必要なら元 tab を閉じる。
       openFileInTab(newPath, data.content, resp.mtime, resp.etag);
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
-      setDialog(null);
+      setModal(null);
     } catch (e) {
       console.error("Save As failed:", e);
-      window.alert(`Save As failed: ${(e as Error).message}`);
+      await dialog.alert(`Save As failed: ${(e as Error).message}`);
     }
   };
 
   const handleDelete = async (): Promise<void> => {
     setOpenMenu(null);
     if (selectedFilePath === null) return;
-    const ok = window.confirm(
+    const ok = await dialog.confirm(
       t("filebrowser.confirm_delete", "Delete {{path}}?", {
         path: selectedFilePath,
       }),
+      { variant: "danger" },
     );
     if (!ok) return;
     try {
@@ -200,7 +204,7 @@ export function MenuBar(): JSX.Element {
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("Delete failed:", e);
-      window.alert(`Delete failed: ${(e as Error).message}`);
+      await dialog.alert(`Delete failed: ${(e as Error).message}`);
     }
   };
 
@@ -246,7 +250,7 @@ export function MenuBar(): JSX.Element {
       setRecentRev((r) => r + 1);
     } catch (e) {
       console.error("Failed to open recent file:", path, e);
-      window.alert(
+      await dialog.alert(
         t("recent.open_failed", "Failed to open: {{path}}", { path }),
       );
       // 開けないファイルは prune
@@ -322,7 +326,7 @@ export function MenuBar(): JSX.Element {
       label: t("menu.help.about", { defaultValue: "About pyflw" }),
       onClick: () => {
         setOpenMenu(null);
-        setDialog({ kind: "about" });
+        setModal({ kind: "about" });
       },
     },
     {
@@ -340,7 +344,7 @@ export function MenuBar(): JSX.Element {
       label: t("menu.help.shortcuts", { defaultValue: "Keyboard shortcuts" }),
       onClick: () => {
         setOpenMenu(null);
-        setDialog({ kind: "shortcuts" });
+        setModal({ kind: "shortcuts" });
       },
     },
   ];
@@ -351,7 +355,7 @@ export function MenuBar(): JSX.Element {
       label: t("menu.simulation.model_settings"),
       onClick: () => {
         setOpenMenu(null);
-        setDialog({ kind: "model-settings" });
+        setModal({ kind: "model-settings" });
       },
       disabled: !hasModel,
     },
@@ -419,7 +423,7 @@ export function MenuBar(): JSX.Element {
       />
 
       {/* dialogs */}
-      {dialog?.kind === "save-as-path" && selectedFilePath && (
+      {modal?.kind === "save-as-path" && selectedFilePath && (
         <SaveAsPathDialog
           defaultValue={selectedFilePath.replace(
             /(\.flw\.json)?$/,
@@ -427,17 +431,17 @@ export function MenuBar(): JSX.Element {
           )}
           primaryLabel={t("modal.button.save_as")}
           onConfirm={(newPath) => void performSaveAsPath(newPath)}
-          onClose={() => setDialog(null)}
+          onClose={() => setModal(null)}
         />
       )}
-      {dialog?.kind === "model-settings" && (
-        <ModelSettingsModal onClose={() => setDialog(null)} />
+      {modal?.kind === "model-settings" && (
+        <ModelSettingsModal onClose={() => setModal(null)} />
       )}
-      {dialog?.kind === "about" && (
-        <AboutDialog onClose={() => setDialog(null)} />
+      {modal?.kind === "about" && (
+        <AboutDialog onClose={() => setModal(null)} />
       )}
-      {dialog?.kind === "shortcuts" && (
-        <KeyboardShortcutsDialog onClose={() => setDialog(null)} />
+      {modal?.kind === "shortcuts" && (
+        <KeyboardShortcutsDialog onClose={() => setModal(null)} />
       )}
     </div>
   );

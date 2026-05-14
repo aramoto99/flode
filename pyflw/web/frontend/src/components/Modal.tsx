@@ -5,6 +5,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { dialog } from "../lib/dialogService";
+
 interface ModalShellProps {
   title: string;
   onClose: () => void;
@@ -94,14 +96,15 @@ export function SaveAsPathDialog({
   // 上書き確認: conflict は warning 表示、submit 時に confirm する
   const disabled = invalid;
 
-  const handleSubmit = (): void => {
+  const handleSubmit = async (): Promise<void> => {
     if (disabled) return;
     if (conflict) {
-      const ok = window.confirm(
+      const ok = await dialog.confirm(
         t("modal.save_as.overwrite_confirm", {
           defaultValue: `Overwrite "${trimmed}"?`,
           path: trimmed,
         }),
+        { variant: "danger" },
       );
       if (!ok) return;
     }
@@ -130,7 +133,7 @@ export function SaveAsPathDialog({
               e.target.setSelectionRange(0, stemEnd);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !disabled) handleSubmit();
+              if (e.key === "Enter" && !disabled) void handleSubmit();
             }}
             spellCheck={false}
             className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 font-mono text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -163,7 +166,7 @@ export function SaveAsPathDialog({
         </button>
         <button
           type="button"
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={disabled}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:bg-slate-300"
         >

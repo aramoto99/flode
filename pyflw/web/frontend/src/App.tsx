@@ -8,6 +8,7 @@ import { ActivityBar } from "./components/ActivityBar";
 import { BlockPalette } from "./components/BlockPalette";
 import { Breadcrumb } from "./components/Breadcrumb";
 import { CommandPalette } from "./components/CommandPalette";
+import { DialogHost } from "./components/DialogHost";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { FileBrowser } from "./components/FileBrowser";
 import { Launcher } from "./components/Launcher";
@@ -420,6 +421,10 @@ export default function App(): JSX.Element {
 
         {/* v0.29.0: コマンドパレット (Ctrl+Shift+P で open) */}
         <GlobalCommandPalette />
+
+        {/* v0.32.0: グローバル dialog host (window.alert/confirm/prompt 置換)。
+            Portal 的に fixed inset-0 で描画されるため grid 末尾でも OK。 */}
+        <DialogHost />
 
         {/* ADR-0045 §(6): DiagramCanvas を ReactFlowProvider 直下に常時 mount。
             実体 DOM は WorkspaceSplit 内の Diagram slot div に React Portal で

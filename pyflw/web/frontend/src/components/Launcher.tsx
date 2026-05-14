@@ -21,6 +21,7 @@ import {
   getFileContent,
   putFileContent,
 } from "../api/filesApi";
+import { dialog } from "../lib/dialogService";
 import { readRecentFiles } from "../lib/recentFiles";
 import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
@@ -71,9 +72,9 @@ export function Launcher(): JSX.Element {
     // v0.31.1: 自動連番 (= nextUntitledFilePath) を廃止、prompt でファイル名を
     // ユーザーに明示要求 (= untitled1, untitled2, ... がディスクに溜まる
     // バグの根本対策)。空 / キャンセルで no-op。
-    const input = window.prompt(
+    const input = await dialog.prompt(
       t("launcher.prompt_new", "New file name (.flw.json):"),
-      "untitled.flw.json",
+      { defaultValue: "untitled.flw.json" },
     );
     if (!input) return;
     const name = input.endsWith(".flw.json") ? input : `${input}.flw.json`;
@@ -88,7 +89,7 @@ export function Launcher(): JSX.Element {
       await queryClient.invalidateQueries({ queryKey: ["files-tree"] });
     } catch (e) {
       console.error("Launcher: New file failed:", e);
-      window.alert(`Create failed: ${(e as Error).message}`);
+      await dialog.alert(`Create failed: ${(e as Error).message}`);
     }
   };
 
@@ -105,7 +106,7 @@ export function Launcher(): JSX.Element {
       openFileInTab(path, data.content, data.mtime, data.etag);
     } catch (e) {
       console.error("Launcher: Open recent failed:", path, e);
-      window.alert(`Open failed: ${(e as Error).message}`);
+      await dialog.alert(`Open failed: ${(e as Error).message}`);
     }
   };
 

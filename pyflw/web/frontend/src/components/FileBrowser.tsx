@@ -34,6 +34,7 @@ import {
   putFileContent,
   renameFile,
 } from "../api/filesApi";
+import { dialog } from "../lib/dialogService";
 import { useAppStore } from "../store/appStore";
 import { DirtyConfirmDialog } from "./Modal";
 
@@ -301,7 +302,7 @@ export function FileBrowser(): JSX.Element {
         moveTargets.push(sourcePath);
       }
       if (forbiddenForOwnSubtree.length > 0) {
-        window.alert(
+        await dialog.alert(
           t(
             "filebrowser.move.descendant_forbidden",
             "Cannot move into own subdirectory",
@@ -350,7 +351,7 @@ export function FileBrowser(): JSX.Element {
         const summary = failures
           .map((f) => `  - ${f.path}: ${f.error}`)
           .join("\n");
-        window.alert(`Move failed for ${failures.length} item(s):\n${summary}`);
+        await dialog.alert(`Move failed for ${failures.length} item(s):\n${summary}`);
       }
     },
     [refresh, renameTabFilePath, setEditingFileMeta, setEditingModel, t],
@@ -358,10 +359,10 @@ export function FileBrowser(): JSX.Element {
 
   const handleDelete = useCallback(
     async (path: string) => {
-      // confirm dialog (= browser native、SaveAsModal の作りと同じ自前 modal は
-      // v0.19.0 で実装)
-      const ok = window.confirm(
+      // v0.32.0: dialog.confirm に置換 (= デスクトップアプリ風 modal)
+      const ok = await dialog.confirm(
         t("filebrowser.confirm_delete", "Delete {{path}}?", { path }),
+        { variant: "danger" },
       );
       if (!ok) return;
       try {
@@ -379,7 +380,7 @@ export function FileBrowser(): JSX.Element {
         }
       } catch (e) {
         console.error("Delete failed:", e);
-        window.alert(`Delete failed: ${(e as Error).message}`);
+        await dialog.alert(`Delete failed: ${(e as Error).message}`);
       }
     },
     [
@@ -395,9 +396,9 @@ export function FileBrowser(): JSX.Element {
 
   const handleNewFile = useCallback(
     async (parentPath: string) => {
-      const name = window.prompt(
+      const name = await dialog.prompt(
         t("filebrowser.prompt_new_file", "New file name (.flw.json):"),
-        "untitled.flw.json",
+        { defaultValue: "untitled.flw.json" },
       );
       if (!name) return;
       const fullPath = parentPath ? `${parentPath}/${name}` : name;
@@ -421,7 +422,7 @@ export function FileBrowser(): JSX.Element {
         await refresh();
       } catch (e) {
         console.error("New file failed:", e);
-        window.alert(`Create failed: ${(e as Error).message}`);
+        await dialog.alert(`Create failed: ${(e as Error).message}`);
       }
     },
     [refresh, t],
@@ -431,7 +432,7 @@ export function FileBrowser(): JSX.Element {
     async (parentPath: string) => {
       // v0.31.5: prompt のデフォルト値 "subdir" を削除 (= ユーザー要望、
       // 何も書かれていない空欄から入力させる)
-      const name = window.prompt(
+      const name = await dialog.prompt(
         t("filebrowser.prompt_new_folder", "New folder name:"),
       );
       if (!name) return;
@@ -441,7 +442,7 @@ export function FileBrowser(): JSX.Element {
         await refresh();
       } catch (e) {
         console.error("Mkdir failed:", e);
-        window.alert(`Mkdir failed: ${(e as Error).message}`);
+        await dialog.alert(`Mkdir failed: ${(e as Error).message}`);
       }
     },
     [refresh, t],
@@ -453,10 +454,11 @@ export function FileBrowser(): JSX.Element {
   const handleDeleteMany = useCallback(
     async (paths: string[]) => {
       if (paths.length === 0) return;
-      const ok = window.confirm(
+      const ok = await dialog.confirm(
         t("filebrowser.confirm_delete_many", "Delete {{count}} item(s)?", {
           count: paths.length,
         }),
+        { variant: "danger" },
       );
       if (!ok) return;
       const failures: { path: string; error: string }[] = [];
@@ -482,7 +484,7 @@ export function FileBrowser(): JSX.Element {
         const summary = failures
           .map((f) => `  - ${f.path}: ${f.error}`)
           .join("\n");
-        window.alert(
+        await dialog.alert(
           `Delete failed for ${failures.length} / ${paths.length}:\n${summary}`,
         );
       }
@@ -508,7 +510,7 @@ export function FileBrowser(): JSX.Element {
       fileBrowserCwd,
     ]);
     if (!treeData) {
-      window.alert("Paste failed: file listing not loaded yet");
+      await dialog.alert("Paste failed: file listing not loaded yet");
       return;
     }
     const existing = new Set(treeData.children.map((e) => e.name));
@@ -531,7 +533,7 @@ export function FileBrowser(): JSX.Element {
       const summary = failures
         .map((f) => `  - ${f.from}: ${f.error}`)
         .join("\n");
-      window.alert(
+      await dialog.alert(
         `Paste failed for ${failures.length} / ${clipboard.length}:\n${summary}`,
       );
     }
@@ -745,7 +747,7 @@ export function FileBrowser(): JSX.Element {
                 setDirty(false);
               } catch (e) {
                 console.error("Save before switch failed:", e);
-                window.alert(`Save failed: ${(e as Error).message}`);
+                await dialog.alert(`Save failed: ${(e as Error).message}`);
                 return;
               }
             }

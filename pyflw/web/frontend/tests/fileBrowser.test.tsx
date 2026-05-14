@@ -14,6 +14,7 @@ import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileBrowser } from "../src/components/FileBrowser";
+import { dialog } from "../src/lib/dialogService";
 import { useAppStore } from "../src/store/appStore";
 
 // 各テストで個別に挙動を切り替えるため top-level mock を使う
@@ -239,8 +240,8 @@ describe("FileBrowser context menu", () => {
       ],
     });
     deleteFile.mockResolvedValue(undefined);
-    // window.confirm を OK で固定
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    // v0.32.0: window.confirm → dialog.confirm に置換、test も spy 化
+    const confirmSpy = vi.spyOn(dialog, "confirm").mockResolvedValue(true);
 
     renderWithProvider(<FileBrowser />);
     const fileButton = await screen.findByText("victim.flw.json");
@@ -268,7 +269,7 @@ describe("FileBrowser context menu", () => {
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmSpy = vi.spyOn(dialog, "confirm").mockResolvedValue(false);
 
     renderWithProvider(<FileBrowser />);
     const fileButton = await screen.findByText("saved.flw.json");

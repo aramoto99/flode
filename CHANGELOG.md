@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-05-14 — ブラウザネイティブ alert/confirm/prompt をデスクトップ風モーダルに置換
+
+ユーザー要望: `window.alert/confirm/prompt` を出すと chrome のネイティブ
+ダイアログ (= 「127.0.0.1:8770 の内容」と表示される素朴な dialog) が表示され、
+デスクトップアプリ風 UI と整合しない。Simulink Property Inspector 風の独自
+モーダル (= `DialogShell` primitives) に置換する。
+
+### Added
+
+- **`src/lib/dialogService.ts`** (新規) — Promise ベースの singleton:
+  - `dialog.alert(message, options?)` → `Promise<void>`
+  - `dialog.confirm(message, options?)` → `Promise<boolean>`
+  - `dialog.prompt(message, options?)` → `Promise<string | null>`
+  - 同時に複数 dialog を出さず、queue で順次表示
+  - `subscribeDialog` / `getCurrentDialog` / `resolveCurrentDialog` で
+    React 外 (= `commands.ts` 等) からも呼べる
+- **`src/components/DialogHost.tsx`** (新規) — `useSyncExternalStore` で active
+  dialog を購読し、kind に応じて `AlertDialog` / `ConfirmDialog` / `PromptDialog`
+  を render。すべて `inspector.tsx` primitives (`DialogShell` /
+  `PrimaryButton` / `SecondaryButton` / `DangerButton` / `INPUT_CLS`) を使用、
+  ui-design-system.md 準拠
+- i18n キー: `dialog.alert.title` / `dialog.confirm.title` / `dialog.prompt.title`
+  / `dialog.button.ok` / `dialog.button.cancel` (ja/en)
+- vitest unit test (`tests/dialogService.test.ts`) — 12 件 (queue / resolve /
+  subscribe / options 受け渡し / 並列呼出し時の順次表示)
+
+### Changed
+
+- **`App.tsx`** root に `<DialogHost />` を mount
+- **`window.alert/confirm/prompt` 全 30 箇所を `await dialog.*` に置換**:
+  - `lib/commands.ts` (4 alert + 1 confirm)
+  - `components/FileBrowser.tsx` (8 alert + 2 confirm + 2 prompt)
+  - `components/Launcher.tsx` (2 alert + 1 prompt)
+  - `components/MenuBar.tsx` (4 alert + 1 confirm + 1 prompt)
+  - `components/Modal.tsx` (1 confirm = `SaveAsPathDialog` overwrite 確認)
+  - `lib/useExternalChangesPoll.ts` (1 confirm = 外部変更 reload 確認)
+- 既存 test (`fileBrowser.test.tsx` / `useExternalChangesPoll.test.tsx`) で
+  `window.confirm` を spy していた箇所を `dialog.confirm` の spy に追従
+- `MenuBar.tsx` のローカル state を `dialog` → `modal` に rename
+  (= import `dialog` との shadowing 解消)
+
+### Scope Note (= 別 release で対応)
+
+旧 `Modal.tsx` 内の専用 dialog (`SaveAsPathDialog` / `DirtyConfirmDialog` /
+`AboutDialog` / `KeyboardShortcutsDialog`) は今回スコープ外。これらは
+`rounded-lg` / `shadow-2xl` の古い design のままで、後続 release で
+`inspector.tsx` primitives に移行予定。
+
+### Verification
+
+- typecheck: clean
+- vitest: **361 全 pass** (新規 12 件 + 既存追従 3 件 + 既存 346 件)
+
 ## [0.31.11] - 2026-05-13 — FileBrowser ヘッダーの click toggle を撤去
 
 ユーザー要望: ヘッダーの「ワークスペース」テキストをクリックするとペインが
