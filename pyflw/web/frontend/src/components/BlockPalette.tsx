@@ -204,13 +204,14 @@ export function BlockPalette(): JSX.Element {
                           key={b.type_path}
                           draggable
                           onDragStart={(e) => handleDragStart(e, b)}
-                          className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
+                          // v0.33.2: 角丸を撤廃して角ばった見た目に (ユーザー要望)
+                          className="group flex cursor-grab flex-col items-center gap-0.5 border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
                           title={summary ? `${dispName} — ${summary}` : dispName}
                         >
                           <div
                             // v0.33.0: per-block color 撤廃。glyph は CSS で
                             // slate-600 を継承 (= 全カテゴリ統一の中性色)。
-                            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400"
+                            className="flex h-9 w-9 items-center justify-center border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400"
                           >
                             <BlockGlyph typePath={b.type_path} />
                           </div>
@@ -281,10 +282,11 @@ export function BlockPalette(): JSX.Element {
                         onDragStart={(e) =>
                           handleLibraryDragStart(e, library, entry)
                         }
-                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
+                        // v0.33.2: 角丸撤廃 (built-in と同じ)
+                        className="group flex cursor-grab flex-col items-center gap-0.5 border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
                         title={dispName}
                       >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400">
+                        <div className="flex h-9 w-9 items-center justify-center border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400">
                           <BlockGlyph typePath="pyflw.subsystems.subsystem.Subsystem" />
                         </div>
                         <div className="w-full truncate text-[10px] font-medium text-slate-700">

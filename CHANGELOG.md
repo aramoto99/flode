@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.2] - 2026-05-14 — BlockPalette のエントリの角丸を撤廃
+
+ユーザー要望「ライブラリ表示のブロックの角の丸みを完全に削除、角ばった
+感じにしてほしい」。Simulink Property Inspector 風 design system の原則
+「`rounded` は使わない (or 1-2px に留める)」とも整合。
+
+### Changed
+
+- `BlockPalette.tsx` の built-in + Library 両セクション内ブロックエントリ
+  (outer + glyph 内側) から `rounded-sm` を撤廃 → 完全に角ばった矩形に
+
+`rounded-md` (= search input / section header) は今回スコープ外。必要であれば
+別 release で対応。
+
 ## [0.33.1] - 2026-05-14 — Library セクション (`.flwlib.json` 由来) の violet 装飾を撤廃
 
 v0.33.0 で per-block color を撤廃したが、`BlockPalette` の Library セクション
