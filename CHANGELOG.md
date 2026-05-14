@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-05-14 — Scope のデフォルト見た目を UI design system に合わせて整理
+
+ユーザー指摘「グラフのデフォルトがダサい」。旧デフォルトは tick label が
+ブラウザ標準フォントで大きく、"t [s]" が中央に大きく表示、軸色が薄すぎ
+(`#94a3b8` = slate-400) で「素の uPlot」感。Simulink Property Inspector 風に
+整える。
+
+### Changed (`ScopeView.tsx` の `buildOptions`)
+
+- **フォント明示**: `axes[].font = "11px system-ui, ..."` /
+  `labelFont = "10px system-ui, ..."`。Canvas 描画なので CSS が効かず、
+  options で指定しないと browser default の sans-serif になっていた
+- **軸ラベル色**: `#94a3b8` (slate-400) → **`#64748b` (slate-500)**
+  (= 旧は薄すぎて読みづらかった)
+- **X 軸 label "t [s]" のサイズを小型化**: `labelSize: 14` /
+  `size: 28` / `labelGap: 0` で軸領域全体をコンパクトに
+- **Tick** を明示的に描画: `ticks: { stroke: "#cbd5e1", width: 1, size: 4 }`
+- **Y 軸** も同様: `size: 38` で密度を上げる
+- **デフォルト線幅**: `1.5` → **`1.25`** (= per-signal 設定が無いときの値、
+  ユーザーが per-signal で個別指定すれば上書き)
+
+色 palette (`FALLBACK_COLORS` = blue-500 → red-500 → emerald-500 ...) は変更
+なし。複数 signal 時の判別性を維持。
+
+### Verification
+
+- typecheck: clean
+- vitest: 361 全 pass
+
 ## [0.32.1] - 2026-05-14 — Scope のホイールクリック (middle button) ドラッグで pan
 
 ユーザー要望: グラフをホイールクリック (= middle button hold) で掴んで動かすと、

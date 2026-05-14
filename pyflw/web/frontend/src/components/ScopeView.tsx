@@ -75,7 +75,7 @@ export function buildOptions(
     ...Array.from({ length: n_signals }, (_, i): uPlot.Series => ({
       label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
       stroke: resolveSignalColor(resolved.signals, i),
-      width: resolved.signals?.[String(i)]?.width ?? 1.5,
+      width: resolved.signals?.[String(i)]?.width ?? 1.25,
       points: { show: false },
     })),
   ];
@@ -93,6 +93,17 @@ export function buildOptions(
       ? { min: resolved.y_min, max: resolved.y_max }
       : undefined;
 
+  // v0.32.2: フォント / 軸色 / グリッドの styling を UI design system に統一
+  // (= 旧デフォルトは tick label が大きく "t [s]" が中央大型表示で「web 標準
+  // っぽい」見た目になっていた)。Simulink Property Inspector 風の 11 px sans-
+  // serif + slate-500 系で密度を上げ、X 軸 label は左寄せ小さく。
+  const AXIS_FONT = '11px system-ui, "Segoe UI", -apple-system, sans-serif';
+  const AXIS_LABEL_FONT =
+    '10px system-ui, "Segoe UI", -apple-system, sans-serif';
+  const AXIS_STROKE = "#64748b"; // slate-500 (旧 slate-400 は薄すぎた)
+  const GRID_STROKE = "#e2e8f0"; // slate-200
+  const TICK_STROKE = "#cbd5e1"; // slate-300
+
   return {
     width: 400,
     height: 192,
@@ -109,13 +120,33 @@ export function buildOptions(
     },
     axes: [
       {
-        stroke: "#94a3b8",
-        grid: { stroke: "#e2e8f0", show: resolved.grid_major !== false },
+        stroke: AXIS_STROKE,
+        font: AXIS_FONT,
+        labelFont: AXIS_LABEL_FONT,
+        size: 28,
+        gap: 3,
+        labelGap: 0,
+        labelSize: 14,
+        grid: {
+          stroke: GRID_STROKE,
+          width: 1,
+          show: resolved.grid_major !== false,
+        },
+        ticks: { stroke: TICK_STROKE, width: 1, size: 4 },
         label: "t [s]",
       },
       {
-        stroke: "#94a3b8",
-        grid: { stroke: "#e2e8f0", show: resolved.grid_major !== false },
+        stroke: AXIS_STROKE,
+        font: AXIS_FONT,
+        labelFont: AXIS_LABEL_FONT,
+        size: 38,
+        gap: 3,
+        grid: {
+          stroke: GRID_STROKE,
+          width: 1,
+          show: resolved.grid_major !== false,
+        },
+        ticks: { stroke: TICK_STROKE, width: 1, size: 4 },
       },
     ],
     legend: {
