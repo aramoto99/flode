@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-05-14 — glyph 中心ブロック 18 個を正方形 48×48 に
+
+ユーザー要望「配置したブロックは長方形が多いが、正四角形のほうが都合の
+いいブロックもある」。glyph (icon) 中心で値表示が不要なシンボリックブロック
+を **正方形 48×48** に変更、Simulink 風の「ブロック」感を強化。
+
+### Changed (`blockShapes.ts`)
+
+以下 18 ブロックを `kind: "rect", width: 48, height: 48` に変更:
+
+| カテゴリ | ブロック |
+|---|---|
+| continuous | Integrator, Derivative |
+| discrete | UnitDelay, ZeroOrderHoldDirect |
+| mathops | Abs, Sign, MinMax, Saturation |
+| sources | Sine, Step, Clock, PulseGenerator |
+| sinks | Scope, XYGraph, Terminator |
+| logic | RelationalOperator, LogicalOperator |
+| routing | Switch |
+
+### Not Changed
+
+横長を要する以下は **default rect (72×40)** のまま:
+
+- `Constant` (= 値文字列 `12345.67` 表示)
+- `Ramp` (= 斜線 icon が横長)
+- `RateTransition` (= sample-time pair の表示余地)
+
+既存の特殊形 (`Gain` 三角形 / `Sum`/`Product`/`Divide` 円 / `Mux`/`Demux` bar /
+`Inport`/`Outport` 台形 / `TransferFunction` etc rect-wide / `Subsystem`)
+は変更なし。
+
+### 既存モデルへの影響
+
+保存済み `.flw.json` モデルの `layout.w / layout.h` 上書きは引き続き有効
+(= ユーザーが過去にリサイズしたブロックは見た目を保つ)。新規追加 + リサイズ
+未指定のブロックのみ新サイズに従う。
+
+### Verification
+
+- typecheck: clean
+- vitest: 361 全 pass (`blockShapes.test.ts` 7 件含む)
+
 ## [0.33.3] - 2026-05-14 — Gain アイコンが「再生ボタン」に見える問題を修正
 
 ユーザー指摘「ライブラリの Gain が再生マークみたいになっている」。

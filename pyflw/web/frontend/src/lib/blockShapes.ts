@@ -53,9 +53,32 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // -------- Display は live 数値を大きく表示するため広め --------
   "pyflw.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
 
-  // 残り (Constant / Step / Sine / Ramp / Clock / PulseGenerator / Saturation / Abs /
-  // Sign / MinMax / Integrator / Derivative / UnitDelay / ZeroOrderHoldDirect /
-  // Logical / Relational / Switch / Scope / Terminator / Subsystem) は default rect。
+  // -------- v0.34.0: glyph 中心ブロック = 正方形 48×48 --------
+  // ユーザー要望「正四角形のほうが都合のいいブロックもある」。glyph のみで
+  // 値表示が不要なシンボリックブロックを正方形化する。横長が必要な
+  // Constant / Ramp / RateTransition / TransferFunction etc は除外 (= デフォ
+  // ルト rect or rect-wide のまま)。
+  "pyflw.blocks.continuous.Integrator":         { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.continuous.Derivative":         { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.discrete.UnitDelay":            { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.discrete.ZeroOrderHoldDirect":  { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.mathops.Abs":                   { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.mathops.Sign":                  { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.mathops.MinMax":                { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.mathops.Saturation":            { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sources.Sine":                  { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sources.Step":                  { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sources.Clock":                 { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sources.PulseGenerator":        { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sinks.Scope":                   { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sinks.XYGraph":                 { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.sinks.Terminator":              { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.logic.RelationalOperator":      { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.logic.LogicalOperator":         { kind: "rect", width: 48, height: 48 },
+  "pyflw.blocks.routing.Switch":                { kind: "rect", width: 48, height: 48 },
+
+  // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
+  // 値 / icon が横長を要求するため。
 };
 
 /** デフォルト矩形のサイズ。 */
