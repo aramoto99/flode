@@ -245,7 +245,12 @@ export function BlockPalette(): JSX.Element {
             <div key={libCatKey} className="mb-1">
               <button
                 type="button"
-                className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-violet-600 hover:bg-slate-100"
+                // v0.33.1: 旧版は Library セクション (= .flwlib.json 由来) を
+                // violet で囲って built-in と区別していたが、per-block color
+                // 撤廃の流れに合わせて Library 側も slate 系 (built-in と同じ)
+                // に統一。区別は「Library · 名前」プレフィクスと「LIB」バッジで
+                // 視認する。
+                className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
                 onClick={() =>
                   setCollapsed((prev) => ({
                     ...prev,
@@ -261,7 +266,7 @@ export function BlockPalette(): JSX.Element {
                   {t("palette.library_prefix", { defaultValue: "Library" })} ·{" "}
                   {libDispName}
                 </span>
-                <span className="ml-auto rounded bg-violet-100 px-1.5 py-px text-[9px] text-violet-700">
+                <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[9px] text-slate-500">
                   {visibleEntries.length}
                 </span>
               </button>
@@ -276,16 +281,16 @@ export function BlockPalette(): JSX.Element {
                         onDragStart={(e) =>
                           handleLibraryDragStart(e, library, entry)
                         }
-                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-violet-300 hover:bg-violet-50/50 active:cursor-grabbing"
+                        className="group flex cursor-grab flex-col items-center gap-0.5 rounded-md border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
                         title={dispName}
                       >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white p-1 text-violet-600 transition-colors group-hover:border-violet-400">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400">
                           <BlockGlyph typePath="pyflw.subsystems.subsystem.Subsystem" />
                         </div>
                         <div className="w-full truncate text-[10px] font-medium text-slate-700">
                           {dispName}
                         </div>
-                        <span className="rounded bg-violet-100 px-1 text-[8px] uppercase tracking-wide text-violet-700">
+                        <span className="rounded bg-slate-100 px-1 text-[8px] uppercase tracking-wide text-slate-500">
                           LIB
                         </span>
                       </div>

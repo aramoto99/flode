@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-05-14 — Library セクション (`.flwlib.json` 由来) の violet 装飾を撤廃
+
+v0.33.0 で per-block color を撤廃したが、`BlockPalette` の Library セクション
+(= `.flwlib.json` 由来のカスタムサブシステム集) には **violet** が残っていた
+(= 旧版で built-in と区別するため hardcode)。built-in と統一する。
+
+### Changed
+
+- `BlockPalette.tsx` の Library セクション内 violet を全て slate に置換:
+  - section header text: `text-violet-600` → **`text-slate-500`** (= built-in
+    の category header と同色)
+  - count badge: `bg-violet-100 text-violet-700` → **`bg-slate-100 text-slate-500`**
+  - entry hover: `hover:border-violet-300 hover:bg-violet-50/50` →
+    **`hover:border-blue-300 hover:bg-blue-50/50`** (= built-in と同 hover)
+  - glyph border / color: `border-violet-200 text-violet-600
+    group-hover:border-violet-400` → **`border-slate-200 text-slate-600
+    group-hover:border-blue-400`**
+  - "LIB" バッジ: `bg-violet-100 text-violet-700` → **`bg-slate-100 text-slate-500`**
+
+Library と built-in の視覚的区別は **section header の「Library · 名前」
+プレフィクス + 「LIB」バッジ** で行う (= 色なしでも判別可能)。
+
 ## [0.33.0] - 2026-05-14 — per-block color を撤廃 (= ライブラリのジャンル別色付け廃止)
 
 ユーザー討議「ジャンルが増えたら color palette をどう管理する? そもそも色は
