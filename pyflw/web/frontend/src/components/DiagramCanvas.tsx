@@ -9,7 +9,9 @@ import {
   ReactFlow,
   SelectionMode,
   useReactFlow,
+  useStoreApi,
   type Connection,
+  type Edge,
   type EdgeChange,
   type NodeChange,
   type OnConnect,
@@ -57,6 +59,12 @@ import {
   type EdgeGeom,
   findSpliceCandidate,
 } from "../lib/autoSplice";
+import {
+  computeStepEdgePolyline,
+  polylineIntersectsRect,
+  type EdgeEndpointNode,
+  type Rect,
+} from "../lib/edgeRectIntersect";
 
 // React Flow に渡すカスタムノード type 表 (modelToDiagram で type: "blockNode" を返す)。
 // 識別子の object 参照を毎回同じにすることで React Flow の警告を回避する
@@ -145,6 +153,22 @@ export function DiagramCanvas({
   } | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlow = useReactFlow();
+  const storeApi = useStoreApi();
+
+  // v3.x: ドラッグ範囲選択 (rubber-band) で「両端ノードのどちらも矩形外で、
+  // 中間の path だけが矩形を横切るエッジ」が選択されないバグの補完。
+  // React Flow v12 の UserSelection は ``getNodesInside`` で選んだ node に
+  // 接続している edge しか拾わない (= edge geometry × rect 判定なし)。本 hook
+  // で ``userSelectionRect`` が null に戻った瞬間 (= drag 終了) を捕まえ、
+  // edge polyline × flow 座標 rect で追加判定する。
+  //
+  // ref 経由で最新 edges/nodes/selection を読むことで store subscription を
+  // 1 回だけに抑える (= drag 中の高頻度更新で DiagramCanvas が再 render しない)。
+  const rubberBandRefs = useRef<{
+    edges: Edge[];
+    nodes: BlockNode[];
+    selectedEdgeIds: readonly string[];
+  }>({ edges: [], nodes: [], selectedEdgeIds: [] });
 
   // Simulink 風: ノード上で右クリックドラッグ = そのノードをコピーしてカーソルに追従。
   // 空エリアで右クリックドラッグの場合は ``panOnDrag = [1, 2]`` 経由で React Flow が
@@ -344,6 +368,91 @@ export function DiagramCanvas({
     };
   }, [branchDrag]);
 
+  // userSelectionRect が非 null → null に切り替わった瞬間 (= 範囲選択完了)
+  // を捕まえ、矩形を横切る edge を追加で選択する (= React Flow v12 default では
+  // 拾われない edge の補完)。
+  useEffect(() => {
+    let prevRect:
+      | { x: number; y: number; width: number; height: number }
+      | null = null;
+    const unsubscribe = storeApi.subscribe((state) => {
+      const cur = state.userSelectionRect;
+      if (cur !== null) {
+        // dragging 中: 最新 rect を保持しておく (= pointerup 時に store から
+        // 消されるため、直前の値を自前で記録する)
+        prevRect = { x: cur.x, y: cur.y, width: cur.width, height: cur.height };
+        return;
+      }
+      if (prevRect === null) return;
+      const screenRect = prevRect;
+      prevRect = null;
+      const [tx, ty, zoom] = state.transform;
+      if (zoom <= 0) return;
+      // screen (container-relative px) → flow 座標
+      const flowRect: Rect = {
+        x: (screenRect.x - tx) / zoom,
+        y: (screenRect.y - ty) / zoom,
+        w: screenRect.width / zoom,
+        h: screenRect.height / zoom,
+      };
+      const { edges: curEdges, nodes: curNodes, selectedEdgeIds: curSelected } =
+        rubberBandRefs.current;
+      const nodeById = new Map(curNodes.map((n) => [n.id, n]));
+      const toEndpoint = (n: BlockNode): EdgeEndpointNode | null => {
+        // ``modelToDiagram`` で必ず populate されるが TS 上は optional / unknown
+        // (BlockNodeData は Record<string, unknown> 拡張) なので narrow する。
+        const sw = typeof n.data.shapeWidth === "number" ? n.data.shapeWidth : undefined;
+        const sh = typeof n.data.shapeHeight === "number" ? n.data.shapeHeight : undefined;
+        const w = n.width ?? sw;
+        const h = n.height ?? sh;
+        const nIn = n.data.nInputs;
+        const nOut = n.data.nOutputs;
+        if (
+          w === undefined ||
+          h === undefined ||
+          nIn === undefined ||
+          nOut === undefined
+        ) {
+          return null;
+        }
+        return {
+          position: n.position,
+          width: w,
+          height: h,
+          nInputs: nIn,
+          nOutputs: nOut,
+          flipped: n.data.flipped,
+        };
+      };
+      const additional: string[] = [];
+      for (const edge of curEdges) {
+        const src = nodeById.get(edge.source);
+        const dst = nodeById.get(edge.target);
+        if (!src || !dst) continue;
+        const srcEp = toEndpoint(src);
+        const dstEp = toEndpoint(dst);
+        if (!srcEp || !dstEp) continue;
+        const srcIdx = Number(edge.sourceHandle ?? 0);
+        const dstIdx = Number(edge.targetHandle ?? 0);
+        const polyline = computeStepEdgePolyline(srcEp, srcIdx, dstEp, dstIdx);
+        if (polylineIntersectsRect(polyline, flowRect)) {
+          additional.push(edge.id);
+        }
+      }
+      if (additional.length === 0) return;
+      const merged = new Set<string>(curSelected);
+      let changed = false;
+      for (const id of additional) {
+        if (!merged.has(id)) {
+          merged.add(id);
+          changed = true;
+        }
+      }
+      if (changed) setSelectedEdgeIds(Array.from(merged));
+    });
+    return unsubscribe;
+  }, [storeApi, setSelectedEdgeIds]);
+
   // v0.21.0: legacy loading/error 判定削除 (= editingModel は FileBrowser
   // onClick で populate される、loading 表示は FileBrowser 側 / no_model
   // 表示で対応)。
@@ -374,6 +483,13 @@ export function DiagramCanvas({
     ...n,
     selected: selectedSet.has(n.id),
   }));
+  // rubber-band 補完 hook の subscription callback が常に最新の edges/nodes/
+  // selection を参照できるよう、render 毎に ref を更新する。
+  rubberBandRefs.current = {
+    edges,
+    nodes: decoratedNodes,
+    selectedEdgeIds,
+  };
 
   // ---------- ハンドラ ----------
 

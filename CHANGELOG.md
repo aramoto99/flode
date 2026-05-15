@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.11] - 2026-05-15 — ドラッグ範囲選択で edge が選択されない問題を修正
+
+ユーザー指摘「ドラッグで選択したときエッジを選択できるべきだが、全然できない」。
+React Flow v12 の rubber-band 選択は仕様として edge geometry を矩形と交差判定
+しない (= 選択ノードに接続している edge しか拾わない) ため、両端ノードが
+矩形外で edge path だけが矩形を横切るケースで edge が無視されていた。
+
+### Fixed
+
+- DiagramCanvas が `useStoreApi` で `userSelectionRect` を購読し、drag 終了
+  (非 null → null 遷移) で flow 座標に変換した矩形と各 edge の step polyline
+  で交差判定、ヒットした edge を既存 `selectedEdgeIds` に union
+- 新規 `pyflw/web/frontend/src/lib/edgeRectIntersect.ts` に Liang-Barsky 風の
+  line-segment × rect 判定 / polyline × rect 判定 / step edge polyline 構築
+  を実装、テスト 19 件追加 (報告された「垂直 leg だけ矩形を横切る」失敗ケース
+  を明示的に再現)
+- subscription は 1 回のみ登録、最新 edges/nodes/selection は ref 経由で参照
+  (= drag 中の高頻度 rect 更新で DiagramCanvas が再 render しない)
+- flipped (左右反転) ノードでも正しい polyline を計算
+
+### Known limitations
+
+- `tx < sx` の U-turn edge (= 帰還ループ等) は React Flow が `offset=20px`
+  の 5-point path を描くが、本実装の 3-segment 近似だと折り返し領域だけを
+  横切る選択矩形で偽陰性が生じうる。pyflw の典型モデル (左→右フロー) では
+  実害は限定的。
+
 ## [0.35.10] - 2026-05-15 — Switch SVG をブロック実寸ベースに変更 (横拡大時の図離れ修正)
 
 ユーザー指摘「横に拡大したときも考えてる?」。前 release (v0.35.9) で
