@@ -529,29 +529,52 @@ function ShapeContent({
             {label}
           </span>
         ))}
-        {/* 右半分: 物理的スイッチアーム SVG (= Simulink Switch ブロックと同じ姿勢)。
-            v0.35.9: preserveAspectRatio="xMidYMid meet" でリサイズ時の歪み回避
-            (ユーザー指摘「拡大したときのことを考えてますか?」)。SVG を絶対位置
-            で「右半分に固定アスペクトで中央フィット」させる。 */}
+        {/* v0.35.10: ブロック実寸を viewBox に使って circle / line を絶対 px で
+            描画する。これで縦長/横長どちらにリサイズしても接点は完全な円、線は
+            均一太さを保ち、かつポート y 位置 (= (i+1)/(n+1)) とぴったり揃う
+            (ユーザー指摘「横に拡大したときも考えてる?」)。 */}
         <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="xMidYMid meet"
-          className="absolute top-0 right-0 h-full"
-          style={{ width: "55%" }}
+          width={shape.width}
+          height={shape.height}
+          viewBox={`0 0 ${shape.width} ${shape.height}`}
+          className="absolute inset-0"
           fill="none"
           stroke="currentColor"
-          strokeWidth="3"
+          strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          {/* T 入力側の接点 (左上、丸) */}
-          <circle cx="30" cy="25" r="6" fill="currentColor" stroke="none" />
-          {/* F 入力側の接点 (左下、丸) */}
-          <circle cx="30" cy="75" r="6" fill="currentColor" stroke="none" />
-          {/* 出力側 pivot (右中央、丸) */}
-          <circle cx="85" cy="50" r="6" fill="currentColor" stroke="none" />
-          {/* スイッチアーム = T 側に倒れている (右中央 pivot → 左上の T 接点) */}
-          <line x1="85" y1="50" x2="30" y2="25" />
+          {/* T 接点 (= 上ポート y 位置、ブロック右寄り 60% 位置) */}
+          <circle
+            cx={shape.width * 0.6}
+            cy={shape.height * 0.25}
+            r="3.5"
+            fill="currentColor"
+            stroke="none"
+          />
+          {/* F 接点 (= 下ポート y 位置、同じ x) */}
+          <circle
+            cx={shape.width * 0.6}
+            cy={shape.height * 0.75}
+            r="3.5"
+            fill="currentColor"
+            stroke="none"
+          />
+          {/* 出力 pivot (= 右端寄り、ブロック中央 y) */}
+          <circle
+            cx={shape.width - 8}
+            cy={shape.height * 0.5}
+            r="3.5"
+            fill="currentColor"
+            stroke="none"
+          />
+          {/* スイッチアーム = T 側に倒れている (pivot → T 接点を斜め直線で結ぶ) */}
+          <line
+            x1={shape.width - 8}
+            y1={shape.height * 0.5}
+            x2={shape.width * 0.6}
+            y2={shape.height * 0.25}
+          />
         </svg>
       </div>
     );

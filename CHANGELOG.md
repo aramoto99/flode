@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.10] - 2026-05-15 — Switch SVG をブロック実寸ベースに変更 (横拡大時の図離れ修正)
+
+ユーザー指摘「横に拡大したときも考えてる?」。前 release (v0.35.9) で
+`xMidYMid meet` にしたが、`width: 55%` 固定だったため、ブロックを横長に
+リサイズすると **SVG が右半分中央に正方形でまとまり、入力ポート (左端) と
+接点が大きく離れて**いた。
+
+### Fixed
+
+- SVG を `width={shape.width} height={shape.height}` + `viewBox` も実寸で
+  描画。接点 / pivot / アームは **絶対 px 座標** で計算
+  - T 接点: `(shape.width * 0.6, shape.height * 0.25)`
+  - F 接点: `(shape.width * 0.6, shape.height * 0.75)`
+  - 出力 pivot: `(shape.width - 8, shape.height * 0.5)`
+- 接点の半径 (3.5 px) / アームの太さ (1.5 px) も絶対 px で固定 → 縦長
+  にも横長にもリサイズしても**完全な円と均一な線**を維持
+- ポート y 位置 (= `(i+1)/(n+1)`) と接点 y 位置 (= 0.25 / 0.75 = 1/4 / 3/4) も
+  一致 (入力 3 で `0.25, 0.5, 0.75`)
+
 ## [0.35.9] - 2026-05-15 — Switch ブロック拡大時の SVG 歪みを修正
 
 ユーザー指摘「拡大したときのことを考えてますか?」。前 release (v0.35.8) で
