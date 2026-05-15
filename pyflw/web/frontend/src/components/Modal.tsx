@@ -358,6 +358,7 @@ export function KeyboardShortcutsDialog({
         { keys: "Ctrl+V", description: t("modal.shortcuts.desc.paste") },
         { keys: "Ctrl+A", description: t("modal.shortcuts.desc.select_all") },
         { keys: "Delete / Backspace", description: t("modal.shortcuts.desc.delete") },
+        { keys: "Ctrl+I", description: t("modal.shortcuts.desc.flip_block") },
       ],
     },
     {

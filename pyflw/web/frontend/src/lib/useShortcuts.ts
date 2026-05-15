@@ -11,6 +11,7 @@ import {
   pasteClipboard,
   removeBlockFromEditing,
   selectAllInScope,
+  toggleBlockFlipped,
   useAppStore,
 } from "../store/appStore";
 import { resolveBlocksAtPath } from "./pathResolver";
@@ -282,6 +283,21 @@ export function useShortcuts(): void {
           window.clearTimeout(ctrlKPrefixTimeoutRef.current);
           ctrlKPrefixTimeoutRef.current = null;
         }
+      }
+
+      // v0.35.5: Ctrl+I = 選択ブロックを左右反転 (Simulink "Flip Block" 互換)。
+      // Ctrl+K プレフィクス中の Ctrl+I (= Inspector dock cycle) は上で処理済、
+      // ここに到達するのは通常 (= プレフィクス無し) の Ctrl+I のみ。
+      if (ctrl && !e.shiftKey && key.toLowerCase() === "i") {
+        const state = useAppStore.getState();
+        const ids = state.selectedNodeIds;
+        if (ids.length > 0) {
+          e.preventDefault();
+          for (const id of ids) {
+            toggleBlockFlipped(id);
+          }
+        }
+        return;
       }
 
       // Esc: 階層を上に / 選択解除

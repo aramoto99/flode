@@ -173,6 +173,7 @@
   "modal.shortcuts.desc.paste": "Paste",
   "modal.shortcuts.desc.select_all": "Select all (in current scope)",
   "modal.shortcuts.desc.delete": "Delete selection",
+  "modal.shortcuts.desc.flip_block": "Flip selected blocks left-right",
   "modal.shortcuts.desc.drill_in": "Drill into selected Subsystem",
   "modal.shortcuts.desc.drill_up": "Drill up / clear selection",
   "modal.shortcuts.desc.rename_file": "Rename file in FileBrowser",

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.5] - 2026-05-15 — Ctrl+I で選択ブロックを左右反転 (Simulink "Flip Block" 互換)
+
+ユーザー要望「Ctrl+I でブロックの左右反転ができるとうれしい」。Simulink の
+"Flip Block" デフォルトショートカット (Ctrl+I) と同じ key binding。
+
+### Added
+
+- `useShortcuts.ts` に **Ctrl+I** handler を追加: `selectedNodeIds` 全てに対し
+  `toggleBlockFlipped` を呼ぶ。Shift なし / Ctrl+K プレフィクス中でない通常の
+  Ctrl+I のみ反応 (= prefix 中の Ctrl+K → I は既存の Inspector dock cycle に
+  優先される)
+- ショートカット一覧 dialog (`Modal.tsx`) に「Ctrl+I = 選択ブロックを左右反転」
+  を追記
+- i18n キー: `modal.shortcuts.desc.flip_block` (ja/en)
+
+### Note
+
+実体の `toggleBlockFlipped` action は v0.15.0 から存在 (ParameterPanel の checkbox
+から呼べる)。本 release では key shortcut を追加しただけで、複数選択時は全
+ブロックがまとめて反転する。
+
 ## [0.35.4] - 2026-05-15 — Divide を矩形化 + per-port `×`/`÷` 表示
 
 ユーザー要望「Divide は四角形のほうがいいね」。Divide は `signs="*/"` の
