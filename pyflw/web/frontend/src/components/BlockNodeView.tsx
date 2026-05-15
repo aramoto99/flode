@@ -18,7 +18,6 @@ import {
   formatNumber,
   formatPolynomial,
   formatTransferFunction,
-  switchOpForCriterion,
 } from "../lib/blockFormatting";
 import { BlockGlyph } from "../lib/blockGlyphs";
 import {
@@ -495,13 +494,37 @@ function ShapeContent({
       </div>
     );
   }
-  // Switch: criterion を Simulink 風の比較式 (例 ``u2 ≥ T``) に整形
+  // v0.35.7: Switch を Simulink 流の per-port 表示に。
+  //   - 上ポート (u[0] = input_true)  → "T"
+  //   - 中央ポート (u[1] = control)   → "{op} {threshold}" (例 "≥ 0")
+  //   - 下ポート (u[2] = input_false) → "F"
   if (typePath.endsWith(".Switch")) {
-    const criterion = (paramsRaw as Record<string, unknown>).criterion;
-    const op = switchOpForCriterion(criterion);
+    const params = paramsRaw as Record<string, unknown>;
+    const criterion = params.criterion;
+    const threshold = params.threshold;
+    const opSymbol =
+      criterion === ">"
+        ? ">"
+        : criterion === "!="
+          ? "≠"
+          : "≥"; // ">=" default
+    const thrText =
+      typeof threshold === "number" ? formatNumber(threshold) : "0";
+    const middleLabel = `${opSymbol} ${thrText}`;
+    const portLabels = ["T", middleLabel, "F"];
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-medium text-slate-800">
-        <span>{op}</span>
+      <div className="pointer-events-none absolute inset-0">
+        {portLabels.map((label, i) => (
+          <span
+            key={i}
+            className={`absolute left-1 -translate-y-1/2 font-mono leading-none text-slate-800 ${
+              i === 1 ? "text-[9px]" : "text-[10px] font-bold"
+            }`}
+            style={{ top: `${((i + 1) * 100) / (3 + 1)}%` }}
+          >
+            {label}
+          </span>
+        ))}
       </div>
     );
   }

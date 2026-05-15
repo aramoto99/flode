@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.7] - 2026-05-15 — Switch を Simulink 流の per-port "T / criterion / F" 表示に
+
+ユーザー要望「Switch の見た目を Simulink ブロックに近づけたい」。旧版は
+中央 1 か所に "u2 ≥ T" を出すだけで、3 入力ポートのどれが true 側 /
+control / false 側か判別しにくかった。
+
+### Changed
+
+- `BlockNodeView.tsx` の `.Switch` 専用 render を per-port 表示に変更:
+  - 上ポート (`u[0]` = input_true) 内側に **`T`**
+  - 中央ポート (`u[1]` = control) 内側に **`{op} {threshold}`** (例: `≥ 0`,
+    `> 5`, `≠ 0`)。閾値は `paramsRaw.threshold` を `formatNumber` で整形
+  - 下ポート (`u[2]` = input_false) 内側に **`F`**
+- y 位置は `inputHandlePosition` と一致する `(i+1)/(n+1)%`
+- 未使用となった `switchOpForCriterion` import を削除 (lib/blockFormatting.ts
+  内の関数自体は他で参照されている場合があるため残置)
+
+### 確認シナリオ
+
+- `criterion=">="`, `threshold=0` → 中央表示 `≥ 0`
+- `criterion=">"`, `threshold=5` → 中央表示 `> 5`
+- `criterion="!="`, `threshold=0` → 中央表示 `≠ 0`
+
 ## [0.35.6] - 2026-05-15 — DerivativeGlyph の "du/dt" 見切れを修正
 
 ユーザー指摘「ライブラリ Derivative の表示が見切れている」。`DerivativeGlyph`
