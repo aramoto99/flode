@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.8] - 2026-05-15 — Switch ブロックに物理的スイッチアームの SVG を追加
+
+ユーザー指摘「あんまり Switch という感じじゃない、もっと Switch っぽさを
+出すべき」。前 release (v0.35.7) で per-port T/criterion/F ラベルを入れたが、
+それだけでは「スイッチ」感が薄かった。
+
+### Changed
+
+- **`blockShapes.ts`**: Switch を `48×48` → **`64×56`** に拡大
+  (= ラベル + スイッチアームの両方を描く余地確保)
+- **`BlockNodeView.tsx`** の Switch render: 右半分に SVG で物理的スイッチを
+  描画
+  - T 接点 (左上、塗りつぶし丸)
+  - F 接点 (左下、塗りつぶし丸)
+  - 出力 pivot (右中央、塗りつぶし丸)
+  - スイッチアーム (右中央 → 左上 T 接点、= T 側に倒れた既定姿)
+- **`blockGlyphs.tsx`** の `SwitchGlyph` も同様に物理的スイッチ図に統一
+  (旧: テキスト `u2≥T`)。Library palette と Diagram canvas で見た目一致
+
+スイッチアームは static (= 内部状態を持たず常に T 側を表示)。Simulink でも
+Switch ブロックの図は static で、実際の挙動は criterion / threshold で決まる
+仕様と整合。
+
 ## [0.35.7] - 2026-05-15 — Switch を Simulink 流の per-port "T / criterion / F" 表示に
 
 ユーザー要望「Switch の見た目を Simulink ブロックに近づけたい」。旧版は

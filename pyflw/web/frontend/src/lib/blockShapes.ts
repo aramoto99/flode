@@ -80,7 +80,9 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "pyflw.blocks.sinks.Terminator":              { kind: "rect", width: 48, height: 48 },
   "pyflw.blocks.logic.RelationalOperator":      { kind: "rect", width: 48, height: 48 },
   "pyflw.blocks.logic.LogicalOperator":         { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.routing.Switch":                { kind: "rect", width: 48, height: 48 },
+  // v0.35.8: Switch は per-port ラベル (T / criterion / F) + 右半分の
+  // スイッチアーム SVG を描き込むためやや横長に拡張。
+  "pyflw.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。

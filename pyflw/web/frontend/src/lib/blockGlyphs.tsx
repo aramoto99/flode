@@ -530,20 +530,18 @@ const LogicalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Routing
 // =============================================================================
 
-// v0.15.0: 実機キャンバスは ``u2 ≥ T`` 等のテキスト → glyph も同じ。
+// v0.35.8: Library palette でも Simulink 風の物理的スイッチアームを表示
+// (= BlockNodeView 内の表示と整合)。2 接点 + 出力 pivot + T 側に倒れたアーム。
 const SwitchGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <text
-      x="12"
-      y="16"
-      textAnchor="middle"
-      fontSize="7"
-      fontFamily="ui-monospace,monospace"
-      fill="currentColor"
-      stroke="none"
-    >
-      u2≥T
-    </text>
+    {/* T 接点 (左上) */}
+    <circle cx="6" cy="6" r="1.8" fill="currentColor" stroke="none" />
+    {/* F 接点 (左下) */}
+    <circle cx="6" cy="18" r="1.8" fill="currentColor" stroke="none" />
+    {/* 出力 pivot (右中央) */}
+    <circle cx="20" cy="12" r="1.8" fill="currentColor" stroke="none" />
+    {/* スイッチアーム (右中央 → T 接点) */}
+    <line x1="20" y1="12" x2="6" y2="6" />
   </svg>
 );
 

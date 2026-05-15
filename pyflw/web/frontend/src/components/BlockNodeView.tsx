@@ -495,6 +495,9 @@ function ShapeContent({
     );
   }
   // v0.35.7: Switch を Simulink 流の per-port 表示に。
+  // v0.35.8: 「スイッチっぽさ」を出すため、右半分に物理的スイッチアームの SVG
+  // を描き込む。スイッチアームは "T 側に倒れている" 既定姿で描画
+  // (= 内部状態がない static icon、Simulink の Switch ブロック表示と同様)。
   //   - 上ポート (u[0] = input_true)  → "T"
   //   - 中央ポート (u[1] = control)   → "{op} {threshold}" (例 "≥ 0")
   //   - 下ポート (u[2] = input_false) → "F"
@@ -514,6 +517,7 @@ function ShapeContent({
     const portLabels = ["T", middleLabel, "F"];
     return (
       <div className="pointer-events-none absolute inset-0">
+        {/* per-port ラベル (左寄せ) */}
         {portLabels.map((label, i) => (
           <span
             key={i}
@@ -525,6 +529,26 @@ function ShapeContent({
             {label}
           </span>
         ))}
+        {/* 右半分: 物理的スイッチアーム SVG (= Simulink Switch ブロックと同じ姿勢) */}
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="absolute inset-0 h-full w-full"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {/* T 入力側の接点 (左上、丸) */}
+          <circle cx="55" cy="25" r="3" fill="currentColor" />
+          {/* F 入力側の接点 (左下、丸) */}
+          <circle cx="55" cy="75" r="3" fill="currentColor" />
+          {/* 出力側 pivot (右中央、丸) */}
+          <circle cx="92" cy="50" r="3" fill="currentColor" />
+          {/* スイッチアーム = T 側に倒れている (右中央 pivot → 左上の T 接点) */}
+          <line x1="92" y1="50" x2="55" y2="25" />
+        </svg>
       </div>
     );
   }
