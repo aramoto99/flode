@@ -529,25 +529,29 @@ function ShapeContent({
             {label}
           </span>
         ))}
-        {/* 右半分: 物理的スイッチアーム SVG (= Simulink Switch ブロックと同じ姿勢) */}
+        {/* 右半分: 物理的スイッチアーム SVG (= Simulink Switch ブロックと同じ姿勢)。
+            v0.35.9: preserveAspectRatio="xMidYMid meet" でリサイズ時の歪み回避
+            (ユーザー指摘「拡大したときのことを考えてますか?」)。SVG を絶対位置
+            で「右半分に固定アスペクトで中央フィット」させる。 */}
         <svg
           viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 h-full w-full"
+          preserveAspectRatio="xMidYMid meet"
+          className="absolute top-0 right-0 h-full"
+          style={{ width: "55%" }}
           fill="none"
           stroke="currentColor"
-          strokeWidth="2"
+          strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
           {/* T 入力側の接点 (左上、丸) */}
-          <circle cx="55" cy="25" r="3" fill="currentColor" />
+          <circle cx="30" cy="25" r="6" fill="currentColor" stroke="none" />
           {/* F 入力側の接点 (左下、丸) */}
-          <circle cx="55" cy="75" r="3" fill="currentColor" />
+          <circle cx="30" cy="75" r="6" fill="currentColor" stroke="none" />
           {/* 出力側 pivot (右中央、丸) */}
-          <circle cx="92" cy="50" r="3" fill="currentColor" />
+          <circle cx="85" cy="50" r="6" fill="currentColor" stroke="none" />
           {/* スイッチアーム = T 側に倒れている (右中央 pivot → 左上の T 接点) */}
-          <line x1="92" y1="50" x2="55" y2="25" />
+          <line x1="85" y1="50" x2="30" y2="25" />
         </svg>
       </div>
     );

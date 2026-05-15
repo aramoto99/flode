@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.9] - 2026-05-15 — Switch ブロック拡大時の SVG 歪みを修正
+
+ユーザー指摘「拡大したときのことを考えてますか?」。前 release (v0.35.8) で
+`preserveAspectRatio="none"` を使っていたため、ブロックを縦長 / 横長に
+リサイズすると **接点の丸が楕円に歪み、スイッチアームの太さも非対称**に
+なっていた。
+
+### Fixed
+
+- `BlockNodeView` の Switch SVG の `preserveAspectRatio` を `"none"` →
+  `"xMidYMid meet"` に変更
+- SVG container を「右半分 55%」幅で `h-full` に絶対配置し、中身は
+  正方形 viewBox (100×100) を縦横比保ったまま中央フィット
+- 接点の半径と stroke 太さも viewBox 内で固定値 (= 拡大時もキレイな丸 +
+  均一な線太さ)
+
+これでブロックを大きく / 細長くしても**スイッチ図は正方形のまま中央表示**
+される (= Simulink のブロック拡大挙動と同じ)。
+
 ## [0.35.8] - 2026-05-15 — Switch ブロックに物理的スイッチアームの SVG を追加
 
 ユーザー指摘「あんまり Switch という感じじゃない、もっと Switch っぽさを
