@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.6] - 2026-05-15 — DerivativeGlyph の "du/dt" 見切れを修正
+
+ユーザー指摘「ライブラリ Derivative の表示が見切れている」。`DerivativeGlyph`
+が `fontSize=11` で "du/dt" (5 文字) を 1 行表示していたため、viewBox 24 を
+はみ出して末尾 "t" が切れていた。
+
+### Fixed
+
+- `DerivativeGlyph` を **分数表示** に変更:
+  - 上段 "du" / 下段 "dt"、間に横線 (= 分数バー)
+  - `fontSize` を 11 → 8 に下げて余白確保
+  - Simulink の Derivative ブロック標準表示 (= 分数形式) とも整合
+
+Diagram canvas 側の Derivative 表示 (= 中央に "s") は変更なし (= ラプラス s
+は簡潔で識別性も高いため維持)。
+
 ## [0.35.5] - 2026-05-15 — Ctrl+I で選択ブロックを左右反転 (Simulink "Flip Block" 互換)
 
 ユーザー要望「Ctrl+I でブロックの左右反転ができるとうれしい」。Simulink の

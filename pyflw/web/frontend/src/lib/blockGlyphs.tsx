@@ -222,19 +222,35 @@ const IntegratorGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.35.6: "du/dt" は fontSize=11 だと viewBox 24 を超えて見切れていた
+// (ユーザー指摘: 末尾 "t" が切れる)。分数形式 (上 "du" / 下 "dt") に変更し、
+// 視認性も向上 (Simulink Derivative ブロックも分数表示が標準)。
 const DerivativeGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
       x="12"
-      y="16"
+      y="11"
       textAnchor="middle"
-      fontSize="11"
+      fontSize="8"
       fontStyle="italic"
       fontFamily="serif"
       fill="currentColor"
       stroke="none"
     >
-      du/dt
+      du
+    </text>
+    <line x1="6" y1="12" x2="18" y2="12" />
+    <text
+      x="12"
+      y="20"
+      textAnchor="middle"
+      fontSize="8"
+      fontStyle="italic"
+      fontFamily="serif"
+      fill="currentColor"
+      stroke="none"
+    >
+      dt
     </text>
   </svg>
 );
