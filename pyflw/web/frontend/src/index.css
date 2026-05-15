@@ -54,8 +54,11 @@ body {
 }
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #2563eb; /* blue-600 */
-  stroke-width: 2.6;
-  filter: drop-shadow(0 0 1px rgba(37, 99, 235, 0.4));
+  stroke-width: 3.0;
+  /* v3.14.12: ユーザー指摘「選択しているのかどうかわかりにくい」。stroke 1.6 →
+   * 3.0 でほぼ 2 倍に太らせ、drop-shadow も 1px → 3px の halo に強化。Simulink
+   * の selected wire 風 (= 明確に分かるが派手すぎない) を目指す。 */
+  filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.55));
 }
 /* edge を掴みやすくするためのインタラクション領域を広げる。実際の path とは別に
  * `react-flow__edge-interaction` がもう少し太めのストロークを invisible で持っている

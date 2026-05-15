@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.12] - 2026-05-15 — 選択された edge の視覚的フィードバックを強化
+
+ユーザー指摘「選択されたエッジが、選択してるのかどうかちょっとわかりにくい」。
+v3.14.11 で範囲選択は機能するようになったが、選択状態のスタイル変化が控えめ
+(stroke 1.6→2.6、薄い 1px drop-shadow のみ) で、選択しているのか目で判別
+しづらかった。
+
+### Changed
+
+- `.react-flow__edge.selected .react-flow__edge-path` の stroke-width を
+  2.6 → **3.0** に増強（unselected 1.6 のほぼ 2 倍）
+- drop-shadow を 1px / α=0.4 から **3px / α=0.55** に強化（青い halo が
+  edge の周囲にはっきり見える）
+- 色 (blue-600 #2563eb) は維持 (Simulink-like selected wire の青系統)
+
 ## [3.14.11] - 2026-05-15 — ドラッグ範囲選択で edge が選択されない問題を修正
 
 ユーザー指摘「ドラッグで選択したときエッジを選択できるべきだが、全然できない」。
