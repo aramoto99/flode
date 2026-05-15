@@ -3,6 +3,7 @@
 
 import type { BlockEntry, BlockMetadata } from "../types/api";
 import { INPORT_TYPE, OUTPORT_TYPE, TRIGGERED_SUBSYSTEM_TYPE } from "./blockTypes";
+import { hasDynamicPorts, resolvePortCounts } from "./dynamicPorts";
 
 export function shapeEquals(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -23,10 +24,12 @@ export function formatShape(shape: number[]): string {
  * 1 block の port_shapes_in/out を、registry の default を base に
  * その block の現在の n_inputs / n_outputs に合わせて推定する。
  *
- * 簡易版: build 時に server が `resolve-port-shapes` で確定した port_shapes は
- * BlockEntry には載らない (= JSON 永続化対象外)。GUI は registry のデフォルトを
- * 使用し、param 変更で port 数が変わるブロックでは resolve-port-shapes を呼んで
- * 補正する (ADR-0019 §6.1)。本ヘルパは default を返すだけ。
+ * ADR-0019 §6.1: param 変更で port 数が変わるブロック (Scope / Sum / Product /
+ * Mux / Demux / StateSpace 等、``hasDynamicPorts`` で判定) は ``resolvePortCounts``
+ * で実 count を取得し、registry default の port shape を **末端複製 / 切詰め** で
+ * 実 count に合わせる。例: Scope の n_inputs=2 → in = [[], []]、Sum の signs="+++"
+ * → in = [[], [], []]。Mux の出力 ``[n]`` のような **param 依存 shape** までは
+ * 反映しない (= count の修正のみ、shape は registry default を踏襲)。
  *
  * ADR-0039: Subsystem / TriggeredSubsystem は ``params.blocks`` 内の Inport /
  * Outport から派生する。registry default (= 空 Subsystem の port_shapes、
@@ -49,10 +52,54 @@ export function getDefaultPortShapes(
   if (!meta) {
     return { in: [], out: [] };
   }
+  const defaultIn = meta.port_shapes_in_default;
+  const defaultOut = meta.port_shapes_out_default;
+
+  // param 変更で port 数が変わるブロック (Scope/Sum/Product/Mux/StateSpace 等)
+  // は実 count に合わせて shape 列を resize する。それ以外は registry default
+  // をそのまま返す (= 既存挙動を維持)。
+  // 注: Subsystem / TriggeredSubsystem も hasDynamicPorts==true だが、上で早期
+  // return 済みなので本分岐には到達しない。
+  if (!hasDynamicPorts(block.type)) {
+    return { in: defaultIn, out: defaultOut };
+  }
+  const counts = resolvePortCounts(
+    block.type,
+    block.params as Record<string, unknown>,
+    meta,
+  );
   return {
-    in: meta.port_shapes_in_default,
-    out: meta.port_shapes_out_default,
+    in: resizeShapes(defaultIn, counts.nInputs),
+    out: resizeShapes(defaultOut, counts.nOutputs),
   };
+}
+
+/**
+ * port_shape の列を target count に合わせて resize する。
+ *
+ * - ``count == defaults.length``: そのまま返す
+ * - ``count < defaults.length``: 先頭から ``count`` 個を切り出す
+ * - ``count > defaults.length``: 末尾の shape を ``count - defaults.length`` 回複製
+ *   (= 動的 port ブロックの可変 input/output は同 shape の追加なので、末尾複製で
+ *    実態と一致する。e.g. Scope: ``[[]]`` → ``[[], []]``、Sum: ``[[], []]`` → ``[[], [], []]``)
+ * - ``defaults`` が空かつ ``count > 0``: scalar ``[]`` を ``count`` 個並べる
+ *   (= registry が n_inputs=0 default のブロック向け fallback)
+ */
+function resizeShapes(defaults: number[][], count: number): number[][] {
+  if (count === defaults.length) return defaults;
+  if (count < defaults.length) return defaults.slice(0, count);
+  // count > defaults.length
+  if (defaults.length === 0) {
+    return Array.from({ length: count }, () => [] as number[]);
+  }
+  const tail = defaults[defaults.length - 1];
+  // shape は ``number[]`` の値型なのでシャローコピーで十分。同一参照の使い回しは
+  // 呼び出し元で in-place 変更されると他要素まで波及するため避ける。
+  const extra = Array.from(
+    { length: count - defaults.length },
+    () => [...tail],
+  );
+  return [...defaults, ...extra];
 }
 
 /**

@@ -223,4 +223,117 @@ describe("validatePortShapeConnection", () => {
     );
     expect(r.ok).toBe(false);
   });
+
+  // ---------- v3.14.13 回帰テスト: dynamic-port count 反映 ----------
+  // バグ: getDefaultPortShapes が registry 固定 default のみ返し、Scope の
+  // n_inputs を 2 に上げても in[1] への接続が "does not exist (n_inputs=1)"
+  // で拒否されていた。Scope / Sum / Product / Mux 等で同じ問題。
+  describe("param-aware port count resolution (regression: dynamic-port blocks)", () => {
+    const META_SCOPE: BlockMetadata = {
+      type_path: "pyflw.blocks.sinks.Scope",
+      display_name: "Scope",
+      category: "sinks",
+      icon: "sinks.scope",
+      docstring_summary: "",
+      params_spec: [],
+      default_n_inputs: 1,
+      default_n_outputs: 0,
+      port_shapes_in_default: [[]],
+      port_shapes_out_default: [],
+      tags: ["sm_a"],
+      is_container: false,
+      mask_capable: false,
+    };
+    const META_SUM: BlockMetadata = {
+      type_path: "pyflw.blocks.mathops.Sum",
+      display_name: "Sum",
+      category: "mathops",
+      icon: "math.sum",
+      docstring_summary: "",
+      params_spec: [],
+      default_n_inputs: 2,
+      default_n_outputs: 1,
+      port_shapes_in_default: [[], []],
+      port_shapes_out_default: [[]],
+      tags: ["sm_a"],
+      is_container: false,
+      mask_capable: false,
+    };
+
+    it("Scope with n_inputs=2 accepts connection to in[1] (= the reported bug)", () => {
+      const scope: BlockEntry = {
+        id: "Scope_0",
+        type: "pyflw.blocks.sinks.Scope",
+        params: { n_inputs: 2, buffer_mode: "ring", buffer_capacity: 100000 },
+      };
+      const reg = indexRegistry([META_GAIN, META_SCOPE]);
+      const r = validatePortShapeConnection(gain1, 0, scope, 1, reg);
+      expect(r.ok).toBe(true);
+    });
+
+    it("Scope with n_inputs=2 still rejects connection to non-existent in[2]", () => {
+      const scope: BlockEntry = {
+        id: "Scope_0",
+        type: "pyflw.blocks.sinks.Scope",
+        params: { n_inputs: 2 },
+      };
+      const reg = indexRegistry([META_GAIN, META_SCOPE]);
+      const r = validatePortShapeConnection(gain1, 0, scope, 2, reg);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain("does not exist");
+      expect(r.reason).toContain("n_inputs=2");
+    });
+
+    it("Sum with signs='+++' accepts connection to in[2]", () => {
+      const sum: BlockEntry = {
+        id: "Sum_0",
+        type: "pyflw.blocks.mathops.Sum",
+        params: { signs: "+++" },
+      };
+      const reg = indexRegistry([META_GAIN, META_SUM]);
+      const r = validatePortShapeConnection(gain1, 0, sum, 2, reg);
+      expect(r.ok).toBe(true);
+    });
+
+    it("Mux with n=3 accepts connection to in[2] — output shape fix is out of scope (known bug)", () => {
+      // 注: 本テストは入力 port count の修正のみ確認。Mux 出力 shape は
+      // [[2]] (= META_MUX.port_shapes_out_default の固定値) のままで、n=3 のとき
+      // 期待される [[3]] には更新されない (= 別バグとして scope 外)。
+      const mux3: BlockEntry = {
+        id: "Mux_0",
+        type: "pyflw.blocks.routing.Mux",
+        params: { n: 3 },
+      };
+      const reg = indexRegistry([META_GAIN, META_MUX]);
+      const r = validatePortShapeConnection(gain1, 0, mux3, 2, reg);
+      expect(r.ok).toBe(true);
+    });
+
+    it("Sum with signs='+' shrinks to 1 input, rejects in[1] (= count < defaults.length path)", () => {
+      // resizeShapes の count < defaults.length 経路を担保: registry default は
+      // n_inputs=2 だが signs="+" で 1 に縮む → in[1] は does not exist
+      const sum: BlockEntry = {
+        id: "Sum_0",
+        type: "pyflw.blocks.mathops.Sum",
+        params: { signs: "+" },
+      };
+      const reg = indexRegistry([META_GAIN, META_SUM]);
+      const r = validatePortShapeConnection(gain1, 0, sum, 1, reg);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain("does not exist");
+      expect(r.reason).toContain("n_inputs=1");
+    });
+
+    it("default-param Scope (n_inputs=1) still rejects in[1] (= existing behavior preserved)", () => {
+      const scope: BlockEntry = {
+        id: "Scope_0",
+        type: "pyflw.blocks.sinks.Scope",
+        params: {},
+      };
+      const reg = indexRegistry([META_GAIN, META_SCOPE]);
+      const r = validatePortShapeConnection(gain1, 0, scope, 1, reg);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain("does not exist");
+    });
+  });
 });

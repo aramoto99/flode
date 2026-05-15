@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.13] - 2026-05-16 — 動的ポートブロックで param 変更後の接続が拒否される問題を修正
+
+ユーザー指摘「Scope の n_inputs を 2 にしてもエラーが出る」。`getDefaultPortShapes`
+が registry の `port_shapes_in_default` を固定で返すだけで、`resolvePortCounts`
+で param-aware に計算される実 port count を反映していなかった。Scope だけでなく
+Sum / Product / Divide / MinMax / LogicalOperator / Mux / Demux / Display /
+Terminator / StateSpace / MimoTransferFunction / DiscreteStateSpace すべてで
+2 番目以降のポートへの接続が `does not exist (n_inputs=1)` で拒否されていた。
+
+### Fixed
+
+- `pyflw/web/frontend/src/lib/portShapeValidate.ts`:
+  - `getDefaultPortShapes` 内で `hasDynamicPorts(type) === true` の場合
+    `resolvePortCounts` を呼んで実 port count を取得
+  - 新規 helper `resizeShapes` で registry default の shape 列を実 count に
+    合わせて末尾複製 / 切詰め (シャローコピーで参照共有を回避)
+  - Subsystem 系は既存の `derivePortShapesFromInner` 経路を維持 (= 挙動不変)
+  - 静的 port ブロック (Gain/Integrator/Sine 等) も registry default をそのまま
+    返す既存挙動を完全踏襲
+- テスト: regression suite 6 件追加 (Red→Green 確認)
+  - Scope n_inputs=2 で in[1] OK / in[2] NG
+  - Sum signs="+++" で in[2] OK / signs="+" で in[1] NG (= 縮小経路カバー)
+  - Mux n=3 で in[2] OK (出力 shape は別バグ、scope 外と明示)
+  - default-param Scope は既存挙動維持
+
+### Known limitations
+
+- Mux 出力 `[n]` / Demux 入力 `[n]` のような **param 依存 shape** は本修正では
+  反映しない (= 別バグ、count の修正のみ)。
+
 ## [3.14.12] - 2026-05-15 — 選択された edge の視覚的フィードバックを強化
 
 ユーザー指摘「選択されたエッジが、選択してるのかどうかちょっとわかりにくい」。
