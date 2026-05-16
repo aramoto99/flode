@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyflw"
-version = "0.26.12"
+version = "0.36.0"
 description = "Block-diagram dynamic system simulator (Simulink-inspired)"
 requires-python = ">=3.11"
 license = "MIT"
