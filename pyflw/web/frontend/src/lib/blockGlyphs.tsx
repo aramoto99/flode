@@ -189,6 +189,77 @@ const DivideGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.36.1: SPEC-0002 / ADR-0053 で追加した Phase 2 Math 系 5 ブロックの glyph。
+// 関数名そのものではなく総称表現 (f(u) / sin の正弦波 / 入出力特性 / 比較記号) を使う
+// — enum 切替時にも glyph は static なので、関数族を示唆する形に揃える。
+const MathFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="10"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      f(u)
+    </text>
+  </svg>
+);
+
+// SineGlyph と同じ正弦 1 周期だが、軸線を省略してより小型で「三角関数族」を示唆。
+const TrigFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <path d="M3 12 Q 7 4, 11 12 T 19 12" />
+  </svg>
+);
+
+// Simulink DeadZone と同じ入出力特性曲線: 左下から中央 flat、右上へ線形。
+// 中央が「不感帯」(出力 0) であることを視覚化する。
+const DeadZoneGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <line x1="3" y1="12" x2="21" y2="12" strokeWidth="0.6" opacity="0.4" />
+    <line x1="12" y1="3" x2="12" y2="21" strokeWidth="0.6" opacity="0.4" />
+    <polyline points="3,19 10,12 14,12 21,5" />
+  </svg>
+);
+
+const CompareToConstantGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      u≷c
+    </text>
+  </svg>
+);
+
+const CompareToZeroGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      u≷0
+    </text>
+  </svg>
+);
+
 // =============================================================================
 // Continuous
 // =============================================================================
@@ -699,6 +770,12 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.mathops.Sign": SignGlyph,
   "pyflw.blocks.mathops.MinMax": MinMaxGlyph,
   "pyflw.blocks.mathops.Divide": DivideGlyph,
+  // SPEC-0002 / ADR-0053 (v0.36.0): Phase 2 Math 系 5 ブロック
+  "pyflw.blocks.mathops.MathFunction": MathFunctionGlyph,
+  "pyflw.blocks.mathops.TrigFunction": TrigFunctionGlyph,
+  "pyflw.blocks.mathops.DeadZone": DeadZoneGlyph,
+  "pyflw.blocks.mathops.CompareToConstant": CompareToConstantGlyph,
+  "pyflw.blocks.mathops.CompareToZero": CompareToZeroGlyph,
   // continuous
   "pyflw.blocks.continuous.Integrator": IntegratorGlyph,
   "pyflw.blocks.continuous.Derivative": DerivativeGlyph,
