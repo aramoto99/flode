@@ -7,7 +7,7 @@
 # ADR-0044) は docked split と並存。Phase 6c (Workspace JupyterLab
 # convergence) Stage 1 として ADR-0040 §Amendments §(1) で位置付け、Stage 2 /
 # 3 (= activity bar + Launcher、drag-to-split-tab) は後続 ADR で順次着手。
-__version__ = "0.36.4"
+__version__ = "3.16.0"
 
 from .analysis import (
     BodeResponse,

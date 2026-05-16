@@ -701,17 +701,19 @@ const SubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// ADR-0036: TriggeredSubsystem glyph — 単枠 + 雷 (= trigger 信号を示唆)。
+// ADR-0054: TriggeredSubsystem glyph — 雷のみ (= trigger 信号を象徴)。
+// 旧 ADR-0036 版は外形 rect を含んでいたが、ShapeOutline と二重描画になるため
+// 削除。BlockNodeView の中央分岐で 70% × 40% boxに描画される、24×24 viewBox 中央
+// に雷を配置する。
 const TriggeredSubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="3" y="7" width="18" height="14" />
-    {/* 雷マーク (= trigger 入力を象徴、上に少しはみ出す) */}
     <polyline
-      points="13,2 11,7 14,7 12,12"
-      fill="currentColor"
+      points="14,3 9,12 13,12 10,21"
+      fill="none"
       stroke="currentColor"
-      strokeWidth="0.5"
+      strokeWidth={SW}
       strokeLinejoin="miter"
+      strokeLinecap="round"
     />
   </svg>
 );

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-05-17 — TriggeredSubsystem の trigger 入力ポートを上辺に配置、中央に雷 glyph を追加 (ADR-0054)
+
+ユーザー指摘「いや、だから何をトリガーにするって聞いてんの。トリガー信号は何？
+まさかこの左端のポートがそうだというつもり？？？」。`TriggeredSubsystem` の
+trigger 入力 (= `input_sources[-1]`、ADR-0036 §(2)) が通常のデータ入力と同じ
+chevron `>` で左辺に描画され、視覚的に区別できなかった。ADR-0054 採択、Option
+B+C (上辺配置 + 縦向き ▽ + 中央雷) で 3 軸冗長な識別を導入。
+
+### Changed (BREAKING visual)
+
+- `pyflw/web/frontend/src/components/BlockNodeView.tsx`:
+  - `arrowHandleStyle` を discriminated union (`{ axis: "y", topPct } | { axis:
+    "x", leftPct }`) に拡張し、上辺 Handle (Position.Top) を表現可能に
+  - `inputHandlePosition` に `typePath` 引数を追加、TriggeredSubsystem の末尾
+    slot (= trigger) のみ `Position.Top` + `leftPct=50` で上辺中央に配置。
+    データ入力 (= 残りの `i < n - 1`) は trigger を差し引いた本数で等分配
+  - trigger glyph (`triggerGlyphStyle`) を amber-500 縦向き ▽ で新設。接続済み
+    でも常時表示してアイデンティティを保持 (= 通常 chevron `>` は接続済時に
+    抑制する既存挙動と差別化)
+  - ShapeContent 中央分岐から TriggeredSubsystem を分離し、`<BlockGlyph>` で
+    中央に雷を描画 (Subsystem は中央空維持、ADR-0021)
+- `pyflw/web/frontend/src/lib/blockGlyphs.tsx`:
+  - `TriggeredSubsystemGlyph` から外形 rect を削除 (ShapeOutline と二重描画に
+    なるため)、雷 polyline のみに簡素化、24×24 viewBox 中央に配置
+- `pyflw/subsystems/triggered.py`:
+  - `_param_enums = {"trigger_mode": TRIGGER_MODES}` を class attribute に追加。
+    本 ADR の対象外 (= Inspector dropdown 化を目的とした別タスクの末端) だが、
+    同一 release commit にバンドルする (= ユーザー指摘 2026-05-17 の 1 連発端
+    から trigger 識別問題に発展した経緯を踏襲)
+- `CHANGELOG.md` / `pyproject.toml` / `pyflw/__init__.py` /
+  `pyflw/web/frontend/package.json`: v0.36.4 → v3.16.0
+
+### Tests
+
+- 新規 `pyflw/web/frontend/tests/triggeredSubsystemPort.test.tsx` (6 件):
+  trigger slot Handle が `data-handlepos="top"`、データ入力は `"left"` 維持、
+  flip 状態で trigger 上辺維持 / データ port 左右反転、中央 polyline 雷描画、
+  trigger glyph 接続済み時も維持、データ chevron は接続済み時に抑制 (既存挙動
+  回帰防止)
+- 既存 vitest 386 件 + backend `test_triggered_subsystem.py` 29 件 全 pass で
+  回帰なし
+
+### Migration
+
+- backend 完全不変 (ADR-0036 §(8) 数値完全不変ガード遵守、`input_sources[-1]`
+  末尾固定維持)
+- JSON schema 0.8 (ADR-0039) 不変、保存済みモデルは migration 不要でロード可能
+- 既存保存モデルで TriggeredSubsystem の trigger 入力に edge が接続されていた
+  場合、handle id (`String(nIn - 1)`) 一致で接続は維持されるが edge path は
+  左辺末尾 → 上辺中央に移動 (= 視覚的な path 変化のみ、手動再配線で美化可能)
+
 ## [3.14.14] - 2026-05-16 — 装飾用「Title bar (window chrome 風)」を撤去、document.title 動的更新に統一
 
 ユーザー指摘「上部のバー、開いているファイルとかバージョンとか、なんでこんな

@@ -155,24 +155,34 @@ export function BlockNodeView({
           flipped={flipped}
         />
         {Array.from({ length: nIn }, (_, i) => {
-          const pos = inputHandlePosition(shape, i, nIn);
-          const finalPos = flipped ? flipPosition(pos.position) : pos.position;
-          const showChevron = !connectedInputs.has(i);
+          const ph = inputHandlePosition(shape, i, nIn, data.blockType);
+          const finalPos = flipped ? flipPosition(ph.position) : ph.position;
+          // ADR-0054: TriggeredSubsystem の trigger slot (= 上辺、末尾 index)
+          // は **接続済みでも glyph を維持** (= trigger アイデンティティを
+          // 視覚で常時提示)。通常 chevron は接続済時に消す既存挙動。
+          const isTriggerSlot =
+            data.blockType.endsWith(".TriggeredSubsystem") && i === nIn - 1;
+          const showGlyph = isTriggerSlot || !connectedInputs.has(i);
           return (
             <Handle
               key={`in-${i}`}
               type="target"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct)}
+              style={arrowHandleStyle(ph.pos)}
             >
-              {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
+              {showGlyph &&
+                (isTriggerSlot ? (
+                  <span style={triggerGlyphStyle} />
+                ) : (
+                  <span style={chevronStyleFor(finalPos, flipped)} />
+                ))}
             </Handle>
           );
         })}
         {Array.from({ length: nOut }, (_, i) => {
-          const pos = outputHandlePosition(shape, i, nOut);
-          const finalPos = flipped ? flipPosition(pos.position) : pos.position;
+          const ph = outputHandlePosition(shape, i, nOut);
+          const finalPos = flipped ? flipPosition(ph.position) : ph.position;
           const showChevron = !connectedOutputs.has(i);
           return (
             <Handle
@@ -180,7 +190,7 @@ export function BlockNodeView({
               type="source"
               position={finalPos}
               id={String(i)}
-              style={arrowHandleStyle(pos.topPct)}
+              style={arrowHandleStyle(ph.pos)}
             >
               {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
             </Handle>
@@ -438,13 +448,26 @@ function ShapeContent({
     );
   }
 
-  // Subsystem / TriggeredSubsystem: 二重枠で identification 済なので中央は空。
-  // block id は外側下部のラベルに任せる (Simulink 互換、glyph 過剰を避ける)。
-  if (
-    typePath.endsWith(".Subsystem") ||
-    typePath.endsWith(".TriggeredSubsystem")
-  ) {
+  // Subsystem: 単枠で identification 済なので中央は空。block id は外側下部の
+  // ラベルに任せる (ADR-0021、Simulink 互換、glyph 過剰を避ける)。
+  if (typePath.endsWith(".Subsystem")) {
     return <></>;
+  }
+  // ADR-0054: TriggeredSubsystem は trigger アイデンティティを示すため中央に
+  // 雷 glyph (= TriggeredSubsystemGlyph) を描画。上辺の trigger port + amber
+  // chevron と組み合わせて 3 軸冗長で識別する。
+  if (typePath.endsWith(".TriggeredSubsystem")) {
+    return (
+      <div
+        data-testid="trigger-center-glyph"
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ color }}
+      >
+        <div className="h-[70%] w-[40%]">
+          <BlockGlyph typePath={typePath} />
+        </div>
+      </div>
+    );
   }
 
   // rect (default): Simulink 風の専用 render を type ごとに優先する
@@ -749,7 +772,14 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
 // 終端を内側に手動調整する必要があるが、規模が大きいので将来検討。
 // ---------------------------------------------------------------------------
 
-function arrowHandleStyle(topPct: number): React.CSSProperties {
+// ADR-0054: Handle の配置軸は (a) 縦軸上に topPct% で打つ (左辺 / 右辺 Handle)
+// / (b) 横軸上に leftPct% で打つ (上辺 Handle) の 2 通り。両方同時に指定される
+// ことはないので discriminated union で型レベルに exclusivity を強制する。
+type HandlePos =
+  | { axis: "y"; topPct: number }
+  | { axis: "x"; leftPct: number };
+
+function arrowHandleStyle(pos: HandlePos): React.CSSProperties {
   // v0.20.4: Handle を 24×24 に拡大して chevron ``>`` (= Handle 中心から外側
   // +6〜+12 px の位置) を hit area に含める。
   //
@@ -759,14 +789,17 @@ function arrowHandleStyle(topPct: number): React.CSSProperties {
   // → React Flow デフォルト transform に戻して chevron は node 外側のままに。
   // edge と node の隙間は React Flow デフォルト挙動 (Handle center が node
   // 境界の少し外側) と markerEnd 削除 (v0.20.7) で当面我慢する。
-  return {
-    top: `${topPct}%`,
+  const base: React.CSSProperties = {
     background: "transparent",
     width: 24,
     height: 24,
     border: "none",
     borderRadius: 0,
   };
+  if (pos.axis === "x") {
+    return { ...base, left: `${pos.leftPct}%` };
+  }
+  return { ...base, top: `${pos.topPct}%` };
 }
 
 const CHEVRON_STYLE: React.CSSProperties = {
@@ -780,6 +813,27 @@ const CHEVRON_STYLE: React.CSSProperties = {
   // ``translate`` で中央寄せしてから ``rotate`` で 45deg 倒す = 上 + 右辺が
   // 「左下→右中央→左上」の chevron になる (= ``>``)。
   transform: "translate(-50%, -50%) rotate(45deg)",
+  pointerEvents: "none",
+};
+
+// ADR-0054: TriggeredSubsystem の trigger 入力 (上辺中央) を識別するための
+// 縦向き chevron (= ``v``)。色は amber-500 でデータ chevron (slate-600) と
+// 差別化する。rotate(135deg) で borderTop+borderRight の corner を下向きに
+// 倒した結果が ``v`` (= 信号が上から下に流れる慣習)。
+// transform 計算: translate の単位 % は **自要素 (= width/height) サイズ基準**。
+// width=height=6px なので ``-50%`` = -3px 中央寄せ、``-150%`` は更に追加で
+// -6px (= chevron 1 個分) を上方向に押し出した結果、Handle 中心 (= ブロック
+// 境界線) から外側へ chevron 1 個分シフトする。``chevronStyleFor`` の左辺版
+// ``translate(-150%, -50%)`` と数値的に対称。
+const triggerGlyphStyle: React.CSSProperties = {
+  position: "absolute",
+  top: "50%",
+  left: "50%",
+  width: 6,
+  height: 6,
+  borderTop: "1.75px solid #f59e0b",
+  borderRight: "1.75px solid #f59e0b",
+  transform: "translate(-50%, -150%) rotate(135deg)",
   pointerEvents: "none",
 };
 
@@ -852,7 +906,17 @@ function inputHandlePosition(
   shape: BlockShape,
   i: number,
   n: number,
-): { position: Position; topPct: number } {
+  typePath: string,
+): { position: Position; pos: HandlePos } {
+  // ADR-0054: TriggeredSubsystem の末尾 slot (= input_sources[-1]、trigger 入力、
+  // ADR-0036 §(2)) のみ上辺中央 (Position.Top + leftPct=50) に配置。
+  // データ入力 (左辺) と物理的に分離して識別性を担保する。
+  if (typePath.endsWith(".TriggeredSubsystem") && i === n - 1) {
+    return {
+      position: Position.Top,
+      pos: { axis: "x", leftPct: 50 },
+    };
+  }
   // 単一入力 + 単数前提形状 (円心 1 点 / 台形)。複数あれば縦に並べる。
   // 三角形 / 円 / バー / Outport (台形-l) は全部「左辺に等間隔配置」で OK。
   if (
@@ -861,24 +925,40 @@ function inputHandlePosition(
     shape.kind === "bar" ||
     shape.kind === "trapezoid-l"
   ) {
-    return { position: Position.Left, topPct: ((i + 1) * 100) / (n + 1) };
+    return {
+      position: Position.Left,
+      pos: { axis: "y", topPct: ((i + 1) * 100) / (n + 1) },
+    };
   }
-  // Inport (= n_inputs=0) で稀に呼ばれた場合の安全側 fallback。
-  return { position: Position.Left, topPct: ((i + 1) * 100) / (n + 1) };
+  // ADR-0054: TriggeredSubsystem で trigger を除いたデータ入力は、trigger を
+  // n_inputs から差し引いた本数で等分配する (= 末尾 1 個分の縦間隔が空かないよう
+  // に)。それ以外は従来通り n で等分配。
+  const dataN = typePath.endsWith(".TriggeredSubsystem") ? n - 1 : n;
+  const denom = dataN < 1 ? n + 1 : dataN + 1;
+  return {
+    position: Position.Left,
+    pos: { axis: "y", topPct: ((i + 1) * 100) / denom },
+  };
 }
 
 function outputHandlePosition(
   shape: BlockShape,
   i: number,
   n: number,
-): { position: Position; topPct: number } {
+): { position: Position; pos: HandlePos } {
   // 三角形 (Gain): 出力は頂点 1 点 → 中央。複数想定なし。
   // 円 (Sum/Product/Divide): n_outputs=1 確定なので中央でよい。複数になることはない。
   // バー / 台形 / その他: 右辺に等間隔配置。
   if (shape.kind === "triangle-r" || shape.kind === "circle") {
-    return { position: Position.Right, topPct: 50 };
+    return {
+      position: Position.Right,
+      pos: { axis: "y", topPct: 50 },
+    };
   }
-  return { position: Position.Right, topPct: ((i + 1) * 100) / (n + 1) };
+  return {
+    position: Position.Right,
+    pos: { axis: "y", topPct: ((i + 1) * 100) / (n + 1) },
+  };
 }
 
 // ---------------------------------------------------------------------------

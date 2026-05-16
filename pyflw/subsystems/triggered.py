@@ -84,6 +84,8 @@ class TriggeredSubsystem(Subsystem):
             ``port_shapes_in`` / ``port_shapes_out`` が渡された場合 (= ADR-0039)。
     """
 
+    _param_enums = {"trigger_mode": TRIGGER_MODES}
+
     def __init__(
         self,
         blocks: list[Block] | None = None,
