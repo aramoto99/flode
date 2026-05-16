@@ -591,6 +591,7 @@ function ShapeContent({
   // v0.36.2: MathFunction / TrigFunction を Simulink 風に **選択された関数名** で
   // 表示する (= MinMax の "min"/"max" と同じパターン)。glyph (f(u) / 正弦波) では
   // どの関数が選ばれているか分からないという指摘 (ユーザー 2026-05-17) への対応。
+  // v0.36.3: フォントスタイルを MinMax (非 italic) と揃える (ユーザー指摘 2026-05-17)。
   if (
     typePath.endsWith(".MathFunction") ||
     typePath.endsWith(".TrigFunction")
@@ -598,7 +599,7 @@ function ShapeContent({
     const fn = (paramsRaw as Record<string, unknown>).function;
     const label = typeof fn === "string" ? fn : "?";
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
         <span>{label}</span>
       </div>
     );
@@ -611,7 +612,7 @@ function ShapeContent({
     const constText =
       typeof params.const === "number" ? formatNumber(params.const) : "?";
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
         <span>{`u ${opSym} ${constText}`}</span>
       </div>
     );
@@ -622,7 +623,7 @@ function ShapeContent({
       (paramsRaw as Record<string, unknown>).op,
     );
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
         <span>{`u ${opSym} 0`}</span>
       </div>
     );
