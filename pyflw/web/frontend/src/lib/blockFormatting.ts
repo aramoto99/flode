@@ -109,3 +109,29 @@ export function switchOpForCriterion(criterion: unknown): string {
       return "u2 ? T";
   }
 }
+
+/**
+ * 比較演算子文字列 (``==`` / ``!=`` / ``<`` / ``<=`` / ``>`` / ``>=``) を表示用に
+ * Unicode 記号化する。``CompareToConstant`` / ``CompareToZero`` の Canvas 表示で
+ * 使用。``==`` のみは数式慣習に従い ``=`` 1 文字に短縮する。
+ *
+ * v0.36.2 (SPEC-0002 / ADR-0053 の glyph 動的表示化)。
+ */
+export function compareOpSymbol(op: unknown): string {
+  switch (op) {
+    case "==":
+      return "=";
+    case "!=":
+      return "≠";
+    case "<":
+      return "<";
+    case "<=":
+      return "≤";
+    case ">":
+      return ">";
+    case ">=":
+      return "≥";
+    default:
+      return "?";
+  }
+}

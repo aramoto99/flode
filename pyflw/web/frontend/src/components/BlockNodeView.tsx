@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 
 import {
+  compareOpSymbol,
   formatMatrixSize,
   formatNumber,
   formatPolynomial,
@@ -584,6 +585,45 @@ function ShapeContent({
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
         <span>sign</span>
+      </div>
+    );
+  }
+  // v0.36.2: MathFunction / TrigFunction を Simulink 風に **選択された関数名** で
+  // 表示する (= MinMax の "min"/"max" と同じパターン)。glyph (f(u) / 正弦波) では
+  // どの関数が選ばれているか分からないという指摘 (ユーザー 2026-05-17) への対応。
+  if (
+    typePath.endsWith(".MathFunction") ||
+    typePath.endsWith(".TrigFunction")
+  ) {
+    const fn = (paramsRaw as Record<string, unknown>).function;
+    const label = typeof fn === "string" ? fn : "?";
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+        <span>{label}</span>
+      </div>
+    );
+  }
+  // v0.36.2: CompareToConstant を Simulink 風に ``u op c`` 表示。
+  // 演算子は Unicode (≥ / ≤ / ≠ / =) で短縮、定数は formatNumber で省略表記。
+  if (typePath.endsWith(".CompareToConstant")) {
+    const params = paramsRaw as Record<string, unknown>;
+    const opSym = compareOpSymbol(params.op);
+    const constText =
+      typeof params.const === "number" ? formatNumber(params.const) : "?";
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+        <span>{`u ${opSym} ${constText}`}</span>
+      </div>
+    );
+  }
+  // v0.36.2: CompareToZero を Simulink 風に ``u op 0`` 表示 (= const=0 固定の特殊化)。
+  if (typePath.endsWith(".CompareToZero")) {
+    const opSym = compareOpSymbol(
+      (paramsRaw as Record<string, unknown>).op,
+    );
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+        <span>{`u ${opSym} 0`}</span>
       </div>
     );
   }
