@@ -7,13 +7,20 @@ __pycache__/
 build/
 dist/
 .eggs/
+pip-wheel-metadata/
 
-# pytest / coverage
+# pytest / coverage / type / lint cache
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
+*.cover
 
 # venv
 .venv/
@@ -28,6 +35,18 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Jupyter (workspace は JupyterLab 方向、checkpoints は無視)
+.ipynb_checkpoints/
 
 # Generated artifacts (regenerate via examples/*.py)
 spring_mass_damper.png
@@ -49,6 +68,12 @@ pyflw/web/frontend/tsconfig.tsbuildinfo
 # StaticFiles 配信先: ローカル build 時のみ生成、release 時は別管理 (ADR-0012 §(8))
 pyflw/server/static/
 
+# Frontend logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Playwright (E2E テスト出力)。`playwright.config.ts` の `cwd` 解決方法によっては
 # repo root にも書き込まれるので両方無視する。
 test-results/
@@ -57,4 +82,5 @@ pyflw/web/frontend/test-results/
 pyflw/web/frontend/playwright-report/
 pyflw/web/frontend/playwright/.cache/
 
+# Claude Code local overrides
 .claude/settings.local.json
