@@ -14,7 +14,21 @@ from .discrete import (
     ZeroOrderHoldDirect,
 )
 from .logic import LogicalOperator, RelationalOperator
-from .mathops import Abs, Divide, Gain, MinMax, Product, Saturation, Sign, Sum
+from .mathops import (
+    Abs,
+    CompareToConstant,
+    CompareToZero,
+    DeadZone,
+    Divide,
+    Gain,
+    MathFunction,
+    MinMax,
+    Product,
+    Saturation,
+    Sign,
+    Sum,
+    TrigFunction,
+)
 from .routing import Demux, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
@@ -22,7 +36,10 @@ from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 __all__ = [
     "Abs",
     "Clock",
+    "CompareToConstant",
+    "CompareToZero",
     "Constant",
+    "DeadZone",
     "Demux",
     "Derivative",
     "Display",
@@ -33,6 +50,7 @@ __all__ = [
     "Gain",
     "Integrator",
     "LogicalOperator",
+    "MathFunction",
     "MimoTransferFunction",
     "MinMax",
     "Mux",
@@ -51,6 +69,7 @@ __all__ = [
     "Switch",
     "Terminator",
     "TransferFunction",
+    "TrigFunction",
     "UnitDelay",
     "XYGraph",
     "ZeroOrderHoldDirect",

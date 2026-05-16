@@ -185,6 +185,57 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "ポートごとに * または / を指定して入力を乗除算。",
         },
     },
+    # SPEC-0002 / ADR-0053 (v0.36.0): Phase 2 送り Math 系 5 ブロック第 1 弾
+    "pyflw.blocks.mathops.MathFunction": {
+        "en": {
+            "display_name": "Math Function",
+            "docstring_summary": "Compute exp / log / sqrt / pow etc. Choose with `function`.",
+        },
+        "ja": {
+            "display_name": "数学関数",
+            "docstring_summary": "exp / log / sqrt / pow 等を計算 (function で関数を選択)。",
+        },
+    },
+    "pyflw.blocks.mathops.TrigFunction": {
+        "en": {
+            "display_name": "Trig Function",
+            "docstring_summary": "Compute sin / cos / atan2 etc. in radians (choose with `function`).",
+        },
+        "ja": {
+            "display_name": "三角関数",
+            "docstring_summary": "sin / cos / atan2 等を radian で計算 (function で関数を選択)。",
+        },
+    },
+    "pyflw.blocks.mathops.DeadZone": {
+        "en": {
+            "display_name": "Dead Zone",
+            "docstring_summary": "Zero output within [lower, upper], pass through with offset outside.",
+        },
+        "ja": {
+            "display_name": "不感帯",
+            "docstring_summary": "[lower, upper] 内ではゼロ、範囲外はオフセットを引いた値を出力。",
+        },
+    },
+    "pyflw.blocks.mathops.CompareToConstant": {
+        "en": {
+            "display_name": "Compare To Constant",
+            "docstring_summary": "Compare input to a constant: y = (u op const) ? 1.0 : 0.0.",
+        },
+        "ja": {
+            "display_name": "定数比較",
+            "docstring_summary": "入力を定数と比較 y = (u op const) ? 1.0 : 0.0。",
+        },
+    },
+    "pyflw.blocks.mathops.CompareToZero": {
+        "en": {
+            "display_name": "Compare To Zero",
+            "docstring_summary": "Compare input to zero: y = (u op 0) ? 1.0 : 0.0.",
+        },
+        "ja": {
+            "display_name": "ゼロ比較",
+            "docstring_summary": "入力をゼロと比較 y = (u op 0) ? 1.0 : 0.0。",
+        },
+    },
     # ----- continuous (5) -------------------------------------------------
     "pyflw.blocks.continuous.Integrator": {
         "en": {

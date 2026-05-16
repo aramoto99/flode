@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -35,6 +36,11 @@ class Sum(Block):
     """符号付き加算 ``y = Σ sign_i * u_i``。
 
     入力ポート数は ``len(signs)``。``signs`` の各文字は ``"+"`` または ``"-"``。
+
+    Note:
+        本クラスは ``signs`` の妥当性検証 (空文字 / 不正文字) を意図的に行わない
+        (v0.1.0 以降の後方互換、ADR-0038 Public API 凍結対象)。Strict な validation
+        が必要な場合は同等機能の ``Add`` (v0.35.0、矩形版) を使う。
 
     Args:
         signs: 符号を表す文字列。例: ``"++-"`` で ``y = u[0] + u[1] - u[2]``。
@@ -86,9 +92,7 @@ class Add(Block):
         if not signs:
             raise BlockSpecError("Add: signs must be non-empty")
         if any(c not in "+-" for c in signs):
-            raise BlockSpecError(
-                f"Add: signs must contain only '+'/'-', got {signs!r}"
-            )
+            raise BlockSpecError(f"Add: signs must contain only '+'/'-', got {signs!r}")
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
         self._params = {"signs": signs}
@@ -253,3 +257,311 @@ class Divide(Block):
             else:
                 result /= float(val)
         return np.array([result])
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 送りブロック群 第 1 弾 (SPEC-0002 / ADR-0053、v0.36.0)
+# ---------------------------------------------------------------------------
+
+
+class MathFunction(Block):
+    """汎用数学関数 ``y = f(u)``。``function`` で関数を選択する。
+
+    SPEC-0002 / ADR-0053 で確定した 9 関数を提供する。``pow`` / ``mod`` / ``rem``
+    の 3 つのみ 2 入力 (``__init__`` で ``n_inputs=2`` を強制)、それ以外は単項。
+    定義域外 (``log(負)`` / ``sqrt(負)`` / ``reciprocal(0)``) は ``nan`` / ``inf``
+    を伝播する (既存 ``Divide`` の 0 除算と同じ寛容方針、ADR-0053 §論点 6)。
+
+    Args:
+        function: ``"exp"`` / ``"log"`` / ``"log10"`` / ``"sqrt"`` / ``"square"``
+            / ``"reciprocal"`` (= 単項、``n_inputs=1``)、または ``"pow"`` /
+            ``"mod"`` / ``"rem"`` (= 2 入力、``n_inputs=2``)。
+
+    Raises:
+        BlockSpecError: ``function`` が enum 値外。
+    """
+
+    _ALLOWED_FUNCTIONS: tuple[str, ...] = (
+        "exp",
+        "log",
+        "log10",
+        "sqrt",
+        "square",
+        "reciprocal",
+        "pow",
+        "mod",
+        "rem",
+    )
+    _BINARY_FUNCTIONS: tuple[str, ...] = ("pow", "mod", "rem")
+    # ADR-0019 / ADR-0039 follow-up: GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"function": _ALLOWED_FUNCTIONS}
+
+    def __init__(
+        self,
+        function: str = "exp",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if function not in self._ALLOWED_FUNCTIONS:
+            raise BlockSpecError(
+                f"MathFunction: function must be one of {self._ALLOWED_FUNCTIONS}, got {function!r}"
+            )
+        n_inputs = 2 if function in self._BINARY_FUNCTIONS else 1
+        super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
+        self.function = function
+        self._params = {"function": function}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        f = self.function
+        if f == "exp":
+            r = float(np.exp(float(u[0])))
+        elif f == "log":
+            r = float(np.log(float(u[0])))
+        elif f == "log10":
+            r = float(np.log10(float(u[0])))
+        elif f == "sqrt":
+            r = float(np.sqrt(float(u[0])))
+        elif f == "square":
+            r = float(np.square(float(u[0])))
+        elif f == "reciprocal":
+            # np.reciprocal は int 入力で 1 / 2 = 0 になる罠を回避するため float 強制。
+            # Python の 1.0 / 0.0 は ZeroDivisionError を投げるため、SPEC-0002 §エッジ
+            # ケース表「u=0 で inf を伝播」を満たすには numpy 演算を経由する必要がある
+            # (np.float64 vs np.float64 の除算は inf を返す)。ADR-0053 §論点 6 で定義
+            # 域外を nan / inf で伝播統一する方針と整合。
+            r = float(np.divide(1.0, float(u[0])))
+        elif f == "pow":
+            r = float(np.power(float(u[0]), float(u[1])))
+        elif f == "mod":
+            # 数学的 mod、符号は除数に従う。
+            r = float(np.mod(float(u[0]), float(u[1])))
+        else:  # "rem"
+            # C 流 rem、符号は被除数に従う。
+            r = float(np.fmod(float(u[0]), float(u[1])))
+        return np.array([r])
+
+
+class TrigFunction(Block):
+    """三角・双曲線関数 ``y = f(u)``。``function`` で関数を選択する (radian 固定)。
+
+    SPEC-0002 / ADR-0053 で確定した 10 関数を提供する。``atan2`` のみ 2 入力
+    (第 1 入力 = y、第 2 入力 = x、数学慣習 ``atan2(y, x)``)、それ以外は単項。
+    定義域外 (``asin``/``acos`` の |u| > 1 等) は ``nan`` を伝播する。
+
+    Args:
+        function: ``"sin"`` / ``"cos"`` / ``"tan"`` / ``"asin"`` / ``"acos"`` /
+            ``"atan"`` / ``"sinh"`` / ``"cosh"`` / ``"tanh"`` (= 単項、
+            ``n_inputs=1``)、または ``"atan2"`` (= 2 入力、``n_inputs=2``)。
+
+    Raises:
+        BlockSpecError: ``function`` が enum 値外。
+    """
+
+    _ALLOWED_FUNCTIONS: tuple[str, ...] = (
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "atan2",
+    )
+    _BINARY_FUNCTIONS: tuple[str, ...] = ("atan2",)
+    _param_enums = {"function": _ALLOWED_FUNCTIONS}
+
+    def __init__(
+        self,
+        function: str = "sin",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if function not in self._ALLOWED_FUNCTIONS:
+            raise BlockSpecError(
+                f"TrigFunction: function must be one of {self._ALLOWED_FUNCTIONS}, got {function!r}"
+            )
+        n_inputs = 2 if function in self._BINARY_FUNCTIONS else 1
+        super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
+        self.function = function
+        self._params = {"function": function}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        f = self.function
+        if f == "sin":
+            r = float(np.sin(float(u[0])))
+        elif f == "cos":
+            r = float(np.cos(float(u[0])))
+        elif f == "tan":
+            r = float(np.tan(float(u[0])))
+        elif f == "asin":
+            r = float(np.arcsin(float(u[0])))
+        elif f == "acos":
+            r = float(np.arccos(float(u[0])))
+        elif f == "atan":
+            r = float(np.arctan(float(u[0])))
+        elif f == "sinh":
+            r = float(np.sinh(float(u[0])))
+        elif f == "cosh":
+            r = float(np.cosh(float(u[0])))
+        elif f == "tanh":
+            r = float(np.tanh(float(u[0])))
+        else:  # "atan2"
+            # 第 1 入力 = y、第 2 入力 = x (数学慣習 atan2(y, x))。
+            r = float(np.arctan2(float(u[0]), float(u[1])))
+        return np.array([r])
+
+
+class DeadZone(Block):
+    """不感帯 ``y = 0 (lower <= u <= upper)、u - lower (u < lower)、u - upper (u > upper)``。
+
+    端点 ``u == lower`` / ``u == upper`` では出力 ``0.0`` (strict 不等号、Simulink
+    互換)。``lower == upper`` は許可 (= 退化単一点 dead zone、実質 ``y = u - lower``
+    の連続関数、ADR-0053 §論点 5)。
+
+    Args:
+        lower: 不感帯の下限。``upper`` より大きいとエラー。
+        upper: 不感帯の上限。``lower`` より小さいとエラー。
+
+    Raises:
+        BlockSpecError: ``lower > upper``。
+    """
+
+    def __init__(
+        self,
+        lower: float = -0.5,
+        upper: float = 0.5,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if lower > upper:
+            raise BlockSpecError(f"DeadZone: lower ({lower}) must be <= upper ({upper})")
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self.lower = float(lower)
+        self.upper = float(upper)
+        self._params = {"lower": self.lower, "upper": self.upper}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        v = float(u[0])
+        if v < self.lower:
+            r = v - self.lower
+        elif v > self.upper:
+            r = v - self.upper
+        else:
+            r = 0.0
+        return np.array([r])
+
+
+# ---------------------------------------------------------------------------
+# 比較系 dispatch helper (CompareToConstant / CompareToZero 共通)
+# ---------------------------------------------------------------------------
+
+
+_COMPARE_OPS: dict[str, Callable[[float, float], bool]] = {
+    "==": lambda a, b: a == b,
+    "!=": lambda a, b: a != b,
+    "<": lambda a, b: a < b,
+    "<=": lambda a, b: a <= b,
+    ">": lambda a, b: a > b,
+    ">=": lambda a, b: a >= b,
+}
+
+
+def _build_compare_fn(op: str) -> Callable[[float, float], bool]:
+    """比較演算子文字列を ``Callable[[float, float], bool]`` に dispatch する。
+
+    Args:
+        op: ``"=="`` / ``"!="`` / ``"<"`` / ``"<="`` / ``">"`` / ``">="`` のいずれか。
+
+    Returns:
+        2 引数を取り bool を返す関数。
+
+    Raises:
+        BlockSpecError: ``op`` が ``_COMPARE_OPS`` に未登録。
+    """
+    if op not in _COMPARE_OPS:
+        raise BlockSpecError(f"Compare op must be one of {tuple(_COMPARE_OPS.keys())}, got {op!r}")
+    return _COMPARE_OPS[op]
+
+
+class CompareToConstant(Block):
+    """入力を定数と比較 ``y = (u op const) ? 1.0 : 0.0``。
+
+    出力型は ``0.0`` / ``1.0`` の float (既存 ``RelationalOperator`` 踏襲、
+    Boolean dtype 一括改修は ADR-0053 §論点 3 で別 ADR 送り)。
+
+    ``nan`` を含む比較は numpy 仕様に従い、``!=`` のみ ``True`` (= ``1.0``)、
+    他は全て ``False`` (= ``0.0``)。
+
+    Args:
+        op: ``"=="`` / ``"!="`` / ``"<"`` / ``"<="`` / ``">"`` / ``">="``。
+        const: 比較対象の定数。
+
+    Raises:
+        BlockSpecError: ``op`` が enum 値外。
+    """
+
+    _ALLOWED_OPS_COMPARE: tuple[str, ...] = ("==", "!=", "<", "<=", ">", ">=")
+    _param_enums = {"op": _ALLOWED_OPS_COMPARE}
+
+    def __init__(
+        self,
+        op: str = "==",
+        const: float = 0.0,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if op not in self._ALLOWED_OPS_COMPARE:
+            raise BlockSpecError(
+                f"CompareToConstant: op must be one of {self._ALLOWED_OPS_COMPARE}, got {op!r}"
+            )
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self.op = op
+        self.const = float(const)
+        self._compare = _build_compare_fn(op)
+        self._params = {"op": op, "const": self.const}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([1.0 if self._compare(float(u[0]), self.const) else 0.0])
+
+
+class CompareToZero(Block):
+    """入力をゼロと比較 ``y = (u op 0) ? 1.0 : 0.0``。
+
+    ``CompareToConstant(const=0)`` の固定特殊化を別クラスで提供 (ADR-0053
+    §論点 4)。Simulink でも別ブロックとして UI に並んでおり、ゼロ越え trigger
+    idiom が 1 ブロックで表現できる。
+
+    Args:
+        op: ``"=="`` / ``"!="`` / ``"<"`` / ``"<="`` / ``">"`` / ``">="``。
+
+    Raises:
+        BlockSpecError: ``op`` が enum 値外。
+    """
+
+    _ALLOWED_OPS_COMPARE: tuple[str, ...] = CompareToConstant._ALLOWED_OPS_COMPARE
+    _param_enums = {"op": _ALLOWED_OPS_COMPARE}
+
+    def __init__(
+        self,
+        op: str = "==",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if op not in self._ALLOWED_OPS_COMPARE:
+            raise BlockSpecError(
+                f"CompareToZero: op must be one of {self._ALLOWED_OPS_COMPARE}, got {op!r}"
+            )
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self.op = op
+        self._compare = _build_compare_fn(op)
+        self._params = {"op": op}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([1.0 if self._compare(float(u[0]), 0.0) else 0.0])

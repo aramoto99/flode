@@ -123,6 +123,20 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "pyflw.blocks.mathops.Sign": ("mathops", "Sign", "math.sign"),
     "pyflw.blocks.mathops.MinMax": ("mathops", "MinMax", "math.minmax"),
     "pyflw.blocks.mathops.Divide": ("mathops", "Divide", "math.divide"),
+    # SPEC-0002 / ADR-0053 (v0.36.0): Phase 2 送り Math 系 5 ブロック第 1 弾
+    "pyflw.blocks.mathops.MathFunction": ("mathops", "Math Function", "math.mathfunction"),
+    "pyflw.blocks.mathops.TrigFunction": ("mathops", "Trig Function", "math.trigfunction"),
+    "pyflw.blocks.mathops.DeadZone": ("mathops", "Dead Zone", "math.deadzone"),
+    "pyflw.blocks.mathops.CompareToConstant": (
+        "mathops",
+        "Compare To Constant",
+        "math.comparetoconstant",
+    ),
+    "pyflw.blocks.mathops.CompareToZero": (
+        "mathops",
+        "Compare To Zero",
+        "math.comparetozero",
+    ),
     # continuous
     "pyflw.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
     "pyflw.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),
