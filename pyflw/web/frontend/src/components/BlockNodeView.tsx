@@ -469,17 +469,20 @@ function ShapeContent({
   if (typePath.endsWith(".UnitDelay")) {
     return <TransferFunctionFraction num="1" den="z" />;
   }
+  // v0.36.4: フォントを MinMax / Integrator (TransferFunctionFraction) と統一
+  // (非 italic、ユーザー指摘 2026-05-17)。``s`` は数学変数なので慣習上 italic でも
+  // 自然だが、Canvas 上の他ブロックと見た目を揃える整合性を優先する。
   if (typePath.endsWith(".Derivative")) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[14px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[14px] font-medium text-slate-800">
         <span>s</span>
       </div>
     );
   }
-  // Abs: Simulink 風に ``|u|`` テキスト
+  // Abs: Simulink 風に ``|u|`` テキスト。v0.36.4: フォント統一 (非 italic)。
   if (typePath.endsWith(".Abs")) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium text-slate-800">
         <span>|u|</span>
       </div>
     );
@@ -580,10 +583,11 @@ function ShapeContent({
       </div>
     );
   }
-  // Sign: Simulink 風に ``sign`` テキスト
+  // Sign: Simulink 風に ``sign`` テキスト。
+  // v0.36.4: フォントを MinMax (非 italic) と統一 (ユーザー指摘 2026-05-17)。
   if (typePath.endsWith(".Sign")) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium italic text-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
         <span>sign</span>
       </div>
     );
