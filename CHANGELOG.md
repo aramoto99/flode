@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.14] - 2026-05-16 — 装飾用「Title bar (window chrome 風)」を撤去、document.title 動的更新に統一
+
+ユーザー指摘「上部のバー、開いているファイルとかバージョンとか、なんでこんな
+ところに表示している？」。`App.tsx` 冒頭にデスクトップアプリ風の装飾 title bar
+を置いていたが、ブラウザのタブタイトル本来の役割を肩代わりさせる二重表示で、
+縦スペースも 28px 消費していた。version は StatusBar 右端で既に表示済み (=
+完全重複)。JupyterLab 方向性 (= タブタイトル運用) とも整合させる。
+
+### Changed
+
+- `pyflw/web/frontend/src/App.tsx`:
+  - 旧 `<div>` (Title bar、`bg-slate-700` の dark バー) を削除
+  - `useEffect` で `document.title` を動的更新:
+    - 未オープン時: `"pyflw"`
+    - オープン中: `"<file> — pyflw"` (clean) / `"● <file> — pyflw"` (dirty)
+  - grid-rows を `auto_auto_auto_auto_1fr_auto` → `auto_auto_auto_1fr_auto` に
+- 結果: 縦 28px 確保、ブラウザのタブが複数ファイルで識別可能になり、dirty 状態
+  も `●` プレフィックスで一目で分かる
+
 ## [3.14.13] - 2026-05-16 — 動的ポートブロックで param 変更後の接続が拒否される問題を修正
 
 ユーザー指摘「Scope の n_inputs を 2 にしてもエラーが出る」。`getDefaultPortShapes`

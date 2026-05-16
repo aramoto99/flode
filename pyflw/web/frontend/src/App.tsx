@@ -54,7 +54,21 @@ export default function App(): JSX.Element {
   // v0.21.0: ``selectedFilePath`` 一本化 (= legacy selectedModelId 削除済、
   // ADR-0041 §論点 4-A)
   const hasOpenedModel = selectedFilePath !== null;
-  const displayName = selectedFilePath ?? "untitled";
+  const dirty = useAppStore((s) => s.dirty);
+
+  // v3.14.14: 旧「Title bar (window chrome 風)」を撤去し、ブラウザのタブ
+  // タイトルを動的更新する標準 idiom に統一する。version は StatusBar 右端で
+  // 既に表示済み (= 重複) のため title bar からの削除で情報損失なし。
+  useEffect(() => {
+    const base = "pyflw";
+    if (!hasOpenedModel) {
+      document.title = base;
+      return;
+    }
+    const name = selectedFilePath ?? "untitled";
+    const prefix = dirty ? "● " : "";
+    document.title = `${prefix}${name} — ${base}`;
+  }, [hasOpenedModel, selectedFilePath, dirty]);
 
   // ADR-0019 §(5): debounce auto-save / Ctrl+S / beforeunload
   useAutoSave();
@@ -211,18 +225,8 @@ export default function App(): JSX.Element {
 
   return (
     <ReactFlowProvider>
-      <div className="grid h-full grid-rows-[auto_auto_auto_auto_1fr_auto] bg-slate-50 font-sans text-[13px] text-slate-900">
-        {/* Title bar (window chrome 風) */}
-        <div className="flex items-center justify-between border-b border-slate-300 bg-slate-700 px-3 py-1 text-[11px] text-slate-100">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold tracking-tight">pyflw</span>
-            <span className="text-slate-400">—</span>
-            <span className="text-slate-300">{displayName}</span>
-          </div>
-          <span className="text-slate-400">v{__APP_VERSION__}</span>
-        </div>
-
-        {/* Menu bar */}
+      <div className="grid h-full grid-rows-[auto_auto_auto_1fr_auto] bg-slate-50 font-sans text-[13px] text-slate-900">
+        {/* Menu bar (v3.14.14: 旧 Title bar 撤去、document.title に移譲) */}
         <MenuBar />
 
         {/* Toolbar */}
