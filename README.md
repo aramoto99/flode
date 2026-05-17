@@ -1,8 +1,8 @@
 # pyflw
 
-A block-diagram dynamic system simulator for Python, inspired by Simulink. Build
-continuous, discrete, and hybrid models by wiring pre-built blocks, then integrate
-with `scipy.solve_ivp` (default: RK45).
+A block-diagram dynamic system simulator for Python. Build continuous, discrete,
+and hybrid models by wiring pre-built blocks, then integrate with
+`scipy.solve_ivp` (default: RK45).
 
 **Stable as of v0.14.0** (2026-05-09, ADR-0039). Public API + JSON schema 0.8 +
 REST `/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) frozen under
@@ -12,7 +12,7 @@ SemVer.
 JupyterLab-style local file editing (ADR-0041), Stop Time = `inf` with ring
 buffer scope (ADR-0042), workspace enhancement with multi-tab + Recent Files +
 fuzzy search (ADR-0043), scope plot settings + floating windows (ADR-0044), and
-a Simulink-Property-Inspector-style UI design system. All additions are
+a Property-Inspector-style UI design system. All additions are
 backward-compatible — `.flw.json` schema 0.8 and the public Python API are
 preserved.
 
@@ -166,7 +166,7 @@ Then open `http://127.0.0.1:8770` in a browser.
 - **Block library** with category accordions + drag-and-drop onto the canvas.
 - **Auto-connect on edge drop** — drop a SISO block onto an existing edge
   to splice it in place (= source → block → target, ADR-0044).
-- **Inspector panel** — Simulink Property Inspector-style parameter editor
+- **Inspector panel** — Property Inspector-style parameter editor
   for the selected block, with collapse-to-widen-canvas affordance.
 - **Workspace ↔ Library ↔ Canvas ↔ Scope split** — every divider is
   drag-resizable, sizes persisted in localStorage.

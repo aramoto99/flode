@@ -74,7 +74,7 @@ export default function App(): JSX.Element {
   useAutoSave();
   // ADR-0041 §論点 11-A: 外部エディタ変更を 5 秒 polling で検知
   useExternalChangesPoll();
-  // Simulink 風キーボードショートカット (Ctrl+T/A/C/V, Esc, Enter)
+  // リファレンスツール風キーボードショートカット (Ctrl+T/A/C/V, Esc, Enter)
   useShortcuts();
 
   // ADR-0043 §論点 1-A / §論点 8-A: startup で workspace_info を fetch、

@@ -1,4 +1,4 @@
-// pyflw UI design system — "Simulink Property Inspector" 風 primitives。
+// pyflw UI design system — "Property Inspector" 風 primitives。
 //
 // v0.25.0: ScopeSettingsDialog (v0.24.4) で確立した設計を再利用可能 primitives
 // として切り出し、ParameterPanel / ModelSettingsModal / 今後の dialogs を統一する。
@@ -119,7 +119,7 @@ export function SectionDivider({ label }: { label: string }): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// Dialog shell (Simulink "Configuration Parameters" 風)
+// Dialog shell (業界標準ブロック線図ツールの "Configuration Parameters" 風)
 // ---------------------------------------------------------------------------
 
 /**

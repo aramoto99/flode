@@ -92,7 +92,7 @@ export function UPlotChart({
 
   // v0.32.1: middle button (= ホイールクリック) hold + drag で X/Y 軸 pan。
   // プロット領域の表示範囲をマウス移動距離分だけスライドする (= グラフを掴んで
-  // 引っ張る感覚)。Simulink の Scope は pan tool ボタン経由だが、pyflw では
+  // 引っ張る感覚)。リファレンスツールの Scope は pan tool ボタン経由だが、pyflw では
   // ホイールクリックを「即時 pan」に bind する (= ユーザー要望)。
   useEffect(() => {
     const root = containerRef.current;

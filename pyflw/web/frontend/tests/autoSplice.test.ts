@@ -1,4 +1,4 @@
-// v0.26.0: Simulink-style auto-connect-on-edge の geometry 判定テスト。
+// v0.26.0: リファレンスツール流 auto-connect-on-edge の geometry 判定テスト。
 
 import { describe, expect, it } from "vitest";
 

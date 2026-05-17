@@ -285,8 +285,7 @@ export function AboutDialog({ onClose }: AboutDialogProps): JSX.Element {
         </div>
         <p className="text-[12px] text-slate-600">
           {t("modal.about.description", {
-            defaultValue:
-              "Block-diagram dynamic system simulator (Simulink-inspired).",
+            defaultValue: "Block-diagram dynamic system simulator.",
           })}
         </p>
         <div className="flex flex-col gap-1 text-[12px]">
@@ -384,7 +383,7 @@ export function KeyboardShortcutsDialog({
           keys: "Drag from edge → Drop on block",
           description: t("modal.shortcuts.desc.drag_branch", {
             defaultValue:
-              "Branch from any point on a wire to block.in[0] (Simulink-style)",
+              "Branch from any point on a wire to block.in[0]",
           }),
         },
         {

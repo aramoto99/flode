@@ -25,9 +25,9 @@ import { getLibraryEntry, listBlockMetadata } from "../api/client";
 import { pushToast } from "../store/toastStore";
 import {
   modelToDiagram,
-  SIMULINK_EDGE_STYLE,
-  SIMULINK_EDGE_TYPE,
-  SIMULINK_MARKER_END,
+  DIAGRAM_EDGE_STYLE,
+  DIAGRAM_EDGE_TYPE,
+  DIAGRAM_MARKER_END,
   type BlockNode,
 } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
@@ -71,12 +71,12 @@ import {
 // (`useMemo` がコンポーネント外で使えないため module-level 定数で代用)。
 const NODE_TYPES = { blockNode: BlockNodeView } as const;
 
-// v0.20.6: edge type "branchable" は BranchableEdge を使う。Simulink の「既存
+// v0.20.6: edge type "branchable" は BranchableEdge を使う。リファレンスツールの「既存
 // 配線から分岐」drag を edge mousedown で発火できるようにする。
 const EDGE_TYPES = { branchable: BranchableEdge } as const;
 
 // 中ボタン (button=1) と右ボタン (button=2) で pan、左クリック (button=0) は
-// 「空エリアドラッグ → 矩形選択 / ノード上ドラッグ → ノード移動」(Simulink + 一般的な
+// 「空エリアドラッグ → 矩形選択 / ノード上ドラッグ → ノード移動」(リファレンスツール + 一般的な
 // editor 慣習)。配列参照を毎 render で新しくしないために module-level 定数。
 const PAN_BUTTONS = [1, 2];
 
@@ -118,7 +118,7 @@ export function DiagramCanvas({
   const editingPath = useAppStore((s) => s.editingPath);
   const drilldownInto = useAppStore((s) => s.drilldownInto);
 
-  // Simulink 互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
+  // リファレンスツール互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
   // 1 回目クリック時の source を保持。2 回目の別ノード Ctrl+click で edge を作成、
   // null にリセット。
   //
@@ -130,7 +130,7 @@ export function DiagramCanvas({
   const [autoConnectSource, setAutoConnectSource] =
     useState<AutoConnectSrc | null>(null);
 
-  // v0.20.6: Simulink 互換 「既存配線 mousedown → drag → ブロック drop で分岐
+  // v0.20.6: リファレンスツール互換 「既存配線 mousedown → drag → ブロック drop で分岐
   // 配線」を実装する state。``BranchableEdge`` の overlay path で pointerdown
   // が発火すると ``setBranchDrag`` が呼ばれ、以降 window mousemove で current
   // 位置を追跡、mouseup で hit testing して接続成立 or cancel。
@@ -170,7 +170,7 @@ export function DiagramCanvas({
     selectedEdgeIds: readonly string[];
   }>({ edges: [], nodes: [], selectedEdgeIds: [] });
 
-  // Simulink 風: ノード上で右クリックドラッグ = そのノードをコピーしてカーソルに追従。
+  // リファレンスツール風: ノード上で右クリックドラッグ = そのノードをコピーしてカーソルに追従。
   // 空エリアで右クリックドラッグの場合は ``panOnDrag = [1, 2]`` 経由で React Flow が
   // pan を担当するので、ここではターゲットが ``.react-flow__node`` に閉じている時のみ
   // 介入する。OS のコンテキストメニュー抑制は ``onPaneContextMenu`` /
@@ -187,10 +187,10 @@ export function DiagramCanvas({
     } | null = null;
 
     const onMouseDown = (e: MouseEvent): void => {
-      // Simulink 仕様 (= ユーザー指摘):
+      // リファレンスツール仕様 (= ユーザー指摘):
       // - ``Ctrl + 右クリックドラッグ``: ノード複製
       // - 単純な右クリック (Ctrl なし) ドラッグ: 同様にノード複製 (= alternative
-      //   shortcut、Simulink でも両方使える)
+      //   shortcut、リファレンスツールでも両方使える)
       // - ``Ctrl + 左クリック`` (= ドラッグでなく単発クリック): 2 ノード間の
       //   auto-connect (= 別経路 ``onCanvasClick`` 等で処理、本ハンドラの対象外)
       const isRightDrag = e.button === 2;
@@ -697,7 +697,7 @@ export function DiagramCanvas({
       { id: newId, type: typePath, params: defaultParams },
       position,
     );
-    // v0.26.0 Simulink auto-connect-on-edge: drop 直後に block が edge 上に
+    // v0.26.0 リファレンスツールの auto-connect-on-edge: drop 直後に block が edge 上に
     // 載ったら自動接続。store は同期 set なので getState で最新を読める。
     tryAutoSplice(newId);
   };
@@ -786,7 +786,7 @@ export function DiagramCanvas({
   };
 
   // 空ペーン (どのノードにも乗っていない領域) をダブルクリックで Quick Insert を開く。
-  // Simulink R2014b〜のクイック挿入と同等の操作。React Flow v12 には ``onPaneDoubleClick``
+  // リファレンスツールのクイック挿入機能と同等の操作。React Flow v12 には ``onPaneDoubleClick``
   // prop が無いので、wrapper の ``onDoubleClick`` で受けて、target が ``.react-flow__pane``
   // (= 空エリア) または背景 SVG の時だけ反応する。
   const onWrapperDoubleClick = (event: React.MouseEvent): void => {
@@ -834,7 +834,7 @@ export function DiagramCanvas({
         nodes={decoratedNodes}
         edges={edges.map((e) => ({
           ...e,
-          // diagramConverter で設定した type ("step") を尊重 (= Simulink 風 90°
+          // diagramConverter で設定した type ("step") を尊重 (= リファレンスツール風 90°
           // 折れ線)。``smoothstep`` で上書きしていた v0.x 時代の挙動を撤廃。
           animated: false,
           // controlled mode では ``selected`` を prop に流し込まないと .selected
@@ -853,24 +853,24 @@ export function DiagramCanvas({
         fitViewOptions={{ maxZoom: 1.0, padding: 0.2 }}
         nodesDraggable
         defaultEdgeOptions={{
-          // Simulink 風: 90° 折れ線 (step) + 黒系細線 + 終点矢印 head。
+          // 業界標準ブロック線図ツール準拠: 90° 折れ線 (step) + 黒系細線 + 終点矢印 head。
           // v0.20.11: markerEnd 復活。BranchableEdge が target 座標を矢印
           // サイズ分外側に置く補正をするため、矢印 head が node 境界に綺麗に
           // 当たる位置に描画される (= 矢印先端が node 境界 + 8 px、base が
           // node 境界)。
-          type: SIMULINK_EDGE_TYPE,
-          style: SIMULINK_EDGE_STYLE,
-          markerEnd: SIMULINK_MARKER_END,
+          type: DIAGRAM_EDGE_TYPE,
+          style: DIAGRAM_EDGE_STYLE,
+          markerEnd: DIAGRAM_MARKER_END,
         }}
         proOptions={{ hideAttribution: true }}
         // 左クリックドラッグ = 空エリアで矩形選択 / ノード上でそのノード移動
-        // (Simulink + 一般的な editor 慣習)。``panOnDrag = [1, 2]`` で中 / 右ボタン
+        // (リファレンスツール + 一般的な editor 慣習)。``panOnDrag = [1, 2]`` で中 / 右ボタン
         // ドラッグだけ pan に。OS の右クリックメニューは onPaneContextMenu / onNodeContextMenu
         // で preventDefault する。
         panOnDrag={PAN_BUTTONS}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
-        // Simulink 仕様: ``Shift`` で multi-select、``Ctrl/Meta`` は auto-connect
+        // リファレンスツール仕様: ``Shift`` で multi-select、``Ctrl/Meta`` は auto-connect
         // (= 2 ノード間に edge を引く 2-step 操作) に振る。
         multiSelectionKeyCode={["Shift"]}
         onNodesChange={onNodesChange}
@@ -918,7 +918,7 @@ export function DiagramCanvas({
         // v0.20.5: Edge を Ctrl+クリック → 「分岐配線」モード開始。
         // 既存 edge の src + src_idx を auto-connect source に記録、次に Ctrl+
         // クリックされたブロックの input port[0] へ枝分かれする edge を追加。
-        // Simulink 互換 (= 信号線から複数ブロックへ分岐) パターンの実装。
+        // リファレンスツール互換 (= 信号線から複数ブロックへ分岐) パターンの実装。
         onEdgeClick={(event, edge) => {
           if (event.ctrlKey || event.metaKey) {
             event.stopPropagation();
@@ -935,7 +935,7 @@ export function DiagramCanvas({
           setAutoConnectSource(null);
         }}
         onNodeDoubleClick={onNodeDoubleClick}
-        // Simulink 流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)
+        // リファレンスツール流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)
         // ノードに繋がっているエッジをすべて切り離す。これによりブロックを「リンク
         // から外して動かす」操作が 1 ストロークで完結する。
         // また v0.16.0: ドラッグ中は body に ``pyflw-dragging`` を付け、CSS で全
@@ -979,7 +979,7 @@ export function DiagramCanvas({
         <Controls className="!shadow-md" />
       </ReactFlow>
       {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
-          start から current への直線で十分 (= Simulink でも drag 中は仮の
+          start から current への直線で十分 (= リファレンスツールでも drag 中は仮の
           直線のみ、確定後に React Flow が step edge を描画)。 */}
       {branchDrag && (
         <svg

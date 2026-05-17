@@ -13,7 +13,7 @@
 //   再 render が発生し、`localizedDisplayName(b)` が新言語の値を返す。
 //   registry 自体の再 fetch は不要 (= TanStack Query cache 互換)。
 // - 検索 (`searchableDisplayNames`) は両言語の値を返し、ja 環境でも英語名で
-//   ヒットさせる (Simulink 経験者向けセーフネット、ADR-0028 §(4))。
+//   ヒットさせる (リファレンスツール経験者向けセーフネット、ADR-0028 §(4))。
 
 import { currentLanguage } from "../i18n";
 import type { BlockMetadata, Locale } from "../types/api";
@@ -111,7 +111,7 @@ export function localizeDescription<
 /** 検索インデックス用に **両言語の表示名** + ``type_path`` 末尾名を返す。
  *
  * ja 環境で `"sum"` (英語名) を入力しても `"加算"` のブロックがヒットする
- * (= Simulink 経験者が日本語名を覚えていなくても見つけられる)。
+ * (= リファレンスツール経験者が日本語名を覚えていなくても見つけられる)。
  *
  * 重複排除済 (例: ``Mux`` の display_name が ja/en 同じ値の場合は 1 件)。
  */

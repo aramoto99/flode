@@ -2,9 +2,9 @@
 
 実装ブロック:
 
-* ``UnitDelay`` — 1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014)
+* ``UnitDelay`` — 1 サンプル遅延 ``y[k+1] = u[k]`` (リファレンスツールの UnitDelay 互換、ADR-0014)
 * ``DiscreteIntegrator`` — 前進 Euler 積分 ``x[k+1] = x[k] + T*gain*u[k]``
-* ``ZeroOrderHoldDirect`` — Simulink ZOH 互換 ``y(t_k) = u(t_k)`` (ADR-0010 §(4) /
+* ``ZeroOrderHoldDirect`` — リファレンスツールの ZOH 互換 ``y(t_k) = u(t_k)`` (ADR-0010 §(4) /
   ADR-0014 §(3))
 * ``DiscreteStateSpace`` — 離散 LTI ``x[k+1] = A_d x[k] + B_d u[k]`` (ADR-0006)
 * ``DiscreteTransferFunction`` — 離散 LTI ``H(z) = num(z)/den(z)`` (ADR-0006)
@@ -17,8 +17,8 @@
    v0.13.0 (ADR-0033) で ``ZeroOrderHold`` (legacy) を削除した。v0.5.0 (ADR-0014
    §(4)) から `DeprecationWarning` を発出していた 2-state state-based ホールドで、
    ADR-0014 適用後は ``UnitDelay`` と完全に同一の semantics だった。利用者は
-   ``UnitDelay`` (1 サンプル遅延) または ``ZeroOrderHoldDirect`` (Simulink ZOH
-   互換、即時反映) に移行すること。
+   ``UnitDelay`` (1 サンプル遅延) または ``ZeroOrderHoldDirect`` (リファレンスツールの
+   ZOH 互換、即時反映) に移行すること。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _zohd_logger = logging.getLogger("pyflw.blocks.discrete")
 
 
 class UnitDelay(Block):
-    """1 サンプル遅延 ``y[k+1] = u[k]`` (Simulink UnitDelay 互換、ADR-0014/0015)。
+    """1 サンプル遅延 ``y[k+1] = u[k]`` (リファレンスツールの UnitDelay 互換、ADR-0014/0015)。
 
     Internal state (n_states=2):
         x[0] = output_curr  -- 現サンプルでの出力 (``output(t, x, u)`` が返す値)
@@ -48,7 +48,7 @@ class UnitDelay(Block):
     呼び、``x_next = [x[1], u[0]]`` (= state[0] ← 前 buffer、state[1] ← 現入力)
     を保存する (ADR-0015 §(1)(2))。
 
-    multi-rate (sample_time > dt_base) でも Simulink semantics と完全一致する。
+    multi-rate (sample_time > dt_base) でもリファレンスツール準拠の semantics と完全一致する。
     ADR-0014 で残った multi-rate 1 dt_base off-by-one は ADR-0015 で根本解決済み。
 
     ``direct_feedthrough=False`` なので閉ループ内で代数ループを切る用途にも使える。
@@ -92,7 +92,7 @@ class UnitDelay(Block):
 
 
 class DiscreteIntegrator(Block):
-    """前進 Euler 離散積分 ``x[k+1] = x[k] + sample_time * gain * u[k]``、出力 ``y[k] = x[k]`` (Simulink 互換)。
+    """前進 Euler 離散積分 ``x[k+1] = x[k] + sample_time * gain * u[k]``、出力 ``y[k] = x[k]`` (リファレンスツール互換)。
 
     Internal state (n_states=2、ADR-0015 §(3) で 2-state augmentation):
         x[0] = output_curr  -- 現サンプル境界での出力 (前回 fire で確定済み)
@@ -167,12 +167,12 @@ _ZOH_SAMPLE_TOL = 1e-9
 
 
 class RateTransition(Block):
-    """異なるサンプル時間の離散ブロック間でレート変換を行う (Simulink 同名、ADR-0036)。
+    """異なるサンプル時間の離散ブロック間でレート変換を行う (リファレンスツール同名、ADR-0036)。
 
     マルチレートモデルで、上流ブロックのサンプル周期 ``input_sample_time`` と
     下流ブロックのサンプル周期 ``output_sample_time`` が異なる場合に明示的に
     挿入する。pyflw は ADR-0005 で「自動 RateTransition 挿入はしない」方針を
-    採用しているため、ユーザーが本ブロックで明示する必要がある (Simulink 経験者
+    採用しているため、ユーザーが本ブロックで明示する必要がある (リファレンスツール経験者
     向けの整合性、ADR-0036 §(2-A))。
 
     モード:
@@ -294,7 +294,7 @@ class RateTransition(Block):
 
 
 class ZeroOrderHoldDirect(Block):
-    """Simulink ZOH 互換 ``y(t_k) = u(t_k)`` の即時反映ホールド (ADR-0014 §(3))。
+    """リファレンスツールの ZOH 互換 ``y(t_k) = u(t_k)`` の即時反映ホールド (ADR-0014 §(3))。
 
     サンプル時刻 ``t_k`` で現入力 ``u(t_k)`` を出力に即時反映し、次サンプル時刻まで
     保持する。連続→ZOHDirect→連続のフローでも、中間時刻 ``t ∈ (t_k, t_{k+1})``
@@ -362,7 +362,7 @@ class ZeroOrderHoldDirect(Block):
 
 
 class DiscreteStateSpace(Block):
-    """離散 LTI 状態空間 ``x[k+1] = A x[k] + B u[k]``、``y[k] = C x[k] + D u[k]`` (Simulink 互換)。
+    """離散 LTI 状態空間 ``x[k+1] = A x[k] + B u[k]``、``y[k] = C x[k] + D u[k]`` (リファレンスツール互換)。
 
     ADR-0006 §(5)、ADR-0015 §(3) で 2n-state augmentation。``direct_feedthrough`` は
     ``D`` の最大絶対値が ``1e-12`` を超えるかで自動推論。
@@ -482,7 +482,7 @@ class DiscreteStateSpace(Block):
 
 
 class DiscreteTransferFunction(Block):
-    """離散 LTI 伝達関数 ``H(z) = num(z) / den(z)`` (SISO、Simulink 互換)。
+    """離散 LTI 伝達関数 ``H(z) = num(z) / den(z)`` (SISO、リファレンスツール互換)。
 
     ADR-0006 §(4)、ADR-0015 §(3) で 2n-state augmentation。内部で
     ``scipy.signal.tf2ss`` により SS に変換して ``DiscreteStateSpace`` 同等の実装。

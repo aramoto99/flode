@@ -120,7 +120,7 @@ v3.14.11 で範囲選択は機能するようになったが、選択状態の�
   2.6 → **3.0** に増強（unselected 1.6 のほぼ 2 倍）
 - drop-shadow を 1px / α=0.4 から **3px / α=0.55** に強化（青い halo が
   edge の周囲にはっきり見える）
-- 色 (blue-600 #2563eb) は維持 (Simulink-like selected wire の青系統)
+- 色 (blue-600 #2563eb) は維持 (リファレンスツール風 selected wire の青系統)
 
 ## [3.14.11] - 2026-05-15 — ドラッグ範囲選択で edge が選択されない問題を修正
 
@@ -185,7 +185,7 @@ React Flow v12 の rubber-band 選択は仕様として edge geometry を矩形�
   均一な線太さ)
 
 これでブロックを大きく / 細長くしても**スイッチ図は正方形のまま中央表示**
-される (= Simulink のブロック拡大挙動と同じ)。
+される (= リファレンスツールのブロック拡大挙動と同じ)。
 
 ## [0.35.8] - 2026-05-15 — Switch ブロックに物理的スイッチアームの SVG を追加
 
@@ -206,13 +206,13 @@ React Flow v12 の rubber-band 選択は仕様として edge geometry を矩形�
 - **`blockGlyphs.tsx`** の `SwitchGlyph` も同様に物理的スイッチ図に統一
   (旧: テキスト `u2≥T`)。Library palette と Diagram canvas で見た目一致
 
-スイッチアームは static (= 内部状態を持たず常に T 側を表示)。Simulink でも
+スイッチアームは static (= 内部状態を持たず常に T 側を表示)。リファレンスツールでも
 Switch ブロックの図は static で、実際の挙動は criterion / threshold で決まる
 仕様と整合。
 
-## [0.35.7] - 2026-05-15 — Switch を Simulink 流の per-port "T / criterion / F" 表示に
+## [0.35.7] - 2026-05-15 — Switch をリファレンスツール流の per-port "T / criterion / F" 表示に
 
-ユーザー要望「Switch の見た目を Simulink ブロックに近づけたい」。旧版は
+ユーザー要望「Switch の見た目をリファレンスツールのブロックに近づけたい」。旧版は
 中央 1 か所に "u2 ≥ T" を出すだけで、3 入力ポートのどれが true 側 /
 control / false 側か判別しにくかった。
 
@@ -244,14 +244,14 @@ control / false 側か判別しにくかった。
 - `DerivativeGlyph` を **分数表示** に変更:
   - 上段 "du" / 下段 "dt"、間に横線 (= 分数バー)
   - `fontSize` を 11 → 8 に下げて余白確保
-  - Simulink の Derivative ブロック標準表示 (= 分数形式) とも整合
+  - リファレンスツールの Derivative ブロック標準表示 (= 分数形式) とも整合
 
 Diagram canvas 側の Derivative 表示 (= 中央に "s") は変更なし (= ラプラス s
 は簡潔で識別性も高いため維持)。
 
-## [0.35.5] - 2026-05-15 — Ctrl+I で選択ブロックを左右反転 (Simulink "Flip Block" 互換)
+## [0.35.5] - 2026-05-15 — Ctrl+I で選択ブロックを左右反転 (リファレンスツールの "Flip Block" 互換)
 
-ユーザー要望「Ctrl+I でブロックの左右反転ができるとうれしい」。Simulink の
+ユーザー要望「Ctrl+I でブロックの左右反転ができるとうれしい」。リファレンスツールの
 "Flip Block" デフォルトショートカット (Ctrl+I) と同じ key binding。
 
 ### Added
@@ -311,12 +311,12 @@ Add (v0.35.2) と同じく **各入力ポート位置に対応する +/− を�
 ### Note
 
 `LogicalOperator` / `RelationalOperator` も中央に operator 1 個を表示しているが、
-これは Simulink でも「2 入力に共通する 1 つの演算」を中央表示する仕様なので
+これはリファレンスツールでも「2 入力に共通する 1 つの演算」を中央表示する仕様なので
 変更不要。
 
-## [0.35.2] - 2026-05-14 — Add ブロックを Simulink 流「各入力ポート位置に signs 表示」に
+## [0.35.2] - 2026-05-14 — Add ブロックをリファレンスツール流「各入力ポート位置に signs 表示」に
 
-ユーザー要望: Simulink Add ブロックのように、各入力ポートのすぐ内側に
+ユーザー要望: リファレンスツールの Add ブロックのように、各入力ポートのすぐ内側に
 対応する `+` / `-` 記号を表示してほしい。
 
 ### Changed
@@ -349,12 +349,12 @@ signs="+-+" → 入力3本 + − +
 
 ### Fixed
 
-- `AddGlyph` から中央の `<rect>` を削除し、**「+」記号のみ** に。Simulink の
+- `AddGlyph` から中央の `<rect>` を削除し、**「+」記号のみ** に。リファレンスツールの
   Add ブロック内表示と整合 (= ブロック枠 + 中央に算術記号のみ)
 
 ## [0.35.0] - 2026-05-14 — Add ブロック新規追加 (Sum の矩形版)
 
-ユーザー要望「ADD ブロックを新規作成」。Simulink の Add ブロック (= Sum と
+ユーザー要望「ADD ブロックを新規作成」。リファレンスツールの Add ブロック (= Sum と
 機能同等で形が矩形) と同じ位置付け。
 
 ### Added — Backend
@@ -386,7 +386,7 @@ SM-A (= スカラー port) のみ対応。SM-B (= ベクトル / テンソル po
 
 ユーザー要望「配置したブロックは長方形が多いが、正四角形のほうが都合の
 いいブロックもある」。glyph (icon) 中心で値表示が不要なシンボリックブロック
-を **正方形 48×48** に変更、Simulink 風の「ブロック」感を強化。
+を **正方形 48×48** に変更、リファレンスツール風の「ブロック」感を強化。
 
 ### Changed (`blockShapes.ts`)
 
@@ -439,13 +439,13 @@ SM-A (= スカラー port) のみ対応。SM-B (= ベクトル / テンソル po
 ### Fixed
 
 - 塗りつぶし polygon を削除し、Sum / Product 等と同じく **輪郭線のみ** に統一。
-  Simulink の Gain ブロックも線画 (三角形枠 + 中央の `k` 値) なので整合性が
+  リファレンスツールの Gain ブロックも線画 (三角形枠 + 中央の `k` 値) なので整合性が
   向上
 
 ## [0.33.2] - 2026-05-14 — BlockPalette のエントリの角丸を撤廃
 
 ユーザー要望「ライブラリ表示のブロックの角の丸みを完全に削除、角ばった
-感じにしてほしい」。Simulink Property Inspector 風 design system の原則
+感じにしてほしい」。Property Inspector 風 design system の原則
 「`rounded` は使わない (or 1-2px に留める)」とも整合。
 
 ### Changed
@@ -487,7 +487,7 @@ Library と built-in の視覚的区別は **section header の「Library · 名
    hardcode しており、同カテゴリで揃えるのは暗黙の慣習 (= drift しがち)
 2. **palette 管理問題**: 新カテゴリ追加時に既存と衝突しない色を考える必要
 3. **色覚多様性 (a11y)**: 8 色 palette は緑/紫/青/赤が見分けにくい組み合わせ
-4. **design system 整合**: Simulink Property Inspector 風は「白 + 黒線 icon」
+4. **design system 整合**: Property Inspector 風は「白 + 黒線 icon」
    が基調。色付き glyph は web-app 然とした見た目になっていた
 
 ### Removed — Backend (API 後方互換性破壊)
@@ -541,7 +541,7 @@ Library と built-in の視覚的区別は **section header の「Library · 名
 
 ユーザー指摘「グラフのデフォルトがダサい」。旧デフォルトは tick label が
 ブラウザ標準フォントで大きく、"t [s]" が中央に大きく表示、軸色が薄すぎ
-(`#94a3b8` = slate-400) で「素の uPlot」感。Simulink Property Inspector 風に
+(`#94a3b8` = slate-400) で「素の uPlot」感。Property Inspector 風に
 整える。
 
 ### Changed (`ScopeView.tsx` の `buildOptions`)
@@ -569,8 +569,8 @@ Library と built-in の視覚的区別は **section header の「Library · 名
 ## [0.32.1] - 2026-05-14 — Scope のホイールクリック (middle button) ドラッグで pan
 
 ユーザー要望: グラフをホイールクリック (= middle button hold) で掴んで動かすと、
-ウィンドウ移動ではなく**プロット領域**を pan できるようにしたい。Simulink の
-Scope は pan tool ボタン経由だが pyflw では即時 pan に bind (= simulink には
+ウィンドウ移動ではなく**プロット領域**を pan できるようにしたい。リファレンスツールの
+Scope は pan tool ボタン経由だが pyflw では即時 pan に bind (= リファレンスツールには
 合わせない、明示的なユーザー判断)。
 
 ### Added
@@ -592,7 +592,7 @@ Scope は pan tool ボタン経由だが pyflw では即時 pan に bind (= simu
 
 ユーザー要望: `window.alert/confirm/prompt` を出すと chrome のネイティブ
 ダイアログ (= 「127.0.0.1:8770 の内容」と表示される素朴な dialog) が表示され、
-デスクトップアプリ風 UI と整合しない。Simulink Property Inspector 風の独自
+デスクトップアプリ風 UI と整合しない。Property Inspector 風の独自
 モーダル (= `DialogShell` primitives) に置換する。
 
 ### Added
@@ -1098,7 +1098,7 @@ v0.30.0 リリース直後のユーザー動作確認フィードバック 6 件
   (= `openScopePanel`)** に戻す。pane タイトルバーの detach ボタンは残置
   (= scope:<id> 葉が SplitTree に既に存在する場合の経路として温存)
 - **`ScopesStack` をタブ切替化** (要望 #3): 旧 = 縦並べで全 Scope 表示、
-  新 = **タブヘッダー + 単一 Scope 表示** (Simulink Scope 風)。`<button
+  新 = **タブヘッダー + 単一 Scope 表示** (リファレンスツールの Scope 風)。`<button
   role="tab">` で scope_id を横並びに、active scope のみ uPlot 描画。
   active scope は local state で管理 (= 永続化なし、entries 変化で先頭に
   fallback)
@@ -1258,7 +1258,7 @@ v0.29.2 で追加した Block 追加コマンドの **表示名と検索キー�
 - **検索キーワードを両言語対応**:
   - 旧 v0.29.2: `display_name` + lowercase 版
   - 新 v0.29.4: `searchableDisplayNames(meta)` で **ja + en + type_path 末尾**
-    を全て検索対象に (= ja UI でも英語名 "Sum" で検索可能、Simulink 経験者の
+    を全て検索対象に (= ja UI でも英語名 "Sum" で検索可能、リファレンスツール経験者の
     セーフネット、ADR-0028 §(4))
 - **CommandPalette `useMemo` deps に `i18n.language` を追加**: 言語切替で
   registry が再構築され、Block コマンドのラベルが新言語で再 resolve される
@@ -1270,7 +1270,7 @@ v0.29.2 で追加した Block 追加コマンドの **表示名と検索キー�
 
 ## [0.29.3] - 2026-05-12 — CommandPalette Block 追加: Quick Insert (選択中 block の右に配置 + auto-connect)
 
-v0.29.2 の block 追加コマンドを **Simulink "Quick Insert" 流儀** に強化。
+v0.29.2 の block 追加コマンドを **リファレンスツールの "Quick Insert" 流儀** に強化。
 キャンバスで block を 1 個選択した状態で `Ctrl+Shift+P` → 「Gain」→ Enter で
 **選択中 block の右に Gain を配置 + 自動連結** + 新 Gain を選択状態に。
 更に `Ctrl+Shift+P` → 「Scope」→ Enter で **Gain → Scope** 直列追加。
@@ -1685,7 +1685,7 @@ v0.27.0 リリース直後の UX 改善 2 点。実装範囲は ADR-0045 §(1) S
 
 UX-2 「Scope pane タイトルを block name で表示」は調査結果 cancel:
 `BlockEntry` には `name` フィールドが存在せず、`block.id` (例: `Scope_1`) が
-そのまま Simulink でいう Block Name に相当するため、現状の挙動 (= scope_id raw
+そのままリファレンスツールでいう Block Name に相当するため、現状の挙動 (= scope_id raw
 表示) が正しいことを確認。
 
 ## [0.27.0] - 2026-05-11 — Workspace JupyterLab Stage 1 = multi-pane split (ADR-0045)
@@ -2032,11 +2032,11 @@ fail のうち 1 だけ queued だった理由)。本リリースで実際に gr
 ローカルでは ``pytest`` / ``mypy --strict`` / ``ruff`` / ``sphinx`` の 4 段階
 チェックを CI と同じ手順で通過することを確認。
 
-## [0.26.0] - 2026-05-11 — Simulink "auto-connect on edge" 対応
+## [0.26.0] - 2026-05-11 — リファレンスツールの "auto-connect on edge" 対応
 
 ### Added
 
-- **エッジ上にブロックを置くと自動接続**: Simulink R2014b〜の "drop on wire"
+- **エッジ上にブロックを置くと自動接続**: リファレンスツールの "drop on wire"
   / "splice into wire" 動作を再現。SISO (n_inputs=1, n_outputs=1) ブロックを:
   - Palette からエッジ上に **drop** すると、入力 0 と出力 0 がエッジ路上に
     乗っている場合に元エッジが `source → block → target` の 2 本に自動分割
@@ -2063,7 +2063,7 @@ fail のうち 1 だけ queued だった理由)。本リリースで実際に gr
 ### Added
 
 - **UI primitives `src/components/ui/inspector.tsx`** (新規): 設定 UI / dialog の
-  共通 building block。Simulink Property Inspector 風スタイルを SSOT として固定:
+  共通 building block。Property Inspector 風スタイルを SSOT として固定:
   - Layout: `<PropertyGrid>` / `<PropertyRow>` (label 右寄せ + 値、indent 対応) /
     `<SectionDivider>` (uppercase + 横ルール)
   - Dialog: `<DialogShell>` (Escape / 外側 click で close、subtle gradient title bar) /
@@ -2075,11 +2075,11 @@ fail のうち 1 だけ queued だった理由)。本リリースで実際に gr
 - **デザインガイド `.claude/docs/ui-design-system.md`** (新規): 採用 / 禁止 idiom、
   カラーパレット、レイアウト定型、reference 実装。
 - CLAUDE.md にデザインシステム規約を追記。
-- memory `feedback_simulink_native_ui` 追加 (= 今後の UI 実装で primitives 厳守)。
+- memory にネイティブデスクトップ風 UI ガイドを追加 (= 今後の UI 実装で primitives 厳守)。
 
 ### Changed
 
-- **ParameterPanel (Inspector サイドバー)** を Simulink Property Inspector 風に
+- **ParameterPanel (Inspector サイドバー)** を Property Inspector 風に
   全面 refactor (= 旧 label 上 / 入力下の縦レイアウトを 2 列 PropertyGrid に置換)。
   - BlockHeader (gradient title bar) + section divider ("Layout" / "Parameters" /
     "Read only" / "Mask parameters")
@@ -2128,11 +2128,11 @@ fail のうち 1 だけ queued だった理由)。本リリースで実際に gr
 
 - typecheck + production build: clean
 
-## [0.24.4] - 2026-05-11 — プロット設定 dialog を Simulink Property Inspector 風に再設計
+## [0.24.4] - 2026-05-11 — プロット設定 dialog を Property Inspector 風に再設計
 
 ### Changed
 
-- **ScopeSettingsDialog を Simulink Property Inspector スタイルに再設計**
+- **ScopeSettingsDialog を Property Inspector スタイルに再設計**
   (= 旧 v0.24.3 が依然 web app 然としていたため):
   - **タブレイアウト**: Display (表示) / Style (スタイル) の 2 タブ、
     Style タブ header に信号数バッジ
@@ -2314,7 +2314,7 @@ ADR-0043 採択。FileBrowser を起点に、日常使いに耐えるワーク�
 
 ## [0.22.0] - 2026-05-10 — Stop Time = `"inf"` (無限実行) + Scope ring buffer
 
-ADR-0042 採択。Simulink 互換で Toolbar の Stop Time フィールドに `"inf"`
+ADR-0042 採択。リファレンスツール互換で Toolbar の Stop Time フィールドに `"inf"`
 (case-insensitive) を入力すると、Stop ボタンを押すまで実行する unbounded run
 を実現する。長時間実行で OOM しないよう Scope buffer はデフォルトで ring 化。
 **完全後方互換** (= 既存 `.flw.json` は無改変で読める、schema 0.8 維持)。
@@ -2467,7 +2467,7 @@ node 境界に揃える inset=12 でも矢印は node に重ならず、先端�
 - source / target ともに ``PORT_TO_NODE_BORDER_PX = 12`` で補正 → adjusted
   target = node 境界 → 矢印先端 = node 境界 → 矢印が node に綺麗に到達
 - ``DiagramCanvas`` / ``defaultEdgeOptions.markerEnd`` は v0.20.11 のまま (=
-  ``SIMULINK_MARKER_END``)
+  ``DIAGRAM_MARKER_END``)
 
 ### Internal / Tests
 
@@ -2489,7 +2489,7 @@ node 境界に揃える inset=12 でも矢印は node に重ならず、先端�
 ### Calculation
 
 - ``PORT_TO_NODE_BORDER_PX = 12`` (= Handle width / 2)
-- ``ARROW_HEAD_SIZE_PX = 8`` (= ``SIMULINK_MARKER_END.width``)
+- ``ARROW_HEAD_SIZE_PX = 8`` (= ``DIAGRAM_MARKER_END.width``)
 - ``TARGET_INSET_PX = 12 - 8 = 4``
 - source 側補正: 12 px → edge 起点 = node 境界線
 - target 側補正: 4 px → edge 終点 = node 境界 + 8 px 外側
@@ -2502,7 +2502,7 @@ node 境界に揃える inset=12 でも矢印は node に重ならず、先端�
 - ``BranchableEdge``: ``adjustToBorder`` を ``adjustWithInset`` に rename + 引数
   に ``inset`` を追加、source/target で異なる補正量を渡せるように
 - ``BranchableEdge``: ``markerEnd`` prop を ``BaseEdge`` に渡すよう復活
-- ``DiagramCanvas``: ``defaultEdgeOptions.markerEnd`` に ``SIMULINK_MARKER_END``
+- ``DiagramCanvas``: ``defaultEdgeOptions.markerEnd`` に ``DIAGRAM_MARKER_END``
   を復活 (= ``ArrowClosed``、width=8、height=8、stroke 色)
 
 ### Internal / Tests
@@ -2601,7 +2601,7 @@ center (= edge anchor) が node 境界の +12 px 外側になっていた。
 - これにより Handle の半分 (= 12 px) は node 内側に重なるが、edge anchor は
   node 境界線にぴったり一致 → 隙間ゼロ
 - node 端 (= port エリア) でクリックすると connection drag を開始するのは
-  Simulink でも同じ慣習なので問題なし
+  リファレンスツールでも同じ慣習なので問題なし
 
 ### Internal / Tests
 
@@ -2624,12 +2624,12 @@ center (= edge anchor) が node 境界の +12 px 外側になっていた。
 - **接続済み edge の ``markerEnd`` (= 矢印 head) を削除**:
   - React Flow は矢印 head を node 境界の外側に描画するオフセットを自動的に
     入れるため、edge の終端が node から ~10 px 離れて見えていた
-  - Simulink でも接続済み配線は純粋な線で、信号方向は node 配置 (= 左→右)
+  - リファレンスツールでも接続済み配線は純粋な線で、信号方向は node 配置 (= 左→右)
     で把握する慣習
   - これにより edge は node 境界に直接到達する見た目に
 - **`defaultEdgeOptions.markerEnd`** を削除、**`BranchableEdge`** も markerEnd
   prop を渡さない
-- ``SIMULINK_MARKER_END`` 定数自体は ``diagramConverter.ts`` に残す (= 将来
+- ``DIAGRAM_MARKER_END`` 定数自体は ``diagramConverter.ts`` に残す (= 将来
   drag connection 中の仮 edge で再利用する余地、現状未使用)
 
 ### Internal / Tests
@@ -2643,15 +2643,15 @@ center (= edge anchor) が node 境界の +12 px 外側になっていた。
 
 利用者は何もする必要なし。サーバ再起動で自動反映。
 
-## [0.20.6] - 2026-05-10 — Simulink 流ドラッグ&ドロップで配線から分岐
+## [0.20.6] - 2026-05-10 — リファレンスツール流ドラッグ&ドロップで配線から分岐
 
 ユーザー指摘 (= 「エッジの任意の点をクリックしてそのままドラッグアンドドロップで
-ほかのブロックに接続できるようにしてほしい、Simulink と同じ振る舞いに」) への
-対応。v0.20.5 では Ctrl+クリック方式しか提供しておらず Simulink 互換ではなかった。
+ほかのブロックに接続できるようにしてほしい、リファレンスツールと同じ振る舞いに」) への
+対応。v0.20.5 では Ctrl+クリック方式しか提供しておらずリファレンスツール互換ではなかった。
 
 ### Added
 
-- **Simulink 流のドラッグ分岐配線** (= 既存配線をクリック → そのまま drag →
+- **リファレンスツール流のドラッグ分岐配線** (= 既存配線をクリック → そのまま drag →
   別ブロックに drop で枝分かれ edge を追加):
   - **Custom Edge ``BranchableEdge``** 新規: React Flow built-in ``"step"``
     edge と同じ見た目 (= 直角ステップ折れ線 + 矢印 head) を ``getSmoothStepPath``
@@ -2663,18 +2663,18 @@ center (= edge anchor) が node 境界の +12 px 外側になっていた。
     - mouseup で ``document.elementFromPoint`` → ``data-id`` を持つ React Flow
       ノードを探索 → input port[0] (= dst_idx=0) に edge 追加
     - **ESC キー** または ブロック以外で離す → cancel
-- ``SIMULINK_EDGE_TYPE`` を built-in ``"step"`` から custom ``"branchable"`` に
+- ``DIAGRAM_EDGE_TYPE`` を built-in ``"step"`` から custom ``"branchable"`` に
   変更 (見た目は不変)
 - Help > Keyboard shortcuts ダイアログ ``Connection`` セクションに「Drag from
   edge → Drop on block」エントリを追加 (= 主要 UX として宣伝)
 - i18n key 1 件追加 (en/ja): ``modal.shortcuts.desc.drag_branch``
 
-### 利用例 (= Display ブロックを既存配線につなぐ、Simulink 流儀)
+### 利用例 (= Display ブロックを既存配線につなぐ、リファレンスツール流儀)
 
 1. キャンバスに ``Constant → Gain → Integrator`` を配置 + 配線済
 2. キャンバス側方の Display ブロックを drag-drop で配置
 3. **``Gain → Integrator`` の配線上の任意点をクリック → そのままドラッグ →
-   Display にドロップ** → ``Gain → Display`` の分岐配線が成立 (Simulink 互換)
+   Display にドロップ** → ``Gain → Display`` の分岐配線が成立 (リファレンスツール互換)
 
 v0.20.5 の Ctrl+クリック方式も併存 (= 利用者が好きな方を使える)。
 
@@ -2693,7 +2693,7 @@ v0.20.5 の Ctrl+クリック方式も併存 (= 利用者が好きな方を使�
 
 ユーザー指摘 (= 「Display ブロックなどをエッジに接続する機能が入っていない、
 わざわざブロックの根本から接続しろというのか」) への対応。v0.20.4 ではポート
-hit area 拡大で「ブロック起点の drag connection」改善のみで、Simulink 流の
+hit area 拡大で「ブロック起点の drag connection」改善のみで、リファレンスツール流の
 **既存配線から分岐**機能は実装していなかった。
 
 ### Added
@@ -3201,13 +3201,13 @@ frontend FileBrowser UI (= `selectedFilePath` state、左サイドバー tree、
 context menu、dirty 確認モーダル、reload polling) は次の v2.x minor リリース
 で実装予定 (ADR-0041 §論点 7〜11)。
 
-## [0.15.0] - 2026-05-09 — GUI Simulink 化 (見た目 + 各ブロック表示 + enum select)
+## [0.15.0] - 2026-05-09 — GUI のリファレンスツール風化 (見た目 + 各ブロック表示 + enum select)
 
-ユーザーフィードバック (= 「Simulink っぽくしてくれ」) を受けて、GUI の見た目と
-各ブロックの表示を Simulink 互換に揃える minor リリース。Public API / JSON
+ユーザーフィードバック (= 「リファレンスツール風にしてくれ」) を受けて、GUI の見た目と
+各ブロックの表示をリファレンスツール互換に揃える minor リリース。Public API / JSON
 schema / backend ロジックは無変更で v2.0.x からの後方互換あり。
 
-### Visual changes (Simulink 互換)
+### Visual changes (リファレンスツール互換)
 
 - **連結線**: bezier (滑らかな曲線) → **`step` (90° 折れ)**、stroke を黒系細線
   (`#1e293b`、1.5px) に統一、終端に **矢印 head** (= `MarkerType.ArrowClosed`、
@@ -3215,10 +3215,10 @@ schema / backend ロジックは無変更で v2.0.x からの後方互換あり�
 - **ブロック輪郭**: 各 shape kind ごとの色 (青/紫/スレート) → **黒線統一**
   (`#1e293b`、1px、selected 時 1.5px 青)、`drop-shadow` 削除でフラット化、
   rect / bar の **角丸を全廃**
-- **ブロック背景**: 白統一 (= Simulink 標準)
+- **ブロック背景**: 白統一 (= リファレンスツール標準)
 - **Subsystem / TriggeredSubsystem**: **二重枠** (= 内側 +3px に細線追加) で
   container と一目で分かる、base size 96×56
-- **Mux / Demux**: width 18 → **6 px** の細い black bar (Simulink 互換)、
+- **Mux / Demux**: width 18 → **6 px** の細い black bar (リファレンスツール互換)、
   chevron は黒バーに重ならないようバーの **外側に offset**
 - **Port (handle)**: 円 → **線画 chevron `>`** (= 信号の流れ方向、未接続のみ
   表示、接続済は edge の矢印 head が代わりに方向を示す)
@@ -3242,7 +3242,7 @@ schema / backend ロジックは無変更で v2.0.x からの後方互換あり�
 | Switch | スイッチ機構図 | **`u2 ≥ T`** 等 (= `param.criterion`) |
 | Sign | 段差 icon | **`sign`** テキスト |
 | Logical / Relational Operator | アイコン | **`AND`** / **`>=`** 等 (= `param.operator`) |
-| Saturation / Step / Sine / Ramp / Pulse | 左 glyph 小 + 右 param 値 | **glyph 中央大配置** (= Simulink は icon only) |
+| Saturation / Step / Sine / Ramp / Pulse | 左 glyph 小 + 右 param 値 | **glyph 中央大配置** (= リファレンスツールは icon only) |
 
 ### Added
 
@@ -3279,7 +3279,7 @@ schema / backend ロジックは無変更で v2.0.x からの後方互換あり�
 
 ### 後続予定
 
-GUI 編集機能の Simulink 互換改善 (= 分岐点 waypoint 編集、edge 中点からの
+GUI 編集機能のリファレンスツール互換改善 (= 分岐点 waypoint 編集、edge 中点からの
 右クリック分岐) は **ADR-0040 / v0.16.0** で別途設計。Public API レベルの
 変更なし、純 frontend GUI の機能追加として進める。
 
@@ -3376,7 +3376,7 @@ ADR-0039 で **Subsystem の port semantics を SSOT 是正**。``n_inputs`` /
 ``n_outputs`` / ``port_shapes_in`` / ``port_shapes_out`` を **派生 property**
 に格上げし、Python API と JSON schema から廃止する。利用者ゼロ + PyPI 未公開
 のうちに「内部 Inport / Outport の集合 = 真実」「外側 port count = 派生計算」
-という Simulink semantics 整合の正しい設計に戻す。ADR-0038 で凍結した
+というリファレンスツール semantics 整合の正しい設計に戻す。ADR-0038 で凍結した
 v1.0 Public API は本リリースで部分 supersede (= ADR-0038 §Amendments §(1))。
 
 ### Rationale
@@ -3506,7 +3506,7 @@ GUI bug fix patch。Public API / JSON schema / REST / extras 名は v0.13.0
 
 - **Subsystem ドリルダウン中の Inport / Outport 追加・削除で親ノードの
   ポート数が同期しないバグ** (`pyflw/web/frontend/src/store/appStore.ts`)。
-  Simulink semantics に合わせて以下を実装:
+  リファレンスツール semantics に合わせて以下を実装:
   - Inport / Outport drop 時、親 Subsystem の ``n_inputs`` / ``n_outputs``
     を +1、新ブロックの ``port_idx`` を内部既存同種 count に自動採番
   - Inport / Outport 削除時、親 ``n_inputs`` / ``n_outputs`` を -1、残った
@@ -3743,7 +3743,7 @@ ADR-0037 §(8) commit 計画に従い v0.17.1 で:
 
 **Phase 5b 中間 — TriggeredSubsystem (edge-driven fire)**。ADR-0036 後半の
 リリース。トリガー信号の rising/falling/either edge でのみ内部ブロックを
-発火するサブシステムを追加 (Simulink Triggered Subsystem 互換)。
+発火するサブシステムを追加 (リファレンスツールの Triggered Subsystem 互換)。
 
 ### Added
 
@@ -3794,7 +3794,7 @@ fallback)、JIT 化は Phase 6+ 検討。
 
 ### Added
 
-- ``pyflw.blocks.RateTransition`` (ADR-0036 §(1)): Simulink RateTransition 互換。
+- ``pyflw.blocks.RateTransition`` (ADR-0036 §(1)): リファレンスツールの RateTransition 互換。
   - ``mode="zoh"`` (fast-to-slow ラッチ) / ``"delay"`` (slow-to-fast 1-step 遅延)
     / ``"auto"`` (input/output 周期から自動決定、default)
   - n_states=2、ADR-0015 §(2) の 2-state ローテーション流用
@@ -3937,7 +3937,7 @@ semantics になっており、v0.5.0 から `DeprecationWarning` を発出し�
 | 用途 | 移行先 |
 |---|---|
 | 1 サンプル遅延 (`y[k+1] = u[k]`) | `pyflw.blocks.UnitDelay` |
-| Simulink ZOH 互換 (`y(t_k) = u(t_k)` 即時反映) | `pyflw.blocks.ZeroOrderHoldDirect` |
+| リファレンスツールの ZOH 互換 (`y(t_k) = u(t_k)` 即時反映) | `pyflw.blocks.ZeroOrderHoldDirect` |
 
 `pyflw.blocks.ZeroOrderHold` を import するコードは `ImportError` で失敗、
 JSON モデルファイルで `"type": "pyflw.blocks.discrete.ZeroOrderHold"` を含む
@@ -3995,7 +3995,7 @@ release commit** で、Phase 5 着手前の安定版マーカーとして機能�
 
 - A4 (Python コード生成、numba/cython JIT)
 - A5 (GPU バックエンド、jax / cupy / numba.cuda 選定)
-- B1 (RateTransition、Simulink 同名)
+- B1 (RateTransition、リファレンスツール同名)
 - B2 (Triggered subsystem、可変ステップ離散)
 - E1 (PyPI 公開自動化)
 - E2 (ダークモード)
@@ -4188,7 +4188,7 @@ Frontend は registry を 1 回 fetch して、言語切替時にクライアン
   `QuickAdd.tsx`: 表示文字列を `localizedDisplayName(b)` /
   `localizedDocstringSummary(b)` 経由に置換。検索フィルタは
   `searchableDisplayNames(b)` の両言語インデックスで動作 (= ja 環境でも
-  `"sum"` で `"加算"` がヒット、Simulink 経験者向けセーフネット)。
+  `"sum"` で `"加算"` がヒット、リファレンスツール経験者向けセーフネット)。
 - `pyflw/__init__.py.__version__`、`pyproject.toml.version`、
   `pyflw/web/frontend/package.json` を `0.11.0` に bump。
 
@@ -4510,7 +4510,7 @@ Two themes:
    `[...arr, ...batch]` spreading on every WebSocket frame. Wire format
    (`scope_batch` `number[][]`) is unchanged — the SoA conversion is
    purely a frontend boundary detail.
-2. **Phase 3 GUI polish**: Simulink-style keyboard shortcuts, a
+2. **Phase 3 GUI polish**: リファレンスツール流 keyboard shortcuts, a
    double-click "quick insert" popup, Ctrl-drag (in addition to
    right-drag) for block duplication, and a fix for Subsystems whose
    default `params.blocks` was the registry's `null` (not the empty
@@ -4547,7 +4547,7 @@ Two themes:
   popup. Trigger by double-clicking on the empty pane; arrow keys
   navigate, Enter inserts at the cursor position, Esc closes. Position
   is clamped against all four window edges.
-- `pyflw/web/frontend/src/lib/useShortcuts.ts`: Simulink-style global
+- `pyflw/web/frontend/src/lib/useShortcuts.ts`: リファレンスツール流 global
   shortcuts wired in `App.tsx`:
   - **Ctrl+T / F9**: run simulation (Ctrl+T may be hijacked by the
     browser as "open new tab"; F9 is the reliable alias).
@@ -4564,7 +4564,7 @@ Two themes:
     block (no-op otherwise).
 - `pyflw/web/frontend/src/components/DiagramCanvas.tsx`:
   **Ctrl+left-drag** (in addition to **right-drag**) on a block now
-  duplicates it and follows the cursor — Simulink's two-button
+  duplicates it and follows the cursor — リファレンスツールの two-button
   duplicate. Listener is registered with capture on both `mousedown`
   and `pointerdown` so React Flow's internal drag does not start on
   the original node.
@@ -4703,12 +4703,12 @@ are unchanged (so v0.7.1 model files load identically).
   hover / selected stroke rules in `index.css`. Hovering an edge now
   shows it's clickable; selecting one tints it blue and adds a soft
   glow.
-- **Right-click duplicate** (Simulink-style): right-click + drag on a
+- **Right-click duplicate** (リファレンスツール流): right-click + drag on a
   node clones it (deep params copy, new auto-incremented `{TypeName}_{N}`
   id) and follows the cursor. Right-click drag on the empty pane still
   pans. OS context menu is suppressed inside the canvas.
 - **Shift+drag = disconnect**: holding Shift while starting a node drag
-  removes every edge connected to the selected nodes, matching Simulink.
+  removes every edge connected to the selected nodes, matching the reference tool.
 - **Param panel covers more types**: numeric, string, and boolean
   parameters are all editable. `signs`, `operator`, `criterion` strings
   are exposed as text inputs. Edits commit on every keystroke (with
@@ -4730,7 +4730,7 @@ are unchanged (so v0.7.1 model files load identically).
   start/stop + WebSocket lifecycle so the toolbar Run button feeds the
   same scope stream as the bottom progress bar.
 - **Auto-layout**: horizontal-first grid (left → right, 8-wide before
-  wrap) with tighter pitch, matching Simulink reading order.
+  wrap) with tighter pitch, matching the reference tool reading order.
 - **Canvas chrome**: smooth-step edges by default, slate-toned stroke,
   thicker / glowing on hover and selection. MiniMap and Controls flat
   (no rounded shadow), system fonts (Segoe UI), tighter spacing
@@ -5112,7 +5112,7 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
   identical to `UnitDelay` since v0.3.0 (ADR-0014) and is scheduled for
   removal in Phase 4. Migrate to:
   - `UnitDelay` for 1-sample delayed sample-and-hold, or
-  - `ZeroOrderHoldDirect` for Simulink-compatible immediate reflection
+  - `ZeroOrderHoldDirect` for リファレンスツール互換 immediate reflection
     (`y(t_k) = u(t_k)`).
 
 ### Documentation
@@ -5121,8 +5121,8 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
 ## [0.4.0] - 2026-05-06
 
 ### Changed (BREAKING)
-- **Multi-rate Simulink semantics fix (ADR-0015)**: All discrete blocks now match
-  Simulink's `y(t in [n*T, (n+1)*T)) = u((n-1)*T)` semantics in the multi-rate
+- **Multi-rate リファレンスツール semantics fix (ADR-0015)**: All discrete blocks now match
+  リファレンスツールの `y(t in [n*T, (n+1)*T)) = u((n-1)*T)` semantics in the multi-rate
   case (`sample_time > dt_base`). The `1 dt_base` off-by-one limitation noted in
   v0.3.0's "Known limitations" is resolved.
   - Implementation: `Simulator.run()` fires updates at sample boundary START
@@ -5141,12 +5141,12 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
   open-loop usage. Single-rate **feedback** loops through `UnitDelay` /
   `ZeroOrderHold` may produce different output sequences (period extends from
   2 to 4) due to the 2-state register semantics — this is consistent with
-  Simulink's 2-state internal model and was implicit in v0.3.0's 1-state
+  リファレンスツールの 2-state internal model and was implicit in v0.3.0's 1-state
   approximation.
 
 ### Added
-- `tests/test_multirate_simulink.py`: 10 regression tests pinning the
-  Simulink-compatible multi-rate semantics for all five discrete block types.
+- `tests/test_multirate_block_semantics.py`: 10 regression tests pinning the
+  リファレンスツール互換 multi-rate semantics for all five discrete block types.
 - Playwright E2E smoke tests for the Web GUI (`pyflw/web/frontend/tests/e2e/`).
   Covers root render, model list, model selection, and Run button +
   WebSocket completion. Run locally with
@@ -5189,14 +5189,14 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
   with the current sample time `t_k` and the input sampled at `t_k`
   (`u(t_k)`), not the next sample time `t_new = (k+1)*dt_base`. This brings
   numerical results of all discrete blocks in line with standard discrete-time
-  LTI semantics (`x[k+1] = f(x[k], u[k])`) and Simulink convention. As a
+  LTI semantics (`x[k+1] = f(x[k], u[k])`) and the reference tool's convention. As a
   consequence, **numerical results of `UnitDelay`, `ZeroOrderHold`,
   `DiscreteIntegrator`, `DiscreteStateSpace`, `DiscreteTransferFunction`
   change** when `sample_time = dt_base` (single-rate). Specifically:
   - `UnitDelay` now produces a genuine 1-sample delay `y[k+1] = u[k]` (was
     effectively 0-sample delay before).
   - `ZeroOrderHold` becomes behaviorally identical to `UnitDelay`
-    (1-sample-delayed sample-and-hold). For Simulink-compatible immediate
+    (1-sample-delayed sample-and-hold). For リファレンスツール互換 immediate
     reflection (`y(t_k) = u(t_k)`), use the new `ZeroOrderHoldDirect` block.
   - `DiscreteIntegrator` now matches the standard forward Euler
     `x[k+1] = x[k] + T*g*u[k]` (the previous version had a 1-step index shift).
@@ -5212,11 +5212,11 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
   `ZeroOrderHoldDirect` is withdrawn.
 
 ### Added
-- `pyflw.blocks.ZeroOrderHoldDirect`: true Simulink Zero-Order Hold
+- `pyflw.blocks.ZeroOrderHoldDirect`: true リファレンスツールの Zero-Order Hold
   (`direct_feedthrough=True`, `y(t_k) = u(t_k)` immediate reflection,
   hold between sample times). See ADR-0014 §(3).
-- `tests/test_simulink_semantics.py`: regression tests pinning the
-  Simulink-compatible semantics of all discrete blocks (`UnitDelay`,
+- `tests/test_discrete_block_semantics.py`: regression tests pinning the
+  リファレンスツール互換 semantics of all discrete blocks (`UnitDelay`,
   `ZeroOrderHold`, `ZeroOrderHoldDirect`, `DiscreteIntegrator`,
   `DiscreteStateSpace`, `DiscreteTransferFunction`).
 - `.claude/docs/adr/0014-simulator-update-timing-fix.md` (Accepted, 2026-05-06).
@@ -5231,9 +5231,9 @@ deferred to Phase 4 (RateTransition, triggered subsystems, SPEC-0001 #16-#21).
 - For multi-rate discrete blocks (`sample_time > dt_base`), the new loop
   samples `u` at `t = (n*step_ratio - 1) * dt_base` instead of the
   conceptual sample boundary `t = n*sample_time`, leading to a one-`dt_base`
-  off-by-one shift compared to Simulink. A complete fix requires a 2-state
+  off-by-one shift compared to the reference tool. A complete fix requires a 2-state
   refactor of `UnitDelay` / `ZeroOrderHold` and is deferred to a future ADR.
-  For now, prefer `sample_time = dt_base` (single-rate) for full Simulink
+  For now, prefer `sample_time = dt_base` (single-rate) for full reference-tool
   compatibility.
 
 ## [0.2.0] - 2026-05-06

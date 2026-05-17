@@ -5,8 +5,8 @@ DiscreteIntegrator / Saturation / Abs / Sign / MinMax / Divide /
 RelationalOperator / LogicalOperator / Switch。
 
 Note: legacy ``ZeroOrderHold`` (= 2-state state-based ホールド) は v0.13.0
-(ADR-0033) で削除済。Simulink ZOH 互換版は ``ZeroOrderHoldDirect`` (ADR-0014
-§(3)、tests/test_simulink_semantics.py)。1 サンプル遅延は ``UnitDelay``。
+(ADR-0033) で削除済。リファレンスツールの ZOH 互換版は ``ZeroOrderHoldDirect`` (ADR-0014
+§(3)、tests/test_discrete_block_semantics.py)。1 サンプル遅延は ``UnitDelay``。
 """
 
 from __future__ import annotations

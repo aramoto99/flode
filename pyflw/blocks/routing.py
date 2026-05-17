@@ -29,7 +29,7 @@ class Switch(Block):
     Args:
         threshold: 比較しきい値。
         criterion: 比較演算子。``">="`` (default) / ``">"`` / ``"!="``。
-            Simulink Switch の "u2 >= Threshold" / "u2 > Threshold" / "u2 ~= 0" 相当。
+            リファレンスツールの Switch の "u2 >= Threshold" / "u2 > Threshold" / "u2 ~= 0" 相当。
 
     Note:
         ``control`` が ``NaN`` のときは Python の比較規則 (NaN との比較は常に

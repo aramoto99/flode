@@ -1,8 +1,8 @@
-// ADR-0019 §(2)(3) + 視覚化リファイン: Simulink 風にブロック外形を type ごとに変える。
+// ADR-0019 §(2)(3) + 視覚化リファイン: リファレンスツール風にブロック外形を type ごとに変える。
 // - 三角 (Gain) / 円 (Sum, Product, Divide) / バー (Mux, Demux) / 台形 (Inport, Outport)
 // - その他は compact rectangle (~72×40px) に固有 SVG glyph
-// - 入力 = 左、出力 = 右 (Simulink 慣習)
-// - block id は外形の **下** に小さく出す (Simulink もブロック名はノード下)
+// - 入力 = 左、出力 = 右 (リファレンスツール慣習)
+// - block id は外形の **下** に小さく出す (リファレンスツールもブロック名はノード下)
 
 import {
   Handle,
@@ -42,13 +42,13 @@ export function BlockNodeView({
   const nOut = (data.nOutputs as number | undefined) ?? 1;
   // v0.33.0: per-block color 撤廃。slate-600 固定 (全カテゴリ統一)。
   const color = "#475569";
-  // v0.15.0: Simulink "Flip Block" 相当の左右反転。SVG ShapeOutline のみ
+  // v0.15.0: リファレンスツールの "Flip Block" 相当の左右反転。SVG ShapeOutline のみ
   // scaleX(-1) で鏡像化 (= 三角形 ▶→◀)。Handle は flipPosition で position prop
   // 反転 (= chevron 向きと data-handlepos が反転して edge anchor が追従)。
   // ShapeContent (テキスト) は反転せず、flipped を渡して justify を切り替えて
   // 「底辺寄り」を維持。z-order は SVG → ShapeContent → Handles で drag 可能。
   const flipped = (data.flipped as boolean | undefined) ?? false;
-  // Simulink 風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
+  // リファレンスツール風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
   // 二重表示を回避)。``diagramConverter`` が edges から populate する。
   const connectedInputs = new Set<number>(
     (data.connectedInputs as number[] | undefined) ?? [],
@@ -95,7 +95,7 @@ export function BlockNodeView({
       style={{ width: shape.width, height: shape.height }}
     >
       {/* React Flow NodeResizer: 選択時のみハンドル表示。
-          Simulink / MATLAB ライクに、連結線は隠して **コーナー + 辺中央の小さい
+          業界標準ブロック線図ツール / 数値計算 IDE ライクに、連結線は隠して **コーナー + 辺中央の小さい
           ハンドルだけ** 表示する。色も濃いスレートで地味めに、白縁取りで上品に。
           選択そのものの視覚フィードバックは ``ShapeOutline`` (= シェイプ自身の
           stroke 色を青く太らす) と CSS の subtle drop-shadow で行うので、リサイザの
@@ -220,10 +220,10 @@ function ShapeOutline({
   selected: boolean;
 }): JSX.Element {
   const { width: w, height: h, kind } = shape;
-  // Simulink 風: 細黒線 + 白背景 + フラット (drop-shadow なし)。selected は薄青、
+  // リファレンスツール風: 細黒線 + 白背景 + フラット (drop-shadow なし)。selected は薄青、
   // container だけ僅かに色を変える程度で、通常時は完全モノトーン。
   const stroke = selected ? "#2563eb" : "#1e293b";
-  // Simulink 風: 通常も Subsystem も白背景、container 識別は二重枠で行う
+  // リファレンスツール風: 通常も Subsystem も白背景、container 識別は二重枠で行う
   const fill = "white";
   const strokeWidth = selected ? 1.5 : 1;
 
@@ -262,7 +262,7 @@ function ShapeOutline({
         )
       )}
       {kind === "bar" && (
-        // Simulink 風: 角丸なし、塗り潰しは細い黒バー
+        // リファレンスツール風: 角丸なし、塗り潰しは細い黒バー
         <rect
           x={1}
           y={1}
@@ -285,7 +285,7 @@ function ShapeOutline({
         />
       )}
       {(kind === "rect" || kind === "rect-wide") && (
-        // Simulink 風: 角丸なし。Subsystem も他のブロックと同じ単枠
+        // リファレンスツール風: 角丸なし。Subsystem も他のブロックと同じ単枠
         // (= ユーザー要望、二重枠は廃止)。
         <rect x={1} y={1} width={w - 2} height={h - 2} {...commonProps} />
       )}
@@ -375,7 +375,7 @@ function ShapeContent({
     return <></>;
   }
 
-  // 台形 (Inport / Outport): Simulink 風にポート番号 (= port_idx + 1) を表示。
+  // 台形 (Inport / Outport): リファレンスツール風にポート番号 (= port_idx + 1) を表示。
   if (kind === "trapezoid-r" || kind === "trapezoid-l") {
     const portIdx =
       typeof (paramsRaw as Record<string, unknown>).port_idx === "number"
@@ -388,7 +388,7 @@ function ShapeContent({
     );
   }
 
-  // rect-wide (TransferFunction 等): Simulink 風に **実際の式** を 2 行表示する。
+  // rect-wide (TransferFunction 等): リファレンスツール風に **実際の式** を 2 行表示する。
   // Display は live 値、TransferFunction / DiscreteTransferFunction は num/den 多項式、
   // StateSpace 系は (A,B,C,D) 行列サイズ、それ以外は glyph を維持。
   if (kind === "rect-wide") {
@@ -449,7 +449,7 @@ function ShapeContent({
   }
 
   // Subsystem: 単枠で identification 済なので中央は空。block id は外側下部の
-  // ラベルに任せる (ADR-0021、Simulink 互換、glyph 過剰を避ける)。
+  // ラベルに任せる (ADR-0021、リファレンスツール互換、glyph 過剰を避ける)。
   if (typePath.endsWith(".Subsystem")) {
     return <></>;
   }
@@ -470,7 +470,7 @@ function ShapeContent({
     );
   }
 
-  // rect (default): Simulink 風の専用 render を type ごとに優先する
+  // rect (default): リファレンスツール風の専用 render を type ごとに優先する
   //   - Constant: 値そのものを大きく表示 (= "1.0", "70" 等)
   //   - Integrator: ``1/s``
   //   - UnitDelay: ``1/z``
@@ -502,7 +502,7 @@ function ShapeContent({
       </div>
     );
   }
-  // Abs: Simulink 風に ``|u|`` テキスト。v0.36.4: フォント統一 (非 italic)。
+  // Abs: リファレンスツール風に ``|u|`` テキスト。v0.36.4: フォント統一 (非 italic)。
   if (typePath.endsWith(".Abs")) {
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium text-slate-800">
@@ -521,10 +521,10 @@ function ShapeContent({
       </div>
     );
   }
-  // v0.35.7: Switch を Simulink 流の per-port 表示に。
+  // v0.35.7: Switch をリファレンスツール流の per-port 表示に。
   // v0.35.8: 「スイッチっぽさ」を出すため、右半分に物理的スイッチアームの SVG
   // を描き込む。スイッチアームは "T 側に倒れている" 既定姿で描画
-  // (= 内部状態がない static icon、Simulink の Switch ブロック表示と同様)。
+  // (= 内部状態がない static icon、リファレンスツールの Switch ブロック表示と同様)。
   //   - 上ポート (u[0] = input_true)  → "T"
   //   - 中央ポート (u[1] = control)   → "{op} {threshold}" (例 "≥ 0")
   //   - 下ポート (u[2] = input_false) → "F"
@@ -606,7 +606,7 @@ function ShapeContent({
       </div>
     );
   }
-  // Sign: Simulink 風に ``sign`` テキスト。
+  // Sign: リファレンスツール風に ``sign`` テキスト。
   // v0.36.4: フォントを MinMax (非 italic) と統一 (ユーザー指摘 2026-05-17)。
   if (typePath.endsWith(".Sign")) {
     return (
@@ -615,7 +615,7 @@ function ShapeContent({
       </div>
     );
   }
-  // v0.36.2: MathFunction / TrigFunction を Simulink 風に **選択された関数名** で
+  // v0.36.2: MathFunction / TrigFunction をリファレンスツール風に **選択された関数名** で
   // 表示する (= MinMax の "min"/"max" と同じパターン)。glyph (f(u) / 正弦波) では
   // どの関数が選ばれているか分からないという指摘 (ユーザー 2026-05-17) への対応。
   // v0.36.3: フォントスタイルを MinMax (非 italic) と揃える (ユーザー指摘 2026-05-17)。
@@ -631,7 +631,7 @@ function ShapeContent({
       </div>
     );
   }
-  // v0.36.2: CompareToConstant を Simulink 風に ``u op c`` 表示。
+  // v0.36.2: CompareToConstant をリファレンスツール風に ``u op c`` 表示。
   // 演算子は Unicode (≥ / ≤ / ≠ / =) で短縮、定数は formatNumber で省略表記。
   if (typePath.endsWith(".CompareToConstant")) {
     const params = paramsRaw as Record<string, unknown>;
@@ -644,7 +644,7 @@ function ShapeContent({
       </div>
     );
   }
-  // v0.36.2: CompareToZero を Simulink 風に ``u op 0`` 表示 (= const=0 固定の特殊化)。
+  // v0.36.2: CompareToZero をリファレンスツール風に ``u op 0`` 表示 (= const=0 固定の特殊化)。
   if (typePath.endsWith(".CompareToZero")) {
     const opSym = compareOpSymbol(
       (paramsRaw as Record<string, unknown>).op,
@@ -678,7 +678,7 @@ function ShapeContent({
     );
   }
 
-  // v0.35.2: Add: Simulink 流に **各入力ポート位置に signs を表示**。
+  // v0.35.2: Add: リファレンスツール流に **各入力ポート位置に signs を表示**。
   // signs="++" なら + + / "+-" なら + - 等。入力ポートの y 位置は
   // ``inputHandlePosition`` と同じ ``(i+1)/(n+1)`` 等分配で揃える。
   if (typePath.endsWith(".Add")) {
@@ -715,8 +715,8 @@ function ShapeContent({
     );
   }
 
-  // それ以外の rect: Simulink 風に **glyph を中央大きく** 配置 (param 値の併記は
-  // しない、Simulink も icon only)。param 値はパラメータパネルで見る。
+  // それ以外の rect: リファレンスツール風に **glyph を中央大きく** 配置 (param 値の併記は
+  // しない、リファレンスツールも icon only)。param 値はパラメータパネルで見る。
   return (
     <div
       className="absolute inset-0 flex items-center justify-center px-1.5"
@@ -738,7 +738,7 @@ function ShapeContent({
 function minWidthForKind(kind: BlockShape["kind"]): number {
   switch (kind) {
     case "bar":
-      return 4; // Mux/Demux は Simulink 風の細い black bar、最低限の視認性のみ確保
+      return 4; // Mux/Demux はリファレンスツール風の細い black bar、最低限の視認性のみ確保
     case "circle":
       return 28;
     case "triangle-r":
@@ -841,7 +841,7 @@ const triggerGlyphStyle: React.CSSProperties = {
  * 全 shape 共通: chevron ``>`` を Handle 中心 (= ブロック境界線上) からさらに
  * 1 chevron 分 (= 6px) **外側** に押し出す。input (Position.Left) は左へ、output
  * (Position.Right) は右へ。これによりブロック種別 (rect / bar / circle / triangle
- * 等) に関わらず chevron 位置が統一され、Simulink の見た目に揃う。
+ * 等) に関わらず chevron 位置が統一され、リファレンスツールの見た目に揃う。
  */
 /**
  * v0.15.0: 左右反転 (= ``data.flipped``) 用に Position を反転する。
@@ -876,7 +876,7 @@ function chevronStyleFor(
 }
 
 // ---------------------------------------------------------------------------
-// Simulink 風: 分数形式で num / den を 2 行表示する小さな helper component。
+// リファレンスツール風: 分数形式で num / den を 2 行表示する小さな helper component。
 // TransferFunction / DiscreteTransferFunction / Integrator (1/s) / UnitDelay
 // (1/z) / DiscreteIntegrator (Ts/(z-1)) で共通利用する。
 // ---------------------------------------------------------------------------
@@ -1031,7 +1031,7 @@ function formatScalar(v: unknown): string {
 
 // ---------------------------------------------------------------------------
 // Display block の live 値表示。WebSocket 経由で scopes store に流れてくる
-// 最新サンプルをブロックフェース上に大きく描画する (Simulink Display 相当)。
+// 最新サンプルをブロックフェース上に大きく描画する (リファレンスツールの Display 相当)。
 // ---------------------------------------------------------------------------
 
 /** @internal テスト用 export。プロダクション利用は BlockNodeView 経由。 */

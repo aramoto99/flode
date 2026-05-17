@@ -1,4 +1,4 @@
-// v0.20.6: Simulink 互換の「既存配線から分岐配線を引く」を実現する Custom Edge。
+// v0.20.6: リファレンスツール互換の「既存配線から分岐配線を引く」を実現する Custom Edge。
 //
 // 既存の React Flow built-in ``"step"`` edge と同じ見た目 (= ステップ折れ線
 // + 矢印 head) を維持しつつ、path に invisible で太い overlay path を重ね、
@@ -103,7 +103,7 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     targetY: adjustedTgt.y,
     sourcePosition,
     targetPosition,
-    // Simulink 流: 折れ角は直角 (= radius 0)
+    // リファレンスツール流: 折れ角は直角 (= radius 0)
     borderRadius: 0,
   });
 

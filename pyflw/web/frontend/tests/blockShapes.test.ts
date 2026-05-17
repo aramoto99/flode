@@ -1,4 +1,4 @@
-// ADR-0019 §(2): blockShapes.ts のテスト。Simulink 風の type→shape mapping。
+// ADR-0019 §(2): blockShapes.ts のテスト。リファレンスツール風の type→shape mapping。
 
 import { describe, expect, it } from "vitest";
 

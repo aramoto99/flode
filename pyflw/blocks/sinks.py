@@ -136,7 +136,7 @@ class Scope(Block):
 
 
 class Display(Block):
-    """シミュレーション中の現在値を数値表示するブロック (Simulink Display 相当)。
+    """シミュレーション中の現在値を数値表示するブロック (リファレンスツールの Display 相当)。
 
     Scope と同じ duck-type インタフェース (``record`` / ``times`` / ``values`` /
     ``labels``) を持つため server (ADR-0011) の WebSocket scope batch パイプラインを
@@ -199,7 +199,7 @@ class Display(Block):
 
 
 class XYGraph(Block):
-    """``y`` を ``x`` に対してプロットするパラメトリックグラフ (Simulink XY Graph 相当)。
+    """``y`` を ``x`` に対してプロットするパラメトリックグラフ (リファレンスツールの XY Graph 相当)。
 
     入力 0 を x、入力 1 を y として記録する。Scope と同じ duck-type インタフェースを
     持つため server WebSocket パイプラインをそのまま流用できる。フロント側は
@@ -266,7 +266,7 @@ class XYGraph(Block):
 class Terminator(Block):
     """入力を消費するだけで何もしない終端ブロック。
 
-    Simulink の Terminator 相当。使われない出力ポートを終端させて未接続警告を
+    リファレンスツールの Terminator 相当。使われない出力ポートを終端させて未接続警告を
     避ける用途で使う。
 
     Args:

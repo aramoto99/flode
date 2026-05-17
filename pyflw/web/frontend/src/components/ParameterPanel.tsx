@@ -2,7 +2,7 @@
 // ADR-0012 §(3)、ADR-0019 §(5) auto-save 連動、ADR-0021 §(9) Mask Subsystem 編集。
 //
 // v0.25.0: ui/inspector.tsx primitives ベースに refactor、ScopeSettingsDialog /
-// ModelSettingsModal と同じ Simulink Property Inspector スタイル (= PropertyGrid +
+// ModelSettingsModal と同じ Property Inspector スタイル (= PropertyGrid +
 // SectionDivider + native widgets) に統一。
 //
 // editingModel + editingPath が source of truth。useAutoSave がそれを PUT する。

@@ -1,4 +1,4 @@
-"""ADR-0014: 離散ブロックが Simulink semantics に整合することを保証する回帰テスト。
+"""ADR-0014: 離散ブロックがリファレンスツール semantics に整合することを保証する回帰テスト。
 
 このテストは ADR-0014 (Simulator update timing fix) の §(2) で表明した振る舞いを
 具体例で固定する。実装上のバグや将来の改修で添字がずれるとここで検出される。
@@ -32,7 +32,7 @@ def _record_array(scope: Scope) -> np.ndarray:
 
 
 def test_unit_delay_produces_one_sample_delay() -> None:
-    """ADR-0014 §(2): UnitDelay は y[k+1] = u[k] (Simulink UnitDelay 互換)。
+    """ADR-0014 §(2): UnitDelay は y[k+1] = u[k] (リファレンスツールの UnitDelay 互換)。
 
     x0=99 (≠ u(0)=0) で初回サンプル値が x0、以降が前サンプル時刻の入力になる。
     """
@@ -45,7 +45,7 @@ def test_unit_delay_produces_one_sample_delay() -> None:
     sim.run()
 
     arr = _record_array(sc)
-    # y[0] = x0 = 99 (Simulink: y[0] = x0)
+    # y[0] = x0 = 99 (リファレンスツール: y[0] = x0)
     # y[k] = u(t_{k-1}) for k≥1 (1-sample delay)
     expected = np.array([99.0, 0.00, 0.01, 0.02, 0.03, 0.04])
     np.testing.assert_allclose(arr, expected, atol=1e-12)

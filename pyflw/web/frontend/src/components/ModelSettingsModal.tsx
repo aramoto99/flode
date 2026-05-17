@@ -1,14 +1,14 @@
-// Model Settings ダイアログ (Simulink の "Configuration Parameters" 相当)。
+// Model Settings ダイアログ (業界標準ブロック線図ツールの "Configuration Parameters" 相当)。
 // Stop time は toolbar 側で編集するため、ここでは solver / dt / rtol / atol /
 // dt_base のみを扱う。
 //
 // v0.25.0: ui/inspector.tsx primitives ベースに refactor、ScopeSettingsDialog と
-// 同じ Simulink Property Inspector スタイル (= PropertyGrid + SectionDivider +
+// 同じ Property Inspector スタイル (= PropertyGrid + SectionDivider +
 // DialogShell + native widgets) に統一。
 //
 // 設計方針:
 //   - draft state で編集中の値を保持し、Save ボタンで一括 commit (= Apply)。
-//     Simulink の Configuration Parameters dialog の挙動 (= 即時反映ではなく
+//     業界標準ブロック線図ツールの Configuration Parameters dialog の挙動 (= 即時反映ではなく
 //     Apply で適用) に揃える。
 //   - 不正値 (空 / NaN / 非正) は Save 時に弾いてエラー表示。
 //   - dt_base は ``Auto`` (= null) と「明示数値」のチェックボックス toggle。

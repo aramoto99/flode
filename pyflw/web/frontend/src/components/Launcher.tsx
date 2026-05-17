@@ -9,7 +9,7 @@
 //   - 「Show all...」リンクで sidebar mode を `file` に切替
 //
 // **a11y**: tile / list item とも `<button>` ベース、`aria-label` 付き。
-// **design system**: memory `feedback_simulink_native_ui` に従い、大型カード /
+// **design system**: ネイティブデスクトップ風 UI ガイドに従い、大型カード /
 // pill button は禁止。Property Inspector primitives 寄りの shape (= 60〜80 px
 // 幅 + 32 px 高さの 小型ボタン)。
 

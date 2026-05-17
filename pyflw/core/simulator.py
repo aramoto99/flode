@@ -632,7 +632,7 @@ class Simulator:
 
         ADR-0015 で ADR-0014 の multi-rate off-by-one を根本解決した。fire を
         ``[A]`` の前に置くことで、サンプル境界 ``t = n*sample_time`` で update が
-        呼ばれ、UnitDelay の出力が ``y(n*T) = u((n-1)*T)`` (Simulink semantics) と
+        呼ばれ、UnitDelay の出力が ``y(n*T) = u((n-1)*T)`` (リファレンスツール semantics) と
         一致する (single-rate / multi-rate 両方)。
 
         実装は SM-A / SM-B モードで完全分離 (ADR-0018 §(2) R-A): モード判定後、

@@ -85,7 +85,7 @@ const PulseGeneratorGlyph = ({ className }: GlyphProps): JSX.Element => (
 // =============================================================================
 
 // v0.33.3: 旧版は 15% opacity の塗りつぶしで「再生ボタン ▶」感が出ていた
-// (ユーザー指摘)。Simulink Gain と整合する **輪郭線のみ** に変更。
+// (ユーザー指摘)。リファレンスツールの Gain と整合する **輪郭線のみ** に変更。
 const GainGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <polygon points="4,4 4,20 20,12" />
@@ -103,7 +103,7 @@ const SumGlyph = ({ className }: GlyphProps): JSX.Element => (
 // v0.35.0: Add (Sum の矩形版) 用 glyph。
 // v0.35.1: 中央の矩形枠を削除。Diagram 上の Add ブロックは shape="rect" で
 // 外枠の矩形が既に描かれており、glyph の矩形と二重表示になっていた (ユーザー
-// 指摘)。「+」記号のみで Simulink の Add ブロック内表示と整合。
+// 指摘)。「+」記号のみでリファレンスツールの Add ブロック内表示と整合。
 const AddGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <line x1="6" y1="12" x2="18" y2="12" />
@@ -216,7 +216,7 @@ const TrigFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// Simulink DeadZone と同じ入出力特性曲線: 左下から中央 flat、右上へ線形。
+// リファレンスツールの DeadZone と同じ入出力特性曲線: 左下から中央 flat、右上へ線形。
 // 中央が「不感帯」(出力 0) であることを視覚化する。
 const DeadZoneGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
@@ -295,7 +295,7 @@ const IntegratorGlyph = ({ className }: GlyphProps): JSX.Element => (
 
 // v0.35.6: "du/dt" は fontSize=11 だと viewBox 24 を超えて見切れていた
 // (ユーザー指摘: 末尾 "t" が切れる)。分数形式 (上 "du" / 下 "dt") に変更し、
-// 視認性も向上 (Simulink Derivative ブロックも分数表示が標準)。
+// 視認性も向上 (リファレンスツールの Derivative ブロックも分数表示が標準)。
 const DerivativeGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
@@ -601,7 +601,7 @@ const LogicalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Routing
 // =============================================================================
 
-// v0.35.8: Library palette でも Simulink 風の物理的スイッチアームを表示
+// v0.35.8: Library palette でもリファレンスツール風の物理的スイッチアームを表示
 // (= BlockNodeView 内の表示と整合)。2 接点 + 出力 pivot + T 側に倒れたアーム。
 const SwitchGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>

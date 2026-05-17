@@ -4,7 +4,7 @@
 //
 // デザインは ``App.tsx:PanelHeader`` (h-6、border-b、bg-slate-100、uppercase
 // tracking-wider) を踏襲し、Property Inspector primitives と整合させる。
-// 大型 icon button / pill button は使わない (= memory `feedback_simulink_native_ui`)。
+// 大型 icon button / pill button は使わない (= ネイティブデスクトップ風 UI ガイド)。
 
 import { useTranslation } from "react-i18next";
 

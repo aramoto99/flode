@@ -2,7 +2,7 @@
 
 Phase 1 では ``RelationalOperator`` (比較) と ``LogicalOperator`` (論理) を提供する。
 信号は ``float`` のまま扱い、論理値は ``0.0`` / ``1.0`` で表現する
-(Simulink の Boolean 信号モードは Phase 2 以降)。
+(リファレンスツールの Boolean 信号モード相当は Phase 2 以降)。
 """
 
 from __future__ import annotations

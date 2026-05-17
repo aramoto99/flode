@@ -64,7 +64,7 @@ Blocks updated at a fixed sample period. Pass ``sample_time`` in seconds.
    The legacy ``ZeroOrderHold`` block (state-based, equivalent to
    ``UnitDelay`` after ADR-0014) was deprecated in v0.5.0 and **removed in
    v0.13.0** (ADR-0033). For 1-sample delayed sample-and-hold use
-   :class:`pyflw.blocks.UnitDelay`; for Simulink-compatible immediate
+   :class:`pyflw.blocks.UnitDelay`; for reference-tool-compatible immediate
    reflection (``y(t_k) = u(t_k)``) use
    :class:`pyflw.blocks.ZeroOrderHoldDirect` (ADR-0014 §(3)).
 

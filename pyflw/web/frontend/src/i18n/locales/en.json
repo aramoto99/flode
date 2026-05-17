@@ -150,7 +150,7 @@
   "modal.dirty_confirm.save_and_open": "Save & Open",
 
   "modal.about.title": "About pyflw",
-  "modal.about.description": "Block-diagram dynamic system simulator (Simulink-inspired).",
+  "modal.about.description": "Block-diagram dynamic system simulator.",
   "modal.about.license": "MIT License",
 
   "modal.shortcuts.title": "Keyboard shortcuts",
@@ -160,7 +160,7 @@
   "modal.shortcuts.section.simulation": "Simulation",
   "modal.shortcuts.section.connect": "Connection",
   "modal.shortcuts.desc.auto_connect": "Connect block A.out[0] → block B.in[0]",
-  "modal.shortcuts.desc.drag_branch": "Branch from any point on a wire to block.in[0] (Simulink-style)",
+  "modal.shortcuts.desc.drag_branch": "Branch from any point on a wire to block.in[0]",
   "modal.shortcuts.desc.branch_connect": "Branch from existing wire to block.in[0]",
   "modal.shortcuts.desc.new_file": "New file",
   "modal.shortcuts.desc.open": "Open",

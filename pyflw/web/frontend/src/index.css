@@ -56,8 +56,8 @@ body {
   stroke: #2563eb; /* blue-600 */
   stroke-width: 3.0;
   /* v3.14.12: ユーザー指摘「選択しているのかどうかわかりにくい」。stroke 1.6 →
-   * 3.0 でほぼ 2 倍に太らせ、drop-shadow も 1px → 3px の halo に強化。Simulink
-   * の selected wire 風 (= 明確に分かるが派手すぎない) を目指す。 */
+   * 3.0 でほぼ 2 倍に太らせ、drop-shadow も 1px → 3px の halo に強化。リファレンス
+   * ツールの selected wire 風 (= 明確に分かるが派手すぎない) を目指す。 */
   filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.55));
 }
 /* edge を掴みやすくするためのインタラクション領域を広げる。実際の path とは別に
@@ -78,7 +78,7 @@ body {
  *   ゆるい transition を付ける → 位置移動がヌルッと追従する
  * - ``.dragging`` クラスが付いている間 (= ユーザーのアクティブドラッグ): transition を
  *   完全に切る。さもないとブロックがマウスポインタから遅れて追従して気持ち悪い
- * - ドラッグ中はシャドウを濃く + 軽くスケール = 「持ち上がった」感を出す (Simulink + 一般的
+ * - ドラッグ中はシャドウを濃く + 軽くスケール = 「持ち上がった」感を出す (リファレンスツール + 一般的
  *   な desktop UX)
  */
 .react-flow__node {
@@ -91,7 +91,7 @@ body {
   filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.18));
 }
 /* 選択時の視覚: 派手な outline ではなく、控えめな drop-shadow で「持ち上げた」感を
- * 出す。NodeResizer のコーナーマーカーと組み合わせて MATLAB / Simulink 風の
+ * 出す。NodeResizer のコーナーマーカーと組み合わせて業界標準ブロック線図ツール風の
  * 地味で品のある「選択中」表現になる。 */
 .react-flow__node.selected:not(.dragging) {
   filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.12))

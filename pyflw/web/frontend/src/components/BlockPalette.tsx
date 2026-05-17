@@ -1,5 +1,5 @@
 // ADR-0019 §(3) + UI 刷新: ブロックパレット。
-// 各エントリに block 種別固有の SVG glyph プレビューを表示する Simulink Library
+// 各エントリに block 種別固有の SVG glyph プレビューを表示する Library
 // Browser 風の見た目。検索 + カテゴリ折りたたみ。drag-start で
 // `application/pyflw-block-type` を data transfer に積む。
 //

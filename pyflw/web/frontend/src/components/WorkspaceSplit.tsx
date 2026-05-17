@@ -636,7 +636,7 @@ function ScopesStack({
   onSplitOutScope: (scopeId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
-  // v0.30.2: タブ切替で 1 個ずつ表示 (= Simulink Scope 風)。
+  // v0.30.2: タブ切替で 1 個ずつ表示 (= リファレンスツールの Scope 風)。
   // 現 active scope_id は local state、entries の最初を default。
   const [activeId, setActiveId] = useState<string | null>(null);
   // entries 変化で active が消えたら自動切替
@@ -663,7 +663,7 @@ function ScopesStack({
       </div>
     );
   }
-  // v0.30.2: タブ切替で 1 Scope を表示 (Simulink Scope 風)。
+  // v0.30.2: タブ切替で 1 Scope を表示 (リファレンスツールの Scope 風)。
   const activeEntry =
     entries.find(([id]) => id === validActiveId) ?? entries[0]!;
   const [activeScopeId, activeBuffer] = activeEntry;

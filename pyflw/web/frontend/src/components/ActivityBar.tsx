@@ -4,7 +4,7 @@
 // 左 2 px の青い accent bar。
 //
 // **a11y**: `<div role="tablist" aria-orientation="vertical">` + 各 button =
-// `<button role="tab" aria-selected aria-label>`。memory `feedback_simulink_native_ui`
+// `<button role="tab" aria-selected aria-label>`。ネイティブデスクトップ風 UI ガイド
 // 規律: pill button / switch toggle / segmented control 禁止、シンプルな
 // 縦並び icon button のみ。
 

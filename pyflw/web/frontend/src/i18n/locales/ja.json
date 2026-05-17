@@ -150,7 +150,7 @@
   "modal.dirty_confirm.save_and_open": "保存して開く",
 
   "modal.about.title": "pyflw について",
-  "modal.about.description": "ブロック線図ベースの動的システムシミュレータ (Simulink にインスパイアされた実装)。",
+  "modal.about.description": "ブロック線図ベースの動的システムシミュレータ。",
   "modal.about.license": "MIT ライセンス",
 
   "modal.shortcuts.title": "キーボードショートカット",
@@ -160,7 +160,7 @@
   "modal.shortcuts.section.simulation": "シミュレーション",
   "modal.shortcuts.section.connect": "接続",
   "modal.shortcuts.desc.auto_connect": "ブロック A.out[0] → ブロック B.in[0] に接続",
-  "modal.shortcuts.desc.drag_branch": "配線の任意の位置から block.in[0] へドラッグ&ドロップで分岐 (Simulink 流)",
+  "modal.shortcuts.desc.drag_branch": "配線の任意の位置から block.in[0] へドラッグ&ドロップで分岐",
   "modal.shortcuts.desc.branch_connect": "既存の配線から block.in[0] へ分岐",
   "modal.shortcuts.desc.new_file": "新規ファイル",
   "modal.shortcuts.desc.open": "開く",

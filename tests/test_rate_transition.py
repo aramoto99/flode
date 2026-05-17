@@ -162,7 +162,7 @@ class TestSimulatorIntegration:
         """RateTransition と UnitDelay が同じ output_sample_time で同じ挙動。
 
         RateTransition の動作は ADR-0015 §(2) の 2-state ローテーションと同一
-        なので、同じ sample_time なら UnitDelay と一致する (= Simulink の
+        なので、同じ sample_time なら UnitDelay と一致する (= リファレンスツールの
         rate-matched RateTransition は実効 UnitDelay)。
         """
         sim = Simulator(t_end=0.1, dt=0.01)

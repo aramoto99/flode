@@ -65,7 +65,7 @@ class Add(Block):
     """符号付き加算 (矩形版) ``y = Σ sign_i * u_i`` (v0.35.0)。
 
     ``Sum`` (= 円形 ○) と機能同等だが、形状が **矩形 □** で描画される。
-    Simulink の Add ブロック (vs Sum) と同じ使い分け: 図面上で「加算ノード」を
+    リファレンスツールの Add ブロック (vs Sum) と同じ使い分け: 図面上で「加算ノード」を
     丸 / 角どちらで表現したいかの好みで選ぶ。
 
     入力ポート数は ``len(signs)``。``signs`` の各文字は ``"+"`` または ``"-"``。
@@ -418,8 +418,8 @@ class TrigFunction(Block):
 class DeadZone(Block):
     """不感帯 ``y = 0 (lower <= u <= upper)、u - lower (u < lower)、u - upper (u > upper)``。
 
-    端点 ``u == lower`` / ``u == upper`` では出力 ``0.0`` (strict 不等号、Simulink
-    互換)。``lower == upper`` は許可 (= 退化単一点 dead zone、実質 ``y = u - lower``
+    端点 ``u == lower`` / ``u == upper`` では出力 ``0.0`` (strict 不等号、リファレンス
+    ツール互換)。``lower == upper`` は許可 (= 退化単一点 dead zone、実質 ``y = u - lower``
     の連続関数、ADR-0053 §論点 5)。
 
     Args:
@@ -534,7 +534,7 @@ class CompareToZero(Block):
     """入力をゼロと比較 ``y = (u op 0) ? 1.0 : 0.0``。
 
     ``CompareToConstant(const=0)`` の固定特殊化を別クラスで提供 (ADR-0053
-    §論点 4)。Simulink でも別ブロックとして UI に並んでおり、ゼロ越え trigger
+    §論点 4)。リファレンスツールでも別ブロックとして UI に並んでおり、ゼロ越え trigger
     idiom が 1 ブロックで表現できる。
 
     Args:

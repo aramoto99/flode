@@ -1,5 +1,5 @@
 // ADR-0019 §(2) §Open Question 2: ブロック type ごとに「外形 (shape)」を割り当てる。
-// Simulink はブロックの形そのものが識別情報になるため (Gain=三角、Sum=円、等)、
+// 業界標準ブロック線図ツールではブロックの形そのものが識別情報になるため (Gain=三角、Sum=円、等)、
 // 長方形に小さいグリフを置くのではなく、外形 SVG を type 固有にする。
 
 export type BlockShapeKind =
@@ -33,11 +33,11 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // 円形より矩形の方が見やすい (Add / Sum と統一)。
   "pyflw.blocks.mathops.Divide":  { kind: "rect", width: 48, height: 48 },
 
-  // -------- 縦長バー (Simulink 風: 細い black bar) --------
+  // -------- 縦長バー (リファレンスツール風: 細い black bar) --------
   "pyflw.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },
   "pyflw.blocks.routing.Demux": { kind: "bar", width: 6, height: 56 },
 
-  // -------- Subsystem (Simulink 風: 二重枠の少し大きめ rect) --------
+  // -------- Subsystem (リファレンスツール風: 二重枠の少し大きめ rect) --------
   "pyflw.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
   "pyflw.subsystems.triggered.TriggeredSubsystem": { kind: "rect", width: 96, height: 56 },
 

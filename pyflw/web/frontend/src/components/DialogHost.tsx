@@ -4,8 +4,8 @@
 // `getCurrentDialog` を購読、kind に応じて 3 種の dialog を切り替える。
 //
 // すべて inspector.tsx primitives (`DialogShell` / `PrimaryButton` /
-// `SecondaryButton` / `DangerButton` / `INPUT_CLS`) を使う = Simulink
-// Property Inspector 風の見た目 (= `.claude/docs/ui-design-system.md`)。
+// `SecondaryButton` / `DangerButton` / `INPUT_CLS`) を使う = Property
+// Inspector 風の見た目 (= `.claude/docs/ui-design-system.md`)。
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";

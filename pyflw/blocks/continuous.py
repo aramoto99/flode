@@ -418,8 +418,8 @@ class Derivative(Block):
     """フィルタ付き微分 ``H(s) = N*s / (s + N)`` (ADR-0006 §(3))。
 
     純粋微分 ``s`` は実装不能なので 1 次フィルタ近似を採用する。``N`` を大きく
-    すると純粋微分に近づくがノイズも拡大する。Simulink Derivative の Filter
-    Coefficient ``N`` (default 1000) と同じ慣習に従う。
+    すると純粋微分に近づくがノイズも拡大する。リファレンスツールの Derivative の
+    Filter Coefficient ``N`` (default 1000) と同じ慣習に従う。
 
     実現形: 状態 ``x`` を ``x_dot = -N*x + N*u``、出力 ``y = -N*x + N*u``
     とすると、入力から出力への伝達関数は ``N*s / (s + N)`` になる。

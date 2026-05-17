@@ -10,25 +10,25 @@ import { getBlockShape } from "./blockShapes";
 import { resolvePortCounts } from "./dynamicPorts";
 import type { BlockMetadata, FlwModel, LayoutDict, LayoutEntry } from "../types/api";
 
-// Simulink 互換: 連結線の終点に矢印 head を付けて「信号の流れ」を視覚化する。
+// 業界標準ブロック線図ツール準拠: 連結線の終点に矢印 head を付けて「信号の流れ」を視覚化する。
 // stroke は 1.5 で接地感を増す。``DiagramCanvas`` の ``defaultEdgeOptions``
 // (= 新規 connect 時) からも import して同じ値を使う (= single source of truth、
 // 値の drift 防止)。
-export const SIMULINK_EDGE_STROKE = "#1e293b"; // slate-800
-export const SIMULINK_EDGE_STYLE = {
-  stroke: SIMULINK_EDGE_STROKE,
+export const DIAGRAM_EDGE_STROKE = "#1e293b"; // slate-800
+export const DIAGRAM_EDGE_STYLE = {
+  stroke: DIAGRAM_EDGE_STROKE,
   strokeWidth: 1.5,
 };
-export const SIMULINK_MARKER_END = {
+export const DIAGRAM_MARKER_END = {
   type: MarkerType.ArrowClosed,
-  color: SIMULINK_EDGE_STROKE,
+  color: DIAGRAM_EDGE_STROKE,
   width: 8,
   height: 8,
 };
 // v0.20.6: built-in "step" → custom "branchable" に変更。見た目は同じ (= 直角
 // ステップ折れ線 + 矢印 head) を BranchableEdge 内で再現しつつ、edge mousedown
 // で「既存配線から分岐」drag を発火できるようにする。
-export const SIMULINK_EDGE_TYPE = "branchable";
+export const DIAGRAM_EDGE_TYPE = "branchable";
 
 export interface BlockNodeData extends Record<string, unknown> {
   blockType: string;
@@ -38,18 +38,18 @@ export interface BlockNodeData extends Record<string, unknown> {
   nInputs?: number;
   nOutputs?: number;
   isContainer?: boolean;
-  // Simulink 風: 接続済みのポートでは chevron ``>`` を抑制 (= edge 矢印 head と
-  // 二重表示を回避)。``modelToDiagram`` が edges を走査して populate する。
+  // 業界標準ブロック線図ツール準拠: 接続済みのポートでは chevron ``>`` を抑制
+  // (= edge 矢印 head と二重表示を回避)。``modelToDiagram`` が edges を走査して populate する。
   connectedInputs?: number[];
   connectedOutputs?: number[];
-  // v0.15.0: ブロック左右反転フラグ (Simulink "Flip Block" 相当)。layout entry の
-  // ``flipped`` から流す。BlockNodeView で port position を反転 + visual scaleX(-1)。
+  // v0.15.0: ブロック左右反転フラグ (業界標準ブロック線図ツールの "Flip Block" 相当)。
+  // layout entry の ``flipped`` から流す。BlockNodeView で port position を反転 + visual scaleX(-1)。
   flipped?: boolean;
 }
 
 export type BlockNode = Node<BlockNodeData>;
 
-/** Grid auto-layout (Simulink 風に左→右の横向きフロー)。
+/** Grid auto-layout (業界標準ブロック線図ツール準拠の左→右の横向きフロー)。
  *  ブロックがコンパクト (~80×40) になったので grid pitch も狭めて密に並べる。 */
 const GRID_CELL_WIDTH = 120;
 const GRID_CELL_HEIGHT = 80;
@@ -71,8 +71,8 @@ export function modelToDiagram(
 } {
   const layout = model.layout ?? {};
 
-  // Simulink 風: 接続済み port (= edge の端点) には chevron ``>`` を表示しない
-  // ため、各 block の接続済み input / output port_idx 集合を先に収集する。
+  // 業界標準ブロック線図ツール準拠: 接続済み port (= edge の端点) には chevron ``>`` を
+  // 表示しないため、各 block の接続済み input / output port_idx 集合を先に収集する。
   const connectedInBy = new Map<string, Set<number>>();
   const connectedOutBy = new Map<string, Set<number>>();
   for (const c of model.connections) {
@@ -135,11 +135,11 @@ export function modelToDiagram(
     target: c.dst,
     sourceHandle: String(c.src_idx),
     targetHandle: String(c.dst_idx),
-    // Simulink 風: 90° 折れ線 (= step、smoothstep の角丸なし版)、黒系細線、
-    // 終点矢印 head で「信号の流れ」を視覚化
-    type: SIMULINK_EDGE_TYPE,
-    style: SIMULINK_EDGE_STYLE,
-    markerEnd: SIMULINK_MARKER_END,
+    // 業界標準ブロック線図ツール準拠: 90° 折れ線 (= step、smoothstep の角丸なし版)、
+    // 黒系細線、終点矢印 head で「信号の流れ」を視覚化
+    type: DIAGRAM_EDGE_TYPE,
+    style: DIAGRAM_EDGE_STYLE,
+    markerEnd: DIAGRAM_MARKER_END,
   }));
   return { nodes, edges };
 }

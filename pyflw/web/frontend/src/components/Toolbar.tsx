@@ -1,4 +1,4 @@
-// アイコンツールバー (Simulink / VS Code 風)。
+// アイコンツールバー (リファレンスツール / VS Code 風)。
 // 左: file actions (Save / Undo / Redo placeholder)
 // 中: zoom controls
 // 右: simulation (Run / Stop)
@@ -108,7 +108,7 @@ export function Toolbar(): JSX.Element {
 
       <div className="flex-1" />
 
-      {/* Group: Simulation — Simulink 風に Run の **直前** に Stop time を置く。 */}
+      {/* Group: Simulation — リファレンスツール風に Run の **直前** に Stop time を置く。 */}
       <StopTimeInput disabled={!hasModel} />
       <ToolButton
         title={t("toolbar.run")}
@@ -131,7 +131,7 @@ export function Toolbar(): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// StopTimeInput: Simulink ツールバー右側にある Stop Time フィールド相当。
+// StopTimeInput: リファレンスツールのツールバー右側にある Stop Time フィールド相当。
 // ``editingModel.simulator.t_end`` を直接購読 + 編集する入力フィールド。
 // ADR-0042 §論点 5-A: ``"inf"`` (case-insensitive) を受け入れて Stop ボタンまで
 // 走らせる unbounded run を実現する。不正値 (空 / NaN / 負 / 未対応 string) は
@@ -172,7 +172,7 @@ function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
     >
       <span className="font-medium">{t("toolbar.stop_time")}</span>
       {/* type="text" + inputMode="decimal" にしているのは:
-          1) Simulink ツールバーの Stop Time にスピナー (上下矢印) は無いため
+          1) リファレンスツールのツールバーの Stop Time にスピナー (上下矢印) は無いため
           2) ``type="number"`` のスピナーは UX を分断する (= マウスで誤操作で
              値が変わる、矩形がブラウザごとに違う見た目)
           3) commit ソフトウェア検証 (Number(draft)) で十分

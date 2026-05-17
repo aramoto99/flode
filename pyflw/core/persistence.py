@@ -38,7 +38,7 @@ SUPPORTED_SCHEMA_VERSIONS = (CURRENT_SCHEMA_VERSION,)
 
 # ADR-0020 §(1): layout entry の型。block_id → {"x": float, "y": float}。
 # `LayoutDict` = レイアウト全体 (top-level または Subsystem 内部の `params.layout`)。
-# v0.15.0: optional ``"flipped": bool`` を許容 (= Simulink の Flip Block 相当)。
+# v0.15.0: optional ``"flipped": bool`` を許容 (= リファレンスツールの Flip Block 相当)。
 LayoutDict = dict[str, dict[str, float | bool]]
 
 

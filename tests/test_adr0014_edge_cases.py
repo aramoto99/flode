@@ -673,8 +673,8 @@ def test_discrete_transfer_function_2nd_order_n_states() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_multirate_unit_delay_simulink_semantics() -> None:
-    """multi-rate (sample_time > dt_base) での UnitDelay が真の Simulink semantics に従う。
+def test_multirate_unit_delay_reference_semantics() -> None:
+    """multi-rate (sample_time > dt_base) での UnitDelay が真の reference semantics に従う。
 
     ADR-0015 で根本治療済み: ADR-0014 で known limitation として残っていた
     「multi-rate で 1 dt_base off-by-one」が、2-state augmentation + fire timing
@@ -713,7 +713,7 @@ def test_multirate_unit_delay_simulink_semantics() -> None:
     assert sample_times_actual[0] == pytest.approx(0.0)
     assert y_at_sample_times[0] == pytest.approx(0.0)
 
-    # y(0.1) = u(0) = 0 (1 サンプル遅延、Simulink semantics)
+    # y(0.1) = u(0) = 0 (1 サンプル遅延、reference semantics)
     assert sample_times_actual[1] == pytest.approx(0.1)
     assert y_at_sample_times[1] == pytest.approx(0.0, abs=1e-10)
 
@@ -726,8 +726,8 @@ def test_multirate_unit_delay_simulink_semantics() -> None:
     assert y_at_sample_times[3] == pytest.approx(0.2, abs=1e-10)
 
 
-def test_multirate_unit_delay_simulink_systematic() -> None:
-    """multi-rate UnitDelay が全サンプル時刻で Simulink y(t_n) = u(t_{n-1}) に従う。
+def test_multirate_unit_delay_systematic_semantics() -> None:
+    """multi-rate UnitDelay が全サンプル時刻で y(t_n) = u(t_{n-1}) (reference semantics) に従う。
 
     ADR-0015 適用後:
     - y(t in [n*T, (n+1)*T)) = u((n-1)*T) for n >= 1
@@ -756,7 +756,7 @@ def test_multirate_unit_delay_simulink_systematic() -> None:
     # 各サンプル時刻 t_n (n >= 1) で y(t_n) = u(t_{n-1}) = t_n - sample_time
     for i in range(1, len(sample_indices)):
         t_n = t_at_sample[i]
-        expected_simulink = t_n - sample_time  # u(t_{n-1}) = t_n - sample_time
-        assert y_at_sample[i] == pytest.approx(expected_simulink, abs=1e-10), (
-            f"t={t_n:.2f}: y_pyflw={y_at_sample[i]}, expected_simulink={expected_simulink}"
+        expected_reference = t_n - sample_time  # u(t_{n-1}) = t_n - sample_time
+        assert y_at_sample[i] == pytest.approx(expected_reference, abs=1e-10), (
+            f"t={t_n:.2f}: y_pyflw={y_at_sample[i]}, expected_reference={expected_reference}"
         )

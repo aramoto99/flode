@@ -1,4 +1,4 @@
-// Simulink ライクなキーボードショートカットを App ルートで束ねる hook。
+// リファレンスツール風のキーボードショートカットを App ルートで束ねる hook。
 // 入力フォーカス中 (input / textarea / contenteditable) はテキスト編集を優先する
 // (= Ctrl+A はテキスト全選択、Ctrl+C はテキストコピーが OS / ブラウザ動作)。
 
@@ -44,7 +44,7 @@ export function useShortcuts(): void {
       const key = e.key;
 
       // ---- Run / Stop ----
-      // Simulink は Ctrl+T = Run / Ctrl+Shift+T = Stop。ただしほとんどのブラウザは
+      // リファレンスツールは Ctrl+T = Run / Ctrl+Shift+T = Stop。ただしほとんどのブラウザは
       // Ctrl+T (= 新しいタブ) と Ctrl+Shift+T (= 閉じたタブを復元) を OS レベルで
       // 横取りし preventDefault を無視する。デスクトップアプリ化 (PWA / Electron 等)
       // した場合に備えて bind は残しつつ、確実に動く F9 / Shift+F9 もエイリアスする
@@ -70,7 +70,7 @@ export function useShortcuts(): void {
       if (isTextEditing(e.target)) return;
 
       // v0.20.0: Ctrl+Z Undo / Ctrl+Shift+Z (= Ctrl+Y) Redo
-      // Simulink / VS Code 流儀。Mac は Cmd+Z / Cmd+Shift+Z (= ctrl 変数で吸収)。
+      // リファレンスツール / VS Code 流儀。Mac は Cmd+Z / Cmd+Shift+Z (= ctrl 変数で吸収)。
       if (ctrl && !e.shiftKey && key.toLowerCase() === "z") {
         e.preventDefault();
         useAppStore.getState().undo();
@@ -285,7 +285,7 @@ export function useShortcuts(): void {
         }
       }
 
-      // v0.35.5: Ctrl+I = 選択ブロックを左右反転 (Simulink "Flip Block" 互換)。
+      // v0.35.5: Ctrl+I = 選択ブロックを左右反転 (リファレンスツールの "Flip Block" 互換)。
       // Ctrl+K プレフィクス中の Ctrl+I (= Inspector dock cycle) は上で処理済、
       // ここに到達するのは通常 (= プレフィクス無し) の Ctrl+I のみ。
       if (ctrl && !e.shiftKey && key.toLowerCase() === "i") {
@@ -301,7 +301,7 @@ export function useShortcuts(): void {
       }
 
       // Esc: 階層を上に / 選択解除
-      // Subsystem の中にいるなら drillUp、それ以外は選択解除。Simulink でも
+      // Subsystem の中にいるなら drillUp、それ以外は選択解除。リファレンスツールでも
       // Esc は段階的に「外向き」のキャンセル動作。
       if (key === "Escape") {
         const state = useAppStore.getState();

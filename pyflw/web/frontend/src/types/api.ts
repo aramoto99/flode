@@ -36,7 +36,7 @@ export interface LayoutEntry {
   y: number;
   w?: number;
   h?: number;
-  // v0.15.0: ブロックの左右反転 (Simulink の "Flip Block" 相当)。``true`` で
+  // v0.15.0: ブロックの左右反転 (リファレンスツールの "Flip Block" 相当)。``true`` で
   // 入出力 port を反転、ノード内の SVG / text は読みやすさ維持のため再反転。
   // 純粋な GUI metadata で backend 計算には影響しない (= 接続先・接続元が同じ
   // なら結果は同じ)。``layout`` 配下に置くことで JSON schema 不変、optional

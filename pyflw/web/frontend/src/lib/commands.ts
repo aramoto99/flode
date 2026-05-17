@@ -380,7 +380,7 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
     // 言語切替時は CommandPalette の useMemo deps (i18n.language) で再構築。
     dynamicSuffix: localizedDisplayName(meta),
     // v0.29.4: searchableDisplayNames は両言語 (ja/en) + type_path 末尾を返す
-    // ため、ja 環境でも英語名 "Sum" で検索可能 (= Simulink 経験者向けセーフネット、
+    // ため、ja 環境でも英語名 "Sum" で検索可能 (= リファレンスツール経験者向けセーフネット、
     // ADR-0028 §(4))。type_path / category / tags は補助検索用に併用。
     keywords: [
       ...searchableDisplayNames(meta),
@@ -404,7 +404,7 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
       const existingIds = new Set(view.blocks.map((b) => b.id));
       const newId = generateUniqueId(meta.type_path, existingIds);
 
-      // v0.29.3: Quick Insert (= Simulink 流)。selectedNodeIds が 1 個なら
+      // v0.29.3: Quick Insert (= リファレンスツール流)。selectedNodeIds が 1 個なら
       // **その block の右側 (+140 px) に配置 + auto-connect** (= src.out[0]
       // → new.in[0])。複数選択 / 未選択時は従来の bounding box heuristics。
       const selectedIds = state.selectedNodeIds;
@@ -460,7 +460,7 @@ export function buildBlockAddCommands(blocks: BlockMetadata[]): Command[] {
           dst_idx: 0,
         });
         // selection を新 block に移す (= 連続 Quick Insert で「→ Gain →
-        // Scope」のように直列追加できる、Simulink 流儀)
+        // Scope」のように直列追加できる、リファレンスツール流儀)
         state.selectNode(newId);
       }
     },

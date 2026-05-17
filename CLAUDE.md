@@ -6,7 +6,7 @@
 
 ## プロジェクト概要
 
-**pyflw**: ブロック線図ベースの動的システムシミュレータ (Simulink-inspired、商標回避のため独自命名)。
+**pyflw**: ブロック線図ベースの動的システムシミュレータ (商標回避のため独自命名)。
 
 - **言語**: Python 3.11+ (pyproject.toml `requires-python = ">=3.11"`、CI matrix は 3.11 / 3.12 / 3.13)
 - **対象 OS**: OS 非依存の pure Python パッケージ (PyPI 配布)。CI は ubuntu-latest のみ
@@ -31,7 +31,8 @@
 
 ### 命名上の制約
 
-- `simulink` という語をモジュール / パッケージ / クラス / ファイル / ディレクトリ名に使わない (商標)。プロジェクトの説明文で「Simulink-inspired」と書くのは可
+- `simulink` / `MathWorks` 等の商標語をモジュール / パッケージ / クラス / ファイル / ディレクトリ名・ソースコード・ドキュメント (ADR を除く) に使わない (商標)。ADR (`.claude/docs/adr/`) は過去の設計判断の履歴として商標語を保持してよい
+- 比較・由来として参照したい場合は「業界標準ブロック線図ツール」「リファレンスツール」等の中性表現を使う
 
 ---
 
@@ -190,7 +191,7 @@ Claudeのデフォルト挙動と異なる、重要な規約のみ記載する�
 - JSDoc で関数・コンポーネントのドキュメント記述
 
 ### UI デザイン (frontend 設定 UI / Inspector / dialog)
-- **`/.claude/docs/ui-design-system.md` に必ず従う** (Simulink Property Inspector 風)。
+- **`/.claude/docs/ui-design-system.md` に必ず従う** (Property Inspector 風)。
 - すべての設定 UI は `src/components/ui/inspector.tsx` の primitives を使う:
   `<DialogShell>` / `<PropertyGrid>` / `<PropertyRow>` / `<SectionDivider>` /
   `<TabBar>` + `<TabButton>` / `<PrimaryButton>` / `<SecondaryButton>` /

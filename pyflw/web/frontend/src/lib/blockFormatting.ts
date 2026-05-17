@@ -1,8 +1,8 @@
-// Simulink 風: ブロック内に param から動的に式 / 値を整形して表示するユーティリティ。
+// リファレンスツール風: ブロック内に param から動的に式 / 値を整形して表示するユーティリティ。
 // テストしやすいように pure function で抽出する。
 
 /**
- * 数値を Simulink 風の短い表示にする。
+ * 数値をリファレンスツール風の短い表示にする。
  * - 整数なら整数として ("70")
  * - 浮動小数なら有効桁 4 (e 表記は避ける、2.0 / 0.001 のような自然表記)
  * - NaN / Infinity / 非数値は "?" にフォールバック
@@ -25,7 +25,7 @@ export function formatNumber(v: unknown): string {
 /**
  * 多項式係数 [a_n, a_{n-1}, ..., a_1, a_0] を ``a_n*var^n + ... + a_0`` の形に整形。
  *
- * Simulink 互換: 係数 1 は省略 (= ``s^2`` not ``1*s^2``)、項 0 は除外、最初の正係数の前の
+ * リファレンスツール互換: 係数 1 は省略 (= ``s^2`` not ``1*s^2``)、項 0 は除外、最初の正係数の前の
  * "+" は省略。``var = "s"`` で TransferFunction、``"z"`` で Discrete。
  */
 export function formatPolynomial(coeffs: unknown, variable: string = "s"): string {
@@ -57,7 +57,7 @@ export function formatPolynomial(coeffs: unknown, variable: string = "s"): strin
     if (power === 1) varStr = variable;
     else if (power > 1) varStr = `${variable}^${power}`;
 
-    // 項を組み立て: 係数と変数の間にスペース不要 (Simulink 互換、例 "2s" / "2s^2")
+    // 項を組み立て: 係数と変数の間にスペース不要 (リファレンスツール互換、例 "2s" / "2s^2")
     terms.push(`${sign}${coeffStr}${varStr}`);
   }
   if (terms.length === 0) return "0";
@@ -92,7 +92,7 @@ export function formatMatrixSize(m: unknown): string {
 
 /**
  * Switch ブロックの ``criterion`` パラメータ (= ``>=`` / ``>`` / ``!=``) を
- * Simulink 風の比較式 ``u2 ≥ T`` 形に整形する。
+ * リファレンスツール風の比較式 ``u2 ≥ T`` 形に整形する。
  *
  * pyflw `Switch` の criterion 値は backend の比較演算子そのもの (``>=`` / ``>`` /
  * ``!=``)。Unicode の ≥ / ≠ で表示する方が視認性が良い。

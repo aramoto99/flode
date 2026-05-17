@@ -95,7 +95,7 @@ export function buildOptions(
 
   // v0.32.2: フォント / 軸色 / グリッドの styling を UI design system に統一
   // (= 旧デフォルトは tick label が大きく "t [s]" が中央大型表示で「web 標準
-  // っぽい」見た目になっていた)。Simulink Property Inspector 風の 11 px sans-
+  // っぽい」見た目になっていた)。Property Inspector 風の 11 px sans-
   // serif + slate-500 系で密度を上げ、X 軸 label は左寄せ小さく。
   const AXIS_FONT = '11px system-ui, "Segoe UI", -apple-system, sans-serif';
   const AXIS_LABEL_FONT =

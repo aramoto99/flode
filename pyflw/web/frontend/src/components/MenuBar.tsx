@@ -1,5 +1,5 @@
 // デスクトップ風 MenuBar (File / View / Simulation / Help)。
-// Simulink + MATLAB の上部メニュー帯に倣う。
+// 業界標準ブロック線図ツール + 数値計算 IDE の上部メニュー帯に倣う。
 //
 // v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` / ``selectedModelId``
 // 経路を撤去、File API (= ``selectedFilePath``) 一本化。File メニューは New /

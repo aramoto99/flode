@@ -1,7 +1,7 @@
 """Triggered Subsystem (ADR-0036)。
 
 外部からのトリガー信号 (rising / falling / either edge) で内部ブロックを
-発火するサブシステム。Simulink ``Triggered Subsystem`` 互換。
+発火するサブシステム。リファレンスツールの ``Triggered Subsystem`` 互換。
 
 設計方針 (ADR-0036 §(2)(3)):
 
@@ -63,8 +63,8 @@ class TriggeredSubsystem(Subsystem):
 
     通常の :class:`Subsystem` を継承し、trigger 入力 (= 入力末尾の port) で
     edge 検出されたタイミングでのみ内部ブロックを実行する。fire しないステップでは
-    内部状態が凍結され、出力は前回 fire 時の値を保持する (= Simulink Triggered
-    Subsystem 互換)。
+    内部状態が凍結され、出力は前回 fire 時の値を保持する (= リファレンスツールの
+    Triggered Subsystem 互換)。
 
     ADR-0039 (v2.0): 親 :class:`Subsystem` と同じく ``n_inputs`` / ``n_outputs``
     は派生 property。``n_inputs = 内部 Inport 数 + 1`` (trigger 分)。

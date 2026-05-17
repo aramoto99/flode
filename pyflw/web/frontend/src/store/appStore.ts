@@ -1526,7 +1526,7 @@ export function updateBlockSize(
 }
 
 /**
- * v0.15.0: ブロックの左右反転フラグをトグルする (Simulink の "Flip Block" 相当)。
+ * v0.15.0: ブロックの左右反転フラグをトグルする (リファレンスツールの "Flip Block" 相当)。
  * ``layout[blockId].flipped`` を反転、純粋な GUI metadata で backend 計算には
  * 影響しない。``layout`` entry が無ければ作る。
  */
@@ -1609,7 +1609,7 @@ export function removeConnectionFromEditing(
 }
 
 /**
- * v0.26.0 (Simulink auto-connect-on-edge): エッジを 1 件削除し、source → block →
+ * v0.26.0 (リファレンスツールの auto-connect-on-edge): エッジを 1 件削除し、source → block →
  * target の 2 本を atomic に追加する (= 履歴 1 entry にまとめる、undo で 1 回で元に戻る)。
  * 同 dst_idx に既存接続があれば置換 (= ``addConnectionToEditing`` と同じ規約)。
  */
@@ -1698,7 +1698,7 @@ export function updateBlockParams(
 }
 
 // ---------------------------------------------------------------------------
-// 全選択 / コピー / 貼り付け (Simulink Ctrl+A / Ctrl+C / Ctrl+V)
+// 全選択 / コピー / 貼り付け (リファレンスツール準拠 Ctrl+A / Ctrl+C / Ctrl+V)
 // ---------------------------------------------------------------------------
 
 /**
@@ -1820,7 +1820,7 @@ export function pasteClipboard(offset = { x: 20, y: 20 }): void {
     }),
   );
 
-  // 貼り付けた block 群を選択 (Simulink でも Ctrl+V 直後は新規分が選択される)
+  // 貼り付けた block 群を選択 (リファレンスツールでも Ctrl+V 直後は新規分が選択される)
   if (pastedIds.length > 0) {
     state.setSelectedNodeIds(pastedIds);
   }

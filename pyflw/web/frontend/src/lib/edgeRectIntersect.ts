@@ -88,7 +88,7 @@ export function polylineIntersectsRect(points: readonly Point[], r: Rect): boole
 }
 
 /**
- * Simulink 流 step edge (90° 折れ線、``borderRadius=0``) の polyline を返す。
+ * リファレンスツール流 step edge (90° 折れ線、``borderRadius=0``) の polyline を返す。
  *
  * **典型ケース** (= 出力ポート Right → 入力ポート Left、``sx < tx``) を 3-segment
  * polyline で近似する: ``(sx, sy) → (midX, sy) → (midX, ty) → (tx, ty)``

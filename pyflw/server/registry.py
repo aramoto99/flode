@@ -76,8 +76,8 @@ class BlockMetadata:
     icon: str
     # v0.33.0: per-block の color フィールドを撤廃。
     # 旧版では category 単位で色を hardcode していたが、(1) category が
-    # 増えたときの palette 管理コスト (2) 色覚多様性への配慮 (3) Simulink
-    # Property Inspector 風 design system との整合 を理由に廃止。glyph 色は
+    # 増えたときの palette 管理コスト (2) 色覚多様性への配慮 (3) Property
+    # Inspector 風 design system との整合 を理由に廃止。glyph 色は
     # frontend 側で slate-600 固定。
     docstring_summary: str
     docstring_full: str

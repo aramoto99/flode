@@ -1,6 +1,6 @@
 """Display / XYGraph (Phase 3 後 sink 拡張) のテスト。
 
-Simulink Display / XY Graph 相当。Scope と同じ duck-type interface
+リファレンスツールの Display / XY Graph 相当。Scope と同じ duck-type interface
 (``record`` / ``times`` / ``values`` / ``labels``) を持つ。
 """
 

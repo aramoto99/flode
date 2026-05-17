@@ -75,7 +75,7 @@ describe("modelToDiagram", () => {
   });
 
   it("returns horizontal grid auto-layout when layout key is absent", () => {
-    // Simulink-like horizontal flow: idx 0 = (0,0), idx 1 = (120,0), ... wrap at 8
+    // Reference-tool-like horizontal flow: idx 0 = (0,0), idx 1 = (120,0), ... wrap at 8
     const { nodes } = modelToDiagram(baseModel);
     expect(nodes[0]?.position).toEqual({ x: 0, y: 0 });
     expect(nodes[1]?.position).toEqual({ x: 120, y: 0 });

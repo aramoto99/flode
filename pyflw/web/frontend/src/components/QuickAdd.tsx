@@ -1,6 +1,6 @@
 // クイックブロック検索ポップアップ。空ペーンをダブルクリックで起動し、
 // インクリメンタル検索で hit したブロックを Enter / クリックでカーソル位置に追加する。
-// Simulink の Quick Insert (R2014b〜) に相当する操作。
+// リファレンスツールの Quick Insert 機能に相当する操作。
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -97,7 +97,7 @@ export function QuickAdd({
     const scored: { score: number; meta: (typeof data.blocks)[number] }[] = [];
     for (const m of data.blocks) {
       // ADR-0028: 両言語の display_name で fuzzy 検索 (= ja 環境で "sum" 入力でも
-      // "加算" がヒット、Simulink 経験者向けセーフネット)。スコアは最大値を採用。
+      // "加算" がヒット、リファレンスツール経験者向けセーフネット)。スコアは最大値を採用。
       const candidates = searchableDisplayNames(m);
       let best: number | null = null;
       for (const cand of candidates) {

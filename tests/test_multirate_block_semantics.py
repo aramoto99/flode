@@ -1,4 +1,4 @@
-"""ADR-0015: multi-rate (sample_time > dt_base) で全離散ブロックが Simulink semantics
+"""ADR-0015: multi-rate (sample_time > dt_base) で全離散ブロックがリファレンスツール semantics
 と完全一致することを保証する回帰テスト。
 
 v0.3.0 までの multi-rate off-by-one (UnitDelay で `1 dt_base` 分のずれ、
@@ -6,9 +6,9 @@ DiscreteIntegrator/StateSpace/TF で同様の挙動) は ADR-0015 で根本治�
 
 参照:
 - ADR-0015 §(2)(3) UnitDelay の 2-state、DiscreteIntegrator/SS/TF の 2n-state
-- ADR-0015 §(7) 新規 multi-rate Simulink semantics 検証
+- ADR-0015 §(7) 新規 multi-rate リファレンスツール semantics 検証
 - legacy ``ZeroOrderHold`` は v0.13.0 (ADR-0033) で削除済 (= UnitDelay と完全同一
-  挙動だったため別実装を残す価値がなかった)。Simulink ZOH 互換は
+  挙動だったため別実装を残す価値がなかった)。リファレンスツールの ZOH 互換は
   ``ZeroOrderHoldDirect``。
 """
 
@@ -135,7 +135,7 @@ def test_multirate_zero_order_hold_direct_immediate_reflection() -> None:
 
 
 def test_multirate_discrete_integrator_constant_input() -> None:
-    """DiscreteIntegrator (sample_time=0.1, gain=1) Forward Euler 標準形 (Simulink 互換)。
+    """DiscreteIntegrator (sample_time=0.1, gain=1) Forward Euler 標準形 (リファレンスツール互換)。
 
     Constant u=1, x0=0:
         x[k+1] = x[k] + T*g*u[k]
@@ -274,7 +274,7 @@ def test_multirate_discrete_transfer_function_first_order() -> None:
 
 
 def test_single_rate_unit_delay_unchanged_from_v030() -> None:
-    """sample_time=dt_base=0.01 で UnitDelay は ADR-0014 v0.3.0 の数値と一致 (single-rate Simulink)。"""
+    """sample_time=dt_base=0.01 で UnitDelay は ADR-0014 v0.3.0 の数値と一致 (single-rate リファレンスツール)。"""
     sim = Simulator(t_end=0.05, dt=0.01)
     clk = sim.add(Clock())
     ud = sim.add(UnitDelay(sample_time=0.01, x0=99.0))
