@@ -70,7 +70,7 @@ interface MenuItemSpec {
   disabled?: boolean;
   destructive?: boolean;
   divider?: boolean;
-  // ADR-0024 §(4): View > Language サブメニュー用
+  // Settings > Language サブメニュー用 (現在言語と一致時に ✓ 表示)
   language?: SupportedLanguage;
 }
 
@@ -361,11 +361,11 @@ export function MenuBar(): JSX.Element {
     },
   ];
 
-  // ADR-0024 §(4): View > Language
-  const viewItems: MenuItemSpec[] = [
-    { label: t("menu.view.language"), disabled: true },
+  // 設定メニュー (アプリ全体に関わる設定。Language が現状唯一の項目)
+  const settingsItems: MenuItemSpec[] = [
+    { label: t("menu.settings.language"), disabled: true },
     {
-      label: t("menu.view.language.en"),
+      label: t("menu.settings.language.en"),
       language: "en",
       onClick: () => {
         setOpenMenu(null);
@@ -373,7 +373,7 @@ export function MenuBar(): JSX.Element {
       },
     },
     {
-      label: t("menu.view.language.ja"),
+      label: t("menu.settings.language.ja"),
       language: "ja",
       onClick: () => {
         setOpenMenu(null);
@@ -396,14 +396,6 @@ export function MenuBar(): JSX.Element {
         currentLang={lang}
       />
       <Menu
-        label={t("menu.view")}
-        open={openMenu === "View"}
-        onToggle={() => setOpenMenu((m) => (m === "View" ? null : "View"))}
-        onHover={() => openMenu && setOpenMenu("View")}
-        items={viewItems}
-        currentLang={lang}
-      />
-      <Menu
         label={t("menu.simulation")}
         open={openMenu === "Simulation"}
         onToggle={() =>
@@ -411,6 +403,16 @@ export function MenuBar(): JSX.Element {
         }
         onHover={() => openMenu && setOpenMenu("Simulation")}
         items={simulationItems}
+        currentLang={lang}
+      />
+      <Menu
+        label={t("menu.settings")}
+        open={openMenu === "Settings"}
+        onToggle={() =>
+          setOpenMenu((m) => (m === "Settings" ? null : "Settings"))
+        }
+        onHover={() => openMenu && setOpenMenu("Settings")}
+        items={settingsItems}
         currentLang={lang}
       />
       <Menu

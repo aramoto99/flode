@@ -47,8 +47,8 @@ export async function setLanguage(lng: SupportedLanguage): Promise<void> {
 
 /** 現在の言語コード。``i18next.language`` は ``"en-US"`` のような BCP47 タグに
  * なる場合があるため、``detectInitialLanguage`` と同じ正規化を適用する
- * (= ``"ja*"`` → ``"ja"``、それ以外 → ``"en"``)。これにより View > Language の
- * チェックマーク判定が BCP47 タグでも正しく動作する。 */
+ * (= ``"ja*"`` → ``"ja"``、それ以外 → ``"en"``)。これにより Settings > Language
+ * のチェックマーク判定が BCP47 タグでも正しく動作する。 */
 export function currentLanguage(): SupportedLanguage {
   const lang = i18n.language ?? "";
   return lang.toLowerCase().startsWith("ja") ? "ja" : "en";
