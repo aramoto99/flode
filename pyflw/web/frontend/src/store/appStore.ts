@@ -33,6 +33,7 @@ import type {
   BlockEntry,
   BlockMetadata,
   ConnectionEntry,
+  FailurePayload,
   FlwModel,
   LayoutDict,
   MaskValuesDict,
@@ -462,6 +463,16 @@ interface AppState {
   setStatus: (status: SimulationStatus | "idle") => void;
   setProgress: (current_t: number, t_end: TEnd) => void;
   resetSimulation: () => void;
+  // ADR-0056: 直近 1 件の失敗詳細 (= Scope tab strip の Error tab に表示)。
+  // 起動失敗時は ``setLastFailure(payload, source="start")``、実行中エラー時は
+  // ``handleStreamMessage`` で ``failed + category`` 受信時にセット。
+  lastFailure: FailurePayload | null;
+  /** 直近失敗が start API 由来 (= 「起動失敗:」プレフィックス) か runtime 由来か。 */
+  lastFailureSource: "start" | "runtime" | null;
+  /** Scope tab strip の Error tab がアクティブか (= 失敗時自動 focus トリガー)。 */
+  activeErrorTab: boolean;
+  setLastFailure: (payload: FailurePayload | null, source: "start" | "runtime") => void;
+  setActiveErrorTab: (value: boolean) => void;
 
   // Scope データ (scope_id -> 時系列)
   scopes: Record<string, ScopeBuffer>;
@@ -1153,11 +1164,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   status: "idle",
   progress: null,
   startedSimulation: (simId) =>
-    set({ simulationId: simId, status: "running", progress: null, scopes: {} }),
+    set({
+      simulationId: simId,
+      status: "running",
+      progress: null,
+      scopes: {},
+      // ADR-0056 §F3: 次の Run 開始時に直近 failure をクリア + Error tab focus 解除。
+      lastFailure: null,
+      lastFailureSource: null,
+      activeErrorTab: false,
+    }),
   setStatus: (status) => set({ status }),
   setProgress: (current_t, t_end) => set({ progress: { current_t, t_end } }),
   resetSimulation: () =>
     set({ simulationId: null, status: "idle", progress: null }),
+  // ADR-0056 §F2: 失敗詳細セット + Error tab を自動 focus。
+  lastFailure: null,
+  lastFailureSource: null,
+  activeErrorTab: false,
+  setLastFailure: (payload, source) =>
+    set({
+      lastFailure: payload,
+      lastFailureSource: payload === null ? null : source,
+      activeErrorTab: payload !== null,
+      status: payload !== null ? "failed" : "idle",
+    }),
+  setActiveErrorTab: (value) => set({ activeErrorTab: value }),
 
   scopes: {},
   appendScopeBatch: (scope_id, times, values) =>
@@ -1184,13 +1216,37 @@ export const useAppStore = create<AppState>((set, get) => ({
         break;
       case "completed":
       case "stopped":
-      case "failed":
         set({ status: msg.type });
         break;
-      case "error":
-        console.error("Simulation stream error:", msg.message);
-        set({ status: "failed" });
+      case "failed": {
+        // ADR-0056 §F2: ``failed`` に ``category`` フィールドが付いていれば構造化
+        // エラーとして lastFailure に保存し Error tab を自動 focus。``category``
+        // 無し (= 旧フォーマット or 想定外) なら詳細無しで status だけ立てる。
+        if (typeof msg.category === "string") {
+          // FailurePayload 9 fields を msg (= Partial<FailurePayload>) から抽出。
+          const payload: FailurePayload = {
+            category: msg.category,
+            template_key: msg.template_key ?? "error.unknown",
+            template_args: msg.template_args ?? {},
+            block_id: msg.block_id ?? null,
+            block_ids: msg.block_ids ?? [],
+            block_type: msg.block_type ?? null,
+            block_label: msg.block_label ?? null,
+            t: msg.t ?? null,
+            raw_message: msg.raw_message ?? "",
+            raw_traceback: msg.raw_traceback ?? null,
+          };
+          set({
+            status: "failed",
+            lastFailure: payload,
+            lastFailureSource: "runtime",
+            activeErrorTab: true,
+          });
+        } else {
+          set({ status: "failed" });
+        }
         break;
+      }
     }
   },
 }));

@@ -347,10 +347,13 @@ export function TabBar({
 export function TabButton({
   active,
   onClick,
+  indicator = "none",
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  /** ADR-0056 §F-2: ``"dot"`` で右上に小さな赤丸を表示 (= Error tab 失敗通知用)。 */
+  indicator?: "dot" | "none";
   children: React.ReactNode;
 }): JSX.Element {
   return (
@@ -359,13 +362,19 @@ export function TabButton({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`-mb-px border border-b-0 px-3 py-0.5 text-[11px] ${
+      className={`-mb-px inline-flex items-center border border-b-0 px-3 py-0.5 text-[11px] ${
         active
           ? "border-slate-400 bg-white text-slate-800 font-medium"
           : "border-transparent bg-slate-100 text-slate-600 hover:text-slate-800"
       }`}
     >
       {children}
+      {indicator === "dot" && (
+        <span
+          aria-hidden="true"
+          className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500"
+        />
+      )}
     </button>
   );
 }

@@ -342,5 +342,19 @@
   "model_settings.no_model": "Open a model to edit settings.",
   "model_settings.invalid_number": "\"{{name}}\" must be a positive number.",
   "model_settings.button.save": "Save",
-  "model_settings.button.cancel": "Cancel"
+  "model_settings.button.cancel": "Cancel",
+
+  "scope_tab.error": "Error",
+  "error.empty": "No errors",
+  "error.prefix.start_failed": "Start failed: ",
+  "error.prefix.runtime_failed": "Runtime error: ",
+  "error.algebraic_loop": "Algebraic loop detected. Involved blocks: {{block_labels, block_labels}}",
+  "error.shape_mismatch": "Input shape mismatch on {{block_label}} ({{shapes}})",
+  "error.divide_by_zero": "Division by zero in {{block_label}} (t={{t, t_sec}})",
+  "error.solver_failure": "ODE solver failed to converge (t={{t, t_sec}}, reason={{reason}})",
+  "error.start_validation": "Model validation error: {{message}}",
+  "error.unknown": "{{raw_message}}",
+  "error.show_in_diagram": "Show in diagram",
+  "error.show_details": "Details (traceback)",
+  "error.copy": "Copy"
 }

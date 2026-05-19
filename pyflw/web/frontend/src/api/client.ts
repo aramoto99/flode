@@ -7,6 +7,7 @@
 import type {
   BlockMetadata,
   BlockRegistryResponse,
+  FailurePayload,
   FlwModel,
   LibraryEntryDetail,
   LibraryRegistryResponse,
@@ -16,21 +17,65 @@ import type {
 
 const API_BASE = "/api/v1";
 
+/** ADR-0056 §B-2: REST start API は失敗時に構造化 detail (``FailurePayload``)
+ *  を ``{detail: {...}}`` で返す。``ApiError`` はその detail を呼出側に届ける
+ *  ための custom Error。``message`` には人間可読な文字列が入り、``structured``
+ *  には FailurePayload を持つ (= 構造化 detail でなければ ``null``)。 */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly structured: FailurePayload | null;
+  readonly rawDetail: unknown;
+  constructor(
+    status: number,
+    message: string,
+    structured: FailurePayload | null,
+    rawDetail: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.structured = structured;
+    this.rawDetail = rawDetail;
+  }
+}
+
+function _structuredOrNull(detail: unknown): FailurePayload | null {
+  // ADR-0056 §B-2: 構造化 detail の最低条件 = ``category`` + ``template_key`` +
+  // ``raw_message`` が string であること。それ以外は旧形式 / 未構造化扱い。
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    typeof (detail as { category?: unknown }).category === "string" &&
+    typeof (detail as { template_key?: unknown }).template_key === "string"
+  ) {
+    return detail as FailurePayload;
+  }
+  return null;
+}
+
 async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
   if (!response.ok) {
-    let detail: string;
+    let parsed: unknown = null;
     try {
-      const body = await response.json();
-      detail =
-        body?.error?.message ?? body?.detail ?? response.statusText;
+      parsed = await response.json();
     } catch {
-      detail = response.statusText;
+      // body 無し or non-JSON は OK
     }
-    throw new Error(`${response.status} ${detail}`);
+    const body = parsed as
+      | { error?: { message?: string }; detail?: unknown }
+      | null;
+    const rawDetail = body?.detail ?? body?.error ?? null;
+    const structured = _structuredOrNull(rawDetail);
+    const message: string =
+      structured?.raw_message
+      ?? (typeof body?.detail === "string" ? body.detail : undefined)
+      ?? body?.error?.message
+      ?? response.statusText;
+    throw new ApiError(response.status, `${response.status} ${message}`, structured, rawDetail);
   }
   return response.json() as Promise<T>;
 }

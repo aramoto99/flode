@@ -342,5 +342,19 @@
   "model_settings.no_model": "モデルを開くと設定を編集できます。",
   "model_settings.invalid_number": "「{{name}}」は正の数値で入力してください。",
   "model_settings.button.save": "保存",
-  "model_settings.button.cancel": "キャンセル"
+  "model_settings.button.cancel": "キャンセル",
+
+  "scope_tab.error": "エラー",
+  "error.empty": "エラーはありません",
+  "error.prefix.start_failed": "起動失敗: ",
+  "error.prefix.runtime_failed": "実行中エラー: ",
+  "error.algebraic_loop": "代数ループを検出しました。関与ブロック: {{block_labels, block_labels}}",
+  "error.shape_mismatch": "{{block_label}} で入力 shape が一致しません ({{shapes}})",
+  "error.divide_by_zero": "{{block_label}} ブロックで 0 除算 (t={{t, t_sec}})",
+  "error.solver_failure": "ODE ソルバが収束しませんでした (t={{t, t_sec}}, reason={{reason}})",
+  "error.start_validation": "モデル検証エラー: {{message}}",
+  "error.unknown": "{{raw_message}}",
+  "error.show_in_diagram": "Diagram で表示",
+  "error.show_details": "詳細 (traceback)",
+  "error.copy": "コピー"
 }

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { startSimulationByPath, stopSimulation } from "../api/client";
+import { ApiError, startSimulationByPath, stopSimulation } from "../api/client";
 import { putFileContent } from "../api/filesApi";
 import { streamSimulation } from "../api/stream";
 import { useAppStore } from "../store/appStore";
@@ -60,6 +60,30 @@ export function useSimulation(): {
       wsRef.current = ws;
     } catch (e) {
       console.error("Failed to start simulation", e);
+      // ADR-0056 §F3: start REST が構造化 detail (= FailurePayload) を返した場合、
+      // Error tab に表示するため lastFailure にセットする。それ以外 (= 通信エラー
+      // 等) は generic な FailurePayload を組み立てる (= 起動失敗 source 固定)。
+      const setLastFailure = useAppStore.getState().setLastFailure;
+      if (e instanceof ApiError && e.structured !== null) {
+        setLastFailure(e.structured, "start");
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        setLastFailure(
+          {
+            category: "unknown",
+            template_key: "error.unknown",
+            template_args: { raw_message: msg },
+            block_id: null,
+            block_ids: [],
+            block_type: null,
+            block_label: null,
+            t: null,
+            raw_message: msg,
+            raw_traceback: null,
+          },
+          "start",
+        );
+      }
     }
   };
 

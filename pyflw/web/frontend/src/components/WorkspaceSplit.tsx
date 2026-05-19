@@ -36,6 +36,7 @@ import {
   type SplitNode,
   type SplitTree,
 } from "../lib/splitTree";
+import { ErrorView } from "./ErrorView";
 import { PaneTitleBar } from "./PaneTitleBar";
 import { ParameterPanel } from "./ParameterPanel";
 import { ScopeView } from "./ScopeView";
@@ -621,6 +622,10 @@ function DiagramSlot({
   );
 }
 
+// ADR-0056 §F6: tab strip 内で Error tab を識別する synthetic ID。
+// scope_id 命名規約と衝突しない先頭 `__` を持つ (= flw.json で id に許容されない)。
+const _ERROR_TAB_ID = "__error__";
+
 function ScopesStack({
   entries,
   blockTypeById,
@@ -636,48 +641,76 @@ function ScopesStack({
   onSplitOutScope: (scopeId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
-  // v0.30.2: タブ切替で 1 個ずつ表示 (= リファレンスツールの Scope 風)。
-  // 現 active scope_id は local state、entries の最初を default。
+  // ADR-0056: Scope tab strip は常設化 (= 0 scope でも Error tab を出す)。
+  const lastFailure = useAppStore((s) => s.lastFailure);
+  const activeErrorTab = useAppStore((s) => s.activeErrorTab);
+  const setActiveErrorTab = useAppStore((s) => s.setActiveErrorTab);
+  // v0.30.2: タブ切替で 1 個ずつ表示。`activeId === _ERROR_TAB_ID` のとき Error tab。
   const [activeId, setActiveId] = useState<string | null>(null);
-  // entries 変化で active が消えたら自動切替
-  const validActiveId =
-    activeId !== null && entries.some(([id]) => id === activeId)
+  // ADR-0056 §F2: 失敗発生時 (= store の activeErrorTab=true) は問答無用で
+  // Error tab を選ぶ。それ以外は local state、entries の最初を default。
+  const validActiveId = activeErrorTab
+    ? _ERROR_TAB_ID
+    : activeId !== null &&
+        (activeId === _ERROR_TAB_ID || entries.some(([id]) => id === activeId))
       ? activeId
-      : (entries[0]?.[0] ?? null);
+      : (entries[0]?.[0] ?? _ERROR_TAB_ID);
   // 未使用 prop warning suppression (= interface 維持のため)
   void onSplitOutScope;
-  if (entries.length === 0) {
-    // v0.27.1 UX-1: 空 stack の理由を出し分ける:
-    // - 個別 pane に分離済 (= splitOutAnyScope=true) → "all separated"
-    // - それ以外 (= sim 未実行 or Scope ブロック無し) → "no data, run sim"
-    // 後者の 2 ケースは現状同じ文言なので 1 つに統合 (= v0.30.0 code-reviewer
-    // §NITS #4 で dead 三項演算子を解消)。
-    // 将来 Scope ブロック無しの状態を別文言にする場合は別 i18n キー化する。
-    void hasScopeBlocks; // 将来分岐用に keep
-    const message = splitOutAnyScope
-      ? t("workspace.scopes_stack.empty")
-      : t("workspace.scopes_stack.no_data");
-    return (
-      <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
-        {message}
-      </div>
-    );
-  }
-  // v0.30.2: タブ切替で 1 Scope を表示 (リファレンスツールの Scope 風)。
-  const activeEntry =
-    entries.find(([id]) => id === validActiveId) ?? entries[0]!;
-  const [activeScopeId, activeBuffer] = activeEntry;
-  const activeBlockType = blockTypeById.get(activeScopeId) ?? "";
+  // ADR-0056: 0 scope 時に空メッセージを返す旧分岐を撤回 (= Error tab strip
+  // は常に表示)。旧表示は活性 scope が無いときの plot 領域内に下記文言として残す。
+  void hasScopeBlocks;
+  void splitOutAnyScope;
+
+  const isErrorActive = validActiveId === _ERROR_TAB_ID;
+  const activeEntry = isErrorActive
+    ? null
+    : (entries.find(([id]) => id === validActiveId) ?? entries[0] ?? null);
+  const activeBlockType =
+    activeEntry !== null ? (blockTypeById.get(activeEntry[0]) ?? "") : "";
   const isXY = activeBlockType.endsWith(".XYGraph");
+
+  const handleScopeTab = (scopeId: string) => {
+    setActiveId(scopeId);
+    // ADR-0056 §F1.5: Scope tab を能動的に選んだら Error tab focus を解除。
+    if (activeErrorTab) setActiveErrorTab(false);
+  };
+  const handleErrorTab = () => {
+    setActiveId(_ERROR_TAB_ID);
+    if (!activeErrorTab) setActiveErrorTab(true);
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
-      {/* タブヘッダー: 各 Scope の scope_id ボタンを横並べ。
+      {/* タブヘッダー: Error tab + 各 Scope の scope_id ボタン。
           幅が足りない場合は overflow-x-auto で横スクロール。 */}
       <div
         role="tablist"
         aria-label={t("workspace.scopes_stack.tablist")}
         className="flex h-6 shrink-0 items-center gap-0 overflow-x-auto border-b border-slate-200 bg-slate-50"
       >
+        {/* ADR-0056 §F1: 左端固定の Error tab (= 失敗あり時にドット表示)。 */}
+        <button
+          key={_ERROR_TAB_ID}
+          type="button"
+          role="tab"
+          aria-selected={isErrorActive}
+          onClick={handleErrorTab}
+          className={`inline-flex shrink-0 items-center border-r border-slate-200 px-2 py-0.5 text-[10px] ${
+            isErrorActive
+              ? "bg-white text-slate-800"
+              : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+          }`}
+          title={t("scope_tab.error", "エラー")}
+        >
+          {t("scope_tab.error", "エラー")}
+          {lastFailure !== null && (
+            <span
+              aria-hidden="true"
+              className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500"
+            />
+          )}
+        </button>
         {entries.map(([scopeId]) => {
           const isActive = scopeId === validActiveId;
           return (
@@ -686,7 +719,7 @@ function ScopesStack({
               type="button"
               role="tab"
               aria-selected={isActive}
-              onClick={() => setActiveId(scopeId)}
+              onClick={() => handleScopeTab(scopeId)}
               className={`shrink-0 border-r border-slate-200 px-2 py-0.5 font-mono text-[10px] ${
                 isActive
                   ? "bg-white text-slate-800"
@@ -699,12 +732,21 @@ function ScopesStack({
           );
         })}
       </div>
-      {/* active scope の uPlot 描画 */}
+      {/* active scope / Error tab の本体描画 */}
       <div className="min-h-0 flex-1 overflow-hidden p-1">
-        {isXY ? (
-          <XYGraphView scopeId={activeScopeId} buffer={activeBuffer} />
+        {isErrorActive ? (
+          <ErrorView />
+        ) : activeEntry !== null ? (
+          isXY ? (
+            <XYGraphView scopeId={activeEntry[0]} buffer={activeEntry[1]} />
+          ) : (
+            <ScopeView scopeId={activeEntry[0]} buffer={activeEntry[1]} />
+          )
         ) : (
-          <ScopeView scopeId={activeScopeId} buffer={activeBuffer} />
+          // 0 scope + Error tab 非選択時のフォールバック表示 (= 旧 empty 文言)。
+          <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
+            {t("workspace.scopes_stack.no_data")}
+          </div>
         )}
       </div>
     </div>

@@ -235,9 +235,38 @@ export interface ResolvedPortShapes {
   port_shapes_out: number[][];
 }
 
-// WebSocket メッセージ (ADR-0011 §(2))
-// 終端メッセージ (completed / stopped / failed) には ``duration_sec`` も含まれるが、
-// Phase 2 では UI に表示しないため store に保存していない (Phase 3 で表示予定)。
+// ADR-0056: シミュレーション失敗時の構造化エラー payload。
+// WS の ``failed`` メッセージにマージされる + REST start API の ``detail`` にも同じ
+// schema で入る。``category === "unknown"`` で fallback、frontend 未知の
+// ``template_key`` は ``error.unknown`` に落とす (ADR-0056 §D-3)。
+export interface FailurePayload {
+  /** Phase 1: algebraic_loop / shape_mismatch / divide_by_zero / solver_failure /
+   *  start_validation / unknown */
+  category: string;
+  /** i18n キー (例: ``"error.divide_by_zero"``)。未知時は ``error.unknown`` fallback。 */
+  template_key: string;
+  /** i18next interpolation 用の引数 (block_label / t / shapes / reason 等)。 */
+  template_args: Record<string, unknown>;
+  /** 主因ブロック ID (= ``Simulator._current_block.id`` または ``AlgebraicLoopError.block_ids[0]``)。 */
+  block_id: string | null;
+  /** 関与ブロック ID 配列 (代数ループ等の複数関与)。単一なら 1 要素 / 不明なら空。 */
+  block_ids: string[];
+  /** ブロックタイプ (例: ``"pyflw.blocks.mathops.Divide"``)。 */
+  block_type: string | null;
+  /** ユーザー命名ラベル (= ``Block.name`` or ``id`` fallback)。 */
+  block_label: string | null;
+  /** 失敗発生時のシミュレーション時刻 (秒)。起動失敗は null。 */
+  t: number | null;
+  /** ``"{ExcType}: {str(e)}"`` 形式の生メッセージ (= compatibility / unknown fallback 用)。 */
+  raw_message: string;
+  /** サーバ traceback (truncated 末尾 50 行)。``include_traceback=False`` で null。 */
+  raw_traceback: string | null;
+}
+
+// WebSocket メッセージ (ADR-0011 §(2))。
+// ADR-0056: 旧 ``{type: "error", message}`` メッセージは廃止。
+// ``failed`` メッセージは正常終了/失敗どちらでも届き、``category`` フィールドの
+// 有無で失敗詳細を判別する (= ``FailurePayload`` を `Partial` でマージ)。
 export type StreamMessage =
   // ADR-0042 §論点 3-A: ``t_end`` は ``number | "inf"`` Union。
   | { type: "progress"; current_t: number; t_end: TEnd }
@@ -249,5 +278,4 @@ export type StreamMessage =
     }
   | { type: "completed"; duration_sec: number }
   | { type: "stopped"; duration_sec: number }
-  | { type: "failed"; duration_sec: number }
-  | { type: "error"; message: string };
+  | ({ type: "failed"; duration_sec: number } & Partial<FailurePayload>);

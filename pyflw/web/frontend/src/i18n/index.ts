@@ -64,7 +64,23 @@ i18n
     lng: detectInitialLanguage(),
     fallbackLng: "en",
     // i18next 既定の double-brace 補間 ``{{name}}`` を使用 (ICU は採用しない、ADR §7)
-    interpolation: { escapeValue: false }, // React は出力を自動エスケープ
+    interpolation: {
+      escapeValue: false, // React は出力を自動エスケープ
+      // ADR-0056 §D-1: 数値 / 配列の locale 表現を frontend 側 formatter に集約。
+      // 使い方: ``"{{t, t_sec}}"`` で ``"1.234s"`` 形式、
+      // ``"{{block_labels, block_labels}}"`` で ``"a, b, c"`` 連結。
+      // 未知 formatter は素通り (= String(value))。
+      format: (value, format) => {
+        if (format === "t_sec") {
+          const n = Number(value);
+          return Number.isFinite(n) ? `${n.toFixed(3)}s` : String(value);
+        }
+        if (format === "block_labels" && Array.isArray(value)) {
+          return value.join(", ");
+        }
+        return String(value);
+      },
+    },
     saveMissing: import.meta.env.DEV,
     missingKeyHandler: import.meta.env.DEV
       ? (lngs, ns, key) => {
