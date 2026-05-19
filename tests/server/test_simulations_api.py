@@ -159,7 +159,11 @@ class TestStartSimulationMutualExclusion:
     def test_400_for_no_keys(self, client: TestClient) -> None:
         response = client.post("/api/v1/simulations", json={})
         assert response.status_code == 400
-        assert "exactly one" in response.json()["detail"]
+        # ADR-0056 §B-2: detail は構造化 dict、raw_message に文言が入る。
+        detail = response.json()["detail"]
+        assert isinstance(detail, dict)
+        assert detail["category"] == "start_validation"
+        assert "exactly one" in detail["raw_message"]
 
     def test_400_for_both_keys(self, client: TestClient, workspace: Path, tmp_path: Path) -> None:
         path = _seed_simple_model(workspace, "demo")
@@ -169,7 +173,10 @@ class TestStartSimulationMutualExclusion:
             json={"model_path": path, "model": model_dict},
         )
         assert response.status_code == 400
-        assert "mutually exclusive" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert isinstance(detail, dict)
+        assert detail["category"] == "start_validation"
+        assert "mutually exclusive" in detail["raw_message"]
 
     def test_400_for_legacy_model_id(self, client: TestClient) -> None:
         """v0.21.0: legacy ``model_id`` は recognized なキーから外れて

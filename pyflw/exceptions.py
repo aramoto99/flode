@@ -27,7 +27,21 @@ class SchedulingError(PyflwError):
 
 
 class AlgebraicLoopError(PyflwError):
-    """代数ループ検出時に投げる。Phase 0 の `ValueError` を昇格。"""
+    """代数ループ検出時に投げる。Phase 0 の `ValueError` を昇格。
+
+    Args:
+        message: 説明文。``str(exc)`` で取得できる。
+        block_ids: 代数ループに関与しているブロック ID 配列 (ADR-0056 §C-3)。
+            UI 側で「Diagram で表示」ボタンが全関与ブロックを選択表示するため、
+            検出ロジック (``Simulator._execution_order``) が解決済リストを渡す。
+            ``None`` のときは空リスト扱い (= 旧互換)。
+    """
+
+    def __init__(
+        self, message: str, *, block_ids: list[str] | None = None
+    ) -> None:
+        super().__init__(message)
+        self.block_ids: list[str] = list(block_ids) if block_ids else []
 
 
 class SolverError(PyflwError):

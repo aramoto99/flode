@@ -2,6 +2,10 @@
 
 v0.21.0: legacy ``model_id`` 受付を削除。``model_path`` (= workspace 相対 path)
 または ``model`` (= インライン dict) のいずれかを必須に。
+
+ADR-0056: シミュレーション開始エラーは構造化 detail で返す
+(``{detail: {category, template_key, ...}}``)。WS の ``error`` メッセージは廃止し、
+``failed`` 1 件に構造化フィールドをマージして送る (= runtime 側で実施)。
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from ...exceptions import (
     PyflwError,
     SimulationStillRunningError,
 )
+from ..errors import build_failure_payload
 from ..runtime import SimulationManager
 from ..security import resolve_workspace_path
 
@@ -39,6 +44,31 @@ _INLINE_DISPLAY_ID = "<inline>"
 
 def _manager(request: Request) -> SimulationManager:
     return request.app.state.simulation_manager  # type: ignore[no-any-return]
+
+
+def _start_validation_detail(message: str) -> dict[str, Any]:
+    """ADR-0056 §B-2: start API のシンプルな validation error 用の構造化 detail。
+
+    例外が無いケース (= body の形式違反等) で使う。``ModelLoadError`` や
+    ``BlockSpecError`` 等の例外がある場合は ``build_failure_payload`` を直接使う。
+    """
+    return {
+        "category": "start_validation",
+        "template_key": "error.start_validation",
+        "template_args": {"message": message},
+        "block_id": None,
+        "block_ids": [],
+        "block_type": None,
+        "block_label": None,
+        "t": None,
+        "raw_message": message,
+        "raw_traceback": None,
+    }
+
+
+def _exception_detail(exc: BaseException) -> dict[str, Any]:
+    """例外から start API 用の構造化 detail を組み立てる (ADR-0056 §B-2)。"""
+    return build_failure_payload(exc, simulator=None, t=None)
 
 
 def _scope_batch_size(request: Request) -> int:
@@ -66,7 +96,7 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
     if len(specified_keys) == 0:
         raise HTTPException(
             status_code=400,
-            detail=(
+            detail=_start_validation_detail(
                 "Body must specify exactly one of: 'model_path' "
                 "(workspace-relative) or 'model' (inline)."
             ),
@@ -74,7 +104,7 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
     if len(specified_keys) > 1:
         raise HTTPException(
             status_code=400,
-            detail=(
+            detail=_start_validation_detail(
                 "Body must specify exactly one of 'model_path' / 'model' "
                 f"(mutually exclusive). Got: {specified_keys}."
             ),
@@ -82,7 +112,10 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
 
     if model_path is not None:
         if not isinstance(model_path, str):
-            raise HTTPException(status_code=400, detail="'model_path' must be a string")
+            raise HTTPException(
+                status_code=400,
+                detail=_start_validation_detail("'model_path' must be a string"),
+            )
         settings = request.app.state.settings
         workspace_root = settings.workspace_root
         try:
@@ -91,28 +124,38 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
             _logger.warning("Path traversal rejected in /simulations: %s", e)
             raise HTTPException(
                 status_code=403,
-                detail="Path traversal rejected (see server log for details).",
+                detail=_start_validation_detail(
+                    "Path traversal rejected (see server log for details)."
+                ),
             ) from e
         if not resolved.exists():
-            raise HTTPException(status_code=404, detail=f"Model file not found: {model_path}")
+            raise HTTPException(
+                status_code=404,
+                detail=_start_validation_detail(f"Model file not found: {model_path}"),
+            )
         if resolved.is_dir():
             raise HTTPException(
                 status_code=400,
-                detail=f"'model_path' is a directory, not a file: {model_path}",
+                detail=_start_validation_detail(
+                    f"'model_path' is a directory, not a file: {model_path}"
+                ),
             )
         try:
             simulator = Simulator.load(resolved)
         except ModelLoadError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            raise HTTPException(status_code=400, detail=_exception_detail(e)) from e
         return simulator, model_path
 
     # model_inline (= dict)
     if not isinstance(model_inline, dict):
-        raise HTTPException(status_code=400, detail="'model' must be a JSON object")
+        raise HTTPException(
+            status_code=400,
+            detail=_start_validation_detail("'model' must be a JSON object"),
+        )
     try:
         simulator = Simulator.from_dict(model_inline)
     except ModelLoadError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=_exception_detail(e)) from e
     return simulator, _INLINE_DISPLAY_ID
 
 
@@ -125,7 +168,10 @@ async def start_simulation(request: Request) -> dict[str, str]:
     """
     payload = await request.json()
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+        raise HTTPException(
+            status_code=400,
+            detail=_start_validation_detail("Body must be a JSON object"),
+        )
 
     simulator, display_id = _resolve_simulator(request, payload)
 
@@ -182,7 +228,10 @@ async def stream(websocket: WebSocket, sim_id: str) -> None:
     """シミュレーション進捗 + Scope データを WebSocket で配信。
 
     クライアントは接続後、サーバから JSON メッセージを順次受信する:
-    ``progress`` / ``scope_batch`` / ``completed`` / ``stopped`` / ``failed`` / ``error``。
+    ``progress`` / ``scope_batch`` / ``completed`` / ``stopped`` / ``failed``。
+
+    ADR-0056: 旧 ``error`` メッセージは廃止 (= 失敗時の構造化フィールドは
+    ``failed`` メッセージにマージされる)。
 
     クライアントが ``{"type": "stop"}`` を送るとサーバ側で
     ``SimulationManager.stop`` を呼ぶ。
@@ -220,7 +269,14 @@ async def stream(websocket: WebSocket, sim_id: str) -> None:
         finally:
             recv_task.cancel()
     except PyflwError as e:
-        await websocket.send_json({"type": "error", "message": f"{type(e).__name__}: {e}"})
+        # ADR-0056: 旧 ``error`` メッセージは廃止。WS 確立中のドメイン例外
+        # (例: 未知の simulation_id) は構造化 ``failed`` で 1 件返してから閉じる。
+        terminal = {"type": "failed", "duration_sec": 0.0}
+        terminal.update(build_failure_payload(e, simulator=None, t=None))
+        try:
+            await websocket.send_json(terminal)
+        except RuntimeError:
+            pass
     except WebSocketDisconnect:
         pass
     finally:

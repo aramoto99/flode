@@ -108,6 +108,11 @@ class Simulator:
         # ペアは Subsystem._virtual_inner_deps に流す (= ADR-0055 §論点 5-A)。
         # ``_resolve_goto_from_virtual_edges`` が冒頭で必ずリセットする。
         self._virtual_deps_top: set[tuple[Block, Block]] = set()
+        # ADR-0056 §C-3: 例外発生時の関与ブロック追跡。``_step`` / ``_run_sm_*_loop``
+        # で各ブロックの ``output`` / ``derivative`` / ``update`` を呼ぶ直前にセット
+        # する。run() が成功完了すれば ``None`` に戻る。例外が伝搬したときは最後に
+        # set されたブロックが残り、サーバ層が構造化エラー payload に詰める。
+        self._current_block: Block | None = None
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -237,7 +242,14 @@ class Simulator:
                     ready.append(child)
         if len(order) != len(self.blocks):
             remaining = [b.id for b in self.blocks if b not in order]
-            raise AlgebraicLoopError(f"Algebraic loop detected involving: {remaining}")
+            # ADR-0056 §C-3: 関与ブロック ID を例外 attr に持たせる。``Block.id`` は
+            # 仕様上 ``str | None`` だが ``_execution_order`` 到達時点で全 block が
+            # ``add()`` 経由で auto-ID 採番済なので Optional は剥がせる。
+            remaining_ids = [str(b_id) for b_id in remaining if b_id is not None]
+            raise AlgebraicLoopError(
+                f"Algebraic loop detected involving: {remaining}",
+                block_ids=remaining_ids,
+            )
         return order
 
     # ------------------------------------------------------------------
@@ -791,8 +803,12 @@ class Simulator:
             else:
                 u = np.zeros(b.n_inputs)
             xb = state_for(b)
+            # ADR-0056 §C-3: 例外時に runtime が関与ブロックを payload に詰めるため
+            # output 呼出直前で current_block を更新する。
+            self._current_block = b
             y = np.atleast_1d(np.asarray(b.output(t, xb, u), dtype=float))
             outputs[b] = y
+        self._current_block = None
         for b in order:
             if not b.direct_feedthrough:
                 u = np.zeros(b.n_inputs)
@@ -1024,7 +1040,10 @@ class Simulator:
             _, ins = self._step(t, x, discrete_state, order, layout)
             xdot = np.zeros(n_total)
             for b, sl in layout:
+                # ADR-0056 §C-3: derivative 内例外時に関与ブロックを記録。
+                self._current_block = b
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], ins[b]), dtype=float)
+            self._current_block = None
             return xdot
 
         k = 0
@@ -1041,7 +1060,10 @@ class Simulator:
                     if k % b._step_ratio == 0:
                         x_b = discrete_state[b]
                         u_b = inputs_pre.get(b, np.zeros(b.n_inputs))
+                        # ADR-0056 §C-3: discrete update 例外時のブロック記録。
+                        self._current_block = b
                         next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
+                self._current_block = None
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
                 # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
@@ -1121,7 +1143,10 @@ class Simulator:
                     [float(np.asarray(ui).item()) for ui in u_tuple],
                     dtype=float,
                 )
+                # ADR-0056 §C-3: SM-B derivative 例外時のブロック記録。
+                self._current_block = b
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], u_1d), dtype=float)
+            self._current_block = None
             return xdot
 
         k = 0
@@ -1146,7 +1171,10 @@ class Simulator:
                             [float(np.asarray(ui).item()) for ui in u_tuple],
                             dtype=float,
                         )
+                        # ADR-0056 §C-3: SM-B discrete update 例外時の記録。
+                        self._current_block = b
                         next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
+                self._current_block = None
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
                 # capture しているため、再代入では新値が見えない (ADR-0018 修正)。

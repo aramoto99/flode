@@ -21,6 +21,7 @@ import numpy as np
 from ..core.persistence import serialize_t_end
 from ..core.simulator import Simulator
 from ..exceptions import PyflwError, SimulationStillRunningError
+from .errors import build_failure_payload
 
 _logger = logging.getLogger("pyflw.server.runtime")
 
@@ -74,6 +75,11 @@ class _SimulationRecord:
         self.future: Future[None] | None = None
         # 各 Scope の前回送信済みインデックス (バッチ送信用)
         self._scope_cursors: dict[str, int] = {}
+        # ADR-0056 §B-4: WS 再接続時の terminal メッセージ replay 用。
+        # ``_run_in_thread`` の finally で最終 ``completed`` / ``stopped`` / ``failed``
+        # メッセージをここに保持し、``SimulationManager.stream`` が再接続時に冒頭で 1
+        # 回 yield してから queue 処理に入る。
+        self.last_terminal_msg: dict[str, Any] | None = None
 
 
 class SimulationManager:
@@ -244,6 +250,10 @@ class SimulationManager:
             _logger.debug("event loop closed; dropping message %r", msg.get("type"))
 
     def _run_in_thread(self, rec: _SimulationRecord) -> None:
+        # ADR-0056 §B-3: 失敗時の構造化 payload は finally 内で `failed` 1 件にまとめる
+        # (= 旧 `error` メッセージの事前送出を廃止)。例外捕捉時は payload を保持する
+        # だけ、実際の送出は finally で実施する。
+        failure_payload: dict[str, Any] | None = None
         try:
             rec.simulator.run()
             self._flush_remaining_scopes(rec)
@@ -255,23 +265,38 @@ class SimulationManager:
             _logger.exception("simulation %s failed", rec.simulation_id)
             rec.state.status = "failed"
             rec.state.error = f"{type(e).__name__}: {e}"
-            self._dispatch(rec, {"type": "error", "message": rec.state.error})
+            failure_payload = build_failure_payload(
+                e,
+                simulator=rec.simulator,
+                t=rec.state.current_t,
+            )
         finally:
             rec.state.finished_at = time.time()
             duration = rec.state.finished_at - rec.state.started_at
-            self._dispatch(
-                rec,
-                {
-                    "type": rec.state.status,  # completed / stopped / failed
-                    "duration_sec": duration,
-                },
-            )
+            terminal: dict[str, Any] = {
+                "type": rec.state.status,  # completed / stopped / failed
+                "duration_sec": duration,
+            }
+            if failure_payload is not None:
+                # ADR-0056 §B-1: 失敗時のみ構造化フィールドをマージ。
+                terminal.update(failure_payload)
+            # ADR-0056 §B-4: replay 用に保持 (= 再接続クライアントが冒頭で受信できる)。
+            rec.last_terminal_msg = terminal
+            self._dispatch(rec, terminal)
 
     async def stream(self, sim_id: str) -> AsyncIterator[dict[str, Any]]:
         with self._lock:
             if sim_id not in self._records:
                 raise PyflwError(f"Unknown simulation_id: {sim_id!r}")
             rec = self._records[sim_id]
+        # ADR-0056 §B-4: 終端済みシミュレーションへの **再接続** (= queue 既消費)
+        # 時、保存済みの terminal を 1 回 yield して即クローズ。失敗詳細を
+        # 取り損ねないことが目的。初回接続で queue にメッセージが残っている
+        # ケースは下の通常ループに任せる (= progress / scope_batch / 最後に
+        # terminal を順に yield)。
+        if rec.last_terminal_msg is not None and rec.queue.empty():
+            yield dict(rec.last_terminal_msg)
+            return
         terminal_types = {"completed", "stopped", "failed"}
         while True:
             msg = await rec.queue.get()

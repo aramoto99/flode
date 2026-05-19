@@ -1,10 +1,17 @@
-"""ドメイン例外 (``PyflwError`` 系) を HTTP エラーへ変換するハンドラ (ADR-0011 §(5))。"""
+"""ドメイン例外 (``PyflwError`` 系) を HTTP エラーへ変換するハンドラ (ADR-0011 §(5))。
+
+ADR-0056 追加: シミュレーション失敗時の構造化エラー payload (``FailurePayload``)
+を組み立てる ``classify_exception`` / ``build_failure_payload`` も本モジュールに集約
+(= サーバ専用ロジックで core 不汚染、ADR-0001 §横断方針)。
+"""
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import traceback
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -21,6 +28,9 @@ from ..exceptions import (
     UnknownBlockIdError,
     UnknownBlockTypeError,
 )
+
+if TYPE_CHECKING:
+    from ..core.simulator import Simulator
 
 _logger = logging.getLogger("pyflw.server")
 
@@ -48,6 +58,252 @@ def _resolve_status(exc: PyflwError) -> int:
         if cls in _STATUS_MAP:
             return _STATUS_MAP[cls]
     return 500
+
+
+# ============================================================================
+# ADR-0056: 構造化エラー protocol (シミュレーション失敗時 UI 用)
+# ============================================================================
+
+# Phase 1 カテゴリ taxonomy (ADR-0056 §C-2 / SPEC-0005 §F5)。
+# 新カテゴリ追加時はここに 1 行 + locale.json に template 追加で済む設計。
+_CATEGORY_ALGEBRAIC_LOOP = "algebraic_loop"
+_CATEGORY_SHAPE_MISMATCH = "shape_mismatch"
+_CATEGORY_DIVIDE_BY_ZERO = "divide_by_zero"
+_CATEGORY_SOLVER_FAILURE = "solver_failure"
+_CATEGORY_START_VALIDATION = "start_validation"
+_CATEGORY_UNKNOWN = "unknown"
+
+# Phase 1 で fall through する例外 (= unknown 扱い、Phase 2 で新カテゴリ追加候補):
+#   - ``TypeError`` / ``IndexError`` (= simulator.py の add/connect 引数 validation)
+#   - ``RuntimeWarning`` (= numpy overflow、Phase 2 で overflow カテゴリ)
+#   - ユーザ式ブロックの任意 Python 例外 (Phase 2)
+
+
+@dataclasses.dataclass(frozen=True)
+class ErrorClassification:
+    """例外 → カテゴリ + i18n テンプレートキーへの分類結果 (ADR-0056 §B-1)。"""
+
+    category: str
+    template_key: str
+
+
+# 例外クラス → 分類のマッピング。``classify_exception`` が MRO で解決する。
+_CATEGORY_BY_EXC: tuple[tuple[type[BaseException], ErrorClassification], ...] = (
+    (AlgebraicLoopError, ErrorClassification(_CATEGORY_ALGEBRAIC_LOOP, "error.algebraic_loop")),
+    (ZeroDivisionError, ErrorClassification(_CATEGORY_DIVIDE_BY_ZERO, "error.divide_by_zero")),
+    (SolverError, ErrorClassification(_CATEGORY_SOLVER_FAILURE, "error.solver_failure")),
+    (BlockSpecError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (ModelLoadError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (UnknownBlockIdError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (UnknownBlockTypeError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (SchemaVersionError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (SchedulingError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (ModelSerializationError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+)
+
+
+def classify_exception(exc: BaseException) -> ErrorClassification:
+    """例外をカテゴリ + i18n テンプレートキーに分類する (ADR-0056 §C)。
+
+    分類順:
+      1. ``_CATEGORY_BY_EXC`` の MRO 完全一致 (= AlgebraicLoopError, SolverError 等)
+      2. ``ValueError`` で message に ``"broadcast"`` / ``"shape"`` を含む
+         → ``shape_mismatch`` (numpy 2.x の wording を狙い撃ち、ADR-0056 §Risks U5)
+      3. 上記いずれにも該当しない → ``unknown``
+    """
+    for exc_type, classification in _CATEGORY_BY_EXC:
+        if isinstance(exc, exc_type):
+            return classification
+    if isinstance(exc, ValueError):
+        msg = str(exc).lower()
+        if "broadcast" in msg or "shape" in msg:
+            return ErrorClassification(_CATEGORY_SHAPE_MISMATCH, "error.shape_mismatch")
+    return ErrorClassification(_CATEGORY_UNKNOWN, "error.unknown")
+
+
+_MAX_TRACEBACK_LINES = 50
+"""traceback を frontend に送る前に truncate する行数 (ADR-0056 §B-1 巨大 traceback 対応)。
+
+サーバログには ``_logger.exception`` で全文が残るため、UI 側は要点表示のみで十分。
+"""
+
+
+def _truncate_traceback(tb_str: str, max_lines: int = _MAX_TRACEBACK_LINES) -> str:
+    """traceback 文字列を ``max_lines`` 以下に truncate する。
+
+    末尾を残す方が「最終的にどこで raise したか」が見える。
+    """
+    lines = tb_str.splitlines()
+    if len(lines) <= max_lines:
+        return tb_str
+    truncated = lines[-max_lines:]
+    omitted = len(lines) - max_lines
+    return f"... ({omitted} earlier lines truncated)\n" + "\n".join(truncated)
+
+
+def _block_label(block: Any) -> str | None:
+    """``Block.name`` (ユーザー命名) があればそれ、無ければ ``id``、両方無ければ ``None``。"""
+    name = getattr(block, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    block_id = getattr(block, "id", None)
+    if isinstance(block_id, str) and block_id:
+        return block_id
+    return None
+
+
+def _block_type_path(block: Any) -> str | None:
+    """``"pyflw.blocks.mathops.Divide"`` 形式の type path。"""
+    cls = type(block)
+    module = cls.__module__
+    return f"{module}.{cls.__name__}" if module else cls.__name__
+
+
+def _shape_mismatch_args(exc: BaseException) -> dict[str, Any]:
+    """``shape_mismatch`` カテゴリの ``template_args.shapes`` を抽出する best-effort 実装。
+
+    numpy 2.x の ``ValueError`` message に含まれる ``(a,) (b,)`` 形式の shape タプル
+    だけを正規表現で拾う。失敗してもエラー全体は壊さない (= ``{}`` を返す)。
+    """
+    import re
+
+    msg = str(exc)
+    shapes = re.findall(r"\([\d,\s]*\)", msg)
+    if shapes:
+        return {"shapes": " vs ".join(shapes[:2])}
+    return {}
+
+
+def _solver_failure_args(exc: BaseException) -> dict[str, Any]:
+    """``solver_failure`` の ``template_args.reason`` を抽出する。
+
+    ``SolverError`` の message は ``"Solver failed at t=[t, t_next]: <reason>"`` 形式
+    (simulator.py:1082)。コロン以降を reason とする。
+    """
+    msg = str(exc)
+    if ":" in msg:
+        reason = msg.rsplit(":", 1)[1].strip()
+        if reason:
+            return {"reason": reason}
+    return {}
+
+
+def _template_args_for(
+    classification: ErrorClassification,
+    exc: BaseException,
+    *,
+    block: Any | None,
+    t: float | None,
+) -> dict[str, Any]:
+    """カテゴリに応じた ``template_args`` を組み立てる。
+
+    全カテゴリ共通: ``block_label`` (in scope なら) と ``t`` (有値なら)。
+    カテゴリ固有: shape_mismatch の ``shapes``、solver_failure の ``reason`` 等。
+    """
+    args: dict[str, Any] = {}
+    label = _block_label(block) if block is not None else None
+    if label is not None:
+        args["block_label"] = label
+    if t is not None:
+        args["t"] = t
+
+    if classification.category == _CATEGORY_ALGEBRAIC_LOOP and isinstance(
+        exc, AlgebraicLoopError
+    ):
+        args["block_labels"] = list(exc.block_ids)
+    elif classification.category == _CATEGORY_SHAPE_MISMATCH:
+        args.update(_shape_mismatch_args(exc))
+    elif classification.category == _CATEGORY_SOLVER_FAILURE:
+        args.update(_solver_failure_args(exc))
+    elif classification.category == _CATEGORY_UNKNOWN:
+        args["raw_message"] = f"{type(exc).__name__}: {exc}"
+
+    return args
+
+
+def build_failure_payload(
+    exc: BaseException,
+    *,
+    simulator: Simulator | None = None,
+    t: float | None = None,
+    duration_sec: float | None = None,
+    include_traceback: bool = True,
+) -> dict[str, Any]:
+    """例外を WS ``failed`` メッセージ / REST start エラーの構造化 payload に変換する。
+
+    ADR-0056 §B-1 の field schema に準拠。``type`` / ``duration_sec`` は呼び出し側
+    (runtime / route) で merge する責務。
+
+    Args:
+        exc: 失敗の原因例外。
+        simulator: 関連 Simulator (``_current_block`` から関与ブロック情報を引く)。
+            ``None`` のときは ``block_*`` が全 None / 空。
+        t: 失敗発生時のシミュレーション時刻 (秒)。runtime 層が ``rec.state.current_t``
+            を渡す。起動失敗時は ``None``。
+        duration_sec: 起動から失敗までの所要時間 (= ``failed`` のみ)。REST start
+            エラー時は ``None`` (route 層で field 自体を含めない)。
+        include_traceback: ``False`` のとき ``raw_traceback`` を ``None`` にする
+            (= test 用、本番では常に ``True``)。
+
+    Returns:
+        ``failed`` / ``start error detail`` の field を満たす dict。``type`` /
+        ``duration_sec`` を含まないので、呼び出し側で merge する。
+    """
+    classification = classify_exception(exc)
+
+    block: Any | None = None
+    if simulator is not None:
+        block = getattr(simulator, "_current_block", None)
+
+    block_id: str | None = None
+    block_type: str | None = None
+    block_label: str | None = None
+    block_ids: list[str] = []
+
+    if block is not None:
+        block_id_attr = getattr(block, "id", None)
+        if isinstance(block_id_attr, str):
+            block_id = block_id_attr
+            block_ids = [block_id_attr]
+        block_type = _block_type_path(block)
+        block_label = _block_label(block)
+
+    # AlgebraicLoopError は run() 前 (= scheduling) で raise されるため ``_current_block``
+    # は None、ただし ``block_ids`` 属性に複数 ID 持っている。
+    if isinstance(exc, AlgebraicLoopError) and exc.block_ids:
+        block_ids = list(exc.block_ids)
+        if not block_id and exc.block_ids:
+            block_id = exc.block_ids[0]
+        if not block_label:
+            block_label = exc.block_ids[0]
+
+    template_args = _template_args_for(
+        classification, exc, block=block, t=t,
+    )
+
+    raw_message = f"{type(exc).__name__}: {exc}"
+    raw_traceback: str | None = None
+    if include_traceback:
+        tb_str = "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        )
+        raw_traceback = _truncate_traceback(tb_str)
+
+    payload: dict[str, Any] = {
+        "category": classification.category,
+        "template_key": classification.template_key,
+        "template_args": template_args,
+        "block_id": block_id,
+        "block_ids": block_ids,
+        "block_type": block_type,
+        "block_label": block_label,
+        "t": t,
+        "raw_message": raw_message,
+        "raw_traceback": raw_traceback,
+    }
+    if duration_sec is not None:
+        payload["duration_sec"] = duration_sec
+    return payload
 
 
 def register_error_handlers(app: FastAPI) -> None:
