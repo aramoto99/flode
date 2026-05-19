@@ -281,8 +281,13 @@ class SimulationManager:
                 # ADR-0056 §B-1: 失敗時のみ構造化フィールドをマージ。
                 terminal.update(failure_payload)
             # ADR-0056 §B-4: replay 用に保持 (= 再接続クライアントが冒頭で受信できる)。
-            rec.last_terminal_msg = terminal
+            # code-reviewer MUST-2: dispatch を先に行ってから last_terminal_msg をセット
+            # することで、stream() の replay 判定 (last_terminal_msg is not None and
+            # queue.empty()) が「dispatch 前 / queue 未投入」窓で誤発火するレースを
+            # 防ぐ (= dispatch 後は queue に入っているので queue.empty() が False、
+            # 通常 drain ルートへ確実に流れる)。
             self._dispatch(rec, terminal)
+            rec.last_terminal_msg = terminal
 
     async def stream(self, sim_id: str) -> AsyncIterator[dict[str, Any]]:
         with self._lock:

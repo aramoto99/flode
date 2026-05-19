@@ -1183,12 +1183,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastFailureSource: null,
   activeErrorTab: false,
   setLastFailure: (payload, source) =>
-    set({
-      lastFailure: payload,
-      lastFailureSource: payload === null ? null : source,
-      activeErrorTab: payload !== null,
-      status: payload !== null ? "failed" : "idle",
-    }),
+    // code-reviewer MUST-1: null クリア時は status を触らない (= failed 遷移のみ責務)。
+    // クリアパスで status="idle" に上書きすると、実行中エラーをクリアしようとした際に
+    // running→idle の意図しない遷移を引き起こす。
+    set(
+      payload === null
+        ? {
+            lastFailure: null,
+            lastFailureSource: null,
+            activeErrorTab: false,
+          }
+        : {
+            lastFailure: payload,
+            lastFailureSource: source,
+            activeErrorTab: true,
+            status: "failed",
+          },
+    ),
   setActiveErrorTab: (value) => set({ activeErrorTab: value }),
 
   scopes: {},

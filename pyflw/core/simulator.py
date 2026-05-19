@@ -953,6 +953,10 @@ class Simulator:
         対応) に委譲する。各ループのステップラベル ``[A']`` / ``[A]`` / ``[E]`` /
         ``[B]`` は両 method 内のコメントを参照。
         """
+        # code-reviewer SHOULD-2: 前回 run() の失敗で残った ``_current_block`` を
+        # 明示的にクリア (= 再利用 Simulator で「失敗後すぐ build_failure_payload
+        # を呼ぶと前回の block が拾われる」リスクを除去)。
+        self._current_block = None
         order = self._execution_order()
         # ADR-0017 §(8) U2 / ADR-0018 §(2): SM-A / SM-B モード判定。``_execution_order()``
         # で全ブロックの ``_build()`` (Subsystem の n_states 確定など) と port shape

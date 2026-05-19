@@ -131,4 +131,17 @@ describe("ErrorView", () => {
       screen.getByText(/Traceback \(most recent call last\)/),
     ).toBeTruthy();
   });
+
+  it("clicking 'コピー' calls navigator.clipboard.writeText with traceback", () => {
+    // code-reviewer SHOULD-4: jsdom にはデフォルト clipboard が無いため stub。
+    const writeText = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    _setFailure(_BASE, "runtime");
+    render(<ErrorView />);
+    // 折り畳みを開く必要あり (= コピーボタンは details 内)
+    fireEvent.click(screen.getByText("詳細 (traceback)"));
+    fireEvent.click(screen.getByRole("button", { name: "コピー" }));
+    expect(writeText).toHaveBeenCalledWith(_BASE.raw_traceback);
+    vi.unstubAllGlobals();
+  });
 });

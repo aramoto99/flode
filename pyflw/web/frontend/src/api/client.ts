@@ -41,12 +41,15 @@ export class ApiError extends Error {
 
 function _structuredOrNull(detail: unknown): FailurePayload | null {
   // ADR-0056 §B-2: 構造化 detail の最低条件 = ``category`` + ``template_key`` +
-  // ``raw_message`` が string であること。それ以外は旧形式 / 未構造化扱い。
+  // ``raw_message`` がすべて string であること。code-reviewer MUST-3: FastAPI の
+  // 標準 validation エラー等が偶然 ``category`` を含む dict を返した場合に誤って
+  // FailurePayload にアサートしないよう、必須 3 field 全てを isString チェック。
   if (
     typeof detail === "object" &&
     detail !== null &&
     typeof (detail as { category?: unknown }).category === "string" &&
-    typeof (detail as { template_key?: unknown }).template_key === "string"
+    typeof (detail as { template_key?: unknown }).template_key === "string" &&
+    typeof (detail as { raw_message?: unknown }).raw_message === "string"
   ) {
     return detail as FailurePayload;
   }

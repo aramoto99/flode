@@ -132,7 +132,9 @@ class TestStructuredFailedMessage:
         assert terminal is not None
         assert terminal["type"] == "failed"
         assert terminal["category"] == "algebraic_loop"
-        assert terminal["block_ids"] == ["a", "b"]
+        # code-reviewer SHOULD-5: ``_execution_order`` の残留リストはブロック登録順
+        # に依存する。順序ではなく集合一致で検証する。
+        assert set(terminal["block_ids"]) == {"a", "b"}
         assert "duration_sec" in terminal
         assert terminal["raw_traceback"]
 

@@ -97,8 +97,13 @@ _CATEGORY_BY_EXC: tuple[tuple[type[BaseException], ErrorClassification], ...] = 
     (UnknownBlockIdError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     (UnknownBlockTypeError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     (SchemaVersionError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
-    (SchedulingError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
-    (ModelSerializationError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    # code-reviewer SHOULD-1: SchedulingError / ModelSerializationError は「モデル
+    # 検証」ではなく内部構成エラー / 保存失敗。Phase 1 では専用カテゴリが無いため
+    # ``unknown`` に落として raw_message で実情を伝える (= 「モデル検証エラー」と
+    # 誤読される問題を回避)。Phase 2 で "start_configuration" / "internal_error"
+    # 等の追加カテゴリ化を検討。
+    (SchedulingError, ErrorClassification(_CATEGORY_UNKNOWN, "error.unknown")),
+    (ModelSerializationError, ErrorClassification(_CATEGORY_UNKNOWN, "error.unknown")),
 )
 
 
