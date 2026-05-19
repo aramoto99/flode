@@ -3,13 +3,17 @@
 - ``Switch``: 3 入力 1 出力スイッチ (Phase 1)
 - ``Mux``: スカラー n 個 → 1D vector (n,) (ADR-0017 SM-B、ADR-0018、Phase 3 #4)
 - ``Demux``: 1D vector (n,) → スカラー n 個 (同上)
+- ``Goto`` / ``From`` / ``GotoTagVisibility``: tag ベース仮想配線
+  (SPEC-0003 / ADR-0055、Local + Scoped + Global の 3 visibility)
 
 ``Mux`` / ``Demux`` は ADR-0017 で導入された SM-B (ベクトルポート) の最初の
-ユーザー向けユースケース。
+ユーザー向けユースケース。``Goto`` / ``From`` は ``Simulator._execution_order``
+内で仮想エッジに展開されるため、実行時には通常の wire と同じ依存グラフに乗る。
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
@@ -180,3 +184,265 @@ class Demux(Block):
         vec = np.asarray(u[0], dtype=float)
         # 各 element を rank-0 ndarray として返す
         return tuple(np.asarray(vec[i], dtype=float) for i in range(self.n))
+
+
+# ---------------------------------------------------------------------------
+# Tag-based virtual wiring (SPEC-0003 / ADR-0055)
+# ---------------------------------------------------------------------------
+
+# tag 名の許容文字 / 長さ (SPEC-0003 §5)。非 ASCII は MVP 不可。
+_TAG_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_TAG_MAX_LEN = 64
+
+
+def _validate_tag(tag: object, block_name: str) -> str:
+    """SPEC-0003 §5 の tag 文字制約を検証する。
+
+    Args:
+        tag: 検証対象。``str`` 以外は ``BlockSpecError``。
+        block_name: エラーメッセージ用のブロック名 (``"Goto"`` 等)。
+
+    Returns:
+        検証済みの tag 文字列。
+
+    Raises:
+        BlockSpecError: 非 str / 空文字 / 64 文字超 / 違反文字 (非 ASCII 含む)。
+    """
+    if not isinstance(tag, str):
+        raise BlockSpecError(
+            f"{block_name}: tag must be a str, got {type(tag).__name__}"
+        )
+    if not tag:
+        raise BlockSpecError(f"{block_name}: invalid tag name {tag!r} (empty)")
+    if len(tag) > _TAG_MAX_LEN:
+        raise BlockSpecError(
+            f"{block_name}: invalid tag name {tag!r} "
+            f"(length {len(tag)} > {_TAG_MAX_LEN})"
+        )
+    if not _TAG_PATTERN.match(tag):
+        raise BlockSpecError(
+            f"{block_name}: invalid tag name {tag!r} "
+            f"(allowed: ASCII alphanumeric + '_' + '-')"
+        )
+    return tag
+
+
+class Goto(Block):
+    """Tag ベースの仮想配線送信側 (SPEC-0003 / ADR-0055)。
+
+    入力で受けた信号を ``tag`` に紐付けて公開する。同じ ``tag`` を持つ ``From``
+    ブロックが、画面の遠い位置や Subsystem 階層を跨いで参照する。実行時には
+    ``Simulator._execution_order`` が仮想エッジに展開する (Goto/From 間の物理
+    wire は描画されない)。
+
+    Args:
+        tag: 信号 tag (1〜64 文字、ASCII 英数 + ``_`` + ``-``)。
+        tag_visibility: ``"local"`` (同一スコープ) / ``"scoped"``
+            (``GotoTagVisibility`` で宣言された境界階層内) / ``"global"``
+            (モデル全体)。default は ``"local"``。
+
+    Raises:
+        BlockSpecError: tag 不正、または ``tag_visibility`` が 3 値以外。
+
+    Note:
+        ``output`` / ``output_v`` の戻り値は空 (n_outputs=0)。代わりに入力値を
+        ``_last_input`` に保存し、対応 ``From`` ブロックが build 時の解決で
+        参照する。SM-A / SM-B 両 path 対応のため ``_skip_dual_api_check`` を
+        立てる (ADR-0018 §(5) 内部例外と同じ扱い)。
+    """
+
+    # ADR-0018 §(5) と同じ内部例外: SM-A / SM-B 両 path で動作するため両 API 必要
+    _skip_dual_api_check = True
+    # port_shapes は build 時に上流から確定する (= JSON に出さない、ADR-0017 §(5))。
+    _serialize_port_shapes = False
+    _ALLOWED_VISIBILITY = ("local", "scoped", "global")
+    # ADR-0039 follow-up: Inspector の enum select ヒント
+    _param_enums = {"tag_visibility": _ALLOWED_VISIBILITY}
+
+    def __init__(
+        self,
+        tag: str,
+        tag_visibility: str = "local",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        _validate_tag(tag, "Goto")
+        if tag_visibility not in self._ALLOWED_VISIBILITY:
+            raise BlockSpecError(
+                f"Goto: invalid tag_visibility {tag_visibility!r}, "
+                f"must be one of {self._ALLOWED_VISIBILITY}"
+            )
+        super().__init__(
+            id=id,
+            name=name,
+            n_inputs=1,
+            n_outputs=0,
+            n_states=0,
+            direct_feedthrough=True,
+        )
+        self.tag = tag
+        self.tag_visibility = tag_visibility
+        self._params = {"tag": tag, "tag_visibility": tag_visibility}
+        # build 後・実行時に Goto.output / output_v が書き込み、対応 From が参照する。
+        # `None` は「まだ Goto が一度も実行されていない」状態 (= From 側の早期参照
+        # を BlockSpecError で気付けるようにする)。
+        self._last_input: npt.NDArray[Any] | None = None
+
+    def output(
+        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
+        # SM-A path: u は 1D ndarray shape (1,)。値を保持して空配列を返す
+        # (n_outputs=0 のため Simulator._step は y = np.atleast_1d(...) で 1D 長 0)。
+        self._last_input = np.asarray(u, dtype=float).copy()
+        return np.zeros(0)
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # SM-B path: u は tuple of 1 ndarray (任意 port shape)。値の shape を保持。
+        self._last_input = np.asarray(u[0], dtype=float).copy()
+        return ()
+
+
+class From(Block):
+    """Tag ベースの仮想配線受信側 (SPEC-0003 / ADR-0055)。
+
+    同じ ``tag`` を持つ ``Goto`` ブロックの入力値をそのまま出力する。visibility
+    は持たず、build 時に Local → Scoped → Global の優先順位で動的解決する。
+
+    Args:
+        tag: 信号 tag (Goto と同じ制約)。
+
+    Raises:
+        BlockSpecError: tag 不正。
+
+    Note:
+        出力 shape は対応 Goto の入力 shape から build 時に推論される
+        (ADR-0055 §論点 4)。``direct_feedthrough`` も build 時に ``False``
+        (= 未解決状態の安全側 default) から ``True`` に書き換わる
+        (= 仮想 wire 経由で Goto 上流に依存するため)。
+    """
+
+    _skip_dual_api_check = True
+    _serialize_port_shapes = False
+
+    def __init__(
+        self,
+        tag: str,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        _validate_tag(tag, "From")
+        super().__init__(
+            id=id,
+            name=name,
+            n_inputs=0,
+            n_outputs=1,
+            n_states=0,
+            # ``Simulator._resolve_goto_from_virtual_edges`` で True に上書き。
+            # 上書き前 (= 仮想エッジ展開前) に exec_order に組み込まれないよう、
+            # default は False (= 「上流に依存しない」と見なされて先頭に来る) で
+            # 開始し、build 後の topo sort では仮想 deps で正しい位置に配置される。
+            direct_feedthrough=False,
+        )
+        self.tag = tag
+        self._params = {"tag": tag}
+        # build 時に解決済み Goto への参照を持つ。output / output_v はこれを
+        # 介して Goto._last_input を返す。
+        self._resolved_goto: Goto | None = None
+
+    def _ensure_resolved(self) -> Goto:
+        if self._resolved_goto is None:
+            raise BlockSpecError(
+                f"From {self.id!r}(tag={self.tag!r}): not resolved. "
+                f"Did Simulator._resolve_goto_from_virtual_edges run?"
+            )
+        if self._resolved_goto._last_input is None:
+            raise BlockSpecError(
+                f"From {self.id!r}(tag={self.tag!r}): upstream Goto "
+                f"{self._resolved_goto.id!r} has not produced any output yet. "
+                f"This usually indicates a scheduling bug "
+                f"(Goto must run before its corresponding From)."
+            )
+        return self._resolved_goto
+
+    def output(
+        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
+        # SM-A path: 解決済み Goto の _last_input (= 1D shape (1,)) を copy 返却。
+        # ADR-0055 §論点 6 (Option 6-A): MVP は 1 copy 固定 (view 最適化は Phase 2)。
+        goto = self._ensure_resolved()
+        # Goto._last_input は SM-A path で shape (1,)、SM-B path で port_shape。
+        # SM-A モードでは From.output は 1D shape (1,) を返す契約 (= n_outputs=1)。
+        last = np.asarray(goto._last_input, dtype=float)
+        # SM-A モードでは Goto._last_input.shape == (1,)、そのまま 1D で返せる。
+        # SM-B モードでは output_v が呼ばれるため本メソッドは通らない。
+        return last.copy()
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # SM-B path: 解決済み Goto の _last_input (= port_shape の ndarray) を
+        # tuple of 1 ndarray にラップして copy 返却 (ADR-0055 §論点 6)。
+        goto = self._ensure_resolved()
+        return (np.asarray(goto._last_input, dtype=float).copy(),)
+
+
+class GotoTagVisibility(Block):
+    """Scoped tag の可視境界宣言 (SPEC-0003 / ADR-0055)。
+
+    Subsystem 内に配置すると、その Subsystem 階層を ``tag`` の scoped 可視
+    境界として宣言する。境界階層内 (= 境界 Subsystem + 全子孫スコープ) の
+    ``From`` が同 tag の ``Goto(tag, "scoped")`` を参照可能になる。
+
+    Args:
+        tag: 境界宣言する tag (Goto と同じ制約)。
+
+    Raises:
+        BlockSpecError: tag 不正。
+
+    Note:
+        0 入力 0 出力で実行時 no-op。build 時に
+        ``Simulator._resolve_goto_from_virtual_edges`` が registry を構築して
+        Scoped 解決に使う。同一スコープ内の重複は ``BlockSpecError``、親子重複
+        は子優先 + ``logging.WARNING`` (ADR-0055 §論点 3)。
+
+        Goto/From と異なり SM-A/SM-B 両 path で呼ばれる必要はない
+        (= 0 入力 0 出力で実質 no-op)。``output`` のみ実装し、SM-B path は
+        Block 基底の default ``output_v`` wrapper (= ``output`` を呼んで空 tuple
+        を返す経路) に任せる。
+    """
+
+    _serialize_port_shapes = False
+
+    def __init__(
+        self,
+        tag: str,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        _validate_tag(tag, "GotoTagVisibility")
+        super().__init__(
+            id=id,
+            name=name,
+            n_inputs=0,
+            n_outputs=0,
+            n_states=0,
+            direct_feedthrough=False,
+        )
+        self.tag = tag
+        self._params = {"tag": tag}
+
+    def output(
+        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
+    ) -> npt.NDArray[Any]:
+        return np.zeros(0)

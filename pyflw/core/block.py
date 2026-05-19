@@ -299,6 +299,32 @@ class Block:
         """
         return
 
+    def _set_port_shapes_in_for_build(
+        self, shapes: tuple[tuple[int, ...], ...] | list[tuple[int, ...]]
+    ) -> None:
+        """ADR-0055 §論点 4: Goto/From 専用 build 時 shape 確定 hook。
+
+        通常のブロックは ``__init__`` で ``port_shapes_in`` を静的宣言する
+        (ADR-0017 §(1) 静的宣言原則)。``Goto`` / ``From`` のみ例外として、
+        ``Simulator._resolve_goto_from_virtual_edges`` から本メソッドを呼んで
+        build 時に shape を上書きする。**他のサブクラスから呼ばない**
+        (= ADR-0017 原則の純粋性を 1 段だけ下げる Goto/From 専用 API)。
+
+        正規化 + 長さ check は ``_normalize_port_shapes`` に委譲するため、
+        ``n_inputs`` と長さが合わない場合は ``BlockSpecError``。
+        """
+        self.port_shapes_in = _normalize_port_shapes(shapes, self.n_inputs, "in")
+
+    def _set_port_shapes_out_for_build(
+        self, shapes: tuple[tuple[int, ...], ...] | list[tuple[int, ...]]
+    ) -> None:
+        """ADR-0055 §論点 4: Goto/From 専用 build 時 shape 確定 hook (out 側)。
+
+        ``_set_port_shapes_in_for_build`` と対の API。本メソッドも Goto/From
+        専用で、他のサブクラスからは呼ばない。
+        """
+        self.port_shapes_out = _normalize_port_shapes(shapes, self.n_outputs, "out")
+
     def to_dict(self) -> dict[str, Any]:
         """ブロックを JSON-serializable な辞書に変換する (ADR-0008 §(5))。
 

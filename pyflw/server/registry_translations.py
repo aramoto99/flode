@@ -400,6 +400,37 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "1 本の (n,) ベクトル入力を n 個のスカラー出力に分割。",
         },
     },
+    # SPEC-0003 / ADR-0055: tag ベース仮想配線
+    "pyflw.blocks.routing.Goto": {
+        "en": {
+            "display_name": "Goto",
+            "docstring_summary": "Publish input under a tag for virtual wiring to From blocks.",
+        },
+        "ja": {
+            "display_name": "Goto",
+            "docstring_summary": "入力を tag に紐付けて公開し、対応する From ブロックへ仮想配線する。",
+        },
+    },
+    "pyflw.blocks.routing.From": {
+        "en": {
+            "display_name": "From",
+            "docstring_summary": "Receive signal from a Goto block with matching tag (Local / Scoped / Global).",
+        },
+        "ja": {
+            "display_name": "From",
+            "docstring_summary": "同じ tag を持つ Goto ブロックの信号を受信 (Local / Scoped / Global)。",
+        },
+    },
+    "pyflw.blocks.routing.GotoTagVisibility": {
+        "en": {
+            "display_name": "Goto Tag Visibility",
+            "docstring_summary": "Declare the visibility boundary for a Scoped Goto tag.",
+        },
+        "ja": {
+            "display_name": "Goto 可視境界",
+            "docstring_summary": "Scoped Goto tag の可視境界を宣言。",
+        },
+    },
     # ----- sinks (4) ------------------------------------------------------
     "pyflw.blocks.sinks.Scope": {
         "en": {

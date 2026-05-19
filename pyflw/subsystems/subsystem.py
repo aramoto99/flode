@@ -117,6 +117,12 @@ class Subsystem(Block):
         self._inports_by_idx: dict[int, Inport] = {}
         self._outports_by_idx: dict[int, Outport] = {}
 
+        # ADR-0055 §論点 5-A: Goto/From 仮想エッジ展開で外部 (Simulator) から
+        # 追加される内部 ``(dst, src)`` deps の set。``_compute_exec_order`` が
+        # 冒頭で deps に merge する。Goto/From を含まない Subsystem では常に空
+        # set のため、既存テストの数値完全不変ガード。
+        self._virtual_inner_deps: set[tuple[Block, Block]] = set()
+
         # save/load 用 params (= ADR-0039 で n_inputs / n_outputs / port_shapes_*
         # フィールドは廃止、内部 blocks / connections のみ保存)。
         self._params = {
@@ -392,6 +398,18 @@ class Subsystem(Block):
                     if src is not None:
                         deps[b].add(src[0])
                         rev[src[0]].add(b)
+        # ADR-0055 §論点 5-A: Goto/From 仮想エッジ展開で外部 (Simulator) から
+        # 追加された内部 deps を merge。``_virtual_inner_deps`` は
+        # ``Simulator._resolve_goto_from_virtual_edges`` が populate するが、
+        # 同 ``_compute_exec_order`` が呼ばれる時点で空 set かもしれない
+        # (= Goto/From を含まない Subsystem、または再ビルド前の初回 build)。
+        # 後者は外部 trigger ``sub._exec_order = None`` で再 build される。
+        # 変数名 ``vdep_src`` は上の ``src`` (= ``tuple[Block, int] | None``) との
+        # 名前衝突 / 型再推論衝突を避けるため (mypy --strict 対策)。
+        for vdep_dst, vdep_src in self._virtual_inner_deps:
+            if vdep_dst in deps and vdep_src in deps:
+                deps[vdep_dst].add(vdep_src)
+                rev[vdep_src].add(vdep_dst)
         ready: deque[Block] = deque(b for b in self._inner_blocks if not deps[b])
         order: list[Block] = []
         while ready:

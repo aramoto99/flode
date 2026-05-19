@@ -12,7 +12,7 @@ import json
 import logging
 import math
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -49,6 +49,8 @@ if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
 StepCallback = Callable[[float, float], bool]
 
 _logger = logging.getLogger("pyflw.scheduler")
+# ADR-0055 §論点 3 / SPEC-0003 §3-5: 仮想エッジ展開時の WARNING / INFO 専用
+_logger_routing = logging.getLogger("pyflw.routing.goto")
 
 _SAMPLE_TIME_RATIO_TOL = 1e-9
 
@@ -100,6 +102,12 @@ class Simulator:
         # top-level ``layout`` を保持する。GUI が ``last_loaded_layout`` を取り出して
         # React Flow に渡すために使う。CLI / pytest からは無視できる (動作不変)。
         self.last_loaded_layout: LayoutDict | None = None
+        # ADR-0055 §論点 1-A: 仮想エッジ展開フェーズで構築される、
+        # ``_execution_order`` の topo sort に merge する追加 deps (``(dst, src)`` の set)。
+        # 共通祖先スコープが Simulator (= ()) のペアのみ格納し、Subsystem 共通祖先の
+        # ペアは Subsystem._virtual_inner_deps に流す (= ADR-0055 §論点 5-A)。
+        # ``_resolve_goto_from_virtual_edges`` が冒頭で必ずリセットする。
+        self._virtual_deps_top: set[tuple[Block, Block]] = set()
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -196,6 +204,11 @@ class Simulator:
         # 実行順序解析の前に全ブロックに対し呼ぶ。
         for b in self.blocks:
             b._build()
+        # ADR-0055 §論点 1-A: 各 ``b._build()`` 直後・``_check_port_shapes`` の前に
+        # 仮想エッジ展開フェーズを挟む。Goto/From/GotoTagVisibility を含まない
+        # モデルは早期 return するため、既存 949 件テストへの影響ゼロ
+        # (= ADR-0036 §(8) / 本 ADR §Consequences 数値完全不変ガード)。
+        self._resolve_goto_from_virtual_edges()
         # ADR-0017 §(4): build 時 port shape 整合性 check (_execution_order の前)
         self._check_port_shapes()
         deps: dict[Block, set[Block]] = {b: set() for b in self.blocks}
@@ -206,6 +219,13 @@ class Simulator:
                     if src is not None:
                         deps[b].add(src[0])
                         rev[src[0]].add(b)
+        # ADR-0055 §論点 1-A / §論点 5-A: 仮想エッジ展開で追加された
+        # Simulator level の仮想 deps を topo sort に merge。共通祖先スコープが
+        # Simulator (= ()) のときだけ ``_virtual_deps_top`` が populate される
+        # (Subsystem 共通祖先のときは ``Subsystem._virtual_inner_deps`` 経由)。
+        for dst_block, src_block in self._virtual_deps_top:
+            deps[dst_block].add(src_block)
+            rev[src_block].add(dst_block)
         ready: deque[Block] = deque(b for b in self.blocks if not deps[b])
         order: list[Block] = []
         while ready:
@@ -219,6 +239,489 @@ class Simulator:
             remaining = [b.id for b in self.blocks if b not in order]
             raise AlgebraicLoopError(f"Algebraic loop detected involving: {remaining}")
         return order
+
+    # ------------------------------------------------------------------
+    # ADR-0055 §論点 1-A: 仮想エッジ展開 (Goto/From/GotoTagVisibility)
+    # ------------------------------------------------------------------
+
+    def _walk_scopes(self) -> Iterator[tuple[tuple[Any, ...], list[Block]]]:
+        """全スコープ (Simulator + 再帰 Subsystem 内部) を yield する。
+
+        各 yield は ``(scope_path, blocks)``:
+          - ``scope_path``: ``tuple[Subsystem, ...]``。Simulator 自身は ``()``、
+            ネスト Subsystem は ``(outer_sub, inner_sub, ...)``。
+          - ``blocks``: そのスコープ直下のブロックリスト
+            (Simulator なら ``self.blocks``、Subsystem なら ``sub._inner_blocks``)。
+        """
+        # 遅延 import で循環回避 (Subsystem は core.block を継承)
+        from ..subsystems import Subsystem
+
+        yield ((), self.blocks)
+
+        def _walk_sub(sub: Subsystem, path: tuple[Any, ...]) -> Iterator[
+            tuple[tuple[Any, ...], list[Block]]
+        ]:
+            yield (path, sub._inner_blocks)
+            for inner in sub._inner_blocks:
+                if isinstance(inner, Subsystem):
+                    yield from _walk_sub(inner, path + (inner,))
+
+        for b in self.blocks:
+            if isinstance(b, Subsystem):
+                yield from _walk_sub(b, (b,))
+
+    @staticmethod
+    def _scope_path_str(scope_path: tuple[Any, ...]) -> str:
+        """エラー / ログメッセージ用のスコープパス文字列 (ADR-0055 §U5)。"""
+        if not scope_path:
+            return "<root>"
+        return "/".join((s.id or "?") for s in scope_path)
+
+    @staticmethod
+    def _is_descendant_or_self(
+        scope: tuple[Any, ...], ancestor: tuple[Any, ...]
+    ) -> bool:
+        """``scope`` が ``ancestor`` の階層内 (= 自身 + 全子孫) に含まれるか。
+
+        ADR-0055 §論点 2-A: Scoped 解決で「境界階層内の Scoped Goto」を探す際に
+        使う。``ancestor`` のすべての要素が ``scope`` の prefix と identity で
+        一致するなら True。
+        """
+        if len(scope) < len(ancestor):
+            return False
+        return all(a is b for a, b in zip(ancestor, scope[: len(ancestor)]))
+
+    def _resolve_goto_from_virtual_edges(self) -> None:
+        """SPEC-0003 §3 / ADR-0055 §論点 1〜6: tag ベース仮想配線を解決する。
+
+        実行内容 (要点):
+          1. 全スコープ走査して Goto/From/GotoTagVisibility を収集
+             (1 パス、Goto/From を 1 つも持たないモデルは早期 return)
+          2. 一意性チェック (Local / Scoped / Global / GotoTagVisibility 重複、
+             加えて Scoped Goto は境界階層単位での重複も検出)
+          3. 親子 GotoTagVisibility shadowing を WARNING で通知 (§論点 3-A)
+          4. 同 tag 異 visibility 衝突を WARNING で通知 (§3-2 緩和ケース)
+          5. 各 From を Local → Scoped → Global の優先順位で解決 (§論点 2-A)
+          6. 解決済み Goto/From の port_shape を build 時確定 (§論点 4-A)
+          7. ``direct_feedthrough = True`` に書き換え + 仮想 deps を共通祖先
+             スコープの exec_order に追加 (§論点 5-A)
+          8. ``_last_input`` リセット (= 2 回目以降 run の安全網)
+          9. Subsystem は ``_virtual_inner_deps`` 反映のため再ビルド
+             (ネストした全祖先 Subsystem を対象)
+         10. dangling Goto / GotoTagVisibility を INFO で残す (§3-5)
+        """
+        # ADR-0055 §論点 1-A 「Goto/From を含まないモデルは早期 return」 =
+        # 既存テスト + spring_mass_damper の数値完全不変ガード。
+        self._virtual_deps_top = set()
+        # Subsystem._virtual_inner_deps もリセット (再ビルド時にも入念に)
+        from ..subsystems import Subsystem
+
+        for _sp, blocks in self._walk_scopes():
+            for b in blocks:
+                if isinstance(b, Subsystem):
+                    b._virtual_inner_deps = set()
+
+        from ..blocks.routing import From, Goto, GotoTagVisibility
+
+        # ------------- Phase 1: 全スコープ 1 パス走査 + registry 構築 -------------
+        # ``found_any`` フラグで「Goto/From/GotoTagVisibility が 1 つでもあるか」
+        # を集計と同時に判定 (= ``_has_goto_from`` の 2 重走査を廃止、
+        # code-reviewer SHOULD #1 修正)。
+        scope_of: dict[Block, tuple[Any, ...]] = {}
+        local_registry: dict[tuple[tuple[Any, ...], str], Goto] = {}
+        scoped_registry_by_scope: dict[tuple[Any, ...], dict[str, Goto]] = defaultdict(
+            dict
+        )
+        global_registry: dict[str, Goto] = {}
+        visibility_registry: dict[tuple[Any, ...], set[str]] = defaultdict(set)
+        from_list: list[tuple[From, tuple[Any, ...]]] = []
+        subsystems_with_goto_from: set[Subsystem] = set()
+        found_any = False
+
+        for scope_path, blocks in self._walk_scopes():
+            for b in blocks:
+                scope_of[b] = scope_path
+                if isinstance(b, (Goto, From, GotoTagVisibility)):
+                    found_any = True
+                    # code-reviewer SHOULD #3: ネストの中間 Subsystem も再ビルド
+                    # 対象に含める (= 深ネスト時にも仮想 deps が正しく反映される)。
+                    for sub in scope_path:
+                        subsystems_with_goto_from.add(sub)
+                if isinstance(b, Goto):
+                    if b.tag_visibility == "local":
+                        key = (scope_path, b.tag)
+                        if key in local_registry:
+                            raise BlockSpecError(
+                                f"duplicate Local Goto tag {b.tag!r} in scope "
+                                f"{self._scope_path_str(scope_path)}"
+                            )
+                        local_registry[key] = b
+                    elif b.tag_visibility == "scoped":
+                        if b.tag in scoped_registry_by_scope[scope_path]:
+                            raise BlockSpecError(
+                                f"duplicate Scoped Goto tag {b.tag!r} in scope "
+                                f"{self._scope_path_str(scope_path)}"
+                            )
+                        scoped_registry_by_scope[scope_path][b.tag] = b
+                    else:  # "global"
+                        if b.tag in global_registry:
+                            raise BlockSpecError(
+                                f"duplicate Global Goto tag {b.tag!r}"
+                            )
+                        global_registry[b.tag] = b
+                elif isinstance(b, From):
+                    from_list.append((b, scope_path))
+                elif isinstance(b, GotoTagVisibility):
+                    if b.tag in visibility_registry[scope_path]:
+                        raise BlockSpecError(
+                            f"duplicate GotoTagVisibility tag {b.tag!r} in scope "
+                            f"{self._scope_path_str(scope_path)}"
+                        )
+                    visibility_registry[scope_path].add(b.tag)
+
+        if not found_any:
+            return  # 数値完全不変ガード
+
+        # ------------- Phase 2: 境界単位の Scoped Goto 重複検出 (SPEC-0003 §3-2) -------------
+        # 「同一境界 (= GotoTagVisibility 階層) 内の Scoped Goto 重複」を検出する。
+        # 同一スコープ内の重複は Phase 1 で既に拒否済。code-reviewer SHOULD #2 修正:
+        # SPEC §3-2 のエラーメッセージ ``"within visibility boundary"`` と整合させる。
+        self._check_scoped_goto_uniqueness_per_boundary(
+            scoped_registry_by_scope, visibility_registry
+        )
+
+        # ------------- Phase 3: 親子 shadowing WARNING (ADR-0055 §論点 3-A) -------------
+        self._warn_visibility_shadowing(visibility_registry)
+
+        # ------------- Phase 4: 同 tag 異 visibility 衝突 WARNING (§3-2 緩和) -------------
+        self._warn_visibility_mixed_kinds(
+            local_registry, scoped_registry_by_scope, global_registry
+        )
+
+        # ------------- Phase 5: From の解決 + 仮想エッジ構築 (§論点 2-A / 4-A / 5-A) -------------
+        used_gotos: set[Goto] = set()
+        used_visibility_keys: set[tuple[tuple[Any, ...], str]] = set()
+
+        for from_block, from_scope in from_list:
+            resolved_goto, used_visibility = self._resolve_from(
+                from_block,
+                from_scope,
+                local_registry,
+                scoped_registry_by_scope,
+                global_registry,
+                visibility_registry,
+            )
+            used_gotos.add(resolved_goto)
+            if used_visibility is not None:
+                used_visibility_keys.add(used_visibility)
+            # Goto の上流接続を取得
+            if resolved_goto.input_sources[0] is None:
+                raise BlockSpecError(
+                    f"Goto {resolved_goto.id!r}(tag={resolved_goto.tag!r}): "
+                    f"input port 0 is not connected; cannot resolve virtual edge "
+                    f"for From {from_block.id!r}"
+                )
+            src_block, src_idx = resolved_goto.input_sources[0]
+            # ADR-0055 §論点 4-A: build 時 shape 確定 (Goto/From のみの例外 API)
+            src_shape = src_block.port_shapes_out[src_idx]
+            resolved_goto._set_port_shapes_in_for_build((src_shape,))
+            from_block._set_port_shapes_out_for_build((src_shape,))
+            # 解決済み Goto への参照を埋め込み (run 時に From.output が読む)
+            from_block._resolved_goto = resolved_goto
+            # code-reviewer MUST 修正: 2 回目以降の ``run()`` で安全網
+            # (= ``From._ensure_resolved`` の ``_last_input is None`` ガード) が
+            # 正しく機能するよう、build 時に Goto._last_input をリセットする。
+            resolved_goto._last_input = None
+            # ADR-0055 §論点 5-A: From は仮想 wire 経由で Goto に依存するため
+            # direct_feedthrough を True に書き換え。これで仮想 deps を topo sort
+            # に merge した時点で「Goto → From」の順序が保証される。
+            from_block.direct_feedthrough = True
+            # 仮想 deps を共通祖先スコープに追加 (ADR-0055 §論点 5-A)。
+            # 依存先は ``Goto`` 自身 (or Goto を含む最上位 Subsystem) — Goto が
+            # exec_order で先に処理されて ``_last_input`` を更新した後に From
+            # (or From を含む Subsystem) が処理される必要があるため。
+            self._add_virtual_dep(
+                from_block, from_scope, resolved_goto, scope_of
+            )
+
+        # ------------- Phase 6: dangling 検出 INFO (SPEC-0003 §3-5) -------------
+        self._log_dangling(
+            local_registry,
+            scoped_registry_by_scope,
+            global_registry,
+            visibility_registry,
+            used_gotos,
+            used_visibility_keys,
+        )
+
+        # ------------- Phase 7: Subsystem 内部 exec_order の再計算 (§論点 5-A) -------------
+        # ``_virtual_inner_deps`` が populate された Subsystem は、内部 exec_order を
+        # 再構築する必要がある (= ``_exec_order = None`` + ``_build()``)。
+        # Subsystem._compute_exec_order が冒頭で ``_virtual_inner_deps`` を deps に
+        # merge する (Phase 4 で追加した処理)。
+        for sub in subsystems_with_goto_from:
+            sub._exec_order = None
+            sub._build()
+
+    def _check_scoped_goto_uniqueness_per_boundary(
+        self,
+        scoped_registry_by_scope: dict[tuple[Any, ...], dict[str, Any]],
+        visibility_registry: dict[tuple[Any, ...], set[str]],
+    ) -> None:
+        """SPEC-0003 §3-2: 同一 GotoTagVisibility 境界内の Scoped Goto 重複検出。
+
+        Phase 1 では同一スコープの重複のみを拒否するが、SPEC は「境界階層内
+        (境界 Subsystem + 全子孫スコープ) で 1 つ」と定めている。
+
+        ADR-0055 §論点 3-A (shadowing): 親子で同 tag の境界が宣言された場合、
+        子境界が親境界を shadow する。よって各 Scoped Goto は「最も近い祖先
+        境界 (nearest enclosing boundary)」に属し、その境界内で他の Scoped Goto
+        と重複していないかを判定する (= shadowing と整合)。
+
+        境界が見つからない Scoped Goto (= GotoTagVisibility なしで宣言された
+        Scoped Goto) は境界に属さず重複チェック対象外 (= 解決時に
+        ``_resolve_from`` で Global fallback or BlockSpecError)。
+
+        Raises:
+            BlockSpecError: 同一境界階層内に同 tag の Scoped Goto が複数。
+        """
+        # 各 Scoped Goto に対して「最近祖先境界」を計算 + 境界単位で集計
+        boundary_tag_to_scopes: dict[
+            tuple[tuple[Any, ...], str], list[tuple[Any, ...]]
+        ] = defaultdict(list)
+        for goto_scope, scoped_by_tag in scoped_registry_by_scope.items():
+            for tag in scoped_by_tag:
+                # goto_scope から親方向に走査して最初の境界
+                # (= GotoTagVisibility(tag) を宣言したスコープ) を見つける
+                nearest_boundary: tuple[Any, ...] | None = None
+                for i in range(len(goto_scope), -1, -1):
+                    candidate = goto_scope[:i]
+                    if tag in visibility_registry.get(candidate, ()):
+                        nearest_boundary = candidate
+                        break
+                if nearest_boundary is None:
+                    continue  # 境界なし、Local fallback 扱いで重複チェック対象外
+                boundary_tag_to_scopes[(nearest_boundary, tag)].append(goto_scope)
+        # 同 (boundary, tag) に複数の Scoped Goto があれば重複
+        for (boundary, tag), scopes in boundary_tag_to_scopes.items():
+            if len(scopes) > 1:
+                raise BlockSpecError(
+                    f"duplicate Scoped Goto tag {tag!r} within visibility "
+                    f"boundary {self._scope_path_str(boundary)} "
+                    f"(found in scopes: "
+                    f"{[self._scope_path_str(s) for s in scopes]})"
+                )
+
+    def _resolve_from(
+        self,
+        from_block: Any,
+        from_scope: tuple[Any, ...],
+        local_registry: dict[tuple[tuple[Any, ...], str], Any],
+        scoped_registry_by_scope: dict[tuple[Any, ...], dict[str, Any]],
+        global_registry: dict[str, Any],
+        visibility_registry: dict[tuple[Any, ...], set[str]],
+    ) -> tuple[Any, tuple[tuple[Any, ...], str] | None]:
+        """SPEC-0003 §3-3 / ADR-0055 §論点 2-A の解決優先順位を実装する。
+
+        1. Local: 同一スコープの ``Goto(tag, "local")``
+        2. Scoped: 親方向に走査、最初の境界階層内で ``Goto(tag, "scoped")``
+           を探す (境界外には抜けず、見つからなければ Global にフォールバック)
+        3. Global: モデル全体の ``Goto(tag, "global")``
+        4. 失敗: ``BlockSpecError``
+
+        Returns:
+            ``(resolved_goto, used_visibility_key)``。
+            ``used_visibility_key`` は Scoped 解決で使われた境界の
+            ``(boundary_scope, tag)`` (= dangling 検出から除外する用)。
+            Scoped 以外の場合は ``None``。
+        """
+        tag = from_block.tag
+        # 1. Local
+        local_hit = local_registry.get((from_scope, tag))
+        if local_hit is not None:
+            return local_hit, None
+        # 2. Scoped: 親方向に上昇 (= from_scope[:i] for i = len..0)
+        for i in range(len(from_scope), -1, -1):
+            boundary = from_scope[:i]
+            if tag in visibility_registry.get(boundary, ()):
+                # 境界階層 (boundary 自身 + 全子孫) 内の Scoped Goto を探す
+                for scope_path, scoped_by_tag in scoped_registry_by_scope.items():
+                    if tag in scoped_by_tag and self._is_descendant_or_self(
+                        scope_path, boundary
+                    ):
+                        return scoped_by_tag[tag], (boundary, tag)
+                # 境界に Scoped Goto なし → Scoped 解決失敗、Global にフォールバック
+                # (= さらに上の階層には Scoped として進まない、ADR-0055 §論点 2-A)
+                break
+        # 3. Global
+        global_hit = global_registry.get(tag)
+        if global_hit is not None:
+            return global_hit, None
+        # 4. 失敗
+        raise BlockSpecError(
+            f"From {from_block.id!r}(tag={tag!r}) in scope "
+            f"{self._scope_path_str(from_scope)}: no matching Goto found "
+            f"(tried Local→Scoped→Global)"
+        )
+
+    def _add_virtual_dep(
+        self,
+        from_block: Block,
+        from_scope: tuple[Any, ...],
+        goto_block: Block,
+        scope_of: dict[Block, tuple[Any, ...]],
+    ) -> None:
+        """共通祖先スコープに仮想 deps を追加する (ADR-0055 §論点 5-A、Plan §U2)。
+
+        実行順序の保証: Goto は ``output`` / ``output_v`` で入力を
+        ``_last_input`` に記録し、From はそれを読み出す。よって exec_order
+        では「Goto → From」(または「Goto を含む Subsystem → From を含む
+        Subsystem」) の順が必要。
+
+        - 同一スコープ (= from_scope == goto_scope): そのスコープの
+          ``deps[from_block].add(goto_block)``
+        - 跨ぎ (= from_scope と goto_scope が共通祖先 prefix を持つ): 共通祖先
+          スコープ直下のブロック対 (``from_top``, ``goto_top``) で依存追加。
+          ``from_top`` / ``goto_top`` は、共通祖先より深い側 (= from や goto を
+          含む祖先 Subsystem) を指す。
+        """
+        goto_scope = scope_of.get(goto_block, ())
+        # 共通祖先スコープ = from_scope と goto_scope の identity 一致 prefix
+        common_len = 0
+        for a, b in zip(from_scope, goto_scope):
+            if a is b:
+                common_len += 1
+            else:
+                break
+        common_scope = from_scope[:common_len]
+        # 共通祖先スコープの「直下」のブロックを特定
+        # (= scope_path[common_len] が存在すればそれ、なければブロック自身)
+        from_top: Block = (
+            from_scope[common_len] if common_len < len(from_scope) else from_block
+        )
+        goto_top: Block = (
+            goto_scope[common_len] if common_len < len(goto_scope) else goto_block
+        )
+        # 自己依存 (= from_top is goto_top) は skip (= 同一 Subsystem 内で from
+        # も goto も同じ Subsystem 配下にいる場合、その Subsystem の内部 deps で
+        # 別途追加するため、外側で自己依存を作るとループになる)。
+        if from_top is goto_top:
+            return
+        # 共通スコープが Simulator (= ()) なら top-level deps、Subsystem ならその内部
+        if not common_scope:
+            self._virtual_deps_top.add((from_top, goto_top))
+        else:
+            boundary_sub = common_scope[-1]
+            boundary_sub._virtual_inner_deps.add((from_top, goto_top))
+
+    def _warn_visibility_shadowing(
+        self, visibility_registry: dict[tuple[Any, ...], set[str]]
+    ) -> None:
+        """親子 GotoTagVisibility shadowing を WARNING で通知 (ADR-0055 §論点 3-A)。
+
+        子の宣言が祖先 (= scope path prefix) の宣言を shadow する場合に出る。
+        同一スコープ内の重複は ``_resolve_goto_from_virtual_edges`` Phase 1 で
+        既に ``BlockSpecError`` 済みなので、ここでは祖先関係のみを対象。
+        """
+        # tag → そのtagを宣言したスコープリスト
+        tag_to_scopes: dict[str, list[tuple[Any, ...]]] = defaultdict(list)
+        for scope, tags in visibility_registry.items():
+            for tag in tags:
+                tag_to_scopes[tag].append(scope)
+        for tag, scopes in tag_to_scopes.items():
+            if len(scopes) < 2:
+                continue
+            for inner in scopes:
+                for outer in scopes:
+                    if outer is inner:
+                        continue
+                    # outer が inner の真の祖先 (= 長さが短く identity prefix 一致)
+                    if len(outer) < len(inner) and all(
+                        o is i for o, i in zip(outer, inner[: len(outer)])
+                    ):
+                        _logger_routing.warning(
+                            "GotoTagVisibility(tag=%r) at scope %s shadows "
+                            "ancestor declaration at scope %s; the inner "
+                            "boundary will be used for any From within %s.",
+                            tag,
+                            self._scope_path_str(inner),
+                            self._scope_path_str(outer),
+                            self._scope_path_str(inner),
+                        )
+
+    def _warn_visibility_mixed_kinds(
+        self,
+        local_registry: dict[tuple[tuple[Any, ...], str], Any],
+        scoped_registry_by_scope: dict[tuple[Any, ...], dict[str, Any]],
+        global_registry: dict[str, Any],
+    ) -> None:
+        """同 tag が異なる visibility で並存する場合 WARNING (SPEC-0003 §3-2 緩和)。
+
+        解決は Local→Scoped→Global の優先順位で行うため意味的には区別可能だが、
+        潜在的なバグの可能性を残しておく。
+        """
+        local_tags = {tag for (_sp, tag) in local_registry}
+        scoped_tags = {tag for sd in scoped_registry_by_scope.values() for tag in sd}
+        global_tags = set(global_registry)
+        for tag in local_tags & global_tags:
+            _logger_routing.warning(
+                "tag %r is declared as both Local and Global Goto; "
+                "Local resolution takes precedence (SPEC-0003 §3-3)",
+                tag,
+            )
+        for tag in local_tags & scoped_tags:
+            _logger_routing.warning(
+                "tag %r is declared as both Local and Scoped Goto; "
+                "Local resolution takes precedence (SPEC-0003 §3-3)",
+                tag,
+            )
+        for tag in scoped_tags & global_tags:
+            _logger_routing.warning(
+                "tag %r is declared as both Scoped and Global Goto; "
+                "Scoped resolution takes precedence within its visibility "
+                "boundary (SPEC-0003 §3-3)",
+                tag,
+            )
+
+    def _log_dangling(
+        self,
+        local_registry: dict[tuple[tuple[Any, ...], str], Any],
+        scoped_registry_by_scope: dict[tuple[Any, ...], dict[str, Any]],
+        global_registry: dict[str, Any],
+        visibility_registry: dict[tuple[Any, ...], set[str]],
+        used_gotos: set[Any],
+        used_visibility_keys: set[tuple[tuple[Any, ...], str]],
+    ) -> None:
+        """SPEC-0003 §3-5: 対応 From が無い Goto / 対応 Scoped Goto が無い
+        GotoTagVisibility を INFO ログで残す (エラーにはしない)。"""
+        for (scope_path, tag), goto in local_registry.items():
+            if goto not in used_gotos:
+                _logger_routing.info(
+                    "dangling Goto: tag=%r visibility=local scope=%s",
+                    tag,
+                    self._scope_path_str(scope_path),
+                )
+        for scope_path, scoped_by_tag in scoped_registry_by_scope.items():
+            for tag, goto in scoped_by_tag.items():
+                if goto not in used_gotos:
+                    _logger_routing.info(
+                        "dangling Goto: tag=%r visibility=scoped scope=%s",
+                        tag,
+                        self._scope_path_str(scope_path),
+                    )
+        for tag, goto in global_registry.items():
+            if goto not in used_gotos:
+                _logger_routing.info(
+                    "dangling Goto: tag=%r visibility=global", tag
+                )
+        for scope_path, tags in visibility_registry.items():
+            for tag in tags:
+                if (scope_path, tag) not in used_visibility_keys:
+                    _logger_routing.info(
+                        "dangling GotoTagVisibility: tag=%r scope=%s",
+                        tag,
+                        self._scope_path_str(scope_path),
+                    )
 
     def _check_port_shapes(self) -> None:
         """ADR-0017 §(4): 接続元出力 port_shape と接続先入力 port_shape が一致するかチェック。

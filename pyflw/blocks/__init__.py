@@ -29,7 +29,7 @@ from .mathops import (
     Sum,
     TrigFunction,
 )
-from .routing import Demux, Mux, Switch
+from .routing import Demux, From, Goto, GotoTagVisibility, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 
@@ -47,7 +47,10 @@ __all__ = [
     "DiscreteStateSpace",
     "DiscreteTransferFunction",
     "Divide",
+    "From",
     "Gain",
+    "Goto",
+    "GotoTagVisibility",
     "Integrator",
     "LogicalOperator",
     "MathFunction",
