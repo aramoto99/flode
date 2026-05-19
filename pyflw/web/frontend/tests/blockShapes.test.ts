@@ -24,6 +24,23 @@ describe("blockShapes", () => {
     expect(getBlockShape("pyflw.blocks.routing.Demux").kind).toBe("bar");
   });
 
+  it("returns rect for Goto / From / GotoTagVisibility (SPEC-0003 / ADR-0055)", () => {
+    // tag ラベル中心の表示なので rect、横長 80x32
+    const goto = getBlockShape("pyflw.blocks.routing.Goto");
+    const from = getBlockShape("pyflw.blocks.routing.From");
+    const vis = getBlockShape("pyflw.blocks.routing.GotoTagVisibility");
+    expect(goto.kind).toBe("rect");
+    expect(from.kind).toBe("rect");
+    expect(vis.kind).toBe("rect");
+    // 同じサイズ (= UI の統一感)、width / height とも 3 ブロック揃える
+    expect(goto.width).toBe(80);
+    expect(goto.height).toBe(32);
+    expect(from.width).toBe(80);
+    expect(from.height).toBe(32);
+    expect(vis.width).toBe(80);
+    expect(vis.height).toBe(32);
+  });
+
   it("returns trapezoid-r for Inport, trapezoid-l for Outport", () => {
     expect(getBlockShape("pyflw.subsystems.ports.Inport").kind).toBe("trapezoid-r");
     expect(getBlockShape("pyflw.subsystems.ports.Outport").kind).toBe("trapezoid-l");

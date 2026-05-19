@@ -521,6 +521,43 @@ function ShapeContent({
       </div>
     );
   }
+  // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベルを表示し、
+  // 種別を装飾 (角括弧 ``[tag]`` / 二重シェブロン ``>tag>`` / 二重波括弧
+  // ``{{tag}}``) で識別する。Goto/From 間に wire は描かない (= tag だけで対応を
+  // 示す、SPEC §7)。3 branch で tag 取得が共通なので local helper にまとめる。
+  if (
+    typePath.endsWith(".Goto") ||
+    typePath.endsWith(".From") ||
+    typePath.endsWith(".GotoTagVisibility")
+  ) {
+    const getTag = (p: Record<string, unknown>): string =>
+      typeof p.tag === "string" ? p.tag : "?";
+    const tag = getTag(paramsRaw);
+    let label: string;
+    let testId: string;
+    if (typePath.endsWith(".Goto")) {
+      label = `[${tag}]`;
+      testId = "goto-label";
+    } else if (typePath.endsWith(".From")) {
+      label = `>${tag}>`;
+      testId = "from-label";
+    } else {
+      // GotoTagVisibility: SPEC-0003 §7 で ``{{tag}}`` (二重波括弧) と規定。
+      // Goto / From の装飾と視覚的にレベルを揃える (= 単独の `{tag}` だと
+      // 単なる f-string 展開に見えるため避ける)。
+      label = `{{${tag}}}`;
+      testId = "goto-tag-visibility-label";
+    }
+    return (
+      <div
+        data-testid={testId}
+        className="absolute inset-0 flex items-center justify-center px-1 font-mono text-[11px] font-semibold text-slate-800"
+      >
+        <span className="truncate">{label}</span>
+      </div>
+    );
+  }
+
   // v0.35.7: Switch をリファレンスツール流の per-port 表示に。
   // v0.35.8: 「スイッチっぽさ」を出すため、右半分に物理的スイッチアームの SVG
   // を描き込む。スイッチアームは "T 側に倒れている" 既定姿で描画
