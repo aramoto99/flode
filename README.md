@@ -193,6 +193,39 @@ pyflw-server --workspace ./workspace --port 8770
 
 Then open `http://127.0.0.1:8770` in a browser.
 
+### Persisting server defaults (`~/.pyflw/config.toml`)
+
+If you find yourself typing the same `--workspace` / `--port` / `--allow-origin`
+every time, persist them in `~/.pyflw/config.toml` (SPEC-0004). Generate a
+commented template with:
+
+```bash
+pyflw-server --generate-config
+```
+
+The template lives at `~/.pyflw/config.toml` (or `%USERPROFILE%\.pyflw\config.toml`
+on Windows). Edit it, then just run `pyflw-server` with no arguments:
+
+```toml
+[server]
+host = "127.0.0.1"
+port = 8770
+
+[settings]
+workspace = "~/pyflw-workspace"
+scope_batch_size = 100
+max_concurrent = 4
+allow_origins = []
+library_paths = []
+bundle_builtin_libraries = true
+```
+
+Priority is **CLI args > config file > defaults** — pass `--port 9000` on the
+command line to override the file for a single run. Use `--config=PATH` to
+load a non-default file (handy for per-project setups), or omit the file
+entirely to fall back to defaults (= `workspace` becomes the current working
+directory).
+
 ### What the browser UI gives you
 
 - **JupyterLab-style file tree** (subdirectories, rename / new / delete via
