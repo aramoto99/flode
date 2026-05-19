@@ -177,14 +177,10 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
     "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),
     "pyflw.blocks.routing.Demux": ("routing", "Demux", "routing.demux"),
-    # SPEC-0003 / ADR-0055: tag ベース仮想配線 (Local + Scoped + Global)
+    # SPEC-0003 / ADR-0055: tag ベース仮想配線 (Local + Global)。
+    # GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
     "pyflw.blocks.routing.Goto": ("routing", "Goto", "routing.goto"),
     "pyflw.blocks.routing.From": ("routing", "From", "routing.from"),
-    "pyflw.blocks.routing.GotoTagVisibility": (
-        "routing",
-        "Goto Tag Visibility",
-        "routing.visibility",
-    ),
     # sinks
     "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
     "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
@@ -250,7 +246,6 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     # Inspector で編集する想定)。実モデルでは同 tag の衝突回避が必要。
     "pyflw.blocks.routing.Goto": {"tag": "Tag1"},
     "pyflw.blocks.routing.From": {"tag": "Tag1"},
-    "pyflw.blocks.routing.GotoTagVisibility": {"tag": "Tag1"},
     "pyflw.subsystems.ports.Inport": {"port_idx": 0},
     "pyflw.subsystems.ports.Outport": {"port_idx": 0},
     # ADR-0039 (v2.0): Subsystem / TriggeredSubsystem の n_inputs / n_outputs は

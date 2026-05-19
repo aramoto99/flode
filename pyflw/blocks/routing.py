@@ -3,12 +3,16 @@
 - ``Switch``: 3 入力 1 出力スイッチ (Phase 1)
 - ``Mux``: スカラー n 個 → 1D vector (n,) (ADR-0017 SM-B、ADR-0018、Phase 3 #4)
 - ``Demux``: 1D vector (n,) → スカラー n 個 (同上)
-- ``Goto`` / ``From`` / ``GotoTagVisibility``: tag ベース仮想配線
-  (SPEC-0003 / ADR-0055、Local + Scoped + Global の 3 visibility)
+- ``Goto`` / ``From``: tag ベース仮想配線
+  (SPEC-0003 / ADR-0055、Local + Global の 2 visibility)
 
 ``Mux`` / ``Demux`` は ADR-0017 で導入された SM-B (ベクトルポート) の最初の
 ユーザー向けユースケース。``Goto`` / ``From`` は ``Simulator._execution_order``
 内で仮想エッジに展開されるため、実行時には通常の wire と同じ依存グラフに乗る。
+
+Note (Phase 2 送り): ``Scoped`` visibility と ``GotoTagVisibility`` ブロックは
+SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。Phase 2 で
+``tag_visibility`` enum に ``"scoped"`` を追加する形で後方互換的に復活させる予定。
 """
 
 from __future__ import annotations
@@ -237,12 +241,13 @@ class Goto(Block):
 
     Args:
         tag: 信号 tag (1〜64 文字、ASCII 英数 + ``_`` + ``-``)。
-        tag_visibility: ``"local"`` (同一スコープ) / ``"scoped"``
-            (``GotoTagVisibility`` で宣言された境界階層内) / ``"global"``
-            (モデル全体)。default は ``"local"``。
+        tag_visibility: ``"local"`` (同一スコープ) / ``"global"`` (モデル全体)。
+            default は ``"local"``。``"scoped"`` は Phase 2 送り (SPEC-0003 /
+            ADR-0055 Amendment 2026-05-19)、現状の MVP では ``BlockSpecError``。
 
     Raises:
-        BlockSpecError: tag 不正、または ``tag_visibility`` が 3 値以外。
+        BlockSpecError: tag 不正、または ``tag_visibility`` が
+            ``("local", "global")`` 以外。
 
     Note:
         ``output`` / ``output_v`` の戻り値は空 (n_outputs=0)。代わりに入力値を
@@ -255,7 +260,9 @@ class Goto(Block):
     _skip_dual_api_check = True
     # port_shapes は build 時に上流から確定する (= JSON に出さない、ADR-0017 §(5))。
     _serialize_port_shapes = False
-    _ALLOWED_VISIBILITY = ("local", "scoped", "global")
+    # SPEC-0003 / ADR-0055 Amendment: ``"scoped"`` は Phase 2 送り。
+    # Phase 2 では ``("local", "scoped", "global")`` に拡張する。
+    _ALLOWED_VISIBILITY = ("local", "global")
     # ADR-0039 follow-up: Inspector の enum select ヒント
     _param_enums = {"tag_visibility": _ALLOWED_VISIBILITY}
 
@@ -269,9 +276,19 @@ class Goto(Block):
     ) -> None:
         _validate_tag(tag, "Goto")
         if tag_visibility not in self._ALLOWED_VISIBILITY:
+            # 旧版 (= Amendment 前) で保存された JSON を load した際に
+            # ``"scoped"`` で詰まるケースの移行ガイドを付ける (code-reviewer
+            # SHOULD 2026-05-19)。
+            hint = (
+                " (Note: 'scoped' is deferred to Phase 2 by ADR-0055 Amendment; "
+                "use 'global' for cross-scope sharing, or split signals into "
+                "Local Goto per Subsystem)"
+                if tag_visibility == "scoped"
+                else ""
+            )
             raise BlockSpecError(
                 f"Goto: invalid tag_visibility {tag_visibility!r}, "
-                f"must be one of {self._ALLOWED_VISIBILITY}"
+                f"must be one of {self._ALLOWED_VISIBILITY}{hint}"
             )
         super().__init__(
             id=id,
@@ -312,7 +329,8 @@ class From(Block):
     """Tag ベースの仮想配線受信側 (SPEC-0003 / ADR-0055)。
 
     同じ ``tag`` を持つ ``Goto`` ブロックの入力値をそのまま出力する。visibility
-    は持たず、build 時に Local → Scoped → Global の優先順位で動的解決する。
+    は持たず、build 時に Local → Global の優先順位で動的解決する
+    (Scoped 解決は Phase 2 送り、SPEC-0003 / ADR-0055 Amendment 2026-05-19)。
 
     Args:
         tag: 信号 tag (Goto と同じ制約)。
@@ -396,53 +414,5 @@ class From(Block):
         return (np.asarray(goto._last_input, dtype=float).copy(),)
 
 
-class GotoTagVisibility(Block):
-    """Scoped tag の可視境界宣言 (SPEC-0003 / ADR-0055)。
-
-    Subsystem 内に配置すると、その Subsystem 階層を ``tag`` の scoped 可視
-    境界として宣言する。境界階層内 (= 境界 Subsystem + 全子孫スコープ) の
-    ``From`` が同 tag の ``Goto(tag, "scoped")`` を参照可能になる。
-
-    Args:
-        tag: 境界宣言する tag (Goto と同じ制約)。
-
-    Raises:
-        BlockSpecError: tag 不正。
-
-    Note:
-        0 入力 0 出力で実行時 no-op。build 時に
-        ``Simulator._resolve_goto_from_virtual_edges`` が registry を構築して
-        Scoped 解決に使う。同一スコープ内の重複は ``BlockSpecError``、親子重複
-        は子優先 + ``logging.WARNING`` (ADR-0055 §論点 3)。
-
-        Goto/From と異なり SM-A/SM-B 両 path で呼ばれる必要はない
-        (= 0 入力 0 出力で実質 no-op)。``output`` のみ実装し、SM-B path は
-        Block 基底の default ``output_v`` wrapper (= ``output`` を呼んで空 tuple
-        を返す経路) に任せる。
-    """
-
-    _serialize_port_shapes = False
-
-    def __init__(
-        self,
-        tag: str,
-        *,
-        id: str | None = None,
-        name: str | None = None,
-    ) -> None:
-        _validate_tag(tag, "GotoTagVisibility")
-        super().__init__(
-            id=id,
-            name=name,
-            n_inputs=0,
-            n_outputs=0,
-            n_states=0,
-            direct_feedthrough=False,
-        )
-        self.tag = tag
-        self._params = {"tag": tag}
-
-    def output(
-        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
-    ) -> npt.NDArray[Any]:
-        return np.zeros(0)
+# GotoTagVisibility は SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。
+# Phase 2 で Scoped visibility と同時に再導入予定。

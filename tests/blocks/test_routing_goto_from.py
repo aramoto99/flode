@@ -1,11 +1,14 @@
-"""SPEC-0003 / ADR-0055: Goto / From / GotoTagVisibility の動作検証。
+"""SPEC-0003 / ADR-0055 (Amendment 2026-05-19): Goto / From の動作検証。
 
-カバー範囲 (SPEC-0003 §テスト戦略の 18 ケース):
+カバー範囲 (SPEC-0003 §テスト戦略の 11 ケース、Local + Global の 2 visibility):
 - 基本 (Local): scalar / vector 透過、複数 From、スコープ独立、跨ぎ未解決
-- Scoped: 境界内解決、境界外不可視、Visibility 無しの fallback、shadowing、重複
 - Global: モデル全体可視、重複
-- 解決優先順位: Local > Scoped > Global
-- 共通: dangling 許容、不正 tag、無効 visibility、代数ループ検出
+- 解決優先順位: Local > Global
+- 共通: dangling 許容、不正 tag、無効 visibility、代数ループ検出、永続化
+
+Note: Scoped + GotoTagVisibility は SPEC-0003 / ADR-0055 Amendment (2026-05-19) で
+Phase 2 送り。Phase 2 で `tag_visibility = "scoped"` enum 値と GotoTagVisibility
+ブロックを追加方向で後方互換的に復活させる予定。
 """
 
 from __future__ import annotations
@@ -21,7 +24,6 @@ from pyflw.blocks import (
     From,
     Gain,
     Goto,
-    GotoTagVisibility,
     Integrator,
     Mux,
     Scope,
@@ -158,198 +160,6 @@ class TestGotoFromLocal:
 
 
 # ===========================================================================
-# Scoped — 5 件
-# ===========================================================================
-
-
-class TestGotoFromScoped:
-    def test_scoped_goto_resolved_within_boundary(self) -> None:
-        """GotoTagVisibility 配下で Scoped Goto / From が解決される。"""
-        # ルートに GotoTagVisibility("ref") を置いて境界宣言
-        # ルートに Scoped Goto("ref") を置く
-        # Subsystem 内の From("ref") から参照
-        sim = Simulator(t_end=0.05, dt=0.01)
-        sim.add(GotoTagVisibility(tag="ref"))
-        src = sim.add(Constant(value=7.0))
-        goto = sim.add(Goto(tag="ref", tag_visibility="scoped"))
-        sim.connect(src, goto)
-
-        sub = Subsystem()
-        sub.add(Inport(port_idx=0))
-        out = Outport(port_idx=0)
-        sub.add(out)
-        f = sub.add(From(tag="ref"))
-        sub.connect(f, out)
-
-        dummy = sim.add(Constant(value=0.0))
-        sim.add(sub)
-        sim.connect(dummy, sub)
-        scope = sim.add(Scope())
-        sim.connect(sub, scope)
-        sim.run()
-        np.testing.assert_allclose(_flat(scope), 7.0 * np.ones(6))
-
-    def test_scoped_goto_not_visible_outside_boundary(self) -> None:
-        """境界外の From からは Scoped Goto が見えない (= 解決不能で BlockSpecError)。"""
-        # Subsystem 内に GotoTagVisibility と Scoped Goto を置く
-        sub = Subsystem()
-        sub.add(Inport(port_idx=0))
-        out = Outport(port_idx=0)
-        sub.add(out)
-        sub.add(GotoTagVisibility(tag="secret"))
-        c = sub.add(Constant(value=99.0))
-        g = sub.add(Goto(tag="secret", tag_visibility="scoped"))
-        sub.connect(c, g)
-        sub.connect(c, out)
-
-        sim = Simulator(t_end=0.05, dt=0.01)
-        dummy = sim.add(Constant(value=0.0))
-        sim.add(sub)
-        sim.connect(dummy, sub)
-        # 外側に From("secret") を置く → 境界外なので見えない
-        from_blk = sim.add(From(tag="secret"))
-        scope = sim.add(Scope())
-        sim.connect(from_blk, scope)
-        with pytest.raises(BlockSpecError, match="no matching Goto"):
-            sim.run()
-
-    def test_scoped_without_visibility_falls_back(self) -> None:
-        """GotoTagVisibility 無しの Scoped Goto は Global なし → 解決不能。
-
-        SPEC §エッジケース: 境界が無ければ Scoped Goto は Local 相当の
-        解決にフォールバックするが、本テストでは Local 解決もできないため
-        最終的に BlockSpecError。
-        """
-        sim = Simulator(t_end=0.05, dt=0.01)
-        src = sim.add(Constant(value=1.0))
-        # GotoTagVisibility 無し
-        goto = sim.add(Goto(tag="orphan", tag_visibility="scoped"))
-        sim.connect(src, goto)
-        # 別 Subsystem から参照
-        sub = Subsystem()
-        sub.add(Inport(port_idx=0))
-        out = Outport(port_idx=0)
-        sub.add(out)
-        f = sub.add(From(tag="orphan"))
-        sub.connect(f, out)
-
-        dummy = sim.add(Constant(value=0.0))
-        sim.add(sub)
-        sim.connect(dummy, sub)
-        scope = sim.add(Scope())
-        sim.connect(sub, scope)
-        with pytest.raises(BlockSpecError, match="no matching Goto"):
-            sim.run()
-
-    def test_nested_visibility_boundary_shadowing(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """親と子の GotoTagVisibility(同 tag) で子の境界が優先 + WARNING ログ。"""
-        # 構造:
-        #   Sim (root) に GotoTagVisibility("v") + Scoped Goto("v")=100
-        #   Sub_outer に GotoTagVisibility("v") + Scoped Goto("v")=200
-        #     Sub_inner に From("v") → 子の境界 (Sub_outer の Scoped Goto) が見える
-        sim = Simulator(t_end=0.05, dt=0.01)
-        sim.add(GotoTagVisibility(tag="v"))
-        c_root = sim.add(Constant(value=100.0))
-        g_root = sim.add(Goto(tag="v", tag_visibility="scoped"))
-        sim.connect(c_root, g_root)
-
-        sub_inner = Subsystem(id="sub_inner")
-        sub_inner.add(Inport(port_idx=0))
-        out_inner = Outport(port_idx=0)
-        sub_inner.add(out_inner)
-        f_inner = sub_inner.add(From(tag="v"))
-        sub_inner.connect(f_inner, out_inner)
-
-        sub_outer = Subsystem(id="sub_outer")
-        sub_outer.add(Inport(port_idx=0))
-        out_outer = Outport(port_idx=0)
-        sub_outer.add(out_outer)
-        sub_outer.add(GotoTagVisibility(tag="v"))
-        c_outer = sub_outer.add(Constant(value=200.0))
-        g_outer = sub_outer.add(Goto(tag="v", tag_visibility="scoped"))
-        sub_outer.connect(c_outer, g_outer)
-        sub_outer.add(sub_inner)
-        sub_outer.connect(sub_outer._inner_blocks[0], sub_inner)  # Inport → sub_inner
-        sub_outer.connect(sub_inner, out_outer)
-
-        dummy = sim.add(Constant(value=0.0))
-        sim.add(sub_outer)
-        sim.connect(dummy, sub_outer)
-        scope = sim.add(Scope())
-        sim.connect(sub_outer, scope)
-
-        with caplog.at_level(logging.WARNING, logger="pyflw.routing.goto"):
-            sim.run()
-        # 子の境界が優先 = sub_outer の Goto=200 が見える
-        np.testing.assert_allclose(_flat(scope), 200.0 * np.ones(6))
-        # shadowing WARNING が出ているか
-        assert any("shadows ancestor" in r.message for r in caplog.records)
-
-    def test_duplicate_scoped_goto_within_boundary_raises(self) -> None:
-        """同一スコープ内の重複 Scoped Goto → BlockSpecError。"""
-        sim = Simulator(t_end=0.05, dt=0.01)
-        sim.add(GotoTagVisibility(tag="dup"))
-        c1 = sim.add(Constant(value=1.0))
-        c2 = sim.add(Constant(value=2.0))
-        g1 = sim.add(Goto(tag="dup", tag_visibility="scoped"))
-        g2 = sim.add(Goto(tag="dup", tag_visibility="scoped"))
-        sim.connect(c1, g1)
-        sim.connect(c2, g2)
-        f = sim.add(From(tag="dup"))
-        scope = sim.add(Scope())
-        sim.connect(f, scope)
-        with pytest.raises(BlockSpecError, match="duplicate Scoped Goto"):
-            sim.run()
-
-    def test_duplicate_scoped_goto_in_different_child_scopes_raises(self) -> None:
-        """境界階層内の異なる子スコープに Scoped Goto 2 つ → BlockSpecError。
-
-        SPEC-0003 §3-2: 「同一階層 (境界 Subsystem) 内の Scoped Goto 重複」は
-        子スコープ間でも検出されるべき (= dict 順序での非決定的解決を防ぐ)。
-        """
-        # root に GotoTagVisibility("shared") を置いて境界宣言
-        # sub_a に Scoped Goto("shared") = 100、sub_b にも Scoped Goto("shared") = 200
-        # → 境界 (= root) 配下に 2 つあるため重複 → BlockSpecError
-
-        sub_a = Subsystem(id="sub_a")
-        sub_a.add(Inport(port_idx=0))
-        out_a = Outport(port_idx=0)
-        sub_a.add(out_a)
-        c_a = sub_a.add(Constant(value=100.0))
-        g_a = sub_a.add(Goto(tag="shared", tag_visibility="scoped"))
-        sub_a.connect(c_a, g_a)
-        sub_a.connect(c_a, out_a)
-
-        sub_b = Subsystem(id="sub_b")
-        sub_b.add(Inport(port_idx=0))
-        out_b = Outport(port_idx=0)
-        sub_b.add(out_b)
-        c_b = sub_b.add(Constant(value=200.0))
-        g_b = sub_b.add(Goto(tag="shared", tag_visibility="scoped"))
-        sub_b.connect(c_b, g_b)
-        sub_b.connect(c_b, out_b)
-
-        sim = Simulator(t_end=0.05, dt=0.01)
-        sim.add(GotoTagVisibility(tag="shared"))
-        dummy = sim.add(Constant(value=0.0))
-        sim.add(sub_a)
-        sim.add(sub_b)
-        sim.connect(dummy, sub_a)
-        sim.connect(dummy, sub_b)
-        # 同境界内のどこかに From があると解決が走るので追加
-        sim.connect(sub_a, sim.add(Scope()))
-        sim.connect(sub_b, sim.add(Scope()))
-        f = sim.add(From(tag="shared"))
-        sim.connect(f, sim.add(Scope()))
-        with pytest.raises(
-            BlockSpecError, match="duplicate Scoped Goto.*visibility boundary"
-        ):
-            sim.run()
-
-
-# ===========================================================================
 # Global — 2 件
 # ===========================================================================
 
@@ -393,7 +203,7 @@ class TestGotoFromGlobal:
 
 
 # ===========================================================================
-# 解決優先順位 — 2 件
+# 解決優先順位 — 1 件
 # ===========================================================================
 
 
@@ -419,24 +229,6 @@ class TestResolutionPriority:
             "Local and Global" in r.message for r in caplog.records
         )
 
-    def test_resolution_priority_scoped_over_global(self) -> None:
-        """Scoped が Global より優先される。"""
-        sim = Simulator(t_end=0.05, dt=0.01)
-        # Global
-        c_g = sim.add(Constant(value=999.0))
-        g_g = sim.add(Goto(tag="p", tag_visibility="global"))
-        sim.connect(c_g, g_g)
-        # Scoped + GotoTagVisibility (root スコープ)
-        sim.add(GotoTagVisibility(tag="p"))
-        c_s = sim.add(Constant(value=77.0))
-        g_s = sim.add(Goto(tag="p", tag_visibility="scoped"))
-        sim.connect(c_s, g_s)
-        f = sim.add(From(tag="p"))
-        scope = sim.add(Scope())
-        sim.connect(f, scope)
-        sim.run()
-        np.testing.assert_allclose(_flat(scope), 77.0 * np.ones(6))
-
 
 # ===========================================================================
 # 共通 — 残り
@@ -454,20 +246,6 @@ class TestGotoFromCommon:
         with caplog.at_level(logging.INFO, logger="pyflw.routing.goto"):
             sim.run()
         assert any("dangling Goto" in r.message for r in caplog.records)
-
-    def test_dangling_visibility_is_allowed(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """対応する Scoped Goto が無い GotoTagVisibility も許容。"""
-        sim = Simulator(t_end=0.05, dt=0.01)
-        sim.add(GotoTagVisibility(tag="unused_v"))
-        src = sim.add(Constant(value=1.0))
-        sim.connect(src, sim.add(Scope()))
-        with caplog.at_level(logging.INFO, logger="pyflw.routing.goto"):
-            sim.run()
-        assert any(
-            "dangling GotoTagVisibility" in r.message for r in caplog.records
-        )
 
     def test_unresolved_from_raises(self) -> None:
         """どこからも解決できない From → BlockSpecError。"""
@@ -490,18 +268,20 @@ class TestGotoFromCommon:
         ],
     )
     def test_invalid_tag_chars(self, bad_tag: str) -> None:
-        """不正な tag 文字 → BlockSpecError (Goto/From/Visibility 全部)。"""
+        """不正な tag 文字 → BlockSpecError (Goto / From 両方)。"""
         with pytest.raises(BlockSpecError, match="invalid tag name"):
             Goto(tag=bad_tag)
         with pytest.raises(BlockSpecError, match="invalid tag name"):
             From(tag=bad_tag)
-        with pytest.raises(BlockSpecError, match="invalid tag name"):
-            GotoTagVisibility(tag=bad_tag)
 
     def test_invalid_tag_visibility_raises(self) -> None:
-        """tag_visibility が 3 値以外 → BlockSpecError。"""
+        """tag_visibility が 2 値以外 → BlockSpecError (Scoped も含めて拒否)。"""
         with pytest.raises(BlockSpecError, match="invalid tag_visibility"):
             Goto(tag="x", tag_visibility="invalid")
+        # SPEC-0003 / ADR-0055 Amendment: "scoped" は Phase 2 送り。
+        # MVP では拒否する (= Phase 2 で復活時に "scoped" が有効になる)。
+        with pytest.raises(BlockSpecError, match="invalid tag_visibility"):
+            Goto(tag="x", tag_visibility="scoped")
 
     def test_algebraic_loop_via_goto_from(self) -> None:
         """Goto → 同 tag From → 同期ブロック → Goto の代数ループを検出。"""
@@ -548,7 +328,12 @@ class TestGotoFromCommon:
             sim.run()
 
     def test_no_goto_from_numerical_invariance(self) -> None:
-        """Goto/From を含まないモデルは _has_goto_from() で early return → 数値不変。"""
+        """Goto/From を含まないモデルは found_any 早期 return → 数値不変。
+
+        振る舞いは「解析解と一致 (= 既存パスと同じ数値結果)」で十分検証できる。
+        ``_virtual_deps_top`` 等の内部実装 attr への assertion は脆弱なので避ける
+        (code-reviewer SHOULD 2026-05-19)。
+        """
         # spring_mass_damper を簡略再現 (Constant → Integrator → Scope)
         sim = Simulator(t_end=0.05, dt=0.01)
         src = sim.add(Constant(value=1.0))
@@ -560,8 +345,6 @@ class TestGotoFromCommon:
         # 解析解: y = t (積分結果)、t = 0, 0.01, ..., 0.05 で値 0, 0.01, ..., 0.05
         expected = np.arange(6) * 0.01
         np.testing.assert_allclose(_flat(scope), expected, atol=1e-7)
-        # _virtual_deps_top も空のまま
-        assert sim._virtual_deps_top == set()
 
 
 # ===========================================================================
@@ -571,13 +354,12 @@ class TestGotoFromCommon:
 
 class TestGotoFromPersistence:
     def test_save_load_round_trip(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        """Goto/From/GotoTagVisibility を含むモデルが save/load で再現する。"""
+        """Goto / From を含むモデルが save/load で再現する。"""
         sim = Simulator(t_end=0.05, dt=0.01)
         src = sim.add(Constant(value=4.0))
         goto = sim.add(Goto(tag="rt", tag_visibility="global"))
         sim.connect(src, goto)
         f = sim.add(From(tag="rt"))
-        sim.add(GotoTagVisibility(tag="v_rt"))
         scope = sim.add(Scope())
         sim.connect(f, scope)
 

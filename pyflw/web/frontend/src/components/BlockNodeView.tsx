@@ -522,32 +522,16 @@ function ShapeContent({
     );
   }
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベルを表示し、
-  // 種別を装飾 (角括弧 ``[tag]`` / 二重シェブロン ``>tag>`` / 二重波括弧
-  // ``{{tag}}``) で識別する。Goto/From 間に wire は描かない (= tag だけで対応を
-  // 示す、SPEC §7)。3 branch で tag 取得が共通なので local helper にまとめる。
-  if (
-    typePath.endsWith(".Goto") ||
-    typePath.endsWith(".From") ||
-    typePath.endsWith(".GotoTagVisibility")
-  ) {
+  // 種別を装飾 (角括弧 ``[tag]`` / 二重シェブロン ``>tag>``) で識別する。
+  // Goto/From 間に wire は描かない (= tag だけで対応を示す、SPEC §7)。
+  // GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
+  if (typePath.endsWith(".Goto") || typePath.endsWith(".From")) {
     const getTag = (p: Record<string, unknown>): string =>
       typeof p.tag === "string" ? p.tag : "?";
     const tag = getTag(paramsRaw);
-    let label: string;
-    let testId: string;
-    if (typePath.endsWith(".Goto")) {
-      label = `[${tag}]`;
-      testId = "goto-label";
-    } else if (typePath.endsWith(".From")) {
-      label = `>${tag}>`;
-      testId = "from-label";
-    } else {
-      // GotoTagVisibility: SPEC-0003 §7 で ``{{tag}}`` (二重波括弧) と規定。
-      // Goto / From の装飾と視覚的にレベルを揃える (= 単独の `{tag}` だと
-      // 単なる f-string 展開に見えるため避ける)。
-      label = `{{${tag}}}`;
-      testId = "goto-tag-visibility-label";
-    }
+    const isGoto = typePath.endsWith(".Goto");
+    const label = isGoto ? `[${tag}]` : `>${tag}>`;
+    const testId = isGoto ? "goto-label" : "from-label";
     return (
       <div
         data-testid={testId}

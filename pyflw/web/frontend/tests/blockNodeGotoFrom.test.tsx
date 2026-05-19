@@ -1,8 +1,9 @@
-// SPEC-0003 / ADR-0055: Goto / From / GotoTagVisibility のラベル render テスト。
+// SPEC-0003 / ADR-0055: Goto / From のラベル render テスト。
 //
-// Canvas (BlockNodeView) で 3 ブロックがそれぞれ ``[tag]`` / ``>tag>`` /
-// ``{tag}`` のラベルを表示することを検証する。enum select / tag 編集は
-// ParameterPanel 側の既存パスで自動的に動くため別 test 不要。
+// Canvas (BlockNodeView) で Goto は ``[tag]``、From は ``>tag>`` のラベルを
+// 表示することを検証する。enum select / tag 編集は ParameterPanel 側の
+// 既存パスで自動的に動くため別 test 不要。
+// GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +48,7 @@ function renderBlockNode(
   render(<BlockNodeView data={data as any} id="test_block" selected={false} {...({} as any)} />);
 }
 
-describe("BlockNodeView: Goto / From / GotoTagVisibility labels (SPEC-0003)", () => {
+describe("BlockNodeView: Goto / From labels (SPEC-0003)", () => {
   it("renders Goto as [tag]", () => {
     renderBlockNode(
       "pyflw.blocks.routing.Goto",
@@ -67,16 +68,6 @@ describe("BlockNodeView: Goto / From / GotoTagVisibility labels (SPEC-0003)", ()
       1,
     );
     expect(screen.getByText(">velocity>")).toBeTruthy();
-  });
-
-  it("renders GotoTagVisibility as {{tag}} (double braces, SPEC-0003 §7)", () => {
-    renderBlockNode(
-      "pyflw.blocks.routing.GotoTagVisibility",
-      { tag: "reference" },
-      0,
-      0,
-    );
-    expect(screen.getByText("{{reference}}")).toBeTruthy();
   });
 
   it("renders '?' as fallback when tag is missing or non-string", () => {

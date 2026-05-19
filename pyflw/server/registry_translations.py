@@ -414,21 +414,11 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     "pyflw.blocks.routing.From": {
         "en": {
             "display_name": "From",
-            "docstring_summary": "Receive signal from a Goto block with matching tag (Local / Scoped / Global).",
+            "docstring_summary": "Receive signal from a Goto block with matching tag (Local / Global).",
         },
         "ja": {
             "display_name": "From",
-            "docstring_summary": "同じ tag を持つ Goto ブロックの信号を受信 (Local / Scoped / Global)。",
-        },
-    },
-    "pyflw.blocks.routing.GotoTagVisibility": {
-        "en": {
-            "display_name": "Goto Tag Visibility",
-            "docstring_summary": "Declare the visibility boundary for a Scoped Goto tag.",
-        },
-        "ja": {
-            "display_name": "Goto 可視境界",
-            "docstring_summary": "Scoped Goto tag の可視境界を宣言。",
+            "docstring_summary": "同じ tag を持つ Goto ブロックの信号を受信 (Local / Global)。",
         },
     },
     # ----- sinks (4) ------------------------------------------------------

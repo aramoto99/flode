@@ -85,12 +85,12 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "pyflw.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
 
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベル
-  // (= ``[tag]`` / ``>tag>`` / ``{{tag}}``) を表示するため横長の rect。
+  // (= ``[tag]`` / ``>tag>``) を表示するため横長の rect。
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
+  // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
   "pyflw.blocks.routing.Goto":               { kind: "rect", width: 80, height: 32 },
   "pyflw.blocks.routing.From":               { kind: "rect", width: 80, height: 32 },
-  "pyflw.blocks.routing.GotoTagVisibility":  { kind: "rect", width: 80, height: 32 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。
