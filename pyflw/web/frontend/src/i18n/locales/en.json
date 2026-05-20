@@ -354,7 +354,6 @@
   "error.solver_failure": "ODE solver failed to converge (t={{t, t_sec}}, reason={{reason}})",
   "error.start_validation": "Model validation error: {{message}}",
   "error.unknown": "{{raw_message}}",
-  "error.show_in_diagram": "Show in diagram",
   "error.show_details": "Details (traceback)",
   "error.copy": "Copy"
 }

@@ -354,7 +354,6 @@
   "error.solver_failure": "ODE ソルバが収束しませんでした (t={{t, t_sec}}, reason={{reason}})",
   "error.start_validation": "モデル検証エラー: {{message}}",
   "error.unknown": "{{raw_message}}",
-  "error.show_in_diagram": "Diagram で表示",
   "error.show_details": "詳細 (traceback)",
   "error.copy": "コピー"
 }

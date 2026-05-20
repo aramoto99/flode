@@ -95,17 +95,32 @@ describe("ErrorView", () => {
     expect(screen.getByRole("button", { name: "c" })).toBeTruthy();
   });
 
-  it("clicking 'Diagram で表示' jumps to the primary block", () => {
-    const loop: FailurePayload = {
+  it("shows a fallback chip when the single block is not inline-linked", () => {
+    // solver_failure はメッセージ本文にブロック名が出ない (= t / reason のみ) ため
+    // インラインリンクが張れない。単一ブロックでもフォールバックのチップを出す。
+    const payload: FailurePayload = {
       ..._BASE,
-      block_ids: ["a", "b", "c"],
+      category: "solver_failure",
+      template_key: "error.solver_failure",
+      template_args: { t: 0.5, reason: "max_step" },
+      block_label: "IntegratorX",
+      block_id: "int_x",
+      block_ids: ["int_x"],
+      t: 0.5,
     };
-    _setFailure(loop, "runtime");
+    _setFailure(payload, "runtime");
     const spy = vi.spyOn(useAppStore.getState(), "focusBlock");
     render(<ErrorView />);
-    fireEvent.click(screen.getByRole("button", { name: "Diagram で表示" }));
-    // 主因 = block_ids 先頭へジャンプ
-    expect(spy).toHaveBeenCalledWith("a");
+    fireEvent.click(screen.getByRole("button", { name: "int_x" }));
+    expect(spy).toHaveBeenCalledWith("int_x");
+  });
+
+  it("does NOT show a redundant chip when the block is inline-linked", () => {
+    // _BASE = divide_by_zero、本文に "Divide1" が出るのでインラインリンクのみ。
+    _setFailure(_BASE, "runtime");
+    render(<ErrorView />);
+    // "Divide1" のリンクは 1 つだけ (= チップで重複しない)。
+    expect(screen.getAllByRole("button", { name: "Divide1" })).toHaveLength(1);
   });
 
   it("clicking the inline block-name link jumps to that block", () => {

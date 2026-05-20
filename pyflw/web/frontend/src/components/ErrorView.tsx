@@ -94,15 +94,8 @@ export function ErrorView(): JSX.Element {
         ? lastFailure.template_args.raw_message
         : lastFailure.raw_message,
   };
-  const body = t(templateKey as "error.unknown", opts);
+  const body: string = t(templateKey as "error.unknown", opts);
   const prefix = t(prefixKey as "error.prefix.runtime_failed");
-
-  // 「Diagram で表示」= 主因 (= block_ids 先頭 or block_id) へジャンプ。
-  // 複数ブロック同時 fit は Phase 2 (= SPEC-0005 §F8 スコープ外)。
-  const showInDiagram = () => {
-    const target = lastFailure.block_ids[0] ?? lastFailure.block_id;
-    if (target) focusBlock(target);
-  };
 
   const copyDetails = () => {
     const text = lastFailure.raw_traceback ?? lastFailure.raw_message;
@@ -111,6 +104,22 @@ export function ErrorView(): JSX.Element {
 
   const hasBlockTarget =
     lastFailure.block_ids.length > 0 || lastFailure.block_id !== null;
+  // 単一ブロックが本文中でインラインリンク化されているか (= 本文クリックでジャンプ
+  // できる状態)。renderBodyWithBlockLink と同じ条件で判定する。
+  const inlineLinked =
+    lastFailure.block_ids.length <= 1 &&
+    !!lastFailure.block_label &&
+    lastFailure.block_id !== null &&
+    body.includes(lastFailure.block_label);
+  // チップは「本文にインラインリンクが無い」ときだけ出す (= 重複を避けつつ、
+  // ジャンプ手段を常に 1 つ確保する)。複数ブロックは全 ID、単一は 1 個。
+  const showChips = hasBlockTarget && !inlineLinked;
+  const chipIds =
+    lastFailure.block_ids.length > 0
+      ? lastFailure.block_ids
+      : lastFailure.block_id !== null
+        ? [lastFailure.block_id]
+        : [];
 
   return (
     <div
@@ -133,29 +142,21 @@ export function ErrorView(): JSX.Element {
         </span>
       </div>
 
-      {/* 2 行目: 関与ブロックチップ + 「Diagram で表示」。
-          チップは **複数ブロック時のみ** (= 代数ループ等)。単一ブロックは本文の
-          インラインリンク + 下のボタンで足りるため重複表示しない。 */}
-      {hasBlockTarget && (
+      {/* 2 行目: 関与ブロックチップ (= 各クリックで対象へジャンプ)。
+          本文がインラインリンク済の単一ブロックでは出さない (= 重複回避)。
+          複数ブロック (代数ループ等) / 本文にブロック名が出ない失敗で使う。 */}
+      {showChips && (
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          {lastFailure.block_ids.length > 1 &&
-            lastFailure.block_ids.map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => focusBlock(id)}
-                className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 hover:bg-slate-100"
-              >
-                {id}
-              </button>
-            ))}
-          <button
-            type="button"
-            onClick={showInDiagram}
-            className="rounded border border-slate-400 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100"
-          >
-            {t("error.show_in_diagram", "Diagram で表示")}
-          </button>
+          {chipIds.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => focusBlock(id)}
+              className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 hover:bg-slate-100"
+            >
+              {id}
+            </button>
+          ))}
         </div>
       )}
 
