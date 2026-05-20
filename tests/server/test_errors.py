@@ -210,6 +210,33 @@ def test_payload_model_load_error_includes_message() -> None:
     )
 
 
+def test_payload_picks_up_exception_block_id() -> None:
+    """ADR-0056: ブロック単位の raise (= From/Goto 解決) は例外に block_id を載せる。
+
+    ``_current_block`` 未設定でも payload の block_id / block_ids / block_label に
+    展開され、UI のジャンプ対象になる (label は id へフォールバック)。
+    """
+    exc = BlockSpecError(
+        "From 'From_0'(tag='aa') in scope <root>: no matching Goto found",
+        block_id="From_0",
+    )
+    payload = build_failure_payload(exc, simulator=None, t=None)
+    assert payload["block_id"] == "From_0"
+    assert payload["block_ids"] == ["From_0"]
+    assert payload["block_label"] == "From_0"
+    # start_validation テンプレートは message を持つ
+    assert "From_0" in payload["template_args"]["message"]
+
+
+def test_block_spec_error_block_id_defaults_none() -> None:
+    """block_id を渡さない既存の raise は従来どおり (= None)。"""
+    exc = BlockSpecError("some validation error")
+    assert exc.block_id is None
+    payload = build_failure_payload(exc, simulator=None, t=None)
+    assert payload["block_id"] is None
+    assert payload["block_ids"] == []
+
+
 def test_payload_raw_traceback_can_be_suppressed() -> None:
     payload = build_failure_payload(
         ZeroDivisionError("x"),

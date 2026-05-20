@@ -347,13 +347,15 @@ class Simulator:
                         if key in local_registry:
                             raise BlockSpecError(
                                 f"duplicate Local Goto tag {b.tag!r} in scope "
-                                f"{self._scope_path_str(scope_path)}"
+                                f"{self._scope_path_str(scope_path)}",
+                                block_id=b.id,
                             )
                         local_registry[key] = b
                     else:  # "global"
                         if b.tag in global_registry:
                             raise BlockSpecError(
-                                f"duplicate Global Goto tag {b.tag!r}"
+                                f"duplicate Global Goto tag {b.tag!r}",
+                                block_id=b.id,
                             )
                         global_registry[b.tag] = b
                 elif isinstance(b, From):
@@ -437,7 +439,8 @@ class Simulator:
         raise BlockSpecError(
             f"From {from_block.id!r}(tag={tag!r}) in scope "
             f"{self._scope_path_str(from_scope)}: no matching Goto found "
-            f"(tried Local→Global)"
+            f"(tried Local→Global)",
+            block_id=from_block.id,
         )
 
     def _add_virtual_dep(

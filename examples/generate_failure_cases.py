@@ -30,7 +30,7 @@ import logging
 from pathlib import Path
 
 from pyflw import Simulator
-from pyflw.blocks import Constant, Divide, Gain, Integrator, Scope
+from pyflw.blocks import Constant, Divide, From, Gain, Integrator, Scope
 
 _logger = logging.getLogger(__name__)
 
@@ -70,6 +70,19 @@ def _solver_failure(out_dir: Path) -> None:
     sim.save(out_dir / "failure_solver.flw.json")
 
 
+def _goto_from_unresolved(out_dir: Path) -> None:
+    """対応する Goto が無い From → ``BlockSpecError`` (start_validation)。
+
+    例外に ``block_id`` が載るため、Log tab のエラーから From ブロックへジャンプ
+    できることの確認用 (ADR-0056 follow-up)。
+    """
+    sim = Simulator(t_end=1.0, dt=0.01)
+    sim.add(From(tag="aa", id="From_0"))
+    sim.add(Scope(n_inputs=1, id="scope"))
+    sim.connect("From_0", "scope")
+    sim.save(out_dir / "failure_goto_from.flw.json")
+
+
 def _start_validation(out_dir: Path) -> None:
     """``Simulator.load`` 時に弾かれる壊れた flw.json を直書きする。
 
@@ -93,8 +106,9 @@ def main() -> None:
     _algebraic_loop(out_dir)
     _divide_by_zero(out_dir)
     _solver_failure(out_dir)
+    _goto_from_unresolved(out_dir)
     _start_validation(out_dir)
-    _logger.info("Generated 4 failure-case models in %s", out_dir)
+    _logger.info("Generated 5 failure-case models in %s", out_dir)
 
 
 if __name__ == "__main__":

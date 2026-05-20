@@ -293,6 +293,17 @@ def build_failure_payload(
         if not block_label:
             block_label = exc.block_ids[0]
 
+    # ADR-0056: ブロック単位の raise 箇所 (= From/Goto 解決、scheduling 前の
+    # validation) は ``_current_block`` が未設定でも例外に ``block_id`` を載せている。
+    # それを拾って UI のジャンプ対象にする (label は id にフォールバック)。
+    exc_block_id = getattr(exc, "block_id", None)
+    if not block_id and isinstance(exc_block_id, str):
+        block_id = exc_block_id
+        if not block_ids:
+            block_ids = [exc_block_id]
+        if not block_label:
+            block_label = exc_block_id
+
     template_args = _template_args_for(
         classification, exc, block=block, t=t,
     )

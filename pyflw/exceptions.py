@@ -8,7 +8,19 @@ from __future__ import annotations
 
 
 class PyflwError(Exception):
-    """pyflw が投げる全例外の基底。"""
+    """pyflw が投げる全例外の基底。
+
+    Args:
+        block_id: 失敗の関与ブロック ID (ADR-0056)。ブロックが特定できる raise 箇所
+            (= From/Goto 解決、ブロック単位の validation 等) は keyword で付与でき、
+            サーバ層 ``build_failure_payload`` が構造化エラー payload の ``block_id``
+            に展開する (= UI の Log tab からそのブロックへジャンプ可能になる)。
+            ブロックが特定できない raise 箇所は省略してよい (= ``None``)。
+    """
+
+    def __init__(self, *args: object, block_id: str | None = None) -> None:
+        super().__init__(*args)
+        self.block_id: str | None = block_id
 
 
 class BlockSpecError(PyflwError):
