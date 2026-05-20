@@ -189,6 +189,27 @@ def test_payload_unknown_includes_raw_message_in_template_args() -> None:
     assert payload["template_args"]["raw_message"].startswith("RuntimeError:")
 
 
+def test_payload_start_validation_includes_message_in_template_args() -> None:
+    """回帰: ``error.start_validation`` テンプレートは ``{{message}}`` を参照するが、
+    例外由来の build_failure_payload 経路で ``template_args["message"]`` が抜けて
+    UI に ``{{message}}`` が literal 表示されていた (2026-05-20 報告)。
+    """
+    exc = BlockSpecError("Block 'div': invalid signs '*x'")
+    payload = build_failure_payload(exc, simulator=None, t=None)
+    assert payload["category"] == "start_validation"
+    assert payload["template_args"].get("message") == "Block 'div': invalid signs '*x'"
+
+
+def test_payload_model_load_error_includes_message() -> None:
+    exc = ModelLoadError("Unknown block type: pyflw.blocks.nonexistent.Foo")
+    payload = build_failure_payload(exc, simulator=None, t=None)
+    assert payload["category"] == "start_validation"
+    assert (
+        payload["template_args"]["message"]
+        == "Unknown block type: pyflw.blocks.nonexistent.Foo"
+    )
+
+
 def test_payload_raw_traceback_can_be_suppressed() -> None:
     payload = build_failure_payload(
         ZeroDivisionError("x"),

@@ -24,4 +24,12 @@ describe("i18n interpolation.format", () => {
     // 数値変換不能なら入力値を素通り
     expect(out).toContain("NaN");
   });
+
+  it("start_validation interpolates {{message}} (regression: literal {{message}})", () => {
+    const out = i18n.t("error.start_validation", {
+      message: "Unknown block type: Foo",
+    });
+    expect(out).toContain("Unknown block type: Foo");
+    expect(out).not.toContain("{{message}}");
+  });
 });

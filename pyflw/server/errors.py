@@ -218,8 +218,19 @@ def _template_args_for(
         args["block_labels"] = list(exc.block_ids)
     elif classification.category == _CATEGORY_SHAPE_MISMATCH:
         args.update(_shape_mismatch_args(exc))
+        # ``error.shape_mismatch`` は {{block_label}} を参照するため、scope 外
+        # (= block None) のとき literal 表示を防ぐフォールバックを入れる。
+        args.setdefault("block_label", "?")
+        args.setdefault("shapes", "?")
     elif classification.category == _CATEGORY_SOLVER_FAILURE:
         args.update(_solver_failure_args(exc))
+        args.setdefault("reason", str(exc))
+    elif classification.category == _CATEGORY_DIVIDE_BY_ZERO:
+        args.setdefault("block_label", "?")
+    elif classification.category == _CATEGORY_START_VALIDATION:
+        # ``error.start_validation`` テンプレートが参照する {{message}} を必ず埋める
+        # (= 例外由来経路で抜けると UI に "{{message}}" が literal 表示される)。
+        args["message"] = str(exc)
     elif classification.category == _CATEGORY_UNKNOWN:
         args["raw_message"] = f"{type(exc).__name__}: {exc}"
 
