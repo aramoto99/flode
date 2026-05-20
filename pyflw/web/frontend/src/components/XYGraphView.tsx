@@ -37,6 +37,9 @@ export function XYGraphView({
 }: XYGraphViewProps): JSX.Element {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // uPlot と同じく「コンテナ div」を測ってサイズする (= canvas を直接測ると
+  // floating panel 等でレイアウト追従しないことがあるため)。
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const editingModel = useAppStore((s) => s.editingModel);
   const setEditingScopeSettingsId = useAppStore(
     (s) => s.setEditingScopeSettingsId,
@@ -52,10 +55,13 @@ export function XYGraphView({
   // 描画本体。data 変更時と resize 時の両方から呼ぶため useCallback で安定化。
   const draw = useCallback((): void => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const { width, height } = canvas.getBoundingClientRect();
+    // コンテナの実寸を使う (= canvas は absolute inset-0 で追従させ、backing store
+    // をコンテナサイズに合わせる)。
+    const { width, height } = container.getBoundingClientRect();
     if (width === 0 || height === 0) return;
     canvas.width = width;
     canvas.height = height;
@@ -203,11 +209,12 @@ export function XYGraphView({
   }, [draw]);
 
   // 親サイズ追従 (= 出力ペインのリサイズ/最大化で再描画、Scope と同じ挙動)。
+  // コンテナ div を observe する (= canvas を直接 observe すると追従しないことがある)。
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!container) return;
     const ro = new ResizeObserver(() => draw());
-    ro.observe(canvas);
+    ro.observe(container);
     return () => ro.disconnect();
   }, [draw]);
 
@@ -294,8 +301,8 @@ export function XYGraphView({
           </button>
         )}
       </div>
-      <div className="relative flex-1">
-        <canvas ref={canvasRef} className="absolute inset-0" />
+      <div ref={containerRef} className="relative flex-1">
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       </div>
     </div>
   );
