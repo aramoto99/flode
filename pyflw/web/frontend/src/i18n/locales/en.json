@@ -344,8 +344,8 @@
   "model_settings.button.save": "Save",
   "model_settings.button.cancel": "Cancel",
 
-  "scope_tab.error": "Error",
-  "error.empty": "No errors",
+  "scope_tab.log": "Log",
+  "log.empty": "No log entries yet",
   "error.prefix.start_failed": "Start failed: ",
   "error.prefix.runtime_failed": "Runtime error: ",
   "error.algebraic_loop": "Algebraic loop detected. Involved blocks: {{block_labels, block_labels}}",

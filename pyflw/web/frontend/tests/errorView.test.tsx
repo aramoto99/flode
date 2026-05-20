@@ -56,7 +56,7 @@ afterEach(() => {
 describe("ErrorView", () => {
   it("renders empty message when lastFailure is null", () => {
     render(<ErrorView />);
-    expect(screen.getByText("エラーはありません")).toBeTruthy();
+    expect(screen.getByText("ログはまだありません")).toBeTruthy();
   });
 
   it("renders runtime failure with i18n template (block_label + t_sec formatter)", () => {

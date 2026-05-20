@@ -42,7 +42,7 @@ export function ErrorView(): JSX.Element {
   if (lastFailure === null) {
     return (
       <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
-        {t("error.empty", "エラーはありません")}
+        {t("log.empty", "ログはまだありません")}
       </div>
     );
   }

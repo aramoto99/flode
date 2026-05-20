@@ -344,8 +344,8 @@
   "model_settings.button.save": "保存",
   "model_settings.button.cancel": "キャンセル",
 
-  "scope_tab.error": "エラー",
-  "error.empty": "エラーはありません",
+  "scope_tab.log": "ログ",
+  "log.empty": "ログはまだありません",
   "error.prefix.start_failed": "起動失敗: ",
   "error.prefix.runtime_failed": "実行中エラー: ",
   "error.algebraic_loop": "代数ループを検出しました。関与ブロック: {{block_labels, block_labels}}",

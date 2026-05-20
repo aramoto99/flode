@@ -622,9 +622,11 @@ function DiagramSlot({
   );
 }
 
-// ADR-0056 §F6: tab strip 内で Error tab を識別する synthetic ID。
+// ADR-0056 §F6: tab strip 内で「ログ」tab (= 失敗詳細を表示) を識別する synthetic ID。
 // scope_id 命名規約と衝突しない先頭 `__` を持つ (= flw.json で id に許容されない)。
-const _ERROR_TAB_ID = "__error__";
+// ユーザー向けラベルは「ログ / Log」(= 将来 warning / 完了サマリ等も載せる前提で
+// 汎用名)。Phase 1 の中身は失敗詳細のみ (= ErrorView)。
+const _ERROR_TAB_ID = "__log__";
 
 function ScopesStack({
   entries,
@@ -701,9 +703,9 @@ function ScopesStack({
               ? "bg-white text-slate-800"
               : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
           }`}
-          title={t("scope_tab.error", "エラー")}
+          title={t("scope_tab.log", "ログ")}
         >
-          {t("scope_tab.error", "エラー")}
+          {t("scope_tab.log", "ログ")}
           {lastFailure !== null && (
             <span
               aria-hidden="true"
