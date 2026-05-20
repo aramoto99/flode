@@ -203,7 +203,11 @@ export function ScopeView({
         formFactor === "panel" ? "scope-panel-drag-handle cursor-move" : ""
       }`}
     >
-      <span className="font-mono font-medium">{scopeId}</span>
+      {/* inline (= タブ表示) 時は scope_id がタブ側に出るため重複ラベルを省く。
+          floating panel 時はウィンドウ識別に必要なので表示する。 */}
+      {formFactor === "panel" && (
+        <span className="font-mono font-medium">{scopeId}</span>
+      )}
       <div className="flex-1" />
       <button
         type="button"
