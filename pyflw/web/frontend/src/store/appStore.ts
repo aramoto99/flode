@@ -9,6 +9,7 @@ import {
   TRIGGERED_SUBSYSTEM_TYPE,
 } from "../lib/blockTypes";
 import { resolvePortCounts } from "../lib/dynamicPorts";
+import { findBlockPath } from "../lib/findBlockPath";
 import { applyAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
 import {
   appendBatch as appendScopeBatchSoA,
@@ -473,6 +474,11 @@ interface AppState {
   activeErrorTab: boolean;
   setLastFailure: (payload: FailurePayload | null, source: "start" | "runtime") => void;
   setActiveErrorTab: (value: boolean) => void;
+  // ADR-0056 follow-up: Log tab のエラーから対象ブロックへジャンプ。
+  // ``focusBlock`` が path 解決 + drilldown + 選択 + center 要求 (= focusBlockRequest)
+  // をまとめてセットし、DiagramCanvas の effect が canvas を pan する。
+  focusBlockRequest: { blockId: string; nonce: number } | null;
+  focusBlock: (blockId: string) => void;
 
   // Scope データ (scope_id -> 時系列)
   scopes: Record<string, ScopeBuffer>;
@@ -1201,6 +1207,22 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
     ),
   setActiveErrorTab: (value) => set({ activeErrorTab: value }),
+  focusBlockRequest: null,
+  focusBlock: (blockId) => {
+    const model = get().editingModel;
+    if (!model) return;
+    const path = findBlockPath(model, blockId);
+    // 別モデルに切替後など、現モデルに存在しない block は no-op。
+    if (path === null) return;
+    const prevNonce = get().focusBlockRequest?.nonce ?? 0;
+    set({
+      editingPath: path,
+      selectedNodeIds: [blockId],
+      selectedNodeId: blockId,
+      // nonce 単調増加で同一ブロック連打でも DiagramCanvas の effect を再発火させる。
+      focusBlockRequest: { blockId, nonce: prevNonce + 1 },
+    });
+  },
 
   scopes: {},
   appendScopeBatch: (scope_id, times, values) =>

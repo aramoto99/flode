@@ -62,10 +62,10 @@ describe("ErrorView", () => {
   it("renders runtime failure with i18n template (block_label + t_sec formatter)", () => {
     _setFailure(_BASE, "runtime");
     render(<ErrorView />);
-    // テンプレート "Divide1 ブロックで 0 除算 (t=1.234s)" + プレフィックス "実行中エラー: "
-    expect(
-      screen.getByText(/Divide1 ブロックで 0 除算 \(t=1\.234s\)/),
-    ).toBeTruthy();
+    // "Divide1" は本文中でインラインリンク (button) に分離される。
+    expect(screen.getByRole("button", { name: "Divide1" })).toBeTruthy();
+    // リンク以外の本文部分 (= t_sec formatter 適用後)。
+    expect(screen.getByText(/ブロックで 0 除算 \(t=1\.234s\)/)).toBeTruthy();
     expect(screen.getByText(/実行中エラー:/)).toBeTruthy();
   });
 
@@ -95,16 +95,44 @@ describe("ErrorView", () => {
     expect(screen.getByRole("button", { name: "c" })).toBeTruthy();
   });
 
-  it("clicking 'Diagram で表示' selects all involved blocks", () => {
+  it("clicking 'Diagram で表示' jumps to the primary block", () => {
     const loop: FailurePayload = {
       ..._BASE,
       block_ids: ["a", "b", "c"],
     };
     _setFailure(loop, "runtime");
-    const spy = vi.spyOn(useAppStore.getState(), "setSelectedNodeIds");
+    const spy = vi.spyOn(useAppStore.getState(), "focusBlock");
     render(<ErrorView />);
     fireEvent.click(screen.getByRole("button", { name: "Diagram で表示" }));
-    expect(spy).toHaveBeenCalledWith(["a", "b", "c"]);
+    // 主因 = block_ids 先頭へジャンプ
+    expect(spy).toHaveBeenCalledWith("a");
+  });
+
+  it("clicking the inline block-name link jumps to that block", () => {
+    _setFailure(_BASE, "runtime");
+    const spy = vi.spyOn(useAppStore.getState(), "focusBlock");
+    render(<ErrorView />);
+    // 本文 "Divide1 ブロックで 0 除算 ..." の "Divide1" がリンク (button)。
+    fireEvent.click(screen.getByRole("button", { name: "Divide1" }));
+    expect(spy).toHaveBeenCalledWith("blk_div");
+  });
+
+  it("clicking a block chip jumps to that block", () => {
+    const loop: FailurePayload = {
+      ..._BASE,
+      category: "algebraic_loop",
+      template_key: "error.algebraic_loop",
+      template_args: { block_labels: ["a", "b"] },
+      block_id: "a",
+      block_ids: ["a", "b"],
+      block_label: "a",
+      t: null,
+    };
+    _setFailure(loop, "runtime");
+    const spy = vi.spyOn(useAppStore.getState(), "focusBlock");
+    render(<ErrorView />);
+    fireEvent.click(screen.getByRole("button", { name: "b" }));
+    expect(spy).toHaveBeenCalledWith("b");
   });
 
   it("falls back to error.unknown for unrecognized template_key", () => {

@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { useAppStore } from "../src/store/appStore";
-import type { FailurePayload, StreamMessage } from "../src/types/api";
+import type { FailurePayload, FlwModel, StreamMessage } from "../src/types/api";
 
 const _PAYLOAD: FailurePayload = {
   category: "divide_by_zero",
@@ -96,5 +96,63 @@ describe("appStore failure reducers", () => {
     useAppStore.getState().setActiveErrorTab(false);
     expect(useAppStore.getState().activeErrorTab).toBe(false);
     expect(useAppStore.getState().lastFailure).toEqual(_PAYLOAD);
+  });
+});
+
+describe("appStore focusBlock", () => {
+  function _setModel(blocks: FlwModel["blocks"]): void {
+    useAppStore.setState({
+      editingModel: {
+        schema_version: "1.0",
+        blocks,
+        connections: [],
+        config: { t_end: 1.0, dt: 0.01, solver: "RK45" },
+      } as unknown as FlwModel,
+      editingPath: [],
+      focusBlockRequest: null,
+    });
+  }
+
+  it("focuses a top-level block: sets editingPath [], selection, request", () => {
+    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    useAppStore.getState().focusBlock("g");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual([]);
+    expect(s.selectedNodeIds).toEqual(["g"]);
+    expect(s.focusBlockRequest?.blockId).toBe("g");
+  });
+
+  it("focuses a nested block: drilldown path is set", () => {
+    _setModel([
+      {
+        id: "sub",
+        type: "pyflw.subsystems.Subsystem",
+        params: {
+          blocks: [{ id: "inner", type: "pyflw.blocks.sinks.Scope", params: {} }],
+        },
+      },
+    ]);
+    useAppStore.getState().focusBlock("inner");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.selectedNodeIds).toEqual(["inner"]);
+  });
+
+  it("is a no-op for a block not in the model", () => {
+    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    useAppStore.setState({ selectedNodeIds: [], focusBlockRequest: null });
+    useAppStore.getState().focusBlock("missing");
+    const s = useAppStore.getState();
+    expect(s.focusBlockRequest).toBeNull();
+    expect(s.selectedNodeIds).toEqual([]);
+  });
+
+  it("increments nonce on repeated focus of the same block", () => {
+    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    useAppStore.getState().focusBlock("g");
+    const n1 = useAppStore.getState().focusBlockRequest!.nonce;
+    useAppStore.getState().focusBlock("g");
+    const n2 = useAppStore.getState().focusBlockRequest!.nonce;
+    expect(n2).toBe(n1 + 1);
   });
 });

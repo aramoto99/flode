@@ -117,6 +117,8 @@ export function DiagramCanvas({
   const setSelectedEdgeIds = useAppStore((s) => s.setSelectedEdgeIds);
   const editingPath = useAppStore((s) => s.editingPath);
   const drilldownInto = useAppStore((s) => s.drilldownInto);
+  // ADR-0056 follow-up: Log tab のエラーからジャンプ要求を受けて canvas を pan する。
+  const focusBlockRequest = useAppStore((s) => s.focusBlockRequest);
 
   // リファレンスツール互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
   // 1 回目クリック時の source を保持。2 回目の別ノード Ctrl+click で edge を作成、
@@ -312,6 +314,21 @@ export function DiagramCanvas({
     setBranchStartHandler(handleStart);
     return () => setBranchStartHandler(null);
   }, []);
+
+  // ADR-0056 follow-up: Log tab のエラーからのジャンプ要求を受けて canvas を pan。
+  // ``focusBlock`` action が editingPath / 選択 / focusBlockRequest を同一 set で
+  // 更新するため、この effect 発火時には新パスの nodes が React Flow に描画済。
+  useEffect(() => {
+    if (!focusBlockRequest) return;
+    const node = reactFlow.getNode(focusBlockRequest.blockId);
+    if (!node) return; // 別 path / 未描画なら no-op (= drilldown 不能ケース)
+    const w = node.measured?.width ?? node.width ?? 0;
+    const h = node.measured?.height ?? node.height ?? 0;
+    reactFlow.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+      zoom: reactFlow.getZoom(),
+      duration: 400,
+    });
+  }, [focusBlockRequest, reactFlow]);
 
   useEffect(() => {
     if (!branchDrag) return;

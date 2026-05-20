@@ -32,11 +32,41 @@ function _resolvedTemplateKey(payload: FailurePayload): string {
     : "error.unknown";
 }
 
+/** メッセージ本文中の ``blockLabel`` 部分をクリック可能リンクに置換する。
+ *
+ * substring split で先頭一致箇所のみリンク化する (= block label は識別子なので
+ * 通常一意)。``blockLabel`` / ``blockId`` が無い、または本文に出現しない場合は
+ * プレーン text のまま返す (= solver_failure / start_validation など)。
+ */
+function renderBodyWithBlockLink(
+  body: string,
+  blockLabel: string | null,
+  blockId: string | null,
+  onJump: (id: string) => void,
+): React.ReactNode {
+  if (!blockLabel || !blockId) return body;
+  const idx = body.indexOf(blockLabel);
+  if (idx < 0) return body;
+  return (
+    <>
+      {body.slice(0, idx)}
+      <button
+        type="button"
+        onClick={() => onJump(blockId)}
+        className="text-sky-700 underline decoration-dotted underline-offset-2 hover:text-sky-900"
+      >
+        {blockLabel}
+      </button>
+      {body.slice(idx + blockLabel.length)}
+    </>
+  );
+}
+
 export function ErrorView(): JSX.Element {
   const { t } = useTranslation();
   const lastFailure = useAppStore((s) => s.lastFailure);
   const lastFailureSource = useAppStore((s) => s.lastFailureSource);
-  const setSelectedNodeIds = useAppStore((s) => s.setSelectedNodeIds);
+  const focusBlock = useAppStore((s) => s.focusBlock);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (lastFailure === null) {
@@ -67,12 +97,11 @@ export function ErrorView(): JSX.Element {
   const body = t(templateKey as "error.unknown", opts);
   const prefix = t(prefixKey as "error.prefix.runtime_failed");
 
+  // 「Diagram で表示」= 主因 (= block_ids 先頭 or block_id) へジャンプ。
+  // 複数ブロック同時 fit は Phase 2 (= SPEC-0005 §F8 スコープ外)。
   const showInDiagram = () => {
-    if (lastFailure.block_ids.length > 0) {
-      setSelectedNodeIds(lastFailure.block_ids);
-    } else if (lastFailure.block_id !== null) {
-      setSelectedNodeIds([lastFailure.block_id]);
-    }
+    const target = lastFailure.block_ids[0] ?? lastFailure.block_id;
+    if (target) focusBlock(target);
   };
 
   const copyDetails = () => {
@@ -89,34 +118,41 @@ export function ErrorView(): JSX.Element {
       aria-live="polite"
       className="flex h-full w-full flex-col overflow-auto bg-white p-3 text-[11px] text-slate-800"
     >
-      {/* 1 行目: プレフィックス + 本文 */}
+      {/* 1 行目: プレフィックス + 本文 (= ブロック名はインラインリンク) */}
       <div className="font-medium text-rose-700">
         {prefix}
-        <span className="text-slate-800">{body}</span>
+        <span className="text-slate-800">
+          {renderBodyWithBlockLink(
+            body,
+            // 複数ブロック時は本文をインラインリンク化せず、下のチップに委ねる
+            // (= 本文に block_labels が "a, b, c" と並ぶため一意に張れない)。
+            lastFailure.block_ids.length > 1 ? null : lastFailure.block_label,
+            lastFailure.block_id,
+            focusBlock,
+          )}
+        </span>
       </div>
 
-      {/* 2 行目: 関与ブロックチップ + 「Diagram で表示」 */}
+      {/* 2 行目: 関与ブロックチップ + 「Diagram で表示」。
+          チップは **複数ブロック時のみ** (= 代数ループ等)。単一ブロックは本文の
+          インラインリンク + 下のボタンで足りるため重複表示しない。 */}
       {hasBlockTarget && (
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          {(lastFailure.block_ids.length > 0
-            ? lastFailure.block_ids
-            : [lastFailure.block_id!]
-          ).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setSelectedNodeIds([id])}
-              className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 hover:bg-slate-100"
-            >
-              {lastFailure.block_label && id === lastFailure.block_id
-                ? lastFailure.block_label
-                : id}
-            </button>
-          ))}
+          {lastFailure.block_ids.length > 1 &&
+            lastFailure.block_ids.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => focusBlock(id)}
+                className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 hover:bg-slate-100"
+              >
+                {id}
+              </button>
+            ))}
           <button
             type="button"
             onClick={showInDiagram}
-            className="ml-1 rounded border border-slate-400 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100"
+            className="rounded border border-slate-400 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100"
           >
             {t("error.show_in_diagram", "Diagram で表示")}
           </button>
