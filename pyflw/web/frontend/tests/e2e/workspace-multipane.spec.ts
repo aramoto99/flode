@@ -46,9 +46,9 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     await expect(
       page.getByText(/^(Diagram|ダイアグラム)$/).first(),
     ).toBeVisible();
-    // scopes-stack pane の title bar (= "Scopes" en / "スコープ" ja)
+    // scopes-stack pane の title bar (= "Output" en / "出力" ja)
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/).first(),
+      page.getByText(/^(Output|出力)$/).first(),
     ).toBeVisible();
   });
 
@@ -63,7 +63,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     await unsplitBtn.click();
     // unsplit 後は scopes-stack pane 表示が消える
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/),
+      page.getByText(/^(Output|出力)$/),
     ).toHaveCount(0);
     // diagram pane は残る
     await expect(
@@ -81,7 +81,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       .first()
       .click();
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/),
+      page.getByText(/^(Output|出力)$/),
     ).toHaveCount(0);
     // diagram pane の split-down ボタンで scopes-stack pane を再追加
     const splitDownBtn = page
@@ -91,7 +91,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     await splitDownBtn.click();
     // scopes-stack pane が再出現
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/).first(),
+      page.getByText(/^(Output|出力)$/).first(),
     ).toBeVisible();
   });
 
@@ -103,7 +103,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       .first()
       .click();
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/),
+      page.getByText(/^(Output|出力)$/),
     ).toHaveCount(0);
 
     // リロード後、last_active 経由で fixture が自動復元される (ADR-0043 §論点 8-A)
@@ -113,7 +113,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     });
     // 永続化された SplitTree (= diagram のみ) が復元 → scopes-stack pane 不在
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/),
+      page.getByText(/^(Output|出力)$/),
     ).toHaveCount(0);
     // diagram pane は復元される
     await expect(
@@ -139,7 +139,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       page.locator("[data-testid='workspace-pane-diagram-slot']"),
     ).toBeVisible();
     await expect(
-      page.getByText(/^(Scopes|スコープ)$/).first(),
+      page.getByText(/^(Output|出力)$/).first(),
     ).toBeVisible();
   });
 });

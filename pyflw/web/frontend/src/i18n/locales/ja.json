@@ -252,7 +252,7 @@
   "command.view.toggle_inspector": "インスペクタの表示切替",
 
   "workspace.pane.title.diagram": "ダイアグラム",
-  "workspace.pane.title.scopes_stack": "スコープ",
+  "workspace.pane.title.scopes_stack": "出力",
   "workspace.pane.title.inspector": "インスペクタ",
   "workspace.split.right": "左右に分割",
   "workspace.split.down": "上下に分割",
@@ -276,9 +276,9 @@
   "workspace.split.disabled.run_simulation": "シミュレーションを実行すると Scope を別ペインに分離できます",
   "workspace.split.disabled.all_separated": "すべての Scope が既に別ペインに分離されています",
   "workspace.scopes_stack.split_out_scope": "この Scope を個別ペインに分離",
-  "workspace.scopes_stack.tablist": "スコープタブ切替",
-  "workspace.show_scopes_area": "Scope エリアを表示 (下に追加)",
-  "workspace.show_scopes_area.short": "Scope",
+  "workspace.scopes_stack.tablist": "出力タブ切替",
+  "workspace.show_scopes_area": "出力エリアを表示 (下に追加)",
+  "workspace.show_scopes_area.short": "出力",
 
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",

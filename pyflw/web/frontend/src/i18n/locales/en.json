@@ -252,7 +252,7 @@
   "command.view.toggle_inspector": "Toggle inspector",
 
   "workspace.pane.title.diagram": "Diagram",
-  "workspace.pane.title.scopes_stack": "Scopes",
+  "workspace.pane.title.scopes_stack": "Output",
   "workspace.pane.title.inspector": "Inspector",
   "workspace.split.right": "Split right",
   "workspace.split.down": "Split down",
@@ -276,9 +276,9 @@
   "workspace.split.disabled.run_simulation": "Run the simulation to enable splitting Scopes into separate panes",
   "workspace.split.disabled.all_separated": "All Scopes are already in separate panes",
   "workspace.scopes_stack.split_out_scope": "Move this Scope to its own pane",
-  "workspace.scopes_stack.tablist": "Switch scope tab",
-  "workspace.show_scopes_area": "Show Scope area (add below)",
-  "workspace.show_scopes_area.short": "Scope",
+  "workspace.scopes_stack.tablist": "Switch output tab",
+  "workspace.show_scopes_area": "Show output area (add below)",
+  "workspace.show_scopes_area.short": "Output",
 
   "app.empty.title": "No file open",
   "app.empty.hint_new": "File → New (Ctrl+N) to create a model",
