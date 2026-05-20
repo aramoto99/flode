@@ -4,10 +4,12 @@
 // ADR-0023 で SoA 化した ScopeBuffer (列指向 Float64Array) から x = values[0],
 // y = values[1] を index ベースで読む。
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { exportScopeImage } from "../lib/scopeImageExport";
 import type { ScopeBuffer } from "../store/appStore";
+import { pushToast } from "../store/toastStore";
 
 interface XYGraphViewProps {
   scopeId: string;
@@ -25,7 +27,8 @@ export function XYGraphView({
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  useEffect(() => {
+  // 描画本体。data 変更時と resize 時の両方から呼ぶため useCallback で安定化。
+  const draw = useCallback((): void => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -142,9 +145,63 @@ export function XYGraphView({
     );
   }, [scopeId, buffer, xLabel, yLabel, t]);
 
+  // data 変更時の再描画
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  // 親サイズ追従 (= 出力ペインのリサイズ/最大化で再描画、Scope と同じ挙動)。
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, [draw]);
+
+  // グラフ画像をクリップボードへコピー (失敗時 download)。XYGraph は全要素を
+  // canvas に直接描画しているため凡例合成は不要 (= 空 legend で白背景のみ付与)。
+  const handleCopyImage = async (): Promise<void> => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const result = await exportScopeImage(canvas, [], `${scopeId}.png`);
+      pushToast({
+        severity: "info",
+        message: t(
+          result === "copied"
+            ? "scope.copy_image.copied"
+            : "scope.copy_image.downloaded",
+        ),
+      });
+    } catch {
+      pushToast({ severity: "error", message: t("scope.copy_image.error") });
+    }
+  };
+
   return (
-    <div className="relative h-56 w-full border border-slate-200 bg-white">
-      <canvas ref={canvasRef} className="absolute inset-0" />
+    <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
+      {/* 薄いヘッダー (= 画像コピーボタンの置き場、Scope と統一)。 */}
+      <div className="flex h-6 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700">
+        <div className="flex-1" />
+        {buffer.length > 0 && (
+          <button
+            type="button"
+            title={t("scope.button.copy_image", "Copy image")}
+            onClick={() => void handleCopyImage()}
+            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <div className="relative flex-1">
+        <canvas ref={canvasRef} className="absolute inset-0" />
+      </div>
     </div>
   );
 }
