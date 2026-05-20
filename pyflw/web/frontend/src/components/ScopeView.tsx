@@ -10,9 +10,10 @@
 // useMemo で参照固定 (= UPlotChart の effect が再生成 trigger するのを抑える)。
 
 import uPlot from "uplot";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { deriveLegend, exportScopeImage } from "../lib/scopeImageExport";
 import {
   DEFAULT_SCOPE_SETTINGS,
   FALLBACK_COLORS,
@@ -21,6 +22,7 @@ import {
   resolveSignalColor,
 } from "../lib/scopeSettings";
 import { type ScopeBuffer, useAppStore } from "../store/appStore";
+import { pushToast } from "../store/toastStore";
 import type { ScopeSettings } from "../types/api";
 import { UPlotChart } from "./UPlotChart";
 
@@ -171,8 +173,31 @@ export function ScopeView({
   );
   const openScopePanel = useAppStore((s) => s.openScopePanel);
   const closeScopePanel = useAppStore((s) => s.closeScopePanel);
+  // plot 領域 (= uPlot canvas の親) を画像コピー時に querySelector する用。
+  const plotAreaRef = useRef<HTMLDivElement | null>(null);
 
   const settings = editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
+
+  // グラフ画像をクリップボードへコピー (失敗時 download)。凡例も合成する。
+  const handleCopyImage = async (): Promise<void> => {
+    const canvas = plotAreaRef.current?.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+    const resolved = resolveSettings(settings);
+    const legend = deriveLegend(scopeId, buffer.n_signals, resolved.signals);
+    try {
+      const result = await exportScopeImage(canvas, legend, `${scopeId}.png`);
+      pushToast({
+        severity: "info",
+        message: t(
+          result === "copied"
+            ? "scope.copy_image.copied"
+            : "scope.copy_image.downloaded",
+        ),
+      });
+    } catch {
+      pushToast({ severity: "error", message: t("scope.copy_image.error") });
+    }
+  };
 
   // ADR-0044 §論点 4: options は buffer 変更ごとに再計算しない
   // (= 毎 WS scope_batch で uPlot を destroy/recreate してしまうのを避ける)。
@@ -205,6 +230,21 @@ export function ScopeView({
         <span className="font-mono font-medium">{scopeId}</span>
       )}
       <div className="flex-1" />
+      {/* グラフ画像をクリップボードへコピー (= データがある時のみ)。 */}
+      {buffer.length > 0 && (
+        <button
+          type="button"
+          title={t("scope.button.copy_image", "Copy image")}
+          onClick={() => void handleCopyImage()}
+          className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+        >
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </button>
+      )}
       <button
         type="button"
         title={t("scope.button.settings", "Settings")}
@@ -263,7 +303,7 @@ export function ScopeView({
     // h-full に統一する。実寸への uPlot 追従は UPlotChart の ResizeObserver が担う。
     <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
       {header}
-      <div className="relative flex-1">
+      <div ref={plotAreaRef} className="relative flex-1">
         <UPlotChart options={options} data={data} className="absolute inset-0" />
       </div>
     </div>
