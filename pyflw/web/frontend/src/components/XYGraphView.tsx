@@ -21,6 +21,8 @@ interface XYGraphViewProps {
   buffer: ScopeBuffer;
   xLabel?: string;
   yLabel?: string;
+  /** ``"inline"`` (タブ表示) / ``"panel"`` (floating window)。ScopeView と統一。 */
+  formFactor?: "inline" | "panel";
 }
 
 /** XYGraph トレースの既定色 (= 設定未指定時)。 */
@@ -31,6 +33,7 @@ export function XYGraphView({
   buffer,
   xLabel = "x",
   yLabel = "y",
+  formFactor = "inline",
 }: XYGraphViewProps): JSX.Element {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -39,6 +42,7 @@ export function XYGraphView({
     (s) => s.setEditingScopeSettingsId,
   );
   const openScopePanel = useAppStore((s) => s.openScopePanel);
+  const closeScopePanel = useAppStore((s) => s.closeScopePanel);
 
   // ADR-0044 follow-up: XYGraph も scope_settings の「XY に効く項目」を honor する
   // (= トレース線色 / 線幅 / X・Y 手動レンジ / マーカー)。
@@ -229,8 +233,16 @@ export function XYGraphView({
 
   return (
     <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
-      {/* 薄いヘッダー (= Scope と同じ 📷コピー / ⚙設定 / ↗別窓)。 */}
-      <div className="flex h-6 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700">
+      {/* 薄いヘッダー (= Scope と統一)。inline: 📷/⚙/↗、panel: ラベル + 📷/⚙/×。
+          panel 時は scope-panel-drag-handle で floating panel の drag 起点にする。 */}
+      <div
+        className={`flex h-6 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700 ${
+          formFactor === "panel" ? "scope-panel-drag-handle cursor-move" : ""
+        }`}
+      >
+        {formFactor === "panel" && (
+          <span className="font-mono font-medium">{scopeId}</span>
+        )}
         <div className="flex-1" />
         {buffer.length > 0 && (
           <button
@@ -257,16 +269,30 @@ export function XYGraphView({
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
-        <button
-          type="button"
-          title={t("scope.button.open_panel", "Open in floating panel")}
-          onClick={() => openScopePanel(scopeId)}
-          className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-        >
-          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 3h7v7M10 21H3v-7M21 3l-9 9M3 21l9-9" />
-          </svg>
-        </button>
+        {formFactor === "inline" ? (
+          <button
+            type="button"
+            title={t("scope.button.open_panel", "Open in floating panel")}
+            onClick={() => openScopePanel(scopeId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 3h7v7M10 21H3v-7M21 3l-9 9M3 21l9-9" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            title={t("scope.button.close_panel", "Close panel")}
+            onClick={() => closeScopePanel(scopeId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-rose-100 hover:text-rose-600"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="relative flex-1">
         <canvas ref={canvasRef} className="absolute inset-0" />

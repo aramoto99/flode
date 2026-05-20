@@ -137,7 +137,7 @@ export function ScopePanelContainer(): JSX.Element {
                 内側の div は h-full / w-full で chain を繋ぐ。 */}
             <div className="flex h-full w-full flex-col">
               {blockType.endsWith(".XYGraph") ? (
-                <XYGraphView scopeId={scopeId} buffer={buffer} />
+                <XYGraphView scopeId={scopeId} buffer={buffer} formFactor="panel" />
               ) : (
                 <ScopeView
                   scopeId={scopeId}
