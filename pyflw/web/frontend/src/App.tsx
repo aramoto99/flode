@@ -23,6 +23,7 @@ import { TabStrip } from "./components/TabStrip";
 import { ToastContainer } from "./components/Toast";
 import { Toolbar } from "./components/Toolbar";
 import { WorkspaceSplit } from "./components/WorkspaceSplit";
+import { findBlockTypeById } from "./lib/findBlockPath";
 import { resolveBlocksAtPath } from "./lib/pathResolver";
 import {
   LEGACY_SCOPE_SPLIT_KEY,
@@ -447,10 +448,17 @@ function GlobalScopeSettingsDialog(): JSX.Element | null {
   const setEditingScopeSettingsId = useAppStore(
     (s) => s.setEditingScopeSettingsId,
   );
+  const editingModel = useAppStore((s) => s.editingModel);
   if (!editingScopeSettingsId) return null;
+  // 対象ブロックが XYGraph なら XY 適応ダイアログ (= log/凡例/minor grid を隠す)。
+  const blockType = editingModel
+    ? findBlockTypeById(editingModel, editingScopeSettingsId)
+    : null;
+  const isXY = blockType?.endsWith(".XYGraph") ?? false;
   return (
     <ScopeSettingsDialog
       scopeId={editingScopeSettingsId}
+      isXY={isXY}
       onClose={() => setEditingScopeSettingsId(null)}
     />
   );

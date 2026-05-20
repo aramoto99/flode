@@ -31,6 +31,9 @@ import {
 interface ScopeSettingsDialogProps {
   scopeId: string;
   onClose: () => void;
+  /** XYGraph 用ダイアログか。true のとき log/凡例/minor grid/複数 signal を隠し、
+   *  トレース 1 本分の style のみ出す (= XY に効く項目だけ表示)。 */
+  isXY?: boolean;
 }
 
 type TabKey = "display" | "style";
@@ -38,6 +41,7 @@ type TabKey = "display" | "style";
 export function ScopeSettingsDialog({
   scopeId,
   onClose,
+  isXY = false,
 }: ScopeSettingsDialogProps): JSX.Element {
   const { t } = useTranslation();
   const editingModel = useAppStore((s) => s.editingModel);
@@ -86,13 +90,17 @@ export function ScopeSettingsDialog({
           <DisplayTab
             settings={settings}
             logSafe={logSafe}
+            isXY={isXY}
             onPatch={(p) => updateScopeSettings(scopeId, p)}
           />
         )}
         {tab === "style" && (
           <StyleTab
             signals={settings.signals}
-            nSignals={nSignals}
+            // XYGraph は単一トレース (= buffer の x,y 2 列でも style は 1 本)。
+            // データ未取得でも色を設定できるよう常に 1 行表示する。
+            nSignals={isXY ? 1 : nSignals}
+            isXY={isXY}
             onPatch={(p) => updateScopeSettings(scopeId, p)}
           />
         )}
@@ -110,10 +118,12 @@ type ResolvedSettings = ReturnType<typeof resolveSettings>;
 function DisplayTab({
   settings,
   logSafe,
+  isXY,
   onPatch,
 }: {
   settings: ResolvedSettings;
   logSafe: boolean;
+  isXY: boolean;
   onPatch: (p: Partial<ResolvedSettings>) => void;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -132,9 +142,12 @@ function DisplayTab({
           <option value="manual">
             {t("scope.settings.y_mode.manual", "Manual")}
           </option>
-          <option value="log">{t("scope.settings.y_mode.log", "Log")}</option>
+          {/* XYGraph は log 軸非対応 (= パラメトリック軌跡) のため log を出さない。 */}
+          {!isXY && (
+            <option value="log">{t("scope.settings.y_mode.log", "Log")}</option>
+          )}
         </select>
-        {settings.y_mode === "log" && !logSafe && (
+        {!isXY && settings.y_mode === "log" && !logSafe && (
           <span className="ml-2 text-[10px] text-amber-700">
             ⚠{" "}
             {t(
@@ -196,26 +209,29 @@ function DisplayTab({
       <SectionDivider
         label={t("scope.settings.section.layout", "Layout")}
       />
-      <PropertyRow label={t("scope.settings.section.legend", "Legend")}>
-        <select
-          value={settings.legend}
-          onChange={(e) =>
-            onPatch({
-              legend: e.target.value as "top" | "bottom" | "right" | "off",
-            })
-          }
-          className={`${SELECT_CLS} w-28`}
-        >
-          <option value="top">{t("scope.settings.legend.top", "Top")}</option>
-          <option value="bottom">
-            {t("scope.settings.legend.bottom", "Bottom")}
-          </option>
-          <option value="right">
-            {t("scope.settings.legend.right", "Right")}
-          </option>
-          <option value="off">{t("scope.settings.legend.off", "Off")}</option>
-        </select>
-      </PropertyRow>
+      {/* XYGraph は単一トレースで凡例を持たないため凡例行は出さない。 */}
+      {!isXY && (
+        <PropertyRow label={t("scope.settings.section.legend", "Legend")}>
+          <select
+            value={settings.legend}
+            onChange={(e) =>
+              onPatch({
+                legend: e.target.value as "top" | "bottom" | "right" | "off",
+              })
+            }
+            className={`${SELECT_CLS} w-28`}
+          >
+            <option value="top">{t("scope.settings.legend.top", "Top")}</option>
+            <option value="bottom">
+              {t("scope.settings.legend.bottom", "Bottom")}
+            </option>
+            <option value="right">
+              {t("scope.settings.legend.right", "Right")}
+            </option>
+            <option value="off">{t("scope.settings.legend.off", "Off")}</option>
+          </select>
+        </PropertyRow>
+      )}
       <PropertyRow label={t("scope.settings.grid.major", "Major grid")}>
         <input
           type="checkbox"
@@ -224,14 +240,17 @@ function DisplayTab({
           className="cursor-pointer"
         />
       </PropertyRow>
-      <PropertyRow label={t("scope.settings.grid.minor", "Minor grid")}>
-        <input
-          type="checkbox"
-          checked={settings.grid_minor === true}
-          onChange={(e) => onPatch({ grid_minor: e.target.checked })}
-          className="cursor-pointer"
-        />
-      </PropertyRow>
+      {/* XYGraph は minor grid 非対応 (= 枠 + major grid のみ)。 */}
+      {!isXY && (
+        <PropertyRow label={t("scope.settings.grid.minor", "Minor grid")}>
+          <input
+            type="checkbox"
+            checked={settings.grid_minor === true}
+            onChange={(e) => onPatch({ grid_minor: e.target.checked })}
+            className="cursor-pointer"
+          />
+        </PropertyRow>
+      )}
     </PropertyGrid>
   );
 }
@@ -243,10 +262,12 @@ function DisplayTab({
 function StyleTab({
   signals,
   nSignals,
+  isXY,
   onPatch,
 }: {
   signals: Record<string, SignalSettings> | undefined;
   nSignals: number;
+  isXY: boolean;
   onPatch: (p: { signals: Record<string, SignalSettings> }) => void;
 }): JSX.Element {
   const { t } = useTranslation();
@@ -264,7 +285,11 @@ function StyleTab({
   return (
     <div className="flex flex-col">
       <div className="grid grid-cols-[36px_1fr_70px_90px] gap-2 border-b border-slate-300 bg-slate-100 px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-        <span>{t("scope.settings.signals.col.idx", "#")}</span>
+        <span>
+          {isXY
+            ? t("scope.settings.trace.col", "Trace")
+            : t("scope.settings.signals.col.idx", "#")}
+        </span>
         <span>{t("scope.settings.signals.col.color", "Color")}</span>
         <span>{t("scope.settings.signals.col.width", "Width")}</span>
         <span>{t("scope.settings.signals.col.marker", "Marker")}</span>

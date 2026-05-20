@@ -38,3 +38,27 @@ export function findBlockPath(
   };
   return walk(model.blocks, []);
 }
+
+/**
+ * `blockId` の ``type`` 文字列を model ツリー全走査で返す。見つからなければ `null`。
+ *
+ * Scope 設定ダイアログが対象ブロックの種別 (Scope / XYGraph) を判定するために使う。
+ */
+export function findBlockTypeById(
+  model: FlwModel,
+  blockId: string,
+): string | null {
+  const walk = (blocks: BlockEntry[]): string | null => {
+    for (const b of blocks) {
+      if (b.id === blockId) return b.type;
+      const params = b.params as Record<string, unknown> | undefined;
+      const inner = params?.blocks;
+      if (Array.isArray(inner)) {
+        const found = walk(inner as BlockEntry[]);
+        if (found !== null) return found;
+      }
+    }
+    return null;
+  };
+  return walk(model.blocks);
+}

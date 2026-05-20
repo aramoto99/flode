@@ -8,6 +8,11 @@ import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { exportScopeImage } from "../lib/scopeImageExport";
+import {
+  DEFAULT_SCOPE_SETTINGS,
+  resolveSettings,
+} from "../lib/scopeSettings";
+import { useAppStore } from "../store/appStore";
 import type { ScopeBuffer } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
 
@@ -18,6 +23,9 @@ interface XYGraphViewProps {
   yLabel?: string;
 }
 
+/** XYGraph トレースの既定色 (= 設定未指定時)。 */
+const XY_DEFAULT_COLOR = "#2563eb";
+
 export function XYGraphView({
   scopeId,
   buffer,
@@ -26,6 +34,16 @@ export function XYGraphView({
 }: XYGraphViewProps): JSX.Element {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const editingModel = useAppStore((s) => s.editingModel);
+  const setEditingScopeSettingsId = useAppStore(
+    (s) => s.setEditingScopeSettingsId,
+  );
+  const openScopePanel = useAppStore((s) => s.openScopePanel);
+
+  // ADR-0044 follow-up: XYGraph も scope_settings の「XY に効く項目」を honor する
+  // (= トレース線色 / 線幅 / X・Y 手動レンジ / マーカー)。
+  const settings =
+    editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
 
   // 描画本体。data 変更時と resize 時の両方から呼ぶため useCallback で安定化。
   const draw = useCallback((): void => {
@@ -48,6 +66,13 @@ export function XYGraphView({
       ctx.fillText(t("xygraph.no_data"), 8, 16);
       return;
     }
+
+    // XY に効く設定を解決 (= トレース 0 番の色/幅/マーカー、X・Y 手動レンジ)。
+    const resolved = resolveSettings(settings);
+    const sig0 = resolved.signals?.["0"];
+    const traceColor = sig0?.color ?? XY_DEFAULT_COLOR;
+    const traceWidth = sig0?.width ?? 1.5;
+    const showMarker = sig0?.marker !== "none"; // none 以外は従来の点を出す
 
     const padding = 28;
     const plotW = width - padding * 2;
@@ -73,6 +98,25 @@ export function XYGraphView({
     ) {
       return;
     }
+    // 手動レンジ指定があれば auto 計算を上書き (log は XY 非対応なので manual のみ)。
+    if (
+      resolved.x_mode === "manual" &&
+      typeof resolved.x_min === "number" &&
+      typeof resolved.x_max === "number" &&
+      resolved.x_max > resolved.x_min
+    ) {
+      xMin = resolved.x_min;
+      xMax = resolved.x_max;
+    }
+    if (
+      resolved.y_mode === "manual" &&
+      typeof resolved.y_min === "number" &&
+      typeof resolved.y_max === "number" &&
+      resolved.y_max > resolved.y_min
+    ) {
+      yMin = resolved.y_min;
+      yMax = resolved.y_max;
+    }
     const xRange = xMax - xMin || 1;
     const yRange = yMax - yMin || 1;
 
@@ -94,15 +138,17 @@ export function XYGraphView({
       ctx.stroke();
     }
 
-    // 枠
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(padding, padding, plotW, plotH);
+    // 枠 (= major grid トグル: off なら枠を描かない)
+    if (resolved.grid_major !== false) {
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(padding, padding, plotW, plotH);
+    }
 
     // パラメトリック折れ線
     ctx.beginPath();
-    ctx.strokeStyle = "#2563eb";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = traceColor;
+    ctx.lineWidth = traceWidth;
     for (let i = 0; i < buffer.length; i += 1) {
       const x = xCol[i]!;
       const y = yCol[i]!;
@@ -113,16 +159,18 @@ export function XYGraphView({
     }
     ctx.stroke();
 
-    // 最新点をマーカー
-    const lastX = xCol[buffer.length - 1]!;
-    const lastY = yCol[buffer.length - 1]!;
-    if (Number.isFinite(lastX) && Number.isFinite(lastY)) {
-      const px = padding + ((lastX - xMin) / xRange) * plotW;
-      const py = padding + plotH - ((lastY - yMin) / yRange) * plotH;
-      ctx.beginPath();
-      ctx.fillStyle = "#dc2626";
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fill();
+    // 最新点をマーカー (= marker 設定が none 以外のとき)
+    if (showMarker) {
+      const lastX = xCol[buffer.length - 1]!;
+      const lastY = yCol[buffer.length - 1]!;
+      if (Number.isFinite(lastX) && Number.isFinite(lastY)) {
+        const px = padding + ((lastX - xMin) / xRange) * plotW;
+        const py = padding + plotH - ((lastY - yMin) / yRange) * plotH;
+        ctx.beginPath();
+        ctx.fillStyle = "#dc2626";
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // ラベル
@@ -143,7 +191,7 @@ export function XYGraphView({
       width - 8,
       12,
     );
-  }, [scopeId, buffer, xLabel, yLabel, t]);
+  }, [scopeId, buffer, xLabel, yLabel, settings, t]);
 
   // data 変更時の再描画
   useEffect(() => {
@@ -181,7 +229,7 @@ export function XYGraphView({
 
   return (
     <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
-      {/* 薄いヘッダー (= 画像コピーボタンの置き場、Scope と統一)。 */}
+      {/* 薄いヘッダー (= Scope と同じ 📷コピー / ⚙設定 / ↗別窓)。 */}
       <div className="flex h-6 shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 text-[11px] text-slate-700">
         <div className="flex-1" />
         {buffer.length > 0 && (
@@ -198,6 +246,27 @@ export function XYGraphView({
             </svg>
           </button>
         )}
+        <button
+          type="button"
+          title={t("scope.button.settings", "Settings")}
+          onClick={() => setEditingScopeSettingsId(scopeId)}
+          className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+        >
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          title={t("scope.button.open_panel", "Open in floating panel")}
+          onClick={() => openScopePanel(scopeId)}
+          className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+        >
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 3h7v7M10 21H3v-7M21 3l-9 9M3 21l9-9" />
+          </svg>
+        </button>
       </div>
       <div className="relative flex-1">
         <canvas ref={canvasRef} className="absolute inset-0" />

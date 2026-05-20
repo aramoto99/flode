@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { findBlockPath } from "../src/lib/findBlockPath";
+import { findBlockPath, findBlockTypeById } from "../src/lib/findBlockPath";
 import type { FlwModel } from "../src/types/api";
 
 function _model(blocks: FlwModel["blocks"]): FlwModel {
@@ -77,5 +77,38 @@ describe("findBlockPath", () => {
     ]);
     expect(findBlockPath(m, "a")).toEqual([]);
     expect(findBlockPath(m, "missing")).toBeNull();
+  });
+});
+
+describe("findBlockTypeById", () => {
+  it("returns the type of a top-level block", () => {
+    const m = _model([
+      { id: "xy", type: "pyflw.blocks.sinks.XYGraph", params: {} },
+      { id: "s", type: "pyflw.blocks.sinks.Scope", params: {} },
+    ]);
+    expect(findBlockTypeById(m, "xy")).toBe("pyflw.blocks.sinks.XYGraph");
+    expect(findBlockTypeById(m, "s")).toBe("pyflw.blocks.sinks.Scope");
+  });
+
+  it("returns the type of a nested block", () => {
+    const m = _model([
+      {
+        id: "sub",
+        type: "pyflw.subsystems.Subsystem",
+        params: {
+          blocks: [
+            { id: "xy", type: "pyflw.blocks.sinks.XYGraph", params: {} },
+          ],
+        },
+      },
+    ]);
+    expect(findBlockTypeById(m, "xy")).toBe("pyflw.blocks.sinks.XYGraph");
+  });
+
+  it("returns null for a missing block", () => {
+    const m = _model([
+      { id: "s", type: "pyflw.blocks.sinks.Scope", params: {} },
+    ]);
+    expect(findBlockTypeById(m, "zzz")).toBeNull();
   });
 });

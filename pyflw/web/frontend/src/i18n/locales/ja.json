@@ -61,6 +61,7 @@
   "scope.settings.x_mode_label": "スケール",
   "scope.settings.no_signals": "信号がまだありません (シミュレーションを実行してください)。",
   "scope.settings.signals.col.idx": "#",
+  "scope.settings.trace.col": "トレース",
   "scope.settings.signals.col.color": "色",
   "scope.settings.signals.col.width": "線幅",
   "scope.settings.signals.col.marker": "マーカー",

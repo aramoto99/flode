@@ -61,6 +61,7 @@
   "scope.settings.x_mode_label": "Scale",
   "scope.settings.no_signals": "No signals yet (run the simulation).",
   "scope.settings.signals.col.idx": "#",
+  "scope.settings.trace.col": "Trace",
   "scope.settings.signals.col.color": "Color",
   "scope.settings.signals.col.width": "Width",
   "scope.settings.signals.col.marker": "Marker",
