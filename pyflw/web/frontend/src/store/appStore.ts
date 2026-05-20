@@ -310,11 +310,6 @@ interface AppState {
   /** SplitTree を強制リセット (= DEFAULT_TREE_WITH_SCOPES or DEFAULT_TREE)。 */
   resetWorkspaceLayout: (hasVisibleScopes: boolean) => void;
 
-  // ADR-0044 §論点 6: maximize 状態 (= scope エリア内で 1 個だけを全画面化)。
-  // null のときは縦並び。値は scope_id。
-  maximizedScopeId: string | null;
-  setMaximizedScopeId: (id: string | null) => void;
-
   // ADR-0044 §論点 4 / §論点 10: scope 設定編集中の scope_id (= ScopeSettingsDialog 制御)。
   editingScopeSettingsId: string | null;
   setEditingScopeSettingsId: (id: string | null) => void;
@@ -629,9 +624,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       return { workspaceLayout: next };
     }),
-
-  maximizedScopeId: null,
-  setMaximizedScopeId: (id) => set({ maximizedScopeId: id }),
 
   editingScopeSettingsId: null,
   setEditingScopeSettingsId: (id) => set({ editingScopeSettingsId: id }),

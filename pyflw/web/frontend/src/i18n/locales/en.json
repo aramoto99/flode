@@ -18,8 +18,6 @@
   "menu.file.clear_recent": "Clear Recent",
   "menu.file.no_recent": "(No recent files)",
   "scope.button.settings": "Settings",
-  "scope.button.maximize": "Maximize",
-  "scope.button.restore": "Restore",
   "scope.button.open_panel": "Open in floating panel",
   "scope.button.close_panel": "Close panel",
   "scope.settings.title": "Plot Settings: {{id}}",

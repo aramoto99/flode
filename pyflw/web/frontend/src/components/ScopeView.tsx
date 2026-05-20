@@ -29,8 +29,6 @@ interface ScopeViewProps {
   buffer: ScopeBuffer;
   /** ADR-0044 §論点 10: ``"inline"`` (Canvas 下部) / ``"panel"`` (floating window) */
   formFactor?: "inline" | "panel";
-  /** ADR-0044 §論点 6: maximize 状態のときヘッダーは「元に戻す」ボタン */
-  isMaximized?: boolean;
   /** ヘッダーを完全に非表示 (= 旧テスト互換用)。 */
   hideHeader?: boolean;
 }
@@ -164,7 +162,6 @@ export function ScopeView({
   scopeId,
   buffer,
   formFactor = "inline",
-  isMaximized = false,
   hideHeader = false,
 }: ScopeViewProps): JSX.Element {
   const { t } = useTranslation();
@@ -173,7 +170,6 @@ export function ScopeView({
     (s) => s.setEditingScopeSettingsId,
   );
   const openScopePanel = useAppStore((s) => s.openScopePanel);
-  const setMaximizedScopeId = useAppStore((s) => s.setMaximizedScopeId);
   const closeScopePanel = useAppStore((s) => s.closeScopePanel);
 
   const settings = editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
@@ -222,24 +218,6 @@ export function ScopeView({
       </button>
       {formFactor === "inline" && (
         <>
-          <button
-            type="button"
-            title={
-              isMaximized
-                ? t("scope.button.restore", "Restore")
-                : t("scope.button.maximize", "Maximize")
-            }
-            onClick={() => setMaximizedScopeId(isMaximized ? null : scopeId)}
-            className="flex h-4 w-4 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-          >
-            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
-              {isMaximized ? (
-                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
-              ) : (
-                <path d="M3 3h7v2H5v5H3zM21 3h-7v2h5v5h2zM3 21h7v-2H5v-5H3zM21 21h-7v-2h5v-5h2z" />
-              )}
-            </svg>
-          </button>
           <button
             type="button"
             title={t("scope.button.open_panel", "Open in floating panel")}
