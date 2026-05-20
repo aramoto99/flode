@@ -280,7 +280,10 @@ export function ScopeView({
   }
 
   return (
-    <div className={`flex w-full flex-col border border-slate-200 bg-white ${formFactor === "inline" ? "h-48" : "h-full"}`}>
+    // 旧 inline は h-48 固定 (= Canvas 下部に縦積みしていた名残) だったが、
+    // タブ表示で 1 個ずつ見せる現行レイアウトでは親ペインを満たすべきなので
+    // h-full に統一する。実寸への uPlot 追従は UPlotChart の ResizeObserver が担う。
+    <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
       {header}
       <div className="relative flex-1">
         <UPlotChart options={options} data={data} className="absolute inset-0" />
