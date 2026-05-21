@@ -36,11 +36,12 @@ const FULL: BlockMetadata = {
   mask_capable: false,
 };
 
-// 旧サーバ (schema blocks.v1) からのレスポンス想定: i18n フィールドなし
+// 旧サーバ (schema blocks.v1) からのレスポンス想定: i18n / search_keywords なし
 const LEGACY: BlockMetadata = {
   ...FULL,
   display_name_i18n: undefined,
   docstring_summary_i18n: undefined,
+  search_keywords: undefined, // 旧サーバ (field 欠落) 想定
 };
 
 describe("localizedDisplayName", () => {
@@ -132,5 +133,26 @@ describe("searchableDisplayNames", () => {
     expect(names).toContain("Constant");
     // legacy 互換: display_name + tail のみ (ja/en どちらも追加されない)
     expect(names.length).toBeGreaterThan(0);
+  });
+
+  it("includes search_keywords so synonyms are searchable", () => {
+    // 表示名に現れない別名 (例: "Relational" を compare/比較) でヒットさせる
+    const rel: BlockMetadata = {
+      ...FULL,
+      type_path: "pyflw.blocks.logic.RelationalOperator",
+      display_name: "Relational",
+      display_name_i18n: { en: "Relational", ja: "関係演算" },
+      search_keywords: ["compare", "comparison", "比較"],
+    };
+    const names = searchableDisplayNames(rel);
+    expect(names).toContain("compare");
+    expect(names).toContain("比較");
+    // "comp" は compare の部分一致で拾える (palette/command filter の挙動)
+    expect(names.some((n) => n.toLowerCase().includes("comp"))).toBe(true);
+  });
+
+  it("treats missing search_keywords as empty (legacy server safe)", () => {
+    // LEGACY には search_keywords field が無い → ?? [] で例外を出さない
+    expect(() => searchableDisplayNames(LEGACY)).not.toThrow();
   });
 });

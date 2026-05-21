@@ -57,6 +57,7 @@ class TestListBlocks:
                 "port_shapes_in_default",
                 "port_shapes_out_default",
                 "tags",
+                "search_keywords",
             ):
                 assert key in entry, f"missing {key} in {entry['type_path']}"
             # full docstring は list レスポンスに含めない (ADR-0019 §1.3)
@@ -143,6 +144,80 @@ class TestListBlocks:
         resp = client.get("/api/v1/blocks")
         type_paths = [b["type_path"] for b in resp.json()["blocks"]]
         assert type_paths == sorted(type_paths)
+
+
+# ---------------------------------------------------------------------------
+# 検索別名 (search_keywords)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchKeywords:
+    def test_relational_has_compare_synonyms(self, client: TestClient) -> None:
+        """「関係演算」が compare / 比較 で検索ヒットするための別名を持つ。
+
+        "comp" は ``compare`` の部分一致で拾われるため、別名に ``compare`` が
+        あれば足りる (= 今回の主因の回帰防止)。
+        """
+        resp = client.get("/api/v1/blocks")
+        rel = next(
+            b
+            for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.logic.RelationalOperator"
+        )
+        assert "compare" in rel["search_keywords"]
+        assert "比較" in rel["search_keywords"]
+
+    def test_seeded_math_blocks_have_synonyms(self, client: TestClient) -> None:
+        """シードした Product / Saturation も別名がレスポンスに乗る
+        (= type_path リネーム時に無言で空配列に戻る回帰を検出)。"""
+        blocks = {b["type_path"]: b for b in client.get("/api/v1/blocks").json()["blocks"]}
+        assert "multiply" in blocks["pyflw.blocks.mathops.Product"]["search_keywords"]
+        assert "飽和" in blocks["pyflw.blocks.mathops.Saturation"]["search_keywords"]
+
+    def test_block_without_synonyms_has_empty_list(self, client: TestClient) -> None:
+        """別名未登録のブロックは空配列 (= 後方互換、frontend は ?? [] で扱う)。"""
+        resp = client.get("/api/v1/blocks")
+        gain = next(
+            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.mathops.Gain"
+        )
+        assert gain["search_keywords"] == []
+
+    def test_class_attribute_overrides_central_table(self) -> None:
+        """class 属性 ``_search_keywords`` が中央テーブルより優先される
+        (= 3rd-party 拡張ブロックが自前で別名宣言できる)。"""
+        from pyflw.core.block import Block
+        from pyflw.server.registry import _resolve_search_keywords, build_metadata
+
+        class _DummyBlock(Block):
+            _search_keywords = ("synonymx", "別名y")
+
+            def __init__(self, *, id: str | None = None, name: str | None = None) -> None:
+                super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+
+            def output(self, t, x, u):  # type: ignore[no-untyped-def]
+                return u
+
+        assert _resolve_search_keywords(_DummyBlock) == ["synonymx", "別名y"]
+        meta = build_metadata(_DummyBlock)
+        assert meta.search_keywords == ["synonymx", "別名y"]
+
+    def test_empty_class_attribute_means_explicit_no_synonyms(self) -> None:
+        """``_search_keywords = []`` は「明示的に別名なし」として尊重し、
+        中央テーブルへフォールバックしない (= is not None 判定)。"""
+        from pyflw.core.block import Block
+        from pyflw.server.registry import _resolve_search_keywords
+
+        # 中央テーブルに登録済の type_path を持つが、空 list で上書きするブロック
+        class _NoKeywords(Block):
+            _search_keywords: tuple[str, ...] = ()
+
+            def __init__(self, *, id: str | None = None, name: str | None = None) -> None:
+                super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+
+            def output(self, t, x, u):  # type: ignore[no-untyped-def]
+                return u
+
+        assert _resolve_search_keywords(_NoKeywords) == []
 
 
 # ---------------------------------------------------------------------------
