@@ -232,7 +232,7 @@ export function applyBranchWaypointsAtPath(
  * drop する。元 dict は変更しない (pure)。
  *
  * ADR-0057 §(5) の孤児掃除 3 層のうち本 helper は **操作時** (connection / block
- * 削除) に使う。**load 時**は描画側 (DiagramCanvas / computeJunctionDots) が枝 2 本
+ * 削除) に使う。**load 時**は描画側 (DiagramCanvas / resolveJunctions) が枝 2 本
  * 未満のグループを楽観無視するため孤児は描画されず、次の操作で本 helper が drop
  * する。**save 時の防御的再帰掃除** (全 subsystem scope を走査) は未実装 (= 操作時 +
  * load 楽観無視で正しさは担保され、残りは JSON をクリーンに保つ cosmetic な層)。

@@ -80,12 +80,28 @@ export interface ScopeSettings {
 
 export type LayoutDict = Record<string, LayoutEntry>;
 
-// ADR-0057: 手動 branch waypoint (分岐点 ● のドラッグ固定位置)。
+// ADR-0057 (改訂 2026-05-25): 手動 branch waypoint (分岐点 ● のドラッグ固定位置)。
 // key = "<source block id>:<sourceHandle index>" (= 分岐点単位の合成キー、
-// 区切り `:` は ADR-0004 の ID 規則で衝突しない)。value = flow 絶対座標 {x, y}。
-// trunk 共有 (= 分岐点単位で 1 件、同一 source ポートの全枝が共有) で、欠落時は
-// 全自動計算 (= 後方互換)。純粋な視覚情報で connections (トポロジ) には一切影響しない。
-export type BranchWaypointDict = Record<string, { x: number; y: number }>;
+// 区切り `:` は ADR-0004 の ID 規則で衝突しない)。
+//
+// 値は **幹線方向に沿った 1 次元位置** ``{ axis, pos }``:
+//   - ``axis``: 幹線方向 ("x" = 水平幹線 / "y" = 縦幹線)。現状の出力ポートは必ず
+//     水平 (Right / flipped で Left) のため実質 "x"。縦幹線 ("y") はスキーマ上
+//     受け入れる器のみ用意し router 実装は将来送り (ADR-0057 §改訂 §(改訂-D))。
+//   - ``pos``: 幹線方向の絶対座標スカラ (水平なら flow X、縦なら flow Y)。直交成分は
+//     保存せず描画時に source 出力高さ (sy/sx) で再構成する (= SSOT、R3)。
+//
+// ● は常に「線が実際に分かれる点 (= 幹線上)」に拘束される (R1)。trunk 共有
+// (= 分岐点単位で 1 件、同一 source ポートの全枝が共有) で、欠落時は全自動計算。
+// 純粋な視覚情報で connections (トポロジ) には一切影響しない。
+//
+// 後方互換: v1 で保存された旧形 ``{ x, y }`` は読込時に ``{ axis: "x", pos: x }``
+// とみなし ``y`` を楽観無視する (= 水平幹線として解釈、次回 save で新形に正規化)。
+export interface BranchWaypoint {
+  axis: "x" | "y";
+  pos: number;
+}
+export type BranchWaypointDict = Record<string, BranchWaypoint>;
 
 export interface FlwModel {
   schema_version: string;
@@ -99,7 +115,7 @@ export interface FlwModel {
   // ADR-0044 §論点 1: optional な per-scope プロット設定 (block_id → ScopeSettings)。
   // schema 0.8 維持 (= optional 追加なので bump 不要、ADR-0008 慣習)。
   scope_settings?: Record<string, ScopeSettings>;
-  // ADR-0057: optional な手動 branch waypoint (合成キー → flow 絶対座標)。
+  // ADR-0057: optional な手動 branch waypoint (合成キー → 幹線方向位置 {axis,pos})。
   // top-level の独立キー (= layout / scope_settings と並ぶ)。backend は opaque
   // round-trip (= Python 無改修)。schema 0.8 維持 (optional 追加、bump 不要)。
   branch_waypoints?: BranchWaypointDict;
