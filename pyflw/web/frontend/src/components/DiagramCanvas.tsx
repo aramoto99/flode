@@ -25,6 +25,7 @@ import { getLibraryEntry, listBlockMetadata } from "../api/client";
 import { pushToast } from "../store/toastStore";
 import {
   modelToDiagram,
+  blockNodeToEndpoint,
   DIAGRAM_EDGE_STYLE,
   DIAGRAM_EDGE_TYPE,
   DIAGRAM_MARKER_END,
@@ -42,6 +43,7 @@ import {
   type BranchStartParams,
   setBranchStartHandler,
 } from "./BranchableEdge";
+import { JunctionDots } from "./JunctionDots";
 import { QuickAdd } from "./QuickAdd";
 import {
   addBlockToEditing,
@@ -62,7 +64,6 @@ import {
 import {
   computeStepEdgePolyline,
   polylineIntersectsRect,
-  type EdgeEndpointNode,
   type Rect,
 } from "../lib/edgeRectIntersect";
 
@@ -415,39 +416,13 @@ export function DiagramCanvas({
       const { edges: curEdges, nodes: curNodes, selectedEdgeIds: curSelected } =
         rubberBandRefs.current;
       const nodeById = new Map(curNodes.map((n) => [n.id, n]));
-      const toEndpoint = (n: BlockNode): EdgeEndpointNode | null => {
-        // ``modelToDiagram`` で必ず populate されるが TS 上は optional / unknown
-        // (BlockNodeData は Record<string, unknown> 拡張) なので narrow する。
-        const sw = typeof n.data.shapeWidth === "number" ? n.data.shapeWidth : undefined;
-        const sh = typeof n.data.shapeHeight === "number" ? n.data.shapeHeight : undefined;
-        const w = n.width ?? sw;
-        const h = n.height ?? sh;
-        const nIn = n.data.nInputs;
-        const nOut = n.data.nOutputs;
-        if (
-          w === undefined ||
-          h === undefined ||
-          nIn === undefined ||
-          nOut === undefined
-        ) {
-          return null;
-        }
-        return {
-          position: n.position,
-          width: w,
-          height: h,
-          nInputs: nIn,
-          nOutputs: nOut,
-          flipped: n.data.flipped,
-        };
-      };
       const additional: string[] = [];
       for (const edge of curEdges) {
         const src = nodeById.get(edge.source);
         const dst = nodeById.get(edge.target);
         if (!src || !dst) continue;
-        const srcEp = toEndpoint(src);
-        const dstEp = toEndpoint(dst);
+        const srcEp = blockNodeToEndpoint(src);
+        const dstEp = blockNodeToEndpoint(dst);
         if (!srcEp || !dstEp) continue;
         const srcIdx = Number(edge.sourceHandle ?? 0);
         const dstIdx = Number(edge.targetHandle ?? 0);
@@ -994,6 +969,9 @@ export function DiagramCanvas({
       >
         <Background gap={18} size={1} color="#cbd5e1" />
         <Controls className="!shadow-md" />
+        {/* 分岐点 (junction) に ● を描く。同一出力ポートから複数 edge が分かれる
+            mid-wire 位置に打つ (= ブロック線図の慣例)。 */}
+        <JunctionDots />
       </ReactFlow>
       {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
           start から current への直線で十分 (= リファレンスツールでも drag 中は仮の

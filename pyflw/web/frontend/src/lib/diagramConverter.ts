@@ -8,6 +8,7 @@ import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
 import { getBlockShape } from "./blockShapes";
 import { resolvePortCounts } from "./dynamicPorts";
+import type { EdgeEndpointNode } from "./edgeRectIntersect";
 import type { BlockMetadata, FlwModel, LayoutDict, LayoutEntry } from "../types/api";
 
 // 業界標準ブロック線図ツール準拠: 連結線の終点に矢印 head を付けて「信号の流れ」を視覚化する。
@@ -142,6 +143,48 @@ export function modelToDiagram(
     markerEnd: DIAGRAM_MARKER_END,
   }));
   return { nodes, edges };
+}
+
+/**
+ * ``BlockNode`` から step edge polyline 計算用の ``EdgeEndpointNode`` を抽出する。
+ *
+ * ``modelToDiagram`` で ``width`` / ``height`` / ``nInputs`` / ``nOutputs`` は
+ * 必ず populate されるが、``BlockNodeData`` が ``Record<string, unknown>`` 拡張の
+ * ため TS 上は optional / unknown。ここで narrow し、未確定なら null を返す。
+ *
+ * rubber-band 選択 (``computeStepEdgePolyline`` で矩形交差判定) と分岐点 ●
+ * 描画 (``JunctionDots``) の双方から共用する (= 端点幾何の single source of truth)。
+ *
+ * @param node 対象ブロックノード。
+ * @returns 端点情報。寸法 / ポート数が未確定なら null。
+ */
+export function blockNodeToEndpoint(node: BlockNode): EdgeEndpointNode | null {
+  const sw =
+    typeof node.data.shapeWidth === "number" ? node.data.shapeWidth : undefined;
+  const sh =
+    typeof node.data.shapeHeight === "number"
+      ? node.data.shapeHeight
+      : undefined;
+  const width = node.width ?? sw;
+  const height = node.height ?? sh;
+  const nInputs = node.data.nInputs;
+  const nOutputs = node.data.nOutputs;
+  if (
+    width === undefined ||
+    height === undefined ||
+    nInputs === undefined ||
+    nOutputs === undefined
+  ) {
+    return null;
+  }
+  return {
+    position: node.position,
+    width,
+    height,
+    nInputs,
+    nOutputs,
+    flipped: node.data.flipped,
+  };
 }
 
 /**
