@@ -10,7 +10,13 @@ import {
 } from "../lib/blockTypes";
 import { resolvePortCounts } from "../lib/dynamicPorts";
 import { findBlockPath } from "../lib/findBlockPath";
-import { applyAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
+import {
+  applyAtPath,
+  applyBranchWaypointsAtPath,
+  pruneBranchWaypoints,
+  resolveBlocksAtPath,
+  resolveBranchWaypointsAtPath,
+} from "../lib/pathResolver";
 import {
   appendBatch as appendScopeBatchSoA,
   createBuffer as createScopeBuffer,
@@ -33,6 +39,7 @@ import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
 import type {
   BlockEntry,
   BlockMetadata,
+  BranchWaypointDict,
   ConnectionEntry,
   FailurePayload,
   FlwModel,
@@ -1285,6 +1292,43 @@ function currentPath(): readonly string[] {
   return useAppStore.getState().editingPath;
 }
 
+/**
+ * ADR-0057 §(5) 孤児掃除: ``path`` 先 scope の branch_waypoint のうち、枝が 2 本
+ * 未満になったグループのものを drop した model を返す。waypoint が無い / 変化が
+ * 無ければ identity を保つ (= 余計な書き込みを避ける)。connection 削除・block
+ * 削除の applyEditingModel 内で同 fn として呼び、操作と同一履歴に畳む。
+ */
+function pruneOrphanWaypointsAtScope(
+  model: FlwModel,
+  path: readonly string[],
+): FlwModel {
+  let waypoints: BranchWaypointDict;
+  try {
+    waypoints = resolveBranchWaypointsAtPath(model, path);
+  } catch {
+    return model; // path 不整合は no-op (= remove 系の race と同じ握り潰し方針)
+  }
+  if (Object.keys(waypoints).length === 0) return model;
+  let connections: ConnectionEntry[];
+  try {
+    connections = resolveBlocksAtPath(model, path).connections;
+  } catch {
+    return model;
+  }
+  const pruned = pruneBranchWaypoints(connections, waypoints);
+  // 変化なし判定はキー集合の一致で行う (pruneBranchWaypoints は subset しか返さない
+  // ため現状は件数比較でも十分だが、将来の仕様変更に対し堅牢にする)。
+  const prunedKeys = Object.keys(pruned);
+  const originalKeys = Object.keys(waypoints);
+  if (
+    prunedKeys.length === originalKeys.length &&
+    prunedKeys.every((k) => k in waypoints)
+  ) {
+    return model; // 孤児が出なかった (= identity 不変)
+  }
+  return applyBranchWaypointsAtPath(model, path, () => pruned);
+}
+
 export function addBlockToEditing(
   block: BlockEntry,
   position: { x: number; y: number },
@@ -1489,6 +1533,14 @@ export function removeBlockFromEditing(blockId: string): void {
       });
     }
 
+    // ADR-0057 §(5): block 削除で枝が消えた分岐の手動 waypoint を drop。block 自身
+    // の scope (= path) と、Inport/Outport 削除で親 connection が変わった場合は親
+    // scope の両方を掃除する (port_idx シフトで孤児化したキーも 2 本未満なら drop)。
+    updated = pruneOrphanWaypointsAtScope(updated, path);
+    if (isPort && path.length > 0 && removedPortIdx !== undefined) {
+      updated = pruneOrphanWaypointsAtScope(updated, path.slice(0, -1));
+    }
+
     return updated;
   });
 }
@@ -1672,8 +1724,8 @@ export function removeConnectionFromEditing(
   dst_idx: number,
 ): void {
   const path = currentPath();
-  useAppStore.getState().applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => ({
+  useAppStore.getState().applyEditingModel((m) => {
+    const afterConn = applyAtPath(m, path, (view) => ({
       blocks: view.blocks,
       connections: view.connections.filter(
         (c) =>
@@ -1685,8 +1737,62 @@ export function removeConnectionFromEditing(
           ),
       ),
       layout: view.layout,
-    })),
+    }));
+    // ADR-0057 §(5): 枝が 2 本未満になった分岐の手動 waypoint を同一履歴で drop。
+    return pruneOrphanWaypointsAtScope(afterConn, path);
+  });
+}
+
+/**
+ * ADR-0057: 手動分岐点 (● のドラッグ固定位置) を現 scope の branch_waypoints に
+ * 書き込む。``key`` は合成キー ``"<source block id>:<sourceHandle index>"``。
+ * ``connections`` には一切触らない (= トポロジ不変、シミュレーション意味論不変)。
+ *
+ * @param key 合成キー ``"<src>:<src_idx>"``。
+ * @param pos flow 絶対座標。NaN / Infinity は無視する (DOM / 保存に渡さない)。
+ * @param opts.merge ``true`` でドラッグ連続更新を 1 履歴エントリに集約する
+ *   (= ノード移動の ``mergeKey`` と同方針)。
+ */
+export function setBranchWaypoint(
+  key: string,
+  pos: { x: number; y: number },
+  opts?: { merge?: boolean },
+): void {
+  // 退化座標ガード (junctionDots.ts の finite ガードと同方針)。
+  if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel(
+    (m) =>
+      applyBranchWaypointsAtPath(m, path, (wp) => ({
+        ...wp,
+        [key]: { x: pos.x, y: pos.y },
+      })),
+    opts?.merge
+      ? { mergeKey: `branch-waypoint:${path.join("/")}:${key}` }
+      : undefined,
   );
+}
+
+/**
+ * ADR-0057 §(6): 手動分岐点をリセットして自動計算 ● に戻す (= 該当合成キーを
+ * 現 scope の branch_waypoints から削除)。キーが無ければ no-op (= 履歴を汚さない)。
+ */
+export function resetBranchWaypoint(key: string): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) => {
+    let cur: BranchWaypointDict;
+    try {
+      cur = resolveBranchWaypointsAtPath(m, path);
+    } catch {
+      return m;
+    }
+    if (!(key in cur)) return m; // no-op
+    return applyBranchWaypointsAtPath(m, path, (wp) => {
+      const next = { ...wp };
+      delete next[key];
+      return next;
+    });
+  });
 }
 
 /**

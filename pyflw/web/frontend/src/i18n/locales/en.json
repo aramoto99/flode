@@ -321,6 +321,7 @@
   "diagram.port_shape_mismatch": "Port shape mismatch.",
   "diagram.library_drop_invalid_ref": "Invalid library entry reference dropped.",
   "diagram.library_drop_failed": "Failed to load library entry: {{message}}",
+  "diagram.reset_branch_waypoint": "Reset junction position",
 
   "palette.library_prefix": "Library",
 
