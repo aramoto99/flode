@@ -47,6 +47,7 @@ import {
   setBranchStartHandler,
 } from "./BranchableEdge";
 import { JunctionDots } from "./JunctionDots";
+import { resolveJunctions } from "../lib/branchJunctions";
 import { QuickAdd } from "./QuickAdd";
 import {
   addBlockToEditing,
@@ -492,26 +493,24 @@ export function DiagramCanvas({
   } catch {
     scopeWaypoints = {};
   }
-  // ● / via は同一 (source, sourceHandle) に 2 本以上の枝がある分岐のみ有効。
-  // 枝が 1 本に減った孤児 waypoint は描画でも ● でも無視する (= 楽観的無視)。
-  const groupCounts = new Map<string, number>();
-  for (const e of edges) {
-    const k = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
-    groupCounts.set(k, (groupCounts.get(k) ?? 0) + 1);
-  }
   const selectedSet = new Set(selectedNodeIds);
   const decoratedNodes = baseNodes.map((n) => ({
     ...n,
     selected: selectedSet.has(n.id),
   }));
-  // ADR-0057: 手動分岐点があれば edge data に via を注入し、BranchableEdge が via
-  // 経由 step path で描画する (= ● 算出と同一 polyline = 幾何 SSOT)。枝が 2 本以上
-  // のグループのみ有効 (孤児 waypoint は無視)。rubber-band 交差判定もこの decorated
-  // edges を使い、描画と同じ via 経由 polyline で判定する (= SSOT)。
+  // ADR-0057 (改訂): 分岐点 ● の算出 (自動 + 手動の幹線上再構成 + クランプ) を
+  // resolveJunctions に一本化する (= 幾何 SSOT)。返り値の vias (= 手動グループの
+  // 正規化済 via {x,y}) を edge / rubber-band へ、junctionDots を <JunctionDots> へ
+  // 渡し、描画・● 算出・rubber-band の 3 系統が同一 via を共有する。枝が 2 本未満の
+  // 孤児グループは resolveJunctions が除外する (= 楽観的無視)。
+  const { dots: junctionDots, vias } = resolveJunctions(
+    decoratedNodes,
+    edges,
+    scopeWaypoints,
+  );
   const decoratedEdges = edges.map((e) => {
     const gkey = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
-    const via =
-      (groupCounts.get(gkey) ?? 0) >= 2 ? scopeWaypoints[gkey] : undefined;
+    const via = vias.get(gkey);
     return {
       ...e,
       // diagramConverter で設定した type ("branchable") を尊重 (= リファレンスツール風 90°
@@ -1011,9 +1010,9 @@ export function DiagramCanvas({
         <Background gap={18} size={1} color="#cbd5e1" />
         <Controls className="!shadow-md" />
         {/* 分岐点 (junction) に ● を描く。同一出力ポートから複数 edge が分かれる
-            mid-wire 位置に打つ (= ブロック線図の慣例)。ADR-0057: ● をドラッグで
-            任意位置に固定でき、手動位置は現スコープの branch_waypoints から渡す。 */}
-        <JunctionDots waypoints={scopeWaypoints} />
+            mid-wire 位置に打つ (= ブロック線図の慣例)。ADR-0057 改訂: ● は幹線上を
+            1 軸スライドで固定でき、resolveJunctions が算出した junctionDots を渡す。 */}
+        <JunctionDots junctions={junctionDots} />
       </ReactFlow>
       {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
           start から current への直線で十分 (= リファレンスツールでも drag 中は仮の

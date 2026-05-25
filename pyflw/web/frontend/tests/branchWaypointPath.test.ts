@@ -13,7 +13,7 @@ import {
   pruneBranchWaypoints,
   resolveBranchWaypointsAtPath,
 } from "../src/lib/pathResolver";
-import type { BlockEntry, FlwModel } from "../src/types/api";
+import type { BlockEntry, BranchWaypointDict, FlwModel } from "../src/types/api";
 
 function baseModel(): FlwModel {
   return {
@@ -84,19 +84,19 @@ describe("resolveBranchWaypointsAtPath", () => {
 
   it("reads top-level branch_waypoints at root scope", () => {
     const m = baseModel();
-    m.branch_waypoints = { "src:0": { x: 200, y: 120 } };
+    m.branch_waypoints = { "src:0": { axis: "x", pos: 200 } };
     expect(resolveBranchWaypointsAtPath(m, [])).toEqual({
-      "src:0": { x: 200, y: 120 },
+      "src:0": { axis: "x", pos: 200 },
     });
   });
 
   it("reads params.branch_waypoints inside a subsystem scope", () => {
     const m = subsystemModel();
     (m.blocks[1]!.params as Record<string, unknown>).branch_waypoints = {
-      "ip0:0": { x: 120, y: 200 },
+      "ip0:0": { axis: "x", pos: 120 },
     };
     expect(resolveBranchWaypointsAtPath(m, ["sub1"])).toEqual({
-      "ip0:0": { x: 120, y: 200 },
+      "ip0:0": { axis: "x", pos: 120 },
     });
   });
 });
@@ -106,12 +106,12 @@ describe("applyBranchWaypointsAtPath (root scope)", () => {
     const m = baseModel();
     const next = applyBranchWaypointsAtPath(m, [], (wp) => ({
       ...wp,
-      "src:0": { x: 200, y: 120 },
+      "src:0": { axis: "x", pos: 200 },
     }));
-    expect(next.branch_waypoints).toEqual({ "src:0": { x: 200, y: 120 } });
+    expect(next.branch_waypoints).toEqual({ "src:0": { axis: "x", pos: 200 } });
     // round-trip
     expect(resolveBranchWaypointsAtPath(next, [])).toEqual({
-      "src:0": { x: 200, y: 120 },
+      "src:0": { axis: "x", pos: 200 },
     });
     // 原本不変 (immutable)
     expect(m.branch_waypoints).toBeUndefined();
@@ -119,7 +119,7 @@ describe("applyBranchWaypointsAtPath (root scope)", () => {
 
   it("drops the key entirely when the dict becomes empty", () => {
     const m = baseModel();
-    m.branch_waypoints = { "src:0": { x: 1, y: 2 } };
+    m.branch_waypoints = { "src:0": { axis: "x", pos: 1 } };
     const next = applyBranchWaypointsAtPath(m, [], () => ({}));
     expect("branch_waypoints" in next).toBe(false);
   });
@@ -128,7 +128,7 @@ describe("applyBranchWaypointsAtPath (root scope)", () => {
     const m = baseModel();
     const next = applyBranchWaypointsAtPath(m, [], (wp) => ({
       ...wp,
-      "src:0": { x: 9, y: 9 },
+      "src:0": { axis: "x", pos: 9 },
     }));
     expect(next.connections).toEqual(m.connections);
   });
@@ -139,10 +139,10 @@ describe("applyBranchWaypointsAtPath (subsystem scope, Open Question #1)", () =>
     const m = subsystemModel();
     const next = applyBranchWaypointsAtPath(m, ["sub1"], (wp) => ({
       ...wp,
-      "ip0:0": { x: 120, y: 200 },
+      "ip0:0": { axis: "x", pos: 120 },
     }));
     const subParams = next.blocks[1]!.params as Record<string, unknown>;
-    expect(subParams.branch_waypoints).toEqual({ "ip0:0": { x: 120, y: 200 } });
+    expect(subParams.branch_waypoints).toEqual({ "ip0:0": { axis: "x", pos: 120 } });
     // 既存の blocks / connections / layout / mask (opaque) が保持される
     expect(subParams.mask).toEqual({ foo: 1 });
     expect((subParams.layout as Record<string, unknown>).ip0).toEqual({
@@ -152,14 +152,14 @@ describe("applyBranchWaypointsAtPath (subsystem scope, Open Question #1)", () =>
     expect(Array.isArray(subParams.connections)).toBe(true);
     // round-trip
     expect(resolveBranchWaypointsAtPath(next, ["sub1"])).toEqual({
-      "ip0:0": { x: 120, y: 200 },
+      "ip0:0": { axis: "x", pos: 120 },
     });
   });
 
   it("drops params.branch_waypoints key when emptied", () => {
     const m = subsystemModel();
     (m.blocks[1]!.params as Record<string, unknown>).branch_waypoints = {
-      "ip0:0": { x: 1, y: 2 },
+      "ip0:0": { axis: "x", pos: 1 },
     };
     const next = applyBranchWaypointsAtPath(m, ["sub1"], () => ({}));
     const subParams = next.blocks[1]!.params as Record<string, unknown>;
@@ -175,13 +175,13 @@ describe("pruneBranchWaypoints", () => {
       { src: "src", src_idx: 0, dst: "g1", dst_idx: 0 },
       { src: "src", src_idx: 0, dst: "g2", dst_idx: 0 },
     ];
-    const wp = { "src:0": { x: 1, y: 2 } };
+    const wp: BranchWaypointDict = { "src:0": { axis: "x", pos: 1 } };
     expect(pruneBranchWaypoints(conns, wp)).toEqual(wp);
   });
 
   it("drops keys whose group dropped below 2 branches (orphan)", () => {
     const conns = [{ src: "src", src_idx: 0, dst: "g1", dst_idx: 0 }];
-    const wp = { "src:0": { x: 1, y: 2 } };
+    const wp: BranchWaypointDict = { "src:0": { axis: "x", pos: 1 } };
     expect(pruneBranchWaypoints(conns, wp)).toEqual({});
   });
 
@@ -191,7 +191,7 @@ describe("pruneBranchWaypoints", () => {
       { src: "src", src_idx: 0, dst: "g2", dst_idx: 0 },
       { src: "src", src_idx: 0, dst: "g3", dst_idx: 0 },
     ];
-    const wp = { "src:0": { x: 5, y: 5 } };
+    const wp: BranchWaypointDict = { "src:0": { axis: "x", pos: 5 } };
     expect(pruneBranchWaypoints(conns, wp)).toEqual(wp);
   });
 
@@ -202,7 +202,7 @@ describe("pruneBranchWaypoints", () => {
       { src: "src", src_idx: 1, dst: "g3", dst_idx: 0 },
     ];
     // src:1 は 1 本のみ → drop。src:0 は残す。
-    const wp = { "src:0": { x: 1, y: 1 }, "src:1": { x: 2, y: 2 } };
-    expect(pruneBranchWaypoints(conns, wp)).toEqual({ "src:0": { x: 1, y: 1 } });
+    const wp: BranchWaypointDict = { "src:0": { axis: "x", pos: 1 }, "src:1": { axis: "x", pos: 2 } };
+    expect(pruneBranchWaypoints(conns, wp)).toEqual({ "src:0": { axis: "x", pos: 1 } });
   });
 });

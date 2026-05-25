@@ -64,10 +64,10 @@ afterEach(() => {
 
 describe("setBranchWaypoint", () => {
   it("creates a top-level waypoint and sets dirty + history", () => {
-    setBranchWaypoint("src:0", { x: 200, y: 120 });
+    setBranchWaypoint("src:0", { axis: "x", pos: 200 });
     const s = useAppStore.getState();
     expect(s.editingModel!.branch_waypoints).toEqual({
-      "src:0": { x: 200, y: 120 },
+      "src:0": { axis: "x", pos: 200 },
     });
     expect(s.dirty).toBe(true);
     expect(s.history.past.length).toBe(1);
@@ -75,8 +75,8 @@ describe("setBranchWaypoint", () => {
 
   it("ignores NaN / Infinity coordinates (finite guard)", () => {
     const before = useAppStore.getState().editingModel;
-    setBranchWaypoint("src:0", { x: NaN, y: 10 });
-    setBranchWaypoint("src:0", { x: 10, y: Infinity });
+    setBranchWaypoint("src:0", { axis: "x", pos: NaN });
+    setBranchWaypoint("src:0", { axis: "x", pos: Infinity });
     const after = useAppStore.getState().editingModel;
     expect(after).toBe(before); // 一切書き込まれない (identity 不変)
     expect(useAppStore.getState().dirty).toBe(false);
@@ -84,17 +84,17 @@ describe("setBranchWaypoint", () => {
 
   it("does NOT change connections (topology invariance)", () => {
     const before = useAppStore.getState().editingModel!.connections;
-    setBranchWaypoint("src:0", { x: 1, y: 2 });
+    setBranchWaypoint("src:0", { axis: "x", pos: 1 });
     expect(useAppStore.getState().editingModel!.connections).toEqual(before);
   });
 
   it("collapses a drag (merge) into a single history entry", () => {
-    setBranchWaypoint("src:0", { x: 1, y: 1 }, { merge: true });
-    setBranchWaypoint("src:0", { x: 2, y: 2 }, { merge: true });
-    setBranchWaypoint("src:0", { x: 3, y: 3 }, { merge: true });
+    setBranchWaypoint("src:0", { axis: "x", pos: 1 }, { merge: true });
+    setBranchWaypoint("src:0", { axis: "x", pos: 2 }, { merge: true });
+    setBranchWaypoint("src:0", { axis: "x", pos: 3 }, { merge: true });
     const s = useAppStore.getState();
     expect(s.history.past.length).toBe(1);
-    expect(s.editingModel!.branch_waypoints).toEqual({ "src:0": { x: 3, y: 3 } });
+    expect(s.editingModel!.branch_waypoints).toEqual({ "src:0": { axis: "x", pos: 3 } });
   });
 
   it("writes into the subsystem scope when editingPath is set", () => {
@@ -131,10 +131,10 @@ describe("setBranchWaypoint", () => {
       lastMergeKey: null,
       dirty: false,
     });
-    setBranchWaypoint("ip0:0", { x: 120, y: 200 });
+    setBranchWaypoint("ip0:0", { axis: "x", pos: 120 });
     const subParams = useAppStore.getState().editingModel!.blocks[0]!
       .params as Record<string, unknown>;
-    expect(subParams.branch_waypoints).toEqual({ "ip0:0": { x: 120, y: 200 } });
+    expect(subParams.branch_waypoints).toEqual({ "ip0:0": { axis: "x", pos: 120 } });
     // root scope は無影響
     expect(useAppStore.getState().editingModel!.branch_waypoints).toBeUndefined();
   });
@@ -143,7 +143,7 @@ describe("setBranchWaypoint", () => {
 describe("resetBranchWaypoint", () => {
   it("removes the manual waypoint (back to auto)", () => {
     useAppStore.setState({
-      editingModel: makeModel({ "src:0": { x: 9, y: 9 } }),
+      editingModel: makeModel({ "src:0": { axis: "x", pos: 9 } }),
       editingPath: [],
       history: { past: [], future: [] },
       lastMergeKey: null,
@@ -166,7 +166,7 @@ describe("resetBranchWaypoint", () => {
 describe("orphan cleanup on connection / block removal (ADR-0057 §(5))", () => {
   it("drops the waypoint when a 2-branch group falls to 1 (removeConnection)", () => {
     useAppStore.setState({
-      editingModel: makeModel({ "src:0": { x: 5, y: 5 } }),
+      editingModel: makeModel({ "src:0": { axis: "x", pos: 5 } }),
       editingPath: [],
       history: { past: [], future: [] },
       lastMergeKey: null,
@@ -180,7 +180,7 @@ describe("orphan cleanup on connection / block removal (ADR-0057 §(5))", () => 
   });
 
   it("keeps the waypoint for a 3->2 branch group (still >= 2)", () => {
-    const m = makeModel({ "src:0": { x: 5, y: 5 } });
+    const m = makeModel({ "src:0": { axis: "x", pos: 5 } });
     m.blocks.push({ id: "g3", type: "pyflw.blocks.mathops.Gain", params: { k: 4 } });
     m.connections.push({ src: "src", src_idx: 0, dst: "g3", dst_idx: 0 });
     useAppStore.setState({
@@ -192,13 +192,13 @@ describe("orphan cleanup on connection / block removal (ADR-0057 §(5))", () => 
     });
     removeConnectionFromEditing("src", 0, "g3", 0);
     expect(useAppStore.getState().editingModel!.branch_waypoints).toEqual({
-      "src:0": { x: 5, y: 5 },
+      "src:0": { axis: "x", pos: 5 },
     });
   });
 
   it("drops the waypoint when removing a branch target block (removeBlock)", () => {
     useAppStore.setState({
-      editingModel: makeModel({ "src:0": { x: 5, y: 5 } }),
+      editingModel: makeModel({ "src:0": { axis: "x", pos: 5 } }),
       editingPath: [],
       history: { past: [], future: [] },
       lastMergeKey: null,

@@ -39,6 +39,7 @@ import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
 import type {
   BlockEntry,
   BlockMetadata,
+  BranchWaypoint,
   BranchWaypointDict,
   ConnectionEntry,
   FailurePayload,
@@ -1744,28 +1745,30 @@ export function removeConnectionFromEditing(
 }
 
 /**
- * ADR-0057: 手動分岐点 (● のドラッグ固定位置) を現 scope の branch_waypoints に
- * 書き込む。``key`` は合成キー ``"<source block id>:<sourceHandle index>"``。
+ * ADR-0057 (改訂): 手動分岐点 (● のドラッグ固定位置) を現 scope の branch_waypoints
+ * に書き込む。``key`` は合成キー ``"<source block id>:<sourceHandle index>"``。値は
+ * 幹線方向の 1 次元位置 ``{ axis, pos }`` (直交成分は保存しない = SSOT、R3)。
  * ``connections`` には一切触らない (= トポロジ不変、シミュレーション意味論不変)。
  *
  * @param key 合成キー ``"<src>:<src_idx>"``。
- * @param pos flow 絶対座標。NaN / Infinity は無視する (DOM / 保存に渡さない)。
+ * @param value 幹線方向位置 (``axis`` = 幹線軸、``pos`` = 幹線方向の絶対座標スカラ)。
+ *   ``pos`` が NaN / Infinity の場合は無視する (DOM / 保存に渡さない)。
  * @param opts.merge ``true`` でドラッグ連続更新を 1 履歴エントリに集約する
  *   (= ノード移動の ``mergeKey`` と同方針)。
  */
 export function setBranchWaypoint(
   key: string,
-  pos: { x: number; y: number },
+  value: BranchWaypoint,
   opts?: { merge?: boolean },
 ): void {
   // 退化座標ガード (junctionDots.ts の finite ガードと同方針)。
-  if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
+  if (!Number.isFinite(value.pos)) return;
   const path = currentPath();
   useAppStore.getState().applyEditingModel(
     (m) =>
       applyBranchWaypointsAtPath(m, path, (wp) => ({
         ...wp,
-        [key]: { x: pos.x, y: pos.y },
+        [key]: { axis: value.axis, pos: value.pos },
       })),
     opts?.merge
       ? { mergeKey: `branch-waypoint:${path.join("/")}:${key}` }
