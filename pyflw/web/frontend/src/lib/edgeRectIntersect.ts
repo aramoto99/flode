@@ -87,6 +87,18 @@ export function polylineIntersectsRect(points: readonly Point[], r: Rect): boole
   return false;
 }
 
+/** 連続する重複頂点 (= 長さ 0 セグメント) を除去する。
+ *  via 経由 polyline で via が trunk 上に乗る等の退化ケースで生じる。 */
+function dedupeConsecutive(points: readonly Point[]): Point[] {
+  const out: Point[] = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (last && last.x === p.x && last.y === p.y) continue;
+    out.push({ x: p.x, y: p.y });
+  }
+  return out;
+}
+
 /**
  * リファレンスツール流 step edge (90° 折れ線、``borderRadius=0``) の polyline を返す。
  *
@@ -94,22 +106,41 @@ export function polylineIntersectsRect(points: readonly Point[], r: Rect): boole
  * polyline で近似する: ``(sx, sy) → (midX, sy) → (midX, ty) → (tx, ty)``
  * (``midX = (sx + tx) / 2``)。
  *
- * 既知の制限: ``tx < sx`` (= 逆向き接続 / 帰還ループ) は React Flow が
- * ``offset=20px`` を加えた 5-point U-turn path で描画するため、本近似だと
- * ``sx ± 20px`` / ``tx ± 20px`` 付近の折り返し領域だけを横切る選択矩形では
- * **偽陰性** (= 本来選択されるべき edge が選ばれない) が生じうる。pyflw の
- * 典型モデルは左→右の信号フローのため実害は限定的。U-turn 多発モデルで
- * 顕在化したら ``getSmoothStepPath`` の path 文字列を parse する実装に
- * 差し替える。
+ * ADR-0057: 手動分岐点 ``via`` が与えられた場合、``via`` を**必ず通る** Z 折れ
+ * ``(sx,sy) → (via.x,sy) → (via.x,via.y) → (via.x,ty) → (tx,ty)`` を返す。
+ * 同一 ``(source, sourceHandle)`` グループの全枝は ``sy`` / ``via`` が共通なので
+ * ``(sx,sy) → (via.x,sy) → via`` の trunk を共有し ``via`` で分岐する。これにより
+ * **● 位置 (= via) が定義上ワイヤ上に乗る** (描画と ● 算出の幾何 SSOT)。連続する
+ * 退化頂点は ``dedupeConsecutive`` で除去する。
+ *
+ * 既知の制限 (``via`` 無し時のみ): ``tx < sx`` (= 逆向き接続 / 帰還ループ) は
+ * React Flow が ``offset=20px`` を加えた 5-point U-turn path で描画するため、本
+ * 近似だと ``sx ± 20px`` / ``tx ± 20px`` 付近の折り返し領域だけを横切る選択矩形
+ * では **偽陰性** (= 本来選択されるべき edge が選ばれない) が生じうる。pyflw の
+ * 典型モデルは左→右の信号フローのため実害は限定的。U-turn 多発モデルで顕在化
+ * したら ``getSmoothStepPath`` の path 文字列を parse する実装に差し替える。
+ * ``via`` 経由時は折れ線が ``via`` で確定するため U-turn でも破綻しにくい。
  *
  * ``computeStepEdgePolyline`` 経由でのみ呼ばれる (= module 内 helper)。
+ *
+ * @param via optional な手動分岐点 (flow 絶対座標)。指定時は必ずこの点を通る。
  */
-function getStepEdgePolyline(
+export function getStepEdgePolyline(
   sx: number,
   sy: number,
   tx: number,
   ty: number,
+  via?: Point,
 ): Point[] {
+  if (via) {
+    return dedupeConsecutive([
+      { x: sx, y: sy },
+      { x: via.x, y: sy },
+      { x: via.x, y: via.y },
+      { x: via.x, y: ty },
+      { x: tx, y: ty },
+    ]);
+  }
   const midX = (sx + tx) / 2;
   return [
     { x: sx, y: sy },
@@ -117,6 +148,21 @@ function getStepEdgePolyline(
     { x: midX, y: ty },
     { x: tx, y: ty },
   ];
+}
+
+/**
+ * 折れ線を SVG path 文字列 (``M x,y L x,y ...``) に変換する。
+ *
+ * ADR-0057: via 経由 edge を ``BranchableEdge`` が ``getSmoothStepPath`` を使わず
+ * 自前 path で描画する際に使う (= 描画と ● 算出が同一 polyline を共有する SSOT)。
+ * 角は直角のまま (= ``borderRadius=0`` 相当)。``points.length < 2`` は空文字を返す。
+ */
+export function polylineToSvgPath(points: readonly Point[]): string {
+  if (points.length < 2) return "";
+  const [head, ...rest] = points;
+  return (
+    `M${head.x},${head.y}` + rest.map((p) => `L${p.x},${p.y}`).join("")
+  );
 }
 
 /** ``computeStepEdgePolyline`` が必要とする端点ノードの最小情報。 */
@@ -144,6 +190,7 @@ export function computeStepEdgePolyline(
   srcHandleIdx: number,
   dst: EdgeEndpointNode,
   dstHandleIdx: number,
+  via?: Point,
 ): Point[] {
   const srcFlipped = src.flipped ?? false;
   const dstFlipped = dst.flipped ?? false;
@@ -156,5 +203,7 @@ export function computeStepEdgePolyline(
   const ty =
     dst.position.y +
     ((dstHandleIdx + 1) * dst.height) / (dst.nInputs + 1);
-  return getStepEdgePolyline(sx, sy, tx, ty);
+  // ADR-0057: 手動分岐点 (via) があれば必ず経由する Z 折れを返す (= 描画と ● 算出
+  // の幾何 SSOT)。via 無しは従来の midX 近似 (後方互換)。
+  return getStepEdgePolyline(sx, sy, tx, ty, via);
 }

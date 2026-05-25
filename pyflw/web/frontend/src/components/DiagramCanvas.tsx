@@ -32,7 +32,10 @@ import {
   type BlockNode,
 } from "../lib/diagramConverter";
 import { generateUniqueId } from "../lib/idGenerator";
-import { resolveBlocksAtPath } from "../lib/pathResolver";
+import {
+  resolveBlocksAtPath,
+  resolveBranchWaypointsAtPath,
+} from "../lib/pathResolver";
 import {
   indexRegistry,
   validatePortShapeConnection,
@@ -55,7 +58,7 @@ import {
   updateBlockPositions,
   useAppStore,
 } from "../store/appStore";
-import type { FlwModel } from "../types/api";
+import type { BranchWaypointDict, FlwModel } from "../types/api";
 import {
   type BlockGeom,
   type EdgeGeom,
@@ -64,6 +67,7 @@ import {
 import {
   computeStepEdgePolyline,
   polylineIntersectsRect,
+  type Point,
   type Rect,
 } from "../lib/edgeRectIntersect";
 
@@ -426,7 +430,16 @@ export function DiagramCanvas({
         if (!srcEp || !dstEp) continue;
         const srcIdx = Number(edge.sourceHandle ?? 0);
         const dstIdx = Number(edge.targetHandle ?? 0);
-        const polyline = computeStepEdgePolyline(srcEp, srcIdx, dstEp, dstIdx);
+        // ADR-0057: 手動分岐点 (via) があれば描画と同一の via 経由 polyline で
+        // 交差判定する (= 幾何 SSOT)。via は decoratedEdges の data に入っている。
+        const via = (edge.data as { via?: Point } | undefined)?.via;
+        const polyline = computeStepEdgePolyline(
+          srcEp,
+          srcIdx,
+          dstEp,
+          dstIdx,
+          via,
+        );
         if (polylineIntersectsRect(polyline, flowRect)) {
           additional.push(edge.id);
         }
@@ -470,15 +483,50 @@ export function DiagramCanvas({
     layout: pathView.layout,
   };
   const { nodes: baseNodes, edges } = modelToDiagram(scopeModel, registryMap);
+  // ADR-0057: 現スコープの手動分岐点 (branch_waypoints)。pathView 解決が成功して
+  // いるので通常 throw しないが、editingPath の非同期変化等のコーナーケースで例外が
+  // 出てもレンダーをクラッシュさせず楽観無視する (= ADR-0057 §(5) load 時方針)。
+  let scopeWaypoints: BranchWaypointDict = {};
+  try {
+    scopeWaypoints = resolveBranchWaypointsAtPath(model, editingPath);
+  } catch {
+    scopeWaypoints = {};
+  }
+  // ● / via は同一 (source, sourceHandle) に 2 本以上の枝がある分岐のみ有効。
+  // 枝が 1 本に減った孤児 waypoint は描画でも ● でも無視する (= 楽観的無視)。
+  const groupCounts = new Map<string, number>();
+  for (const e of edges) {
+    const k = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
+    groupCounts.set(k, (groupCounts.get(k) ?? 0) + 1);
+  }
   const selectedSet = new Set(selectedNodeIds);
   const decoratedNodes = baseNodes.map((n) => ({
     ...n,
     selected: selectedSet.has(n.id),
   }));
+  // ADR-0057: 手動分岐点があれば edge data に via を注入し、BranchableEdge が via
+  // 経由 step path で描画する (= ● 算出と同一 polyline = 幾何 SSOT)。枝が 2 本以上
+  // のグループのみ有効 (孤児 waypoint は無視)。rubber-band 交差判定もこの decorated
+  // edges を使い、描画と同じ via 経由 polyline で判定する (= SSOT)。
+  const decoratedEdges = edges.map((e) => {
+    const gkey = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
+    const via =
+      (groupCounts.get(gkey) ?? 0) >= 2 ? scopeWaypoints[gkey] : undefined;
+    return {
+      ...e,
+      // diagramConverter で設定した type ("branchable") を尊重 (= リファレンスツール風 90°
+      // 折れ線)。``smoothstep`` で上書きしていた v0.x 時代の挙動を撤廃。
+      animated: false,
+      // controlled mode では ``selected`` を prop に流し込まないと .selected
+      // クラスが付かず、CSS のハイライトが効かない (= ユーザーから選択不可に見える)。
+      selected: selectedEdgeIds.includes(e.id),
+      data: via ? { ...(e.data ?? {}), via } : e.data,
+    };
+  });
   // rubber-band 補完 hook の subscription callback が常に最新の edges/nodes/
   // selection を参照できるよう、render 毎に ref を更新する。
   rubberBandRefs.current = {
-    edges,
+    edges: decoratedEdges,
     nodes: decoratedNodes,
     selectedEdgeIds,
   };
@@ -824,18 +872,11 @@ export function DiagramCanvas({
     >
       <ReactFlow
         nodes={decoratedNodes}
-        edges={edges.map((e) => ({
-          ...e,
-          // diagramConverter で設定した type ("step") を尊重 (= リファレンスツール風 90°
-          // 折れ線)。``smoothstep`` で上書きしていた v0.x 時代の挙動を撤廃。
-          animated: false,
-          // controlled mode では ``selected`` を prop に流し込まないと .selected
-          // クラスが付かず、CSS のハイライトが効かない (= ユーザーから選択不可に見える)。
-          selected: selectedEdgeIds.includes(e.id),
-          // 注意: ここでインライン ``style`` を当てると CSS の
-          // ``.react-flow__edge.selected`` / ``:hover`` ルールが specificity 負けする
-          // ので入れない。色 / 太さは index.css で集中管理。
-        }))}
+        // ADR-0057: via 注入済の decoratedEdges を渡す (rubber-band 判定と SSOT)。
+        // 注意: ここでインライン ``style`` を当てると CSS の
+        // ``.react-flow__edge.selected`` / ``:hover`` ルールが specificity 負けする
+        // ので入れない。色 / 太さは index.css で集中管理。
+        edges={decoratedEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         fitView
@@ -970,8 +1011,9 @@ export function DiagramCanvas({
         <Background gap={18} size={1} color="#cbd5e1" />
         <Controls className="!shadow-md" />
         {/* 分岐点 (junction) に ● を描く。同一出力ポートから複数 edge が分かれる
-            mid-wire 位置に打つ (= ブロック線図の慣例)。 */}
-        <JunctionDots />
+            mid-wire 位置に打つ (= ブロック線図の慣例)。ADR-0057: ● をドラッグで
+            任意位置に固定でき、手動位置は現スコープの branch_waypoints から渡す。 */}
+        <JunctionDots waypoints={scopeWaypoints} />
       </ReactFlow>
       {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
           start から current への直線で十分 (= リファレンスツールでも drag 中は仮の

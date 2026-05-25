@@ -80,6 +80,13 @@ export interface ScopeSettings {
 
 export type LayoutDict = Record<string, LayoutEntry>;
 
+// ADR-0057: 手動 branch waypoint (分岐点 ● のドラッグ固定位置)。
+// key = "<source block id>:<sourceHandle index>" (= 分岐点単位の合成キー、
+// 区切り `:` は ADR-0004 の ID 規則で衝突しない)。value = flow 絶対座標 {x, y}。
+// trunk 共有 (= 分岐点単位で 1 件、同一 source ポートの全枝が共有) で、欠落時は
+// 全自動計算 (= 後方互換)。純粋な視覚情報で connections (トポロジ) には一切影響しない。
+export type BranchWaypointDict = Record<string, { x: number; y: number }>;
+
 export interface FlwModel {
   schema_version: string;
   metadata?: { name?: string; created_at?: string; tool?: string; comment?: string };
@@ -92,6 +99,10 @@ export interface FlwModel {
   // ADR-0044 §論点 1: optional な per-scope プロット設定 (block_id → ScopeSettings)。
   // schema 0.8 維持 (= optional 追加なので bump 不要、ADR-0008 慣習)。
   scope_settings?: Record<string, ScopeSettings>;
+  // ADR-0057: optional な手動 branch waypoint (合成キー → flow 絶対座標)。
+  // top-level の独立キー (= layout / scope_settings と並ぶ)。backend は opaque
+  // round-trip (= Python 無改修)。schema 0.8 維持 (optional 追加、bump 不要)。
+  branch_waypoints?: BranchWaypointDict;
 }
 
 export interface ModelList {

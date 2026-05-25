@@ -10,6 +10,19 @@
 
 import { BaseEdge, type EdgeProps, getSmoothStepPath, Position } from "@xyflow/react";
 
+import {
+  getStepEdgePolyline,
+  polylineToSvgPath,
+  type Point,
+} from "../lib/edgeRectIntersect";
+
+/** ADR-0057: ``BranchableEdge`` の ``data`` に注入される手動分岐点 (= 経由点)。
+ *  ``DiagramCanvas`` が現 scope の ``branch_waypoints`` から該当 edge に付与する。 */
+export interface BranchableEdgeData extends Record<string, unknown> {
+  /** 手動分岐点 (flow 絶対座標)。無ければ従来の自動 step path で描画する。 */
+  via?: Point;
+}
+
 // v0.20.10: edge の起点 / 終点を Handle 中心 (= node 境界の +12 px 外側) では
 // なく **node 境界線** に補正するためのオフセット。React Flow Handle width=24
 // で Handle center は node 境界の Handle width/2 = 12 px 外側にあるため、
@@ -82,7 +95,9 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     targetPosition,
     style,
     markerEnd,
+    data,
   } = props;
+  const via = (data as BranchableEdgeData | undefined)?.via;
 
   // v0.20.10: ユーザー要求「ポート位置は動かさず、ポート接続後はエッジの起点を
   // ポートではなくブロックにしてほしい」への対応。React Flow は sourceX/Y に
@@ -96,16 +111,32 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
   const adjustedSrc = adjustToBorder(sourceX, sourceY, sourcePosition);
   const adjustedTgt = adjustToBorder(targetX, targetY, targetPosition);
 
-  const [edgePath] = getSmoothStepPath({
-    sourceX: adjustedSrc.x,
-    sourceY: adjustedSrc.y,
-    targetX: adjustedTgt.x,
-    targetY: adjustedTgt.y,
-    sourcePosition,
-    targetPosition,
-    // リファレンスツール流: 折れ角は直角 (= radius 0)
-    borderRadius: 0,
-  });
+  // ADR-0057: 手動分岐点 (via) があれば、``getSmoothStepPath`` の代わりに via を
+  // 必ず通る自前 step path (= ● 算出と同一の polyline = 幾何 SSOT) で描画する。
+  // via 無しは従来 ``getSmoothStepPath`` を維持し、見た目 drift を局所化する。
+  let edgePath: string;
+  if (via) {
+    edgePath = polylineToSvgPath(
+      getStepEdgePolyline(
+        adjustedSrc.x,
+        adjustedSrc.y,
+        adjustedTgt.x,
+        adjustedTgt.y,
+        via,
+      ),
+    );
+  } else {
+    [edgePath] = getSmoothStepPath({
+      sourceX: adjustedSrc.x,
+      sourceY: adjustedSrc.y,
+      targetX: adjustedTgt.x,
+      targetY: adjustedTgt.y,
+      sourcePosition,
+      targetPosition,
+      // リファレンスツール流: 折れ角は直角 (= radius 0)
+      borderRadius: 0,
+    });
+  }
 
   return (
     <>

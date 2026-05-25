@@ -321,6 +321,7 @@
   "diagram.port_shape_mismatch": "ポート形状が一致しません。",
   "diagram.library_drop_invalid_ref": "不正なライブラリ参照がドロップされました。",
   "diagram.library_drop_failed": "ライブラリ entry の取得に失敗: {{message}}",
+  "diagram.reset_branch_waypoint": "分岐点位置をリセット",
 
   "palette.library_prefix": "ライブラリ",
 
