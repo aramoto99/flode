@@ -242,7 +242,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       setDraft((prev) => ({ ...prev, [k]: e.target.value }));
                       commit(k, e.target.value, "string");
                     }}
-                    className={`${SELECT_CLS} flex-1 max-w-[140px]`}
+                    className={`${SELECT_CLS} min-w-0 flex-1 max-w-[140px]`}
                   >
                     {enumValues.map((opt) => (
                       <option key={opt} value={opt}>
@@ -258,7 +258,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       setDraft((prev) => ({ ...prev, [k]: e.target.value }));
                       commit(k, e.target.value, "boolean");
                     }}
-                    className={`${SELECT_CLS} w-24`}
+                    className={`${SELECT_CLS} min-w-0 w-24`}
                   >
                     <option value="false">false</option>
                     <option value="true">true</option>
@@ -277,7 +277,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       }
                     }}
                     onBlur={(e) => commit(k, e.target.value, "number")}
-                    className={`${INPUT_MONO_CLS} flex-1 max-w-[140px]`}
+                    className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
                   />
                 ) : (
                   <input
@@ -290,7 +290,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       commit(k, val, "string");
                     }}
                     onBlur={(e) => commit(k, e.target.value, "string")}
-                    className={`${INPUT_CLS} flex-1 max-w-[140px]`}
+                    className={`${INPUT_CLS} min-w-0 flex-1 max-w-[140px]`}
                   />
                 )}
               </PropertyRow>
@@ -440,7 +440,7 @@ function MaskValuesEditor({
                     setDraft((prev) => ({ ...prev, [p.name]: e.target.value }));
                     commit(p.name, e.target.value, p.type);
                   }}
-                  className={`${SELECT_CLS} w-24`}
+                  className={`${SELECT_CLS} min-w-0 w-24`}
                 >
                   <option value="false">false</option>
                   <option value="true">true</option>
@@ -459,7 +459,7 @@ function MaskValuesEditor({
                     }
                   }}
                   onBlur={(e) => commit(p.name, e.target.value, p.type)}
-                  className={`${INPUT_MONO_CLS} flex-1 max-w-[140px]`}
+                  className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
                 />
               )}
             </PropertyRow>
