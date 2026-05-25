@@ -87,6 +87,11 @@ class BlockMetadata:
     port_shapes_in_default: list[list[int]]
     port_shapes_out_default: list[list[int]]
     tags: list[str] = field(default_factory=list)
+    # 検索別名 (synonym)。display_name / type_path / category / tags に現れない
+    # 同義語で palette / command palette / QuickAdd の検索ヒットを増やす
+    # (例: "Relational" を "compare" / "比較" で見つけられるようにする)。
+    # 解決順は class 属性 ``_search_keywords`` → 中央テーブル → 空。
+    search_keywords: list[str] = field(default_factory=list)
     # ADR-0021 §(5): GUI ドリルダウン / マスクパラメータ可否のヒント
     is_container: bool = False
     mask_capable: bool = False
@@ -199,6 +204,20 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     ),
     "pyflw.subsystems.ports.Inport": ("subsystems", "Inport", "subsys.inport"),
     "pyflw.subsystems.ports.Outport": ("subsystems", "Outport", "subsys.outport"),
+}
+
+
+# 検索別名 (synonym) テーブル。type_path → 同義語の tuple。display_name /
+# type_path / category / tags に現れない語で検索ヒットさせる。両言語 (en/ja) を
+# 1 つの tuple にフラットに並べてよい (= 検索は locale 非依存の部分一致)。
+# class 属性 ``_search_keywords`` が定義されていればそちらが優先される
+# (= 3rd-party 拡張ブロックが自前で宣言できる)。
+_BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
+    # 「関係演算」を "comp" / "compare" / "比較" で見つけられるようにする (主因)。
+    "pyflw.blocks.logic.RelationalOperator": ("compare", "comparison", "比較"),
+    "pyflw.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
+    "pyflw.blocks.mathops.Divide": ("division", "除算", "割り算"),
+    "pyflw.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),
 }
 
 
@@ -402,6 +421,21 @@ def _resolve_metadata_fallback(cls: type) -> tuple[str, str, str]:
     return category, display_name, icon
 
 
+def _resolve_search_keywords(cls: type) -> list[str]:
+    """検索別名を class 属性 → 中央テーブル → 空 の順で解決する。
+
+    解決順は ``_resolve_metadata_fallback`` と同じ慣習。class 属性
+    ``_search_keywords`` を持つ 3rd-party 拡張ブロックは自前の別名を宣言できる。
+    ``_search_keywords = []`` (= 明示的に別名なし) は意図を尊重し中央テーブルへ
+    フォールバックしない (``is not None`` で空シーケンスと未宣言を区別する)。
+    """
+    override = getattr(cls, "_search_keywords", None)
+    if override is not None:
+        return [str(k) for k in override]
+    table = _BLOCK_SEARCH_KEYWORDS.get(block_type_path(cls))
+    return list(table) if table else []
+
+
 def build_metadata(cls: type) -> BlockMetadata:
     """1 つの Block サブクラスから ``BlockMetadata`` を構築する (ADR-0019、ADR-0028)。"""
     # 遅延 import で循環回避 (subsystem.py は core.block / core.persistence に依存)
@@ -457,6 +491,7 @@ def build_metadata(cls: type) -> BlockMetadata:
         port_shapes_in_default=([list(s) for s in blk.port_shapes_in] if blk else []),
         port_shapes_out_default=([list(s) for s in blk.port_shapes_out] if blk else []),
         tags=tags,
+        search_keywords=_resolve_search_keywords(cls),
         is_container=is_container,
         mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
         display_name_i18n=display_name_i18n,
@@ -551,6 +586,8 @@ def metadata_to_dict(
         "port_shapes_in_default": meta.port_shapes_in_default,
         "port_shapes_out_default": meta.port_shapes_out_default,
         "tags": meta.tags,
+        # 検索別名。別名なしブロックは空配列 (= 後方互換、frontend は ?? [] で扱う)。
+        "search_keywords": meta.search_keywords,
         "is_container": meta.is_container,
         "mask_capable": meta.mask_capable,
     }

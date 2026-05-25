@@ -108,10 +108,15 @@ export function localizeDescription<
   return obj.description_i18n?.[l] || obj.description || "";
 }
 
-/** 検索インデックス用に **両言語の表示名** + ``type_path`` 末尾名を返す。
+/** 検索インデックス用に **両言語の表示名** + ``type_path`` 末尾名 + 検索別名を返す。
  *
  * ja 環境で `"sum"` (英語名) を入力しても `"加算"` のブロックがヒットする
  * (= リファレンスツール経験者が日本語名を覚えていなくても見つけられる)。
+ *
+ * ``search_keywords`` (registry の synonym) も含めるため、表示名に現れない語
+ * (例: "Relational" を `"compare"` / `"比較"`) でもヒットする。BlockPalette /
+ * CommandPalette / QuickAdd の検索はすべて本 helper を経由するため、ここ 1 箇所で
+ * 3 画面に波及する。
  *
  * 重複排除済 (例: ``Mux`` の display_name が ja/en 同じ値の場合は 1 件)。
  */
@@ -125,5 +130,9 @@ export function searchableDisplayNames(block: BlockMetadata): string[] {
   // が空のブロックがあっても `type_path` の末尾でヒットさせる
   const tail = block.type_path.split(".").at(-1);
   if (tail) set.add(tail);
+  // 検索別名 (synonym)。旧サーバでは欠落するため ?? [] で安全に扱う。
+  for (const kw of block.search_keywords ?? []) {
+    if (kw) set.add(kw);
+  }
   return Array.from(set);
 }

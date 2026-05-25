@@ -165,6 +165,11 @@ export interface BlockMetadata {
   port_shapes_in_default: number[][];
   port_shapes_out_default: number[][];
   tags: string[];
+  // 検索別名 (synonym)。display_name / type_path / category / tags に現れない
+  // 同義語で palette / command palette / QuickAdd の検索ヒットを増やす
+  // (例: "Relational" を "compare" / "比較" で発見可能にする)。
+  // 旧サーバ (この field 以前) では欠落するため optional。
+  search_keywords?: string[];
   // ADR-0021 §(5): drilldown / mask 可否のヒント
   is_container: boolean;
   mask_capable: boolean;

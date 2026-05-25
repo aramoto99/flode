@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — ブロック検索の別名 (search_keywords)
+
+ユーザー指摘「comp で検索したときに出なかったので存在しないと思った」。入力同士を
+比較する `RelationalOperator` は表示名「Relational / 関係演算」・type_path・category・
+tags のどれにも "comp" / "比較" を含まず、検索でヒットしなかった (ブロック自体は
+存在)。表示名に現れない同義語で発見できるよう、registry に検索別名フィールドを追加。
+
+- `pyflw/server/registry.py`:
+  - `BlockMetadata` に `search_keywords: list[str]` を追加 (additive optional の
+    ため blocks schema は `blocks.v2` 据え置き)
+  - 中央テーブル `_BLOCK_SEARCH_KEYWORDS` (type_path → 同義語) を新設。シードは
+    RelationalOperator (`compare` / `comparison` / `比較`)、Product (`multiply`
+    等)、Divide (`division` / `除算` 等)、Saturation (`limit` / `clamp` / `飽和`
+    等)
+  - `_resolve_search_keywords()` は class 属性 `_search_keywords` → 中央テーブル
+    → 空 の順で解決 (= 3rd-party 拡張ブロックが自前で別名宣言可能)
+  - `metadata_to_dict` で `search_keywords` を常時出力 (別名なしは空配列)
+- `pyflw/web/frontend/src/types/api.ts`: `BlockMetadata.search_keywords?` を追加
+  (旧サーバ互換のため optional)
+- `pyflw/web/frontend/src/lib/blockI18n.ts`: `searchableDisplayNames()` に
+  `search_keywords` を合流。BlockPalette / CommandPalette / QuickAdd の検索は
+  すべて本 helper 経由のため、1 箇所の変更で 3 画面に波及
+
+### Tests
+
+- `tests/server/test_blocks_registry.py`: 必須キーに `search_keywords` 追加、
+  RelationalOperator の別名 / 別名なしブロックの空配列 / class 属性上書きを検証
+- `pyflw/web/frontend/tests/blockI18n.test.ts`: `searchableDisplayNames` が
+  `search_keywords` を含むこと / 旧サーバ (field 欠落) で例外を出さないことを検証
+
 ## [3.16.0] - 2026-05-17 — TriggeredSubsystem の trigger 入力ポートを上辺に配置、中央に雷 glyph を追加 (ADR-0054)
 
 ユーザー指摘「いや、だから何をトリガーにするって聞いてんの。トリガー信号は何？
