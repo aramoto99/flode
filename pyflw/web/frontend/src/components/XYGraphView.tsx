@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { sizeCanvasToDisplay } from "../lib/hidpiCanvas";
 import { exportScopeImage } from "../lib/scopeImageExport";
 import {
   DEFAULT_SCOPE_SETTINGS,
@@ -59,13 +60,14 @@ export function XYGraphView({
     if (!canvas || !container) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // コンテナの実寸を使う (= canvas は absolute inset-0 で追従させ、backing store
-    // をコンテナサイズに合わせる)。
+    // コンテナの実寸 (CSS px) を使う (= canvas は absolute inset-0 で追従させる)。
+    // backing store は devicePixelRatio 倍にして HiDPI でピンボケさせない
+    // (sizeCanvasToDisplay が ctx を dpr 倍スケールするので、以降の描画は CSS px
+    // 座標のままでよい)。canvas.width への代入は仕様上バッキングストアを全消去
+    // するため、別途 clearRect は不要 (毎フレーム新規キャンバスとして描き直す)。
     const { width, height } = container.getBoundingClientRect();
     if (width === 0 || height === 0) return;
-    canvas.width = width;
-    canvas.height = height;
-    ctx.clearRect(0, 0, width, height);
+    sizeCanvasToDisplay(canvas, ctx, width, height);
 
     // SoA: values[0] = x 列、values[1] = y 列。両方揃っていない / サンプル <2 ならスキップ。
     const xCol = buffer.values[0];
