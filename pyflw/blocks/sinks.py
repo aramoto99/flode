@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
 import numpy.typing as npt
@@ -41,6 +41,13 @@ class Scope(Block):
             ``100_000`` (ADR-0042 §論点 2-A)。``unbounded`` では未使用。
     """
 
+    # 型エイリアス ScopeBufferMode を単一の真実とし、validation /
+    # エラーメッセージ / GUI dropdown ヒントはすべてここから導出する
+    # (= 値追加時の更新漏れを防ぐ)。
+    _BUFFER_MODES: tuple[str, ...] = get_args(ScopeBufferMode)
+    # ADR-0039 follow-up: GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"buffer_mode": _BUFFER_MODES}
+
     def __init__(
         self,
         n_inputs: int = 1,
@@ -53,9 +60,10 @@ class Scope(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=0)
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
-        if buffer_mode not in ("ring", "bounded", "unbounded"):
+        if buffer_mode not in self._BUFFER_MODES:
+            allowed = " / ".join(repr(m) for m in self._BUFFER_MODES)
             raise BlockSpecError(
-                f"Scope: buffer_mode must be 'ring' / 'bounded' / 'unbounded', got {buffer_mode!r}"
+                f"Scope: buffer_mode must be {allowed}, got {buffer_mode!r}"
             )
         if buffer_mode != "unbounded" and buffer_capacity < 1:
             raise BlockSpecError(f"Scope: buffer_capacity must be >= 1, got {buffer_capacity!r}")

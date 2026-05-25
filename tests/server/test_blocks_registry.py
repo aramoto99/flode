@@ -139,6 +139,17 @@ class TestListBlocks:
         assert "sink" in sc["tags"]
         assert sc["category"] == "sinks"
 
+    def test_scope_buffer_mode_exposes_enum_values(self, client: TestClient) -> None:
+        """``Scope.buffer_mode`` は ``_param_enums`` 経由で 3 値の enum を露出し、
+        Inspector が ``<input>`` でなく ``<select>`` を出せる (ユーザー指摘 2026-05-26)。"""
+        resp = client.get("/api/v1/blocks")
+        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sinks.Scope")
+        buffer_mode = next(p for p in sc["params_spec"] if p["name"] == "buffer_mode")
+        assert buffer_mode["enum_values"] == ["ring", "bounded", "unbounded"]
+        # buffer_capacity は数値 param なので enum 化されない (= 従来 <input>)
+        buffer_capacity = next(p for p in sc["params_spec"] if p["name"] == "buffer_capacity")
+        assert "enum_values" not in buffer_capacity
+
     def test_response_is_canonical_sorted(self, client: TestClient) -> None:
         """type_path 昇順で返ることを確認 (起動↔テストの安定性)。"""
         resp = client.get("/api/v1/blocks")
