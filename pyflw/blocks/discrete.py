@@ -204,6 +204,8 @@ class RateTransition(Block):
     """
 
     _VALID_MODES = ("zoh", "delay", "auto")
+    # ADR-0039 follow-up: GUI ParameterPanel が enum select を出すヒント
+    _param_enums = {"mode": _VALID_MODES}
 
     def __init__(
         self,
