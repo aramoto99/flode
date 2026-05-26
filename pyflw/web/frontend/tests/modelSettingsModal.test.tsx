@@ -137,6 +137,17 @@ describe("ModelSettingsModal", () => {
     expect(useAppStore.getState().editingModel!.simulator.dt_base).toBe(0.002);
   });
 
+  it("solver description hint updates when the dropdown selection changes", () => {
+    render(<ModelSettingsModal onClose={() => {}} />);
+    const hint = screen.getByTestId("model-settings-solver-desc");
+    // 初期は RK45 の説明 (= mock t は key をそのまま返す)
+    expect(hint.textContent).toBe("model_settings.solver_desc.RK45");
+    fireEvent.change(screen.getByTestId("model-settings-solver"), {
+      target: { value: "Radau" },
+    });
+    expect(hint.textContent).toBe("model_settings.solver_desc.Radau");
+  });
+
   it("auto checked → dt_base saved as null even if previous value was non-null", () => {
     const m = makeModel();
     m.simulator.dt_base = 0.003;
