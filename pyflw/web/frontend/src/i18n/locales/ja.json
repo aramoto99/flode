@@ -104,6 +104,7 @@
   "palette.category.routing": "ルーティング",
   "palette.category.sinks": "シンク",
   "palette.category.subsystems": "サブシステム",
+  "palette.category.control": "Subsystem 制御",
   "palette.category.uncategorized": "その他",
 
   "quickadd.placeholder": "挿入するブロックを検索…",

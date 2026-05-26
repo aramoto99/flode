@@ -104,6 +104,7 @@
   "palette.category.routing": "Routing",
   "palette.category.sinks": "Sinks",
   "palette.category.subsystems": "Subsystems",
+  "palette.category.control": "Subsystem control",
   "palette.category.uncategorized": "Other",
 
   "quickadd.placeholder": "Search a block to insert…",

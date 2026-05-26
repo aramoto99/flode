@@ -36,6 +36,10 @@ const CATEGORY_ORDER = [
   "routing",
   "sinks",
   "subsystems",
+  // ADR-0058: Subsystem 内部に置く境界ブロック (Inport / Outport / Trigger /
+  // Enable) を集約した「control」カテゴリ。subsystems の直後に並べて palette
+  // 上の位置を「Subsystem 関連の隣」にする。
+  "control",
   "uncategorized",
 ] as const;
 
