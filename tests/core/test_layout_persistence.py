@@ -48,10 +48,10 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_8(self) -> None:
-        # ADR-0039: 0.7 → 0.8 bump (Subsystem n_inputs/n_outputs/port_shapes_*
-        # を派生 property 化、JSON フィールド廃止)
-        assert CURRENT_SCHEMA_VERSION == "0.8"
+    def test_current_is_0_9(self) -> None:
+        # ADR-0058: 0.8 → 0.9 bump (TriggeredSubsystem を Subsystem + 内部 Trigger
+        # block に migration、識別の真実源を class 名から内部 control block に変更)
+        assert CURRENT_SCHEMA_VERSION == "0.9"
 
     def test_supported_includes_current(self) -> None:
         assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS

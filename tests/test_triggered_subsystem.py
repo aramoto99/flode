@@ -1,17 +1,21 @@
 """``TriggeredSubsystem`` (ADR-0036 §(2)(3)) のテスト。
 
-- ``trigger_mode``: ``"rising"`` / ``"falling"`` / ``"either"`` の edge 検出
-- 内部ブロックは fire 時のみ実行 (= ``_step_inner`` 経由)、fire しないステップでは
-  内部状態凍結 + 前回 ``_last_y`` キャッシュ維持
-- NaN sentinel で起動時の偽 edge を防ぐ
-- ``_is_trigger_edge`` ヘルパの単体テスト
+ADR-0058 で ``TriggeredSubsystem`` は ``Subsystem`` + 内部 ``Trigger`` block 構築の
+deprecation factory に縮退した。本テストは:
 
-ADR-0036 §(8) 数値完全不変ガード: TriggeredSubsystem を含まないモデルでは
-``Simulator._run_sm_a_loop`` の挙動は本 ADR 前と完全に同一。本テストは新規追加のみ
-で既存テストを変更しない。
+- ``_is_trigger_edge`` / ``TRIGGER_MODES`` の backward-compat shim 動作
+- ``TriggeredSubsystem(trigger_mode=...)`` 経由でも edge 駆動 / 状態凍結 / output
+  キャッシュが ADR-0036 仕様通りに動くこと (= 戻り値は ``Subsystem`` 実体だが、
+  内部 ``Trigger`` block が自動配置されているため挙動は完全互換)
+- ``DeprecationWarning`` が発生すること
+
+ADR-0036 §(8) / ADR-0058 §論点 14 数値完全不変ガード: control block を持たない
+Subsystem は既存 hot-path をそのまま通る (= 既存 949+ 件の pytest 数値は変化なし)。
 """
 
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 import pytest
@@ -19,7 +23,24 @@ import pytest
 from pyflw import Inport, Outport, TriggeredSubsystem
 from pyflw.blocks import Gain, UnitDelay
 from pyflw.exceptions import BlockSpecError
+from pyflw.subsystems.control_blocks import Trigger
 from pyflw.subsystems.triggered import TRIGGER_MODES, _is_trigger_edge
+
+
+def _get_inner_trigger(sub: object) -> Trigger:
+    """``TriggeredSubsystem(...)`` から返された Subsystem の内部 Trigger block を取得。"""
+    # _inner_blocks は build 前から存在
+    inner = getattr(sub, "_inner_blocks", [])
+    for b in inner:
+        if isinstance(b, Trigger):
+            return b
+    raise AssertionError("expected an inner Trigger block from TriggeredSubsystem factory")
+
+
+# ``TriggeredSubsystem(...)`` 呼び出しで出る DeprecationWarning をテスト全体で許容。
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:TriggeredSubsystem is deprecated:DeprecationWarning"
+)
 
 # ---------------------------------------------------------------------------
 # _is_trigger_edge ヘルパ
@@ -90,17 +111,21 @@ def _build_simple_triggered(trigger_mode: str = "rising") -> TriggeredSubsystem:
 
 
 class TestConstructor:
+    """ADR-0058: ``TriggeredSubsystem(...)`` は ``__new__`` で ``Subsystem`` +
+    内部 ``Trigger`` block を構築する factory に縮退。trigger_mode は内部 Trigger
+    block の ``trigger_type`` に転送される。"""
+
     def test_default_trigger_mode_is_rising(self) -> None:
         sub = _build_simple_triggered()
-        assert sub.trigger_mode == "rising"
+        assert _get_inner_trigger(sub).trigger_type == "rising"
 
     def test_explicit_falling(self) -> None:
         sub = _build_simple_triggered("falling")
-        assert sub.trigger_mode == "falling"
+        assert _get_inner_trigger(sub).trigger_type == "falling"
 
     def test_explicit_either(self) -> None:
         sub = _build_simple_triggered("either")
-        assert sub.trigger_mode == "either"
+        assert _get_inner_trigger(sub).trigger_type == "either"
 
     def test_invalid_trigger_mode_raises(self) -> None:
         with pytest.raises(BlockSpecError, match="trigger_mode must be one of"):
@@ -121,12 +146,24 @@ class TestConstructor:
         sub = _build_simple_triggered()
         assert np.isnan(sub._prev_trigger_value)
 
-    def test_initial_last_y_is_zeros(self) -> None:
+    def test_initial_last_y_is_zeros_after_build(self) -> None:
+        # ADR-0058: _last_y は build 後に zeros(n_outputs) で初期化される
+        # (build 前は None。Subsystem ベース実装に変更されたため)
         sub = _build_simple_triggered()
+        sub._build()
         np.testing.assert_array_equal(sub._last_y, np.zeros(1))
 
     def test_trigger_modes_constant_lists_three(self) -> None:
         assert set(TRIGGER_MODES) == {"rising", "falling", "either"}
+
+    def test_deprecation_warning_emitted(self) -> None:
+        """ADR-0058 §論点 9: 旧 API 呼び出しで DeprecationWarning が出る。"""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            TriggeredSubsystem(id="dep_test")
+            dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+            assert len(dep) >= 1
+            assert "TriggeredSubsystem is deprecated" in str(dep[0].message)
 
 
 # ---------------------------------------------------------------------------
@@ -244,8 +281,12 @@ class TestStateFreeze:
 
 
 class TestPersistence:
+    """ADR-0058: factory 経由で構築された Subsystem (+内部 Trigger) は、
+    JSON save/load 後も内部 Trigger が保持され trigger_type が一致する。"""
+
     def test_save_load_round_trip_rising(self, tmp_path) -> None:
         from pyflw import Simulator
+        from pyflw.subsystems import Subsystem
 
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(_build_simple_triggered("rising"))
@@ -254,11 +295,13 @@ class TestPersistence:
 
         sim2 = Simulator.load(path)
         sub2 = sim2.get_block("trig_sub")
-        assert isinstance(sub2, TriggeredSubsystem)
-        assert sub2.trigger_mode == "rising"
+        # ADR-0058: load 後の実体は Subsystem。内部 Trigger block で識別する
+        assert isinstance(sub2, Subsystem)
+        assert _get_inner_trigger(sub2).trigger_type == "rising"
 
     def test_save_load_round_trip_either(self, tmp_path) -> None:
         from pyflw import Simulator
+        from pyflw.subsystems import Subsystem
 
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(_build_simple_triggered("either"))
@@ -267,5 +310,5 @@ class TestPersistence:
 
         sim2 = Simulator.load(path)
         sub2 = sim2.get_block("trig_sub")
-        assert isinstance(sub2, TriggeredSubsystem)
-        assert sub2.trigger_mode == "either"
+        assert isinstance(sub2, Subsystem)
+        assert _get_inner_trigger(sub2).trigger_type == "either"

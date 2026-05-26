@@ -204,6 +204,23 @@ class Simulator:
         dst_block.input_sources[dst_idx] = (src_block, src_idx)
 
     def _execution_order(self) -> list[Block]:
+        # ADR-0058 §論点 3 / SPEC-0007 §機能要件 4: root (= Simulator 直下) に
+        # Trigger / Enable control block を配置することは禁止。これらは Subsystem
+        # 内部にのみ意味を持つ境界ブロックなので、root に置かれていたら早期 fail。
+        # 循環 import 回避のため関数内で import (= simulator.py が subsystems を
+        # トップで import すると subsystems/__init__.py が control_blocks を引いて、
+        # control_blocks が core.block を引く、という解決可能なチェーンだが
+        # 既存のレイヤリングを尊重)。
+        from ..subsystems.control_blocks import Enable, Trigger
+
+        for b in self.blocks:
+            if isinstance(b, (Trigger, Enable)):
+                kind = type(b).__name__
+                raise BlockSpecError(
+                    f"{kind} block {b.id!r} cannot be placed at root level "
+                    f"(Simulator); it must be inside a Subsystem (ADR-0058 §論点 3)."
+                )
+
         # Subsystem 等、内部構造を持つブロックは direct_feedthrough / n_states /
         # x0 を ``_build()`` で確定する (Block 基底の default は no-op)。
         # 実行順序解析の前に全ブロックに対し呼ぶ。

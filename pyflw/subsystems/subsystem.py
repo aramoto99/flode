@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict, deque
 from typing import Any
 
@@ -30,6 +31,7 @@ from ._mask import (
     normalize_mask_params,
     substitute_placeholders,
 )
+from .control_blocks import Enable, Trigger, is_trigger_edge
 from .ports import Inport, Outport
 
 _logger = logging.getLogger("pyflw.subsystem")
@@ -117,6 +119,29 @@ class Subsystem(Block):
         self._inports_by_idx: dict[int, Inport] = {}
         self._outports_by_idx: dict[int, Outport] = {}
 
+        # ADR-0058: Subsystem behavior modifier (Trigger / Enable control block)。
+        # ``_build()`` 内で内部 inner_blocks をスキャンして確定する。
+        # ``_has_trigger`` / ``_has_enable`` が共に False のとき、output / derivative
+        # / update は既存 hot-path をそのまま通る (= 数値完全不変ガード、ADR-0058
+        # §論点 14)。
+        self._trigger_block: Trigger | None = None
+        self._enable_block: Enable | None = None
+        self._has_trigger: bool = False
+        self._has_enable: bool = False
+        # ``_step_inner`` に渡すデータ Inport 数 (= n_inputs - control_count)。
+        self._n_data_inports: int = 0
+        # 外部 u 配列における slot index ([data..., enable, trigger] 順)。
+        self._enable_slot_idx: int | None = None
+        self._trigger_slot_idx: int | None = None
+        # Trigger fire 判定用の前ステップ値 (NaN sentinel で起動時の偽エッジ防止、
+        # 旧 TriggeredSubsystem._prev_trigger_value と同じ initial)。
+        self._prev_trigger_value: float = float("nan")
+        # Enable 遷移検出用の前ステップ enable 値 (NaN = 初回、`> 0` で enabled)。
+        self._prev_enable_value: float = float("nan")
+        # fire しないステップ / disable 中ステップで返す出力キャッシュ。
+        # ``_build`` 後に zeros(n_outputs) で初期化される (= n_outputs は派生 property)。
+        self._last_y: npt.NDArray[Any] | None = None
+
         # ADR-0055 §論点 5-A: Goto/From 仮想エッジ展開で外部 (Simulator) から
         # 追加される内部 ``(dst, src)`` deps の set。``_compute_exec_order`` が
         # 冒頭で deps に merge する。Goto/From を含まない Subsystem では常に空
@@ -155,7 +180,13 @@ class Subsystem(Block):
 
     @property
     def n_inputs(self) -> int:
-        return sum(1 for b in self._inner_blocks if isinstance(b, Inport))
+        # ADR-0058 §論点 4: slot 順序 [data_inports..., enable_slot, trigger_slot]。
+        # Enable / Trigger を内部に持つ Subsystem は外側から見た n_inputs に
+        # 1 個ずつ加算される。
+        n_data = sum(1 for b in self._inner_blocks if isinstance(b, Inport))
+        n_enable = sum(1 for b in self._inner_blocks if isinstance(b, Enable))
+        n_trigger = sum(1 for b in self._inner_blocks if isinstance(b, Trigger))
+        return n_data + n_enable + n_trigger
 
     @n_inputs.setter
     def n_inputs(self, value: int) -> None:  # noqa: ARG002
@@ -174,11 +205,19 @@ class Subsystem(Block):
     def port_shapes_in(self) -> tuple[tuple[int, ...], ...]:
         # 内部 Inport を port_idx 順で並べて port_shape を集める。port_idx 重複や
         # 抜けは ``_build`` で検出するため、ここでは見つかった順に並べる。
+        # ADR-0058 §論点 4: enable / trigger slot は scalar () shape を末尾に追加。
         inports = sorted(
             (b for b in self._inner_blocks if isinstance(b, Inport)),
             key=lambda p: p.port_idx,
         )
-        return tuple(p.port_shape for p in inports)
+        shapes: tuple[tuple[int, ...], ...] = tuple(p.port_shape for p in inports)
+        has_enable = any(isinstance(b, Enable) for b in self._inner_blocks)
+        has_trigger = any(isinstance(b, Trigger) for b in self._inner_blocks)
+        if has_enable:
+            shapes = shapes + ((),)
+        if has_trigger:
+            shapes = shapes + ((),)
+        return shapes
 
     @port_shapes_in.setter
     def port_shapes_in(self, value: tuple[tuple[int, ...], ...]) -> None:  # noqa: ARG002
@@ -221,7 +260,30 @@ class Subsystem(Block):
         self._inner_blocks.append(block)
         # ADR-0039: Inport が追加されたら外側 input_sources を拡張 (= n_inputs
         # property に同期させる、Block 契約「input_sources の長さ == n_inputs」を維持)。
+        # ADR-0058 §論点 4: slot 順序 [data_inports..., enable, trigger]。control
+        # block (Enable / Trigger) は input_sources の末尾側に並ぶため、Inport を
+        # 追加するときは control slot の **前** に挿入する。
         if isinstance(block, Inport):
+            # 既に存在する control slot の数 (= block 自身は Inport なので除外不要)
+            n_control_at_tail = sum(
+                1 for b in self._inner_blocks if isinstance(b, (Enable, Trigger))
+            )
+            insert_pos = len(self.input_sources) - n_control_at_tail
+            self.input_sources.insert(insert_pos, None)
+        elif isinstance(block, Enable):
+            # Enable は末尾側 control 群の最初 (= Trigger があるならその前)。
+            # ``isinstance(b, Trigger)`` で Trigger 有無を判定。block 自身は Enable
+            # なので Trigger には該当せず、自動的に除外される。
+            trigger_present = any(
+                isinstance(b, Trigger) for b in self._inner_blocks
+            )
+            if trigger_present:
+                # 末尾 Trigger slot の 1 つ前に挿入
+                self.input_sources.insert(-1, None)
+            else:
+                self.input_sources.append(None)
+        elif isinstance(block, Trigger):
+            # Trigger は常に末尾 (ADR-0058 §論点 4)
             self.input_sources.append(None)
         # 構造変更があったので次回 _build を強制再実行
         self._exec_order = None
@@ -296,12 +358,55 @@ class Subsystem(Block):
         # ADR-0021 §(6): マスク placeholder の resolve
         self._resolve_mask_placeholders()
 
-        # Inport / Outport の一覧
+        # Inport / Outport / control block (Trigger / Enable) の一覧
         # ADR-0039: n_inputs / n_outputs / port_shapes_in / port_shapes_out は
         # すべて派生 property のため、内部 Inport / Outport との count 一致と
         # port_shape 整合は **自動的に成立**する。port_idx の重複・抜けのみ検証。
+        # ADR-0058: Trigger / Enable control block を同パスで検出し、多重配置を
+        # reject する。
         inports = [b for b in self._inner_blocks if isinstance(b, Inport)]
         outports = [b for b in self._inner_blocks if isinstance(b, Outport)]
+        triggers = [b for b in self._inner_blocks if isinstance(b, Trigger)]
+        enables = [b for b in self._inner_blocks if isinstance(b, Enable)]
+
+        # ADR-0058 §論点 8: 多重配置は build 時に BlockSpecError で reject
+        if len(triggers) > 1:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: at most one Trigger block is allowed, "
+                f"got {len(triggers)}: {[t.id for t in triggers]}"
+            )
+        if len(enables) > 1:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: at most one Enable block is allowed, "
+                f"got {len(enables)}: {[e.id for e in enables]}"
+            )
+
+        trigger_block: Trigger | None = triggers[0] if triggers else None
+        enable_block: Enable | None = enables[0] if enables else None
+
+        # ADR-0058 §論点 10: function-call trigger は MVP では未実装
+        if trigger_block is not None and trigger_block.trigger_type == "function-call":
+            raise NotImplementedError(
+                f"Subsystem {self.id!r}: Trigger.trigger_type='function-call' is "
+                f"not implemented in MVP (ADR-0058 §論点 10). Use 'rising' / "
+                f"'falling' / 'either' for edge-driven triggers."
+            )
+
+        self._trigger_block = trigger_block
+        self._enable_block = enable_block
+        self._has_trigger = trigger_block is not None
+        self._has_enable = enable_block is not None
+        self._n_data_inports = len(inports)
+        # 外部 u 配列の slot index ([data..., enable, trigger] 順、ADR-0058 §論点 4)
+        if self._has_enable:
+            self._enable_slot_idx = self._n_data_inports
+        else:
+            self._enable_slot_idx = None
+        if self._has_trigger:
+            offset = 1 if self._has_enable else 0
+            self._trigger_slot_idx = self._n_data_inports + offset
+        else:
+            self._trigger_slot_idx = None
 
         # port_idx の重複・抜けチェック (= 連番 [0..N-1])
         n_in = len(inports)
@@ -374,6 +479,13 @@ class Subsystem(Block):
 
         # direct_feedthrough を内部 Inport→Outport 経路から推論 (LO-A)
         self.direct_feedthrough = self._infer_direct_feedthrough(inports, outports)
+        # ADR-0058 §論点 11 / 旧 TriggeredSubsystem._build と同じく、Trigger 付き
+        # Subsystem は出力が「前回 fire 時の _last_y キャッシュ」になるため、内部の
+        # 直達経路に関係なく外側からは非直達。Simulator のトポロジカルソートが
+        # 誤って direct_feedthrough=True と扱うと代数ループ誤検知や順序ミスを
+        # 起こすため、推論結果を強制 False に書き換える。
+        if self._has_trigger:
+            self.direct_feedthrough = False
 
         # sample_time 継承 (ST-A): 内部の最小サンプル時間
         sample_times = [
@@ -387,6 +499,14 @@ class Subsystem(Block):
         # save/load 用 params の確定
         self._params["blocks"] = [b.to_dict() for b in self._inner_blocks]
         self._params["connections"] = self._serialize_inner_connections()
+
+        # ADR-0058: control block hot-path で参照する出力キャッシュを build 末尾で
+        # 初期化。n_outputs は派生 property なので、ここで確定値が取れる。
+        # Trigger / Enable を持たない Subsystem では output() の既存 hot-path が
+        # _last_y を参照しないので、初期化しても数値挙動への影響はない (= 数値
+        # 完全不変ガード、既存テストへの影響なし)。
+        if self._last_y is None or self._last_y.shape != (self.n_outputs,):
+            self._last_y = np.zeros(self.n_outputs)
 
     def _compute_exec_order(self) -> list[Block]:
         """内部 direct_feedthrough 依存に基づくトポロジカル順 (代数ループ検出付き)。"""
@@ -618,6 +738,11 @@ class Subsystem(Block):
 
         assert self._exec_order is not None
         for b in self._exec_order:
+            # ADR-0058 §論点 2 (SHOULD 2): Trigger / Enable は宣言的境界ブロックで、
+            # 内部の output / input dataflow には参加しない。明示的に skip して
+            # ``outputs`` 辞書に entry を作らない (= 内部接続から参照されない保証)。
+            if isinstance(b, (Trigger, Enable)):
+                continue
             if b.direct_feedthrough:
                 u = np.zeros(b.n_inputs)
                 for i, src in enumerate(b.input_sources):
@@ -640,10 +765,25 @@ class Subsystem(Block):
                 inputs[b] = u
         return outputs, inputs
 
-    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        self._build()
-        outputs, _inputs = self._step_inner(t, x, u)
-        # Outport ごとに集める
+    # ---------- ADR-0058 hot-path helpers (control block を持つ Subsystem 用) ----------
+
+    def _is_enabled(self, u: npt.NDArray[Any]) -> bool:
+        """``u[enable_slot_idx]`` を読んで enable 状態を返す。Enable なしなら常に True。
+
+        ADR-0058 §エッジケース: NaN は無効化扱い (= safe fallback)。
+        """
+        if not self._has_enable:
+            return True
+        assert self._enable_slot_idx is not None
+        val = float(u[self._enable_slot_idx])
+        if math.isnan(val):
+            return False
+        return val > 0.0
+
+    def _compute_y_from_outputs(
+        self, outputs: dict[Block, npt.NDArray[Any]]
+    ) -> npt.NDArray[Any]:
+        """内部 ``outputs`` 辞書から Outport を集めて y ベクトルを作る。"""
         y = np.zeros(self.n_outputs)
         for port_idx in range(self.n_outputs):
             outport = self._outports_by_idx[port_idx]
@@ -653,11 +793,75 @@ class Subsystem(Block):
                 y[port_idx] = outputs[sb][si]
         return y
 
+    # ---------- Block 契約: output / derivative / update ----------
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        self._build()
+        # ADR-0058 §論点 14 数値完全不変ガード: Trigger / Enable を持たない Subsystem
+        # は既存 hot-path をそのまま通る (= 既存テスト 949+ 件の数値が bit 単位で
+        # 変化しないことを保証)。
+        if not (self._has_trigger or self._has_enable):
+            outputs, _inputs = self._step_inner(t, x, u)
+            return self._compute_y_from_outputs(outputs)
+
+        # 制御ブロック付き hot-path。_last_y は build 直後に初期化。
+        if self._last_y is None:
+            self._last_y = np.zeros(self.n_outputs)
+
+        enabled = self._is_enabled(u)
+        if not enabled:
+            # ADR-0058 §論点 5: disable 中の出力ポリシー
+            assert self._enable_block is not None
+            if self._enable_block.outputs_when_disabled == "reset":
+                return np.zeros(self.n_outputs)
+            return np.asarray(self._last_y, dtype=float)
+
+        if self._has_trigger:
+            # Trigger-driven (enable 真のときも): _last_y キャッシュを返す
+            # (= update() で fire 時に更新される、旧 TriggeredSubsystem.output と同等)
+            return np.asarray(self._last_y, dtype=float)
+
+        # Enable-only かつ enabled: 通常 Subsystem として現在 state から計算。
+        # ADR-0058 §論点 2 MUST 2: Simulator の 2-pass output 計算 (= ADR-0014 [A]
+        # phase) は 1 step 内で複数回 ``output()`` を呼ぶ可能性がある。内部 state
+        # を変えない設計 (``update()`` のみが state を進める) のため、``_step_inner``
+        # 再実行は idempotent (内部ブロックの ``output()`` も状態を変えない)。
+        # 余計な計算コストはあるが、副作用ゼロで仕様通り。
+        u_data = u[: self._n_data_inports]
+        outputs, _inputs = self._step_inner(t, x, u_data)
+        y = self._compute_y_from_outputs(outputs)
+        # _last_y を更新: 次に disable に遷移したとき "held" policy で返す値の cache
+        self._last_y = y
+        return y
+
     def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         if self.n_states == 0:
             return np.zeros(0)
-        _outputs, inputs = self._step_inner(t, x, u)
+        # ADR-0058 §論点 14 数値完全不変ガード
+        if not (self._has_trigger or self._has_enable):
+            _outputs, inputs = self._step_inner(t, x, u)
+            xdot = np.zeros(self.n_states)
+            for b, sl in self._continuous_slices:
+                xdot[sl] = np.asarray(
+                    b.derivative(t, x[sl], inputs.get(b, np.zeros(b.n_inputs))),
+                    dtype=float,
+                )
+            return xdot
+
+        # ADR-0058 §論点 6: Enable=false / Trigger fire 外は derivative=0 で凍結
+        # (= solve_ivp は積分継続するが dx/dt=0 で実質的に state を固定)。
+        enabled = self._is_enabled(u)
+        if not enabled:
+            return np.zeros(self.n_states)
+        if self._has_trigger:
+            # Trigger 駆動: ADR-0036 §(4-C) 踏襲、fire 外は derivative=0 で凍結
+            # (= 連続状態を持つ場合は warning が _build 後に 1 度出る別経路で対応)
+            return np.zeros(self.n_states)
+
+        # Enable-only かつ enabled: 通常 Subsystem として derivative を計算
+        u_data = u[: self._n_data_inports]
+        _outputs, inputs = self._step_inner(t, x, u_data)
         xdot = np.zeros(self.n_states)
         for b, sl in self._continuous_slices:
             xdot[sl] = np.asarray(
@@ -668,10 +872,85 @@ class Subsystem(Block):
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
+        # ADR-0058 §論点 14 数値完全不変ガード
+        if not (self._has_trigger or self._has_enable):
+            if self.n_states == 0:
+                return np.asarray(x, dtype=float)
+            _outputs, inputs = self._step_inner(t, x, u)
+            x_next: npt.NDArray[Any] = np.array(x, dtype=float, copy=True)
+            for b, sl in self._discrete_slices:
+                x_next[sl] = np.asarray(
+                    b.update(t, x[sl], inputs.get(b, np.zeros(b.n_inputs))),
+                    dtype=float,
+                )
+            return x_next
+
+        # 制御ブロック付き hot-path
+        if self._last_y is None:
+            self._last_y = np.zeros(self.n_outputs)
+
+        # Enable 状態の遷移検出 (false → true) と prev 更新。
+        # ADR-0058 §論点 4 MUST 3: ``_prev_enable_value`` は NaN sentinel 初期化なので
+        # 「初回ステップで enable=true から始まる」ケースでは ``prev_was_disabled=False``
+        # となり ``enable_transition_to_true=False``。これは意図的設計で、Trigger の
+        # 偽エッジ防止 (``_prev_trigger_value=NaN``) と対称的。起動直後は内部状態が
+        # 既に x0 なので、reset policy 下でも追加の reset は不要 (= 余計な書き戻しを
+        # 避けて数値的に冪等)。
+        enable_transition_to_true = False
+        if self._has_enable:
+            assert self._enable_slot_idx is not None and self._enable_block is not None
+            curr_en = float(u[self._enable_slot_idx])
+            prev_en = self._prev_enable_value
+            curr_enabled = (not math.isnan(curr_en)) and curr_en > 0.0
+            prev_was_disabled = (not math.isnan(prev_en)) and prev_en <= 0.0
+            enable_transition_to_true = curr_enabled and prev_was_disabled
+            self._prev_enable_value = curr_en
+        else:
+            curr_enabled = True
+
+        # Trigger edge 検出と prev 更新 (旧 TriggeredSubsystem.update と同じ semantics)
+        if self._has_trigger:
+            assert (
+                self._trigger_slot_idx is not None and self._trigger_block is not None
+            )
+            curr_trig = float(u[self._trigger_slot_idx])
+            edge = is_trigger_edge(
+                self._prev_trigger_value, curr_trig, self._trigger_block.trigger_type
+            )
+            self._prev_trigger_value = curr_trig
+        else:
+            edge = False
+
+        # ADR-0058 §論点 4: state reset on enable false→true 遷移 (policy: reset)
+        if (
+            enable_transition_to_true
+            and self._enable_block is not None
+            and self._enable_block.states_when_enabling == "reset"
+        ):
+            x = np.array(self.x0, dtype=float, copy=True)
+
+        # Fire 条件 (ADR-0058 §論点 9: edge AND enable):
+        # - Trigger + Enable: enabled and edge
+        # - Trigger only: edge
+        # - Enable only: enabled (level-driven、毎ステップ fire)
+        if self._has_trigger and self._has_enable:
+            fire = curr_enabled and edge
+        elif self._has_trigger:
+            fire = edge
+        else:  # has_enable only
+            fire = curr_enabled
+
+        if not fire:
+            # 凍結 (state reset があった場合はその x を返す、なければ受信 x をそのまま)
+            return np.asarray(x, dtype=float)
+
+        # Fire: 内部 step を実行し _last_y を更新
+        u_data = u[: self._n_data_inports]
+        outputs, inputs = self._step_inner(t, x, u_data)
+        self._last_y = self._compute_y_from_outputs(outputs)
         if self.n_states == 0:
             return np.asarray(x, dtype=float)
-        _outputs, inputs = self._step_inner(t, x, u)
-        x_next: npt.NDArray[Any] = np.array(x, dtype=float, copy=True)
+        x_next = np.array(x, dtype=float, copy=True)
         for b, sl in self._discrete_slices:
             x_next[sl] = np.asarray(
                 b.update(t, x[sl], inputs.get(b, np.zeros(b.n_inputs))),

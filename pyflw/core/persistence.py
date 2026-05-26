@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.8"
+CURRENT_SCHEMA_VERSION = "0.9"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -473,6 +473,103 @@ def _strip_subsystem_port_fields_recursive(
             _strip_subsystem_port_fields_recursive(inner_blocks, parent_path=path)
 
 
+# ADR-0058: TriggeredSubsystem の旧 type_path / migration 後の Subsystem type_path /
+# 新規 Trigger control block の type_path。文字列として 3 箇所で参照されるので定数化。
+_OLD_TRIGGERED_SUBSYSTEM_TYPE = "pyflw.subsystems.triggered.TriggeredSubsystem"
+_NEW_SUBSYSTEM_TYPE = "pyflw.subsystems.subsystem.Subsystem"
+_NEW_TRIGGER_BLOCK_TYPE = "pyflw.subsystems.control_blocks.Trigger"
+
+
+def _convert_triggered_subsystem_recursive(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    parent_path: str = "<root>",
+) -> None:
+    """ADR-0058 0.8 → 0.9 用のヘルパ。``blocks`` を再帰的にたどり、
+    ``TriggeredSubsystem`` を ``Subsystem`` + 内部 ``Trigger`` block に変換する。
+
+    変換ルール (ADR-0058 §論点 6):
+        - ``type`` を ``Subsystem`` に書き換え
+        - ``params.trigger_mode`` を取り出し、内部 ``blocks`` 末尾に
+          ``Trigger(trigger_type=<旧 trigger_mode>)`` の entry を append
+        - 新 ``Trigger`` block の id は ``f"{parent_id}_trigger"`` (衝突時は連番)
+        - 旧 ``params.trigger_mode`` を削除
+        - 内部 ``params.blocks`` を再帰処理 (= ネスト Subsystem 内の旧型も変換)
+
+    数値挙動: 変換後の Subsystem + Trigger は旧 TriggeredSubsystem と同じ semantics
+    で動作する (ADR-0058 §論点 6 確定、`is_trigger_edge` は移植・公開化済)。
+    """
+    logger = logging.getLogger("pyflw.persistence.migrate_0_8_to_0_9")
+    if not blocks:
+        return
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        block_type = entry.get("type")
+        params = entry.get("params")
+        if not isinstance(params, dict):
+            continue
+        if block_type == _OLD_TRIGGERED_SUBSYSTEM_TYPE:
+            entry_id = entry.get("id", "unknown")
+            path = f"{parent_path}/{entry_id}"
+            trigger_mode = params.pop("trigger_mode", "rising")
+            # ``setdefault`` で元 list object への参照を維持しつつ、欠損時に空 list を
+            # 自動補完 (NITS 2: ``params.get("blocks") or [] + append + 再代入`` の
+            # 冗長パターンを簡素化)。
+            inner = params.setdefault("blocks", [])
+            # ADR-0058 §論点 6: 内部 Trigger の id は決定的 ``{parent_id}_trigger``
+            # で、衝突した場合のみ counter を後置する。
+            existing_ids: set[str] = set()
+            for b in inner:
+                if isinstance(b, dict):
+                    bid = b.get("id")
+                    if isinstance(bid, str):
+                        existing_ids.add(bid)
+            trigger_id = f"{entry_id}_trigger"
+            counter = 0
+            while trigger_id in existing_ids:
+                counter += 1
+                trigger_id = f"{entry_id}_trigger_{counter}"
+            inner.append(
+                {
+                    "id": trigger_id,
+                    "type": _NEW_TRIGGER_BLOCK_TYPE,
+                    "params": {"trigger_type": trigger_mode},
+                }
+            )
+            entry["type"] = _NEW_SUBSYSTEM_TYPE
+            logger.debug(
+                "Subsystem %s: converted TriggeredSubsystem (trigger_mode=%r) → "
+                "Subsystem + Trigger block id=%r (ADR-0058 schema 0.9 migration)",
+                path,
+                trigger_mode,
+                trigger_id,
+            )
+        # ネスト Subsystem の内部 blocks も再帰処理 (Subsystem に変換済の entry も含む)
+        inner_blocks = params.get("blocks")
+        if isinstance(inner_blocks, list):
+            _convert_triggered_subsystem_recursive(
+                inner_blocks, parent_path=f"{parent_path}/{entry.get('id', '<no-id>')}"
+            )
+
+
+def _builtin_migrate_0_8_to_0_9(data: dict[str, Any]) -> dict[str, Any]:
+    """ADR-0058: 0.8 → 0.9。
+
+    旧 ``pyflw.subsystems.triggered.TriggeredSubsystem`` を新
+    ``pyflw.subsystems.subsystem.Subsystem`` + 内部 ``Trigger`` block に変換する。
+    識別の真実源を class 名から内部 control block に変える設計変更
+    (ADR-0058 §論点 6 / §論点 11)。
+
+    数値挙動への影響: なし (= ``is_trigger_edge`` semantics は ADR-0036 から不変、
+    state freeze ロジックも同等。SPEC-0007 §非機能要件「数値完全不変」を満たす)。
+    """
+    out = dict(data)
+    _convert_triggered_subsystem_recursive(out.get("blocks"))
+    out["schema_version"] = "0.9"
+    return out
+
+
 def _builtin_migrate_0_7_to_0_8(data: dict[str, Any]) -> dict[str, Any]:
     """ADR-0039: 0.7 → 0.8。
 
@@ -502,6 +599,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.5", "0.6")] = _builtin_migrate_0_5_to_0_6
     _MIGRATIONS[("0.6", "0.7")] = _builtin_migrate_0_6_to_0_7
     _MIGRATIONS[("0.7", "0.8")] = _builtin_migrate_0_7_to_0_8
+    _MIGRATIONS[("0.8", "0.9")] = _builtin_migrate_0_8_to_0_9
 
 
 _register_builtin_migrations()
@@ -525,7 +623,20 @@ def register_migration(
 
 
 def migrate_to_current(data: dict[str, Any]) -> dict[str, Any]:
-    """``schema_version`` を確認し、必要なら最新版にマイグレートして返す。"""
+    """``schema_version`` を確認し、必要なら最新版にマイグレートして返す。
+
+    ADR-0058 §論点 10: 1 段以上の migration を適用したら、戻り値に
+    ``_migrated_from`` メタを付与する (= 呼び出し側が「保存時に新 schema になる」
+    旨を UI 通知 / dirty flag 設定に使う)。元データに既に ``_migrated_from`` が
+    あっても上書きする (= migration 連鎖時は最古バージョンを記録)。
+
+    Note:
+        ``_migrated_from`` キーは **migration が走ったときだけ** 戻り値に存在する。
+        現バージョンファイルをロードしたときは含まれない。呼び出し側は必ず
+        ``data.get("_migrated_from")`` で参照すること (= ``data["_migrated_from"]``
+        での参照は KeyError を起こす)。Simulator.load / frontend loadModel での
+        消費後は ``data`` から削除する (= save 時に metadata として書き戻さない)。
+    """
     if "schema_version" not in data:
         raise ModelLoadError("Missing required key 'schema_version' in JSON model")
     version = data["schema_version"]
@@ -537,6 +648,7 @@ def migrate_to_current(data: dict[str, Any]) -> dict[str, Any]:
         return data  # 互換性のあるサポートバージョン
 
     # 異なるが migration 可能?
+    original_version = version
     cur = version
     visited: set[str] = {cur}
     while cur != CURRENT_SCHEMA_VERSION:
@@ -553,4 +665,8 @@ def migrate_to_current(data: dict[str, Any]) -> dict[str, Any]:
         data = _MIGRATIONS[(cur, next_step)](data)
         visited.add(next_step)
         cur = next_step
+    # ADR-0058 §論点 10: migration を 1 段以上経た data に元バージョンを記録。
+    # 呼び出し側 (Simulator.load / frontend loadModel) はこのキーを見て dirty flag
+    # を立てる / toast を出すかを決める。
+    data["_migrated_from"] = original_version
     return data
