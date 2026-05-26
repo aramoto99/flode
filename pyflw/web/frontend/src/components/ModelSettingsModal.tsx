@@ -25,6 +25,7 @@ import {
   INPUT_MONO_CLS,
   PrimaryButton,
   PropertyGrid,
+  PropertyHint,
   PropertyRow,
   SecondaryButton,
   SELECT_CLS,
@@ -195,6 +196,10 @@ export function ModelSettingsModal({
               ))}
             </select>
           </PropertyRow>
+          <PropertyHint
+            testId="model-settings-solver-desc"
+            text={t(`model_settings.solver_desc.${solver}`, "")}
+          />
 
           <SectionDivider
             label={t("model_settings.section.step_size", "Step size")}

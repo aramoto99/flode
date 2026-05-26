@@ -104,6 +104,35 @@ export function PropertyRow({
 }
 
 /**
+ * ``PropertyRow`` の直下に表示する補足説明 (小さく薄い 1〜2 行のヒント)。
+ *
+ * 入力 column に揃えてインデントする (= label column 分の空白を左に取る)。
+ * 動的に内容が変わる用途 (例: solver method 選択に応じた解説の切替) に使う。
+ * ``labelWidth`` は親 ``PropertyRow`` と揃える。
+ */
+export function PropertyHint({
+  text,
+  labelWidth = 140,
+  testId,
+}: {
+  text: string;
+  labelWidth?: number;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <div className="flex items-start gap-2 pb-1">
+      <div className="shrink-0" style={{ width: `${labelWidth}px` }} />
+      <p
+        data-testid={testId}
+        className="min-w-0 flex-1 text-[10px] leading-snug text-slate-500"
+      >
+        {text}
+      </p>
+    </div>
+  );
+}
+
+/**
  * セクション見出し (uppercase tracking-wider + 横ルール)。
  * グルーピング用、property row の前に挿入する。
  */
