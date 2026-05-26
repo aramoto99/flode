@@ -150,6 +150,18 @@ class TestListBlocks:
         buffer_capacity = next(p for p in sc["params_spec"] if p["name"] == "buffer_capacity")
         assert "enum_values" not in buffer_capacity
 
+    def test_rate_transition_mode_exposes_enum_values(self, client: TestClient) -> None:
+        """``RateTransition.mode`` も ``_param_enums`` 経由で 3 値の enum を露出する
+        (Scope と同じ宣言漏れ修正、ユーザー指摘 2026-05-26)。"""
+        resp = client.get("/api/v1/blocks")
+        rt = next(
+            b
+            for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.blocks.discrete.RateTransition"
+        )
+        mode = next(p for p in rt["params_spec"] if p["name"] == "mode")
+        assert mode["enum_values"] == ["zoh", "delay", "auto"]
+
     def test_response_is_canonical_sorted(self, client: TestClient) -> None:
         """type_path 昇順で返ることを確認 (起動↔テストの安定性)。"""
         resp = client.get("/api/v1/blocks")
