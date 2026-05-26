@@ -5,6 +5,113 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-05-26
+
+### BREAKING — Subsystem behavior modifier (SPEC-0007 / ADR-0058)
+
+**移行サマリ**: 旧 `TriggeredSubsystem` クラスは **`Subsystem` + 内部 `Trigger` block** に
+一般化された。schema 0.8 → 0.9 で **JSON は自動 migration**、Python API も
+deprecation factory で旧呼び出し互換を **v4.x の間** 維持。**v0.38.0 で旧 class
+完全削除予定**。
+
+> **Note on version**: ADR-0058 起票時 (当時 v2.x.y 想定) のロードマップでは "v0.21.0"
+> としていたが、本実装時点で既に 3.16.0 に到達していたため SemVer に従い **v0.37.0**
+> として release する (= BREAKING change の MAJOR bump)。削除予定も "v0.37.0 →
+> v0.38.0" にスライド。
+
+### Added — 新規 control block
+
+- `pyflw.subsystems.control_blocks.Trigger`: Subsystem 内部に置くと親が trigger
+  edge (rising / falling / either) で fire する境界ブロック (n_inputs =
+  n_outputs = n_states = 0、direct_feedthrough=False)
+- `pyflw.subsystems.control_blocks.Enable`: Subsystem 内部に置くと親が enable
+  入力で動作する境界ブロック。`states_when_enabling` (held / reset) と
+  `outputs_when_disabled` (held / reset) policy
+- `pyflw.subsystems.control_blocks.is_trigger_edge`: 旧 private
+  `_is_trigger_edge` を public 化 (= 新 `Trigger` block と旧 deprecation
+  shim 両方から呼ぶ)
+- `pyflw.subsystems` パッケージから `Trigger` / `Enable` を re-export
+- 新カテゴリ `"control"` を Block registry に追加。`Inport` / `Outport` /
+  `Trigger` / `Enable` が「Subsystem 制御」カテゴリに集約 (ADR-0058 §論点 2、
+  SPEC-0007 §機能要件 8)
+
+### Added — Subsystem 統合
+
+- `Subsystem._build()` に内部 Trigger / Enable 検出 + 多重配置 reject
+  (BlockSpecError) を追加 (ADR-0058 §論点 8)。`function-call` trigger は MVP
+  未実装 (`NotImplementedError`)
+- 派生 property `n_inputs` / `port_shapes_in` が内部 control block 加算
+  対応。slot 順序は `[data_inports..., enable_slot, trigger_slot]` (ADR-0058
+  §論点 4)
+- `Subsystem.output()` / `derivative()` / `update()` に control block hot-path
+  を実装: edge AND enable で fire (§論点 9)、disable 中の `outputs_when_disabled`
+  policy、enable false→true 遷移時の state reset policy (§論点 4)。
+  **Trigger / Enable を持たない Subsystem は既存 hot-path をそのまま通る
+  (= 数値完全不変、§論点 14)**。既存 949+ pytest が bit 単位で同一結果
+- Trigger 付き Subsystem は `direct_feedthrough=False` 強制 (旧
+  TriggeredSubsystem 互換、Simulator topo sort 整合性)
+- `Simulator._execution_order()` で root 直下の Trigger / Enable を
+  `BlockSpecError` で reject (§論点 3)
+
+### Added — schema 0.8 → 0.9 migration
+
+- `pyflw/core/persistence.py` の `CURRENT_SCHEMA_VERSION` を `"0.9"` に bump
+- `_builtin_migrate_0_8_to_0_9`: 旧 `TriggeredSubsystem` を `Subsystem` + 内部
+  `Trigger` に再帰変換 (ネスト Subsystem 含む)。内部 Trigger の id は決定的
+  `{parent_id}_trigger`、衝突時は counter 付与 (§論点 6)
+- `migrate_to_current()` が 1 段以上 migration 通過時に `_migrated_from` メタ
+  を戻り値に付与 (§論点 10)。frontend がこれを検知して dirty flag + toast
+  通知
+
+### Added — frontend (palette / glyph / dynamic ports)
+
+- `blockTypes.ts`: `TRIGGER_TYPE` / `ENABLE_TYPE` 定数
+- `dynamicPorts.ts`: filter ベースで Subsystem 内部 control block 検出、
+  n_inputs に加算
+- `portShapeValidate.ts`: slot 順序 `[data..., enable, trigger]` に scalar `[]`
+  shape を末尾追加
+- `blockGlyphs.tsx`: 4 種 SVG (`TriggerGlyph` / `EnableGlyph` palette 用 +
+  `TriggerIndicatorGlyph` / `EnableIndicatorGlyph` 12×12 Subsystem 中央
+  indicator)
+- `BlockNodeView.tsx`: `resolveControlSlots()` ヘルパで filter ベース判定、
+  trigger 上辺中央 (leftPct=50) / enable 上辺左寄せ (並存時 leftPct=25 /
+  単独 50)。Subsystem 中央は内部 control の有無で indicator 描画
+- `appStore.ts`: `openFileInTab` で `model._migrated_from` を検知して
+  dirty=true + 自動 toast 通知 (「保存すると新 schema になる」)、store には
+  メタを保存しない
+
+### Deprecated
+
+- `pyflw.subsystems.TriggeredSubsystem`: `__new__` で `Subsystem` + 内部
+  `Trigger` を構築する factory に縮退 (DeprecationWarning 発出)。1 minor 残置、
+  **v0.38.0 で削除予定** (ADR-0058 §論点 9 のスライド版)。旧 `_is_trigger_edge` /
+  `TRIGGER_MODES` は新 `control_blocks.is_trigger_edge` への薄い shim として
+  残置
+
+### Changed
+
+- `Inport` / `Outport` を registry カテゴリ `"subsystems"` → `"control"` に
+  移動 (= 新カテゴリ集約、SPEC-0007 §機能要件 8)
+- ADR-0036 と ADR-0054 に `Amended by: ADR-0058` ヘッダを追加 (部分 supersede /
+  視覚識別の真実源変更)
+- `compiled_simulator.py`: 旧 `isinstance(b, TriggeredSubsystem)` reject を
+  filter ベース (= Subsystem 内部 Trigger / Enable 検出) に書き換え
+  (ADR-0037 allowlist 維持、ADR-0058 §論点 5)
+
+### Migration guide
+
+- **JSON**: 自動 migration (schema 0.9)、追加作業なし。保存し直すと新 schema
+  で書き出される
+- **Python API**:
+  - 旧: `TriggeredSubsystem(blocks=[Inport(0), ...], trigger_mode="rising")`
+  - 新: `Subsystem(blocks=[Inport(0), ..., Trigger(trigger_type="rising")])`
+  - 旧 API は `DeprecationWarning` 付きで動作 (v4.x の間、v0.38.0 で削除予定)
+- **`isinstance(b, TriggeredSubsystem)` の利用箇所**: 常に `False` を返すよう
+  になる (= factory が Subsystem を返すため)。新方式では `isinstance(b,
+  Subsystem)` + 内部 Trigger block の存在で判定する
+- **frontend**: `_migrated_from` メタが付いた状態でロードされたファイルは
+  自動的に dirty + toast 通知。保存すると schema 0.9 で書き出される
+
 ## [Unreleased]
 
 ### Added — ブロック検索の別名 (search_keywords)
