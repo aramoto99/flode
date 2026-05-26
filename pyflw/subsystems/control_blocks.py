@@ -85,8 +85,9 @@ def is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
         Edge 検出時 True、それ以外 False。
 
     Raises:
-        ValueError: ``mode`` が 3 種のいずれでもない場合 (``"function-call"`` は
-            edge 検出経路を通らないので本関数では未対応)。
+        BlockSpecError: ``mode`` が 3 種のいずれでもない場合 (``"function-call"`` は
+            edge 検出経路を通らないので本関数では未対応)。旧 ``_is_trigger_edge`` と
+            例外型を揃える (Chunk B 移行時の互換性のため)。
     """
     # 旧 _is_trigger_edge と同じく prev / curr の両方を NaN ガードする
     # (= ADR-0036 §(8) 数値完全不変、Chunk B 切り替え時の挙動差ゼロ保証)。
@@ -98,7 +99,7 @@ def is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
         return prev >= 0.0 > curr
     if mode == "either":
         return (prev <= 0.0 < curr) or (prev >= 0.0 > curr)
-    raise ValueError(
+    raise BlockSpecError(
         f"is_trigger_edge: unknown mode {mode!r}, expected one of "
         f"('rising', 'falling', 'either')"
     )

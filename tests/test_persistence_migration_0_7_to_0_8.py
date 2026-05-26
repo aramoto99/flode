@@ -59,8 +59,10 @@ def _make_old_model(blocks: list) -> dict:
     }
 
 
-def test_current_schema_version_is_0_8() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.8"
+def test_current_schema_version_is_0_9() -> None:
+    # ADR-0058: 0.8 → 0.9 bump (TriggeredSubsystem を Subsystem + 内部 Trigger
+    # block に migration、識別の真実源を class 名から内部 control block に変更)
+    assert CURRENT_SCHEMA_VERSION == "0.9"
 
 
 def test_migrate_0_7_to_0_8_removes_n_inputs_n_outputs() -> None:

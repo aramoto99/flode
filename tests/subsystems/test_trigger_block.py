@@ -134,12 +134,13 @@ class TestIsTriggerEdgeInvalidMode:
     """``"function-call"`` や未知の mode は ``is_trigger_edge`` の対象外
     (= edge 検出経路を通らない、build 時に別経路で扱われる)。"""
 
-    def test_function_call_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="unknown mode"):
+    def test_function_call_raises_block_spec_error(self) -> None:
+        # 旧 _is_trigger_edge と例外型を揃える (BlockSpecError)
+        with pytest.raises(BlockSpecError, match="unknown mode"):
             is_trigger_edge(0.0, 1.0, "function-call")
 
-    def test_unknown_mode_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="unknown mode"):
+    def test_unknown_mode_raises_block_spec_error(self) -> None:
+        with pytest.raises(BlockSpecError, match="unknown mode"):
             is_trigger_edge(0.0, 1.0, "unknown")
 
 
