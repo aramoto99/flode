@@ -52,6 +52,10 @@ import type {
   TEnd,
 } from "../types/api";
 
+// ADR-0058 §論点 10: ファイルロード時の schema migration toast 通知用。
+// toastStore は appStore に依存しない (= 循環依存なし、静的 import で OK)。
+import { pushToast } from "./toastStore";
+
 // ADR-0023 §Decision §(3): ScopeBuffer は ``../lib/scopeBuffer`` に SoA 実装を抽出。
 // ここでは re-export して既存 import (= ScopeView / XYGraphView / BlockNodeView 経由) を
 // 壊さないように維持する。
@@ -719,7 +723,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
 
   // ADR-0043 §論点 2: 複数タブ操作 actions
-  openFileInTab: (path, model, mtime, etag) =>
+  openFileInTab: (path, model, mtime, etag) => {
+    // ADR-0058 §論点 10: backend persistence.migrate_to_current() が 1 段以上
+    // migration を適用したファイルには ``_migrated_from`` メタが付く。ロード直後に
+    // toast 通知 + dirty flag で「保存すると新 schema になる」とユーザーに伝え、
+    // store にはメタを保存しない (= save 時に二重記録しない、ADR-0058 §論点 10
+    // 確定)。
+    let initialDirty = false;
+    let storedModel: FlwModel = model;
+    const migratedFrom = model._migrated_from;
+    if (migratedFrom) {
+      initialDirty = true;
+      pushToast({
+        severity: "info",
+        message: `モデルを schema ${migratedFrom} → ${model.schema_version} に自動更新しました。保存すると新スキーマになります。`,
+        durationMs: 8000,
+      });
+      // 引数の model object を mutate せず、メタ除去版を spread で複製する
+      // (= 呼び出し側 filesApi の cache が壊れない、関数 contract 上の安全)。
+      const { _migrated_from: _omit, ...rest } = model;
+      storedModel = rest as FlwModel;
+    }
+    // 以降は storedModel (メタ除去済 or 元のまま) を保存する
+    const m = storedModel;
     set((state) => {
       // 同一 path の tab が既存ならそれを active 化 (= 重複オープン不可、VSCode 流儀)
       const existing = state.tabs.find((t) => t.filePath === path);
@@ -758,10 +784,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         : state.tabs;
       const newTab: TabSnapshot = {
         filePath: path,
-        editingModel: model,
+        editingModel: m,
         editingFileMtime: mtime,
         editingFileEtag: etag,
-        dirty: false,
+        // ADR-0058 §論点 10: migrated_from があれば dirty 開始 (= 「保存すると
+        // 新スキーマ」を伝える)。
+        dirty: initialDirty,
         history: { past: [], future: [] },
         lastMergeKey: null,
         editingPath: [],
@@ -770,10 +798,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         tabs: [...otherTabs, newTab],
         activeTabFilePath: path,
         selectedFilePath: path,
-        editingModel: model,
+        editingModel: m,
         editingFileMtime: mtime,
         editingFileEtag: etag,
-        dirty: false,
+        dirty: initialDirty,
         history: { past: [], future: [] },
         lastMergeKey: null,
         editingPath: [],
@@ -784,7 +812,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         status: "idle",
         scopes: {},
       };
-    }),
+    });
+  },
   closeTab: (path) =>
     set((state) => {
       const idx = state.tabs.findIndex((t) => t.filePath === path);

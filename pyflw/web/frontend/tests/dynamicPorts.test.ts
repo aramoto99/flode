@@ -175,6 +175,75 @@ describe("resolvePortCounts", () => {
     expect(r).toEqual({ nInputs: 3, nOutputs: 2 });
   });
 
+  it("Subsystem + internal Trigger: n_inputs += 1 (ADR-0058)", () => {
+    const r = resolvePortCounts(
+      "pyflw.subsystems.subsystem.Subsystem",
+      {
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          {
+            id: "trig",
+            type: "pyflw.subsystems.control_blocks.Trigger",
+            params: { trigger_type: "rising" },
+          },
+        ],
+      },
+      META(1, 1),
+    );
+    expect(r).toEqual({ nInputs: 2, nOutputs: 1 });
+  });
+
+  it("Subsystem + internal Enable: n_inputs += 1 (ADR-0058)", () => {
+    const r = resolvePortCounts(
+      "pyflw.subsystems.subsystem.Subsystem",
+      {
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          {
+            id: "en",
+            type: "pyflw.subsystems.control_blocks.Enable",
+            params: {
+              states_when_enabling: "held",
+              outputs_when_disabled: "held",
+            },
+          },
+        ],
+      },
+      META(1, 1),
+    );
+    expect(r).toEqual({ nInputs: 2, nOutputs: 1 });
+  });
+
+  it("Subsystem + Trigger + Enable: n_inputs += 2 (ADR-0058)", () => {
+    const r = resolvePortCounts(
+      "pyflw.subsystems.subsystem.Subsystem",
+      {
+        blocks: [
+          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "in1", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 1 } },
+          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          {
+            id: "en",
+            type: "pyflw.subsystems.control_blocks.Enable",
+            params: {
+              states_when_enabling: "held",
+              outputs_when_disabled: "held",
+            },
+          },
+          {
+            id: "trig",
+            type: "pyflw.subsystems.control_blocks.Trigger",
+            params: { trigger_type: "rising" },
+          },
+        ],
+      },
+      META(1, 1),
+    );
+    expect(r).toEqual({ nInputs: 4, nOutputs: 1 });
+  });
+
   it("MinMax: n_inputs", () => {
     const r = resolvePortCounts(
       "pyflw.blocks.mathops.MinMax",

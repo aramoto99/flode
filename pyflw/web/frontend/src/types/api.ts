@@ -119,6 +119,10 @@ export interface FlwModel {
   // top-level の独立キー (= layout / scope_settings と並ぶ)。backend は opaque
   // round-trip (= Python 無改修)。schema 0.8 維持 (optional 追加、bump 不要)。
   branch_waypoints?: BranchWaypointDict;
+  // ADR-0058 §論点 10: migrate_to_current() が 1 段以上 migration を適用したとき
+  // に付与される元バージョン。frontend はこれを見て dirty flag を立て、toast を
+  // 出してユーザーに「保存すると新 schema になる」と通知する。save 時には除去する。
+  _migrated_from?: string;
 }
 
 export interface ModelList {

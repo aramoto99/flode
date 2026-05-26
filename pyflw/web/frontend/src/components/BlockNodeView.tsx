@@ -20,14 +20,58 @@ import {
   formatPolynomial,
   formatTransferFunction,
 } from "../lib/blockFormatting";
-import { BlockGlyph } from "../lib/blockGlyphs";
+import {
+  BlockGlyph,
+  EnableIndicatorGlyph,
+  TriggerIndicatorGlyph,
+} from "../lib/blockGlyphs";
 import {
   getBlockShape,
   type BlockShape,
   type BlockShapeKind,
 } from "../lib/blockShapes";
+import { ENABLE_TYPE, TRIGGER_TYPE } from "../lib/blockTypes";
 import type { BlockNodeData } from "../lib/diagramConverter";
+import type { BlockEntry } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
+
+/**
+ * ADR-0058 §論点 4 / §論点 11: Subsystem (新方式 + 旧 TriggeredSubsystem) に
+ * 含まれる control block の有無を ``params.blocks`` filter で判定する。slot 順序は
+ * [data_inports..., enable_slot, trigger_slot]。旧 ``TriggeredSubsystem`` クラス
+ * は deprecation 期間中も class 名で trigger 有とみなす。
+ */
+function resolveControlSlots(
+  typePath: string,
+  params: Record<string, unknown> | undefined,
+): { hasTrigger: boolean; hasEnable: boolean } {
+  if (!params) {
+    if (typePath.endsWith(".TriggeredSubsystem")) {
+      return { hasTrigger: true, hasEnable: false };
+    }
+    return { hasTrigger: false, hasEnable: false };
+  }
+  const inner = params.blocks;
+  if (Array.isArray(inner)) {
+    const hasTrigger = inner.some(
+      (b) =>
+        typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
+    );
+    const hasEnable = inner.some(
+      (b) =>
+        typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
+    );
+    // ADR-0058 §論点 11: 内部 control block が見つかったら新方式 (filter ベース)
+    // を採用。空配列 (= 内部に何もない旧 TriggeredSubsystem) は意図的に下の
+    // class 名フォールバックに落ちて hasTrigger=true を返す (= 旧 TriggeredSubsystem
+    // の trigger slot を保持する deprecation 期間中の互換動作)。
+    if (hasTrigger || hasEnable) return { hasTrigger, hasEnable };
+  }
+  if (typePath.endsWith(".TriggeredSubsystem")) {
+    return { hasTrigger: true, hasEnable: false };
+  }
+  return { hasTrigger: false, hasEnable: false };
+}
 
 interface BlockNodeViewProps extends NodeProps {
   data: BlockNodeData;
@@ -82,6 +126,14 @@ export function BlockNodeView({
     // v0.15.0: ``flipped`` 変化でも handle position が反転 (Position.Left ↔
     // Right) するため、React Flow の内部キャッシュを再 measure する必要あり。
   }, [id, nIn, nOut, flipped, updateNodeInternals]);
+
+  // ADR-0058 §論点 4 / §論点 11: Subsystem の trigger / enable slot 識別を
+  // ``params.blocks`` filter ベースで一度だけ算出。下記の slot 描画 / 中央
+  // indicator / handle position 全てが共有する。
+  const controlSlots = resolveControlSlots(
+    data.blockType,
+    data.params as Record<string, unknown> | undefined,
+  );
 
   // ノード bounding box は shape のみで構成し、ID ラベルは ``absolute top: 100%`` で
   // ノードの外側に escape させる。これにより:
@@ -153,16 +205,27 @@ export function BlockNodeView({
           param={param}
           paramsRaw={(data.params as Record<string, unknown>) ?? {}}
           flipped={flipped}
+          controlSlots={controlSlots}
         />
         {Array.from({ length: nIn }, (_, i) => {
-          const ph = inputHandlePosition(shape, i, nIn, data.blockType);
+          const ph = inputHandlePosition(
+            shape,
+            i,
+            nIn,
+            data.blockType,
+            controlSlots,
+          );
           const finalPos = flipped ? flipPosition(ph.position) : ph.position;
-          // ADR-0054: TriggeredSubsystem の trigger slot (= 上辺、末尾 index)
-          // は **接続済みでも glyph を維持** (= trigger アイデンティティを
-          // 視覚で常時提示)。通常 chevron は接続済時に消す既存挙動。
-          const isTriggerSlot =
-            data.blockType.endsWith(".TriggeredSubsystem") && i === nIn - 1;
-          const showGlyph = isTriggerSlot || !connectedInputs.has(i);
+          // ADR-0054 / ADR-0058 §論点 11: trigger / enable slot は接続済でも
+          // glyph を維持 (= 制御アイデンティティを視覚で常時提示)。slot 順序は
+          // [data..., enable, trigger] (= ADR-0058 §論点 4)。
+          const isTriggerSlot = controlSlots.hasTrigger && i === nIn - 1;
+          const enableSlotIdx = controlSlots.hasEnable
+            ? nIn - 1 - (controlSlots.hasTrigger ? 1 : 0)
+            : -1;
+          const isEnableSlot = controlSlots.hasEnable && i === enableSlotIdx;
+          const isControlSlot = isTriggerSlot || isEnableSlot;
+          const showGlyph = isControlSlot || !connectedInputs.has(i);
           return (
             <Handle
               key={`in-${i}`}
@@ -172,7 +235,7 @@ export function BlockNodeView({
               style={arrowHandleStyle(ph.pos)}
             >
               {showGlyph &&
-                (isTriggerSlot ? (
+                (isControlSlot ? (
                   <span style={triggerGlyphStyle} />
                 ) : (
                   <span style={chevronStyleFor(finalPos, flipped)} />
@@ -305,6 +368,7 @@ function ShapeContent({
   param,
   paramsRaw,
   flipped = false,
+  controlSlots = { hasTrigger: false, hasEnable: false },
 }: {
   shape: BlockShape;
   typePath: string;
@@ -313,6 +377,9 @@ function ShapeContent({
   param: string | null;
   paramsRaw: Record<string, unknown>;
   flipped?: boolean;
+  // ADR-0058 §論点 11 (code-reviewer SHOULD 1): 親コンポーネントで一度算出した
+  // control slot 情報を再利用 (DRY、二重 ``inner.some(...)`` 走査を回避)。
+  controlSlots?: { hasTrigger: boolean; hasEnable: boolean };
 }): JSX.Element {
   const { kind } = shape;
 
@@ -448,14 +515,35 @@ function ShapeContent({
     );
   }
 
-  // Subsystem: 単枠で identification 済なので中央は空。block id は外側下部の
-  // ラベルに任せる (ADR-0021、リファレンスツール互換、glyph 過剰を避ける)。
+  // ADR-0058 §論点 1 / §論点 11: Subsystem に内部 Trigger / Enable があれば、
+  // 上辺左に小さな indicator アイコンを 12×12 SVG で重ねる (= 制御アイデンティティ
+  // を視覚で示す、ADR-0054 を一般化)。識別の真実源は class 名から内部 control
+  // block の有無 (= filter ベース) に移行。両方ある時は横並びで両方描画。
+  // controlSlots は親コンポーネントで一度算出した結果を受け取る (DRY)。
   if (typePath.endsWith(".Subsystem")) {
-    return <></>;
+    if (!controlSlots.hasTrigger && !controlSlots.hasEnable) {
+      // 普通の Subsystem: 単枠で identification 済なので中央は空 (ADR-0021、
+      // リファレンスツール互換、glyph 過剰を避ける)。
+      return <></>;
+    }
+    return (
+      <div
+        data-testid="subsystem-control-indicator"
+        className="absolute inset-y-0 left-0 flex items-start gap-0.5 pl-1 pt-1"
+        style={{ color }}
+      >
+        {controlSlots.hasEnable && (
+          <EnableIndicatorGlyph className="h-3 w-3" />
+        )}
+        {controlSlots.hasTrigger && (
+          <TriggerIndicatorGlyph className="h-3 w-3" />
+        )}
+      </div>
+    );
   }
-  // ADR-0054: TriggeredSubsystem は trigger アイデンティティを示すため中央に
-  // 雷 glyph (= TriggeredSubsystemGlyph) を描画。上辺の trigger port + amber
-  // chevron と組み合わせて 3 軸冗長で識別する。
+  // ADR-0054: 旧 TriggeredSubsystem クラスは中央に雷 glyph を描画。schema 0.8 → 0.9
+  // migration 後は普通の Subsystem に変換されるため、この分岐に来るのは Python API
+  // 直接構築 + deprecation factory が走らない経路 (= 旧型 instance) のみ。
   if (typePath.endsWith(".TriggeredSubsystem")) {
     return (
       <div
@@ -927,15 +1015,31 @@ function inputHandlePosition(
   shape: BlockShape,
   i: number,
   n: number,
-  typePath: string,
+  _typePath: string, // ADR-0058: filter ベース化で未使用、API 互換のため残置
+  controlSlots: { hasTrigger: boolean; hasEnable: boolean } = {
+    hasTrigger: false,
+    hasEnable: false,
+  },
 ): { position: Position; pos: HandlePos } {
-  // ADR-0054: TriggeredSubsystem の末尾 slot (= input_sources[-1]、trigger 入力、
-  // ADR-0036 §(2)) のみ上辺中央 (Position.Top + leftPct=50) に配置。
-  // データ入力 (左辺) と物理的に分離して識別性を担保する。
-  if (typePath.endsWith(".TriggeredSubsystem") && i === n - 1) {
+  // ADR-0058 §論点 4 / §論点 11 / ADR-0054 継承: slot 順序
+  // [data_inports..., enable_slot, trigger_slot]。
+  // - trigger slot (= 末尾): 上辺中央 (Position.Top + leftPct=50)
+  // - enable slot (trigger 並存時: 末尾-1、enable のみ: 末尾): 上辺左寄せ
+  //   (leftPct=25、trigger と並ぶときの中心は 50 + 25 で物理的に離す)
+  // - データ入力 (左辺): 残りの縦軸に等間隔配置
+  const triggerSlotIdx = controlSlots.hasTrigger ? n - 1 : -1;
+  const enableSlotIdx = controlSlots.hasEnable
+    ? n - 1 - (controlSlots.hasTrigger ? 1 : 0)
+    : -1;
+  if (i === triggerSlotIdx) {
+    return { position: Position.Top, pos: { axis: "x", leftPct: 50 } };
+  }
+  if (i === enableSlotIdx) {
+    // trigger 並存時は左寄せ (= trigger の中央 50 と物理的に分離して識別)、
+    // enable のみの時は中央 50 (= 単独 trigger と同じ位置)。
     return {
       position: Position.Top,
-      pos: { axis: "x", leftPct: 50 },
+      pos: { axis: "x", leftPct: controlSlots.hasTrigger ? 25 : 50 },
     };
   }
   // 単一入力 + 単数前提形状 (円心 1 点 / 台形)。複数あれば縦に並べる。
@@ -951,10 +1055,11 @@ function inputHandlePosition(
       pos: { axis: "y", topPct: ((i + 1) * 100) / (n + 1) },
     };
   }
-  // ADR-0054: TriggeredSubsystem で trigger を除いたデータ入力は、trigger を
-  // n_inputs から差し引いた本数で等分配する (= 末尾 1 個分の縦間隔が空かないよう
-  // に)。それ以外は従来通り n で等分配。
-  const dataN = typePath.endsWith(".TriggeredSubsystem") ? n - 1 : n;
+  // control slot を除いたデータ入力本数で等分配する (= 末尾 control slot 分の
+  // 縦間隔が空かないように)。control なしのときは従来通り n で等分配。
+  const nControl =
+    (controlSlots.hasTrigger ? 1 : 0) + (controlSlots.hasEnable ? 1 : 0);
+  const dataN = n - nControl;
   const denom = dataN < 1 ? n + 1 : dataN + 1;
   return {
     position: Position.Left,

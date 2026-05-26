@@ -336,4 +336,95 @@ describe("validatePortShapeConnection", () => {
       expect(r.reason).toContain("does not exist");
     });
   });
+
+  // ADR-0058: Subsystem + Trigger / Enable の derivePortShapesFromInner 経由で
+  // ``getDefaultPortShapes`` が返す in shape の slot 順序 [data..., enable, trigger]
+  // を検証。これらの shape は ``validatePortShapeConnection`` から呼ばれる。
+  describe("Subsystem + control block (ADR-0058)", () => {
+    const gain1: BlockEntry = {
+      id: "gain1",
+      type: "pyflw.blocks.mathops.Gain",
+      params: { k: 1.0 },
+    };
+
+    it("Subsystem + Trigger: trigger slot is scalar [] appended at end", () => {
+      const sub: BlockEntry = {
+        id: "sub",
+        type: "pyflw.subsystems.subsystem.Subsystem",
+        params: {
+          blocks: [
+            {
+              id: "in0",
+              type: "pyflw.subsystems.ports.Inport",
+              params: { port_idx: 0 },
+            },
+            {
+              id: "trig",
+              type: "pyflw.subsystems.control_blocks.Trigger",
+              params: { trigger_type: "rising" },
+            },
+          ],
+        },
+      };
+      const reg = indexRegistry([META_GAIN]);
+      // index 1 (= trigger slot) は存在し、scalar shape として gain (scalar) と接続可
+      const r = validatePortShapeConnection(gain1, 0, sub, 1, reg);
+      expect(r.ok).toBe(true);
+    });
+
+    it("Subsystem + Enable + Trigger: slot order [data..., enable, trigger]", () => {
+      const sub: BlockEntry = {
+        id: "sub",
+        type: "pyflw.subsystems.subsystem.Subsystem",
+        params: {
+          blocks: [
+            {
+              id: "in0",
+              type: "pyflw.subsystems.ports.Inport",
+              params: { port_idx: 0 },
+            },
+            {
+              id: "en",
+              type: "pyflw.subsystems.control_blocks.Enable",
+              params: {
+                states_when_enabling: "held",
+                outputs_when_disabled: "held",
+              },
+            },
+            {
+              id: "trig",
+              type: "pyflw.subsystems.control_blocks.Trigger",
+              params: { trigger_type: "rising" },
+            },
+          ],
+        },
+      };
+      const reg = indexRegistry([META_GAIN]);
+      // index 1 (= enable) と index 2 (= trigger) はどちらも scalar、gain 出力と接続可
+      expect(validatePortShapeConnection(gain1, 0, sub, 1, reg).ok).toBe(true);
+      expect(validatePortShapeConnection(gain1, 0, sub, 2, reg).ok).toBe(true);
+      // index 3 は存在しない (= n_inputs=3 ちょうどなので)
+      expect(validatePortShapeConnection(gain1, 0, sub, 3, reg).ok).toBe(false);
+    });
+
+    it("旧 TriggeredSubsystem (deprecation 経路): trigger 末尾 1 個のみ", () => {
+      const sub: BlockEntry = {
+        id: "sub",
+        type: "pyflw.subsystems.triggered.TriggeredSubsystem",
+        params: {
+          blocks: [
+            {
+              id: "in0",
+              type: "pyflw.subsystems.ports.Inport",
+              params: { port_idx: 0 },
+            },
+          ],
+        },
+      };
+      const reg = indexRegistry([META_GAIN]);
+      // index 1 (= trigger slot) は存在、index 2 は存在しない
+      expect(validatePortShapeConnection(gain1, 0, sub, 1, reg).ok).toBe(true);
+      expect(validatePortShapeConnection(gain1, 0, sub, 2, reg).ok).toBe(false);
+    });
+  });
 });
