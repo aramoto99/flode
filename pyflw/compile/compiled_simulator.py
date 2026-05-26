@@ -163,26 +163,46 @@ def _build_compiled_simulator(
 
     Raises:
         ImportError: ``backend="jax"`` で ``pyflw[codegen]`` 未インストール。
-        BlockSpecError: モデル内に jax tracing 不可能なブロック (= ``TriggeredSubsystem``
+        BlockSpecError: モデル内に jax tracing 不可能なブロック (= Subsystem 内部に
             等) がある (ADR-0036 §(9) / ADR-0037 §Decision §(10) 規約)。
     """
     from ..exceptions import BlockSpecError
-    from ..subsystems.triggered import TriggeredSubsystem
+    from ..subsystems.control_blocks import Enable, Trigger
+    from ..subsystems.subsystem import Subsystem
 
     if backend not in ("jax", "numpy"):
         raise ValueError(f"Simulator.compile: backend must be 'jax' or 'numpy', got {backend!r}")
     if backend == "jax":
         _ensure_jax_available()
 
-    # ADR-0036 §(9): TriggeredSubsystem は MVP で Codegen 対象外。
+    # ADR-0036 §(9) / ADR-0058 §論点 5: 内部に Trigger / Enable control block を
+    # 持つ Subsystem は MVP で codegen 対象外。明示的に拒否してエラーメッセージで
+    # 旧 numpy hot path 経路へ誘導する (= jax_backend allowlist 経由でも reject
+    # されるが、ここでは「内部 control block の有無」を判定して具体的なメッセージ
+    # を返す)。schema 0.8 → 0.9 migration 後は旧 TriggeredSubsystem instance は
+    # 存在しないため、Subsystem 内部 filter で検出する。
+    # NOTE: ``simulator.blocks`` は root 直下のフラットなリストで、ネスト Subsystem
+    # 内部の control block は本ループで検出しない。これは旧 ``isinstance(b,
+    # TriggeredSubsystem)`` 実装と同じ制限 (= 階層の最外側だけ判定すれば codegen
+    # build 時に jax tracing が同等の boundary block で hit するため十分)。
+    # NOTE: ``backend in {"jax", "numpy"}`` の両方で reject する。``backend="numpy"``
+    # の compile path も JAX-style 純関数 view を生成する経路で、Trigger/Enable の
+    # state mutation を扱うランタイムを実装していない (= Phase 6+ で再設計、
+    # 旧 TriggeredSubsystem 実装と同じ制限を維持)。
     for b in simulator.blocks:
-        if isinstance(b, TriggeredSubsystem):
-            raise BlockSpecError(
-                f"Simulator.compile: TriggeredSubsystem {b.id!r} is not supported "
-                f"in v0.17.x (ADR-0036 §(9) / ADR-0037 §Decision §(10) MVP scope). "
-                f"Use Simulator.run() (numpy hot path) which handles trigger edges, "
-                f"or wait for Phase 6+ jax tracing extension."
+        if isinstance(b, Subsystem):
+            inner_blocks = getattr(b, "_inner_blocks", [])
+            has_control = any(
+                isinstance(ib, (Trigger, Enable)) for ib in inner_blocks
             )
+            if has_control:
+                raise BlockSpecError(
+                    f"Simulator.compile: Subsystem {b.id!r} contains a Trigger / "
+                    f"Enable control block; codegen is out of scope in MVP "
+                    f"(ADR-0036 §(9) / ADR-0037 §Decision §(10) / ADR-0058 §論点 5). "
+                    f"Use Simulator.run() (numpy hot path) which handles edge / "
+                    f"enable gating, or wait for Phase 6+ JAX tracing extension."
+                )
 
     # state_layout 抽出 (= Simulator._state_layout 互換、戻り値 (layout, n_total))
     layout, n_total = simulator._state_layout()

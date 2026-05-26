@@ -1,7 +1,7 @@
 {
   "name": "pyflw-frontend",
   "private": true,
-  "version": "3.16.0",
+  "version": "0.37.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

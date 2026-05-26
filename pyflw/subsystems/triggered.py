@@ -2,7 +2,7 @@
 
 ADR-0036 で導入された ``TriggeredSubsystem`` は、ADR-0058 で「``Subsystem`` 内部に
 ``Trigger`` control block を配置する方式」に置き換えられた。本モジュールは
-**deprecation 期間 (v3.x)** の互換性 shim:
+**deprecation 期間 (v4.x)** の互換性 shim:
 
 - ``TriggeredSubsystem(trigger_mode=...)`` 呼び出しは ``__new__`` で ``Subsystem`` +
   内部 ``Trigger`` block を構築して返す factory (= 旧 API 経由でも新方式で動作する)。
@@ -10,7 +10,9 @@ ADR-0036 で導入された ``TriggeredSubsystem`` は、ADR-0058 で「``Subsys
 - ``_is_trigger_edge`` / ``TRIGGER_MODES`` は :mod:`pyflw.subsystems.control_blocks`
   の新 API への薄いラッパ / 別名として残す (= 旧 import path で動作する)。
 
-v0.37.0 で本モジュール自体を削除する予定 (ADR-0058 §論点 9)。
+v0.38.0 で本モジュール自体を削除する予定 (ADR-0058 §論点 9 のスライド版、
+ADR では v0.37.0 想定だったが本実装時点で既に 3.16.x に到達済のため、SemVer
+に従い v0.37.0 を BREAKING release / v0.38.0 を削除 release にスライド)。
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ def _is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
 
     新しい :func:`pyflw.subsystems.control_blocks.is_trigger_edge` を呼ぶ。
     semantics は ADR-0036 と完全同一 (NaN ガード、rising/falling/either 判定、
-    unknown mode で ``BlockSpecError``)。v0.37.0 で削除予定。
+    unknown mode で ``BlockSpecError``)。v0.38.0 で削除予定。
     """
     return _new_is_trigger_edge(prev, curr, mode)
 
@@ -44,9 +46,9 @@ def _is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
 class TriggeredSubsystem(Subsystem):
     """Deprecated: ``Subsystem`` + 内部 ``Trigger`` block の factory (ADR-0058)。
 
-    v0.21.0 から本クラスは **deprecation 期間の factory** に縮退した。``__new__`` で
+    v0.37.0 から本クラスは **deprecation 期間の factory** に縮退した。``__new__`` で
     実際には :class:`Subsystem` インスタンスを返し、内部に :class:`Trigger` block を
-    追加する。``DeprecationWarning`` を出す。v0.37.0 で削除予定。
+    追加する。``DeprecationWarning`` を出す。v0.38.0 で削除予定。
 
     旧 API:
         ``TriggeredSubsystem(trigger_mode="rising", ...)``
@@ -68,9 +70,9 @@ class TriggeredSubsystem(Subsystem):
         BlockSpecError: ``trigger_mode`` が ``TRIGGER_MODES`` 外 / 廃止引数指定。
     """
 
-    # ADR-0058 §論点 6: 旧 trigger_mode の許容値は 3 種で v3 互換維持。
+    # ADR-0058 §論点 6: 旧 trigger_mode の許容値は 3 種で v4 互換維持。
     # NITS 1: ``__new__`` が ``Subsystem`` instance を返すため、registry/Inspector
-    # からは参照されない (= dead code に近い)。v0.37.0 削除予定。本クラス定義の
+    # からは参照されない (= dead code に近い)。v0.38.0 削除予定。本クラス定義の
     # 整合性のために残置。
     _param_enums = {"trigger_mode": TRIGGER_MODES}
 
@@ -88,8 +90,8 @@ class TriggeredSubsystem(Subsystem):
         **kwargs: Any,
     ) -> Subsystem:
         warnings.warn(
-            "TriggeredSubsystem is deprecated since v0.21.0 and will be removed in "
-            "v4.0.0. Use Subsystem(blocks=[..., Trigger(trigger_type=...)], ...) "
+            "TriggeredSubsystem is deprecated since v0.37.0 and will be removed in "
+            "v5.0.0. Use Subsystem(blocks=[..., Trigger(trigger_type=...)], ...) "
             "directly (= ADR-0058 §論点 9 deprecation). For JSON, schema 0.8 → 0.9 "
             "migration handles the conversion automatically.",
             DeprecationWarning,

@@ -929,8 +929,9 @@ class Simulator:
 
         Raises:
             ImportError: ``backend="jax"`` で ``pyflw[codegen]`` 未インストール。
-            BlockSpecError: モデル内に Codegen 不可能なブロック (= ``TriggeredSubsystem``
-                Phase 5b MVP では Python fallback 必須) がある。
+            BlockSpecError: モデル内に Codegen 不可能なブロック (= 内部に
+                ``Trigger`` / ``Enable`` control block を持つ ``Subsystem``、MVP では
+                Python fallback 必須、ADR-0058 §論点 5) がある。
             ValueError: ``backend`` が ``"jax"`` / ``"numpy"`` 以外。
 
         Examples:

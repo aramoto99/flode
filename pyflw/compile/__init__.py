@@ -18,8 +18,9 @@
   を生成、既存 numpy コアは無変更 (Option 1-B、ADR-0037 §(1))
 * **64-bit 強制**: ``jax_enable_x64=True`` を遅延設定 (= ML エコシステムへの
   副作用最小化、ADR-0037 §Risks #2)
-* **TriggeredSubsystem は Codegen out-of-scope**: v0.17.x では ``BlockSpecError``
-  で明示拒否、Phase 6+ で別 ADR (ADR-0036 §(9) と整合)
+* **Trigger / Enable control block を内包する Subsystem は Codegen 対象外 (MVP)**:
+  ``BlockSpecError`` で明示拒否し ``Simulator.run()`` (numpy hot path) へ誘導。
+  Phase 6+ で別 ADR で対応 (ADR-0036 §(9) / ADR-0058 §論点 5 整合)
 
 依存関係:
 
