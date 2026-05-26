@@ -503,6 +503,40 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "Subsystem 境界の出力ポート (Subsystem 内部でのみ使用)。",
         },
     },
+    # ADR-0058: Subsystem behavior modifier control blocks。Subsystem 内部に置く
+    # ことで親の発火 / 有効化セマンティクスを修飾する境界ブロック。
+    "pyflw.subsystems.control_blocks.Trigger": {
+        "en": {
+            "display_name": "Trigger",
+            "docstring_summary": (
+                "Place inside a Subsystem to fire it on trigger edges "
+                "(rising / falling / either)."
+            ),
+        },
+        "ja": {
+            "display_name": "Trigger",
+            "docstring_summary": (
+                "Subsystem 内部に置くと、トリガー信号のエッジ "
+                "(rising / falling / either) で親 Subsystem を発火する境界ブロック。"
+            ),
+        },
+    },
+    "pyflw.subsystems.control_blocks.Enable": {
+        "en": {
+            "display_name": "Enable",
+            "docstring_summary": (
+                "Place inside a Subsystem to gate execution by an enable signal "
+                "(state / output policy: held or reset)."
+            ),
+        },
+        "ja": {
+            "display_name": "Enable",
+            "docstring_summary": (
+                "Subsystem 内部に置くと、enable 信号が真の間だけ親 Subsystem を"
+                "動作させる境界ブロック (state / output policy: held / reset)。"
+            ),
+        },
+    },
 }
 
 

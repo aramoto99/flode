@@ -150,6 +150,59 @@ class TestListBlocks:
         buffer_capacity = next(p for p in sc["params_spec"] if p["name"] == "buffer_capacity")
         assert "enum_values" not in buffer_capacity
 
+    def test_control_blocks_are_in_control_category(self, client: TestClient) -> None:
+        """ADR-0058: Inport / Outport / Trigger / Enable は "control" カテゴリに同居する
+        (SPEC-0007 §機能要件 8)。Subsystem / TriggeredSubsystem は "subsystems" のまま。"""
+        resp = client.get("/api/v1/blocks")
+        blocks = {b["type_path"]: b for b in resp.json()["blocks"]}
+        for type_path in (
+            "pyflw.subsystems.ports.Inport",
+            "pyflw.subsystems.ports.Outport",
+            "pyflw.subsystems.control_blocks.Trigger",
+            "pyflw.subsystems.control_blocks.Enable",
+        ):
+            assert type_path in blocks, f"missing {type_path}"
+            assert blocks[type_path]["category"] == "control", (
+                f"{type_path}: expected 'control', got {blocks[type_path]['category']!r}"
+            )
+        # Subsystem 系は移動しない
+        assert blocks["pyflw.subsystems.subsystem.Subsystem"]["category"] == "subsystems"
+        assert (
+            blocks["pyflw.subsystems.triggered.TriggeredSubsystem"]["category"] == "subsystems"
+        )
+
+    def test_trigger_block_exposes_trigger_type_enum(self, client: TestClient) -> None:
+        """ADR-0058 §論点 10: Trigger.trigger_type は 4 値の enum を露出する。"""
+        resp = client.get("/api/v1/blocks")
+        trig = next(
+            b
+            for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.subsystems.control_blocks.Trigger"
+        )
+        trigger_type_param = next(
+            p for p in trig["params_spec"] if p["name"] == "trigger_type"
+        )
+        assert trigger_type_param["enum_values"] == [
+            "rising",
+            "falling",
+            "either",
+            "function-call",
+        ]
+
+    def test_enable_block_exposes_both_policy_enums(self, client: TestClient) -> None:
+        """ADR-0058 §論点 4 / 5: Enable は states_when_enabling / outputs_when_disabled
+        の 2 つの 2 値 enum を露出する。"""
+        resp = client.get("/api/v1/blocks")
+        en = next(
+            b
+            for b in resp.json()["blocks"]
+            if b["type_path"] == "pyflw.subsystems.control_blocks.Enable"
+        )
+        states = next(p for p in en["params_spec"] if p["name"] == "states_when_enabling")
+        outputs = next(p for p in en["params_spec"] if p["name"] == "outputs_when_disabled")
+        assert states["enum_values"] == ["held", "reset"]
+        assert outputs["enum_values"] == ["held", "reset"]
+
     def test_rate_transition_mode_exposes_enum_values(self, client: TestClient) -> None:
         """``RateTransition.mode`` も ``_param_enums`` 経由で 3 値の enum を露出する
         (Scope と同じ宣言漏れ修正、ユーザー指摘 2026-05-26)。"""
@@ -360,6 +413,9 @@ class TestRegistryBuild:
             "routing",
             "sinks",
             "subsystems",
+            # ADR-0058: Inport / Outport / Trigger / Enable を集約した境界ブロック
+            # カテゴリ (SPEC-0007 §機能要件 8)
+            "control",
         }
         assert expected.issubset(cats)
 

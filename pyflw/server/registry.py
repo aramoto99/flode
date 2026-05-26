@@ -202,8 +202,13 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "Triggered Subsystem",
         "subsys.triggered",
     ),
-    "pyflw.subsystems.ports.Inport": ("subsystems", "Inport", "subsys.inport"),
-    "pyflw.subsystems.ports.Outport": ("subsystems", "Outport", "subsys.outport"),
+    # ADR-0058: Subsystem behavior modifier control blocks (= Inport / Outport /
+    # Trigger / Enable) は "control" カテゴリに集約。SPEC-0007 §機能要件 8 で
+    # 「Inport / Outport / Trigger / Enable を同居」と確定。
+    "pyflw.subsystems.ports.Inport": ("control", "Inport", "control.inport"),
+    "pyflw.subsystems.ports.Outport": ("control", "Outport", "control.outport"),
+    "pyflw.subsystems.control_blocks.Trigger": ("control", "Trigger", "control.trigger"),
+    "pyflw.subsystems.control_blocks.Enable": ("control", "Enable", "control.enable"),
 }
 
 
@@ -267,6 +272,12 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     "pyflw.blocks.routing.From": {"tag": "Tag1"},
     "pyflw.subsystems.ports.Inport": {"port_idx": 0},
     "pyflw.subsystems.ports.Outport": {"port_idx": 0},
+    # ADR-0058: Trigger / Enable control blocks。default で枯渇しない最低 1 組。
+    "pyflw.subsystems.control_blocks.Trigger": {"trigger_type": "rising"},
+    "pyflw.subsystems.control_blocks.Enable": {
+        "states_when_enabling": "held",
+        "outputs_when_disabled": "held",
+    },
     # ADR-0039 (v2.0): Subsystem / TriggeredSubsystem の n_inputs / n_outputs は
     # 派生 property に格上げ (= コンストラクタ引数廃止)。``_default_factory_args``
     # も不要 — 第 1 試行の TypeError → 第 2 試行 ``cls()`` という無駄な経路を避ける
