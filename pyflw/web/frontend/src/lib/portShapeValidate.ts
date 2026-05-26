@@ -2,7 +2,13 @@
 // strict 一致 (broadcasting なし、ADR-0017 §(4))。
 
 import type { BlockEntry, BlockMetadata } from "../types/api";
-import { INPORT_TYPE, OUTPORT_TYPE, TRIGGERED_SUBSYSTEM_TYPE } from "./blockTypes";
+import {
+  ENABLE_TYPE,
+  INPORT_TYPE,
+  OUTPORT_TYPE,
+  TRIGGER_TYPE,
+  TRIGGERED_SUBSYSTEM_TYPE,
+} from "./blockTypes";
 import { hasDynamicPorts, resolvePortCounts } from "./dynamicPorts";
 
 export function shapeEquals(a: number[], b: number[]): boolean {
@@ -104,10 +110,13 @@ function resizeShapes(defaults: number[][], count: number): number[][] {
 
 /**
  * Subsystem / TriggeredSubsystem の port_shapes を ``params.blocks`` 内の
- * Inport / Outport の port_shape (port_idx 順) から派生計算する。
+ * Inport / Outport / Trigger / Enable の port_shape (port_idx 順) から派生計算
+ * する。
  *
- * TriggeredSubsystem は trigger 入力分 ``[]`` (= scalar) を ``in`` の末尾に
- * 追加する (ADR-0036 §(2))。
+ * ADR-0058 §論点 4 (slot 順序 [data..., enable, trigger]): Subsystem に内部
+ * ``Trigger`` / ``Enable`` block があると ``in`` の末尾に scalar ``[]`` shape を
+ * 順に追加する。旧 ``TriggeredSubsystem`` クラスは deprecation 期間中も末尾 1
+ * 個追加 (= 旧挙動の互換維持)。
  */
 function derivePortShapesFromInner(
   block: BlockEntry,
@@ -143,9 +152,24 @@ function derivePortShapesFromInner(
     .sort((a, b) => a.port_idx - b.port_idx)
     .map((p) => p.port_shape);
 
-  // TriggeredSubsystem の trigger 入力 (= scalar) を末尾に付加
-  const inShapes =
-    block.type === TRIGGERED_SUBSYSTEM_TYPE ? [...inports, []] : inports;
+  // ADR-0058 §論点 4: 末尾 control slot を [enable, trigger] 順で付加。
+  // 旧 TriggeredSubsystem (deprecation factory が呼ばれた直接構築経路) は trigger 1 個分。
+  const hasEnable = inner.some(
+    (b): b is BlockEntry =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
+  );
+  const hasTrigger = inner.some(
+    (b): b is BlockEntry =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
+  );
+  const inShapes: number[][] = [...inports];
+  if (hasEnable) inShapes.push([]);
+  if (hasTrigger) inShapes.push([]);
+  // 旧 TriggeredSubsystem (factory 廃止前の Python API 直接呼び出し経路) との
+  // 互換: 旧型は trigger 1 個固定。新方式と同居しない (= migration が走るため)。
+  if (block.type === TRIGGERED_SUBSYSTEM_TYPE && !hasTrigger) {
+    inShapes.push([]);
+  }
 
   return { in: inShapes, out: outports };
 }

@@ -8,6 +8,12 @@ export const TRIGGERED_SUBSYSTEM_TYPE =
 export const INPORT_TYPE = "pyflw.subsystems.ports.Inport";
 export const OUTPORT_TYPE = "pyflw.subsystems.ports.Outport";
 
+// ADR-0058: Subsystem behavior modifier control blocks。Subsystem 内部に置く
+// ことで親の発火 / 有効化セマンティクスを修飾する境界ブロック。Inport /
+// Outport と並ぶ「control」カテゴリ。
+export const TRIGGER_TYPE = "pyflw.subsystems.control_blocks.Trigger";
+export const ENABLE_TYPE = "pyflw.subsystems.control_blocks.Enable";
+
 /**
  * `params[key]` を number として取り出す。値が number でなければ `fallback` を返す。
  * `as number` の二段キャストが NaN を黙って混入させる罠を避けるための型ガード

@@ -750,6 +750,73 @@ const OutportGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// ADR-0058 §論点 1: control block glyph。Subsystem 内部に置く境界ブロック
+// (Inport / Outport と並ぶ"control"カテゴリ) の palette アイコン。
+// 純線画、24×24 viewBox 中央寄せ、currentColor で外側から色制御可能。
+const TriggerGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 稲妻シルエット (Trigger を象徴、TriggeredSubsystemGlyph の縮小版) */}
+    <polyline
+      points="14,3 9,12 13,12 10,21"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={SW}
+      strokeLinejoin="miter"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const EnableGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* "E" 形 (Enable の頭文字、horizontal bars で識別性確保) */}
+    <line x1="6" y1="4" x2="6" y2="20" />
+    <line x1="6" y1="4" x2="18" y2="4" />
+    <line x1="6" y1="12" x2="15" y2="12" />
+    <line x1="6" y1="20" x2="18" y2="20" />
+  </svg>
+);
+
+// ADR-0058 §論点 1 (Subsystem 中央の indicator): 12×12 px の縮小版 SVG。
+// BlockNodeView が Subsystem 中央に重ねて描画する用 (Trigger / Enable いずれかが
+// 内部にあるとき、その存在をユーザーに視覚通知)。線画のみ、色は CSS 変数で外側
+// から制御可能 (アクセシビリティ: 形状で識別、色弱配慮)。
+const TriggerIndicatorGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.4}
+    strokeLinejoin="miter"
+    strokeLinecap="round"
+    className={className}
+  >
+    <polyline points="7,1 4,6 6,6 5,11" />
+  </svg>
+);
+
+const EnableIndicatorGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.4}
+    strokeLinecap="square"
+    className={className}
+  >
+    <line x1="3" y1="2" x2="3" y2="10" />
+    <line x1="3" y1="2" x2="9" y2="2" />
+    <line x1="3" y1="6" x2="7" y2="6" />
+    <line x1="3" y1="10" x2="9" y2="10" />
+  </svg>
+);
+
+export { EnableIndicatorGlyph, TriggerIndicatorGlyph };
+
 // =============================================================================
 // Registry
 // =============================================================================
@@ -808,6 +875,9 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.subsystems.triggered.TriggeredSubsystem": TriggeredSubsystemGlyph,
   "pyflw.subsystems.ports.Inport": InportGlyph,
   "pyflw.subsystems.ports.Outport": OutportGlyph,
+  // ADR-0058: Subsystem behavior modifier control blocks
+  "pyflw.subsystems.control_blocks.Trigger": TriggerGlyph,
+  "pyflw.subsystems.control_blocks.Enable": EnableGlyph,
 };
 
 const GlyphFallback = ({ className }: GlyphProps): JSX.Element => (

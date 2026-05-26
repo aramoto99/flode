@@ -7,7 +7,13 @@
 // (= 各 endsWith の上に Python 実装の根拠コメントを書いておく)
 
 import type { BlockEntry, BlockMetadata } from "../types/api";
-import { INPORT_TYPE, OUTPORT_TYPE, TRIGGERED_SUBSYSTEM_TYPE } from "./blockTypes";
+import {
+  ENABLE_TYPE,
+  INPORT_TYPE,
+  OUTPORT_TYPE,
+  TRIGGER_TYPE,
+  TRIGGERED_SUBSYSTEM_TYPE,
+} from "./blockTypes";
 
 export interface ResolvedPortCounts {
   nInputs: number;
@@ -98,9 +104,26 @@ export function resolvePortCounts(
     return { nInputs: Math.max(1, ni), nOutputs: Math.max(1, no) };
   }
 
-  // ----- Subsystem (ADR-0039: 派生 property) -----
-  // 内部 Inport / Outport の数から自動算出。TriggeredSubsystem は trigger 入力分
-  // を ``n_inputs`` に +1 (= ADR-0036 §(2) 末尾固定 trigger slot)。
+  // ----- Subsystem (ADR-0039 派生 property + ADR-0058 control block) -----
+  // 内部 Inport / Outport / Trigger / Enable から自動算出。
+  // ADR-0058 §論点 4: slot 順序 [data_inports..., enable_slot, trigger_slot]。
+  // 旧 TriggeredSubsystem 専用分岐は deprecation 期間中も残置するが、内部 Trigger
+  // 同居時の二重カウントを避けるため、新方式 (Subsystem + 内部 Trigger / Enable)
+  // を優先して評価する。
+  if (typePath.endsWith(".Subsystem")) {
+    const inner = params.blocks;
+    if (Array.isArray(inner)) {
+      const inports = countByType(inner, INPORT_TYPE);
+      const outports = countByType(inner, OUTPORT_TYPE);
+      const hasTrigger = countByType(inner, TRIGGER_TYPE) > 0 ? 1 : 0;
+      const hasEnable = countByType(inner, ENABLE_TYPE) > 0 ? 1 : 0;
+      return { nInputs: inports + hasEnable + hasTrigger, nOutputs: outports };
+    }
+    return { nInputs: defaultIn, nOutputs: defaultOut };
+  }
+  // 旧 TriggeredSubsystem: schema 0.8 → 0.9 migration が走るとファイルからは
+  // 消えるが、Python API 直接呼び出し経路の deprecation 期間 (v3.x) は残す。
+  // n_inputs に固定 +1 (旧 trigger slot 互換)。
   if (
     typePath === TRIGGERED_SUBSYSTEM_TYPE ||
     typePath.endsWith(".TriggeredSubsystem")
@@ -111,17 +134,7 @@ export function resolvePortCounts(
       const outports = countByType(inner, OUTPORT_TYPE);
       return { nInputs: inports + 1, nOutputs: outports };
     }
-    // params.blocks が未取得 (= drag prefetch 直後 等) なら registry default + trigger
     return { nInputs: defaultIn + 1, nOutputs: defaultOut };
-  }
-  if (typePath.endsWith(".Subsystem")) {
-    const inner = params.blocks;
-    if (Array.isArray(inner)) {
-      const inports = countByType(inner, INPORT_TYPE);
-      const outports = countByType(inner, OUTPORT_TYPE);
-      return { nInputs: inports, nOutputs: outports };
-    }
-    return { nInputs: defaultIn, nOutputs: defaultOut };
   }
 
   // それ以外は registry default
