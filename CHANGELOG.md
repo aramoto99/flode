@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.1] - 2026-05-26 — Subsystem 制御カテゴリの palette 表示修正
+
+### Fixed
+
+- `BlockPalette.tsx` の `CATEGORY_ORDER` whitelist に新カテゴリ `"control"` が
+  欠けていたため、v0.37.0 で追加した `Trigger` / `Enable` および移動先となった
+  `Inport` / `Outport` が **palette サイドバーに表示されない** 問題を修正
+  (ユーザー指摘 2026-05-26、ADR-0058 §論点 2 follow-up)
+- `palette.category.control` の i18n 翻訳を追加 (ja「Subsystem 制御」 / en
+  「Subsystem control」)
+
 ## [0.37.0] - 2026-05-26
 
 ### BREAKING — Subsystem behavior modifier (SPEC-0007 / ADR-0058)
