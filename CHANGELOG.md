@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.1] - 2026-05-27 — control category ブロックを「subsystem」検索でヒット可能に
+
+### Fixed
+
+- ライブラリで「subsystem」検索すると `Subsystem` 1 件しかヒットせず、関連の
+  `Inport` / `Outport` / `Trigger` / `Enable` が見つからない問題を修正
+  (ユーザー指摘 2026-05-27)。registry の `_BLOCK_SEARCH_KEYWORDS` に
+  "subsystem" / "サブシステム" / "boundary" / "境界" / "trigger" / "edge" /
+  "enable" / "gate" 等を追加し、4 ブロックを「subsystem」検索の対象に含めた
+- ADR-0019 §(1) の search_keywords 機構を再活用 (= category code "control" が
+  検索に出ない代わりに、シノニムで補強する設計)
+
 ## [0.38.0] - 2026-05-27 — TriggeredSubsystem class 完全削除
 
 ### BREAKING — TriggeredSubsystem class の削除 (ADR-0058 §論点 9)

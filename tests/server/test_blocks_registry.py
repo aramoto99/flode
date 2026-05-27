@@ -294,6 +294,26 @@ class TestSearchKeywords:
 
         assert _resolve_search_keywords(_NoKeywords) == []
 
+    def test_control_blocks_discoverable_by_subsystem_keyword(self, client: TestClient) -> None:
+        """ADR-0058 / v0.38.1: control category の境界ブロックは "subsystem" 検索で
+        発見できる (= search_keywords に "subsystem" / "サブシステム" を持つ、
+        ユーザー指摘 2026-05-27)。"""
+        resp = client.get("/api/v1/blocks")
+        blocks = {b["type_path"]: b for b in resp.json()["blocks"]}
+        for type_path in (
+            "pyflw.subsystems.ports.Inport",
+            "pyflw.subsystems.ports.Outport",
+            "pyflw.subsystems.control_blocks.Trigger",
+            "pyflw.subsystems.control_blocks.Enable",
+        ):
+            kw = blocks[type_path]["search_keywords"]
+            assert "subsystem" in kw, (
+                f"{type_path}: missing 'subsystem' search keyword, got {kw}"
+            )
+            assert "サブシステム" in kw, (
+                f"{type_path}: missing 'サブシステム' search keyword, got {kw}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # GET /api/v1/blocks/{type_path}
