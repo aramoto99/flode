@@ -218,6 +218,27 @@ _BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
     "pyflw.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
     "pyflw.blocks.mathops.Divide": ("division", "除算", "割り算"),
     "pyflw.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),
+    # ADR-0058: control category の境界ブロックは「subsystem」検索で発見できる
+    # ようにする (= category code は "control" で表面に出ないため、search_keywords
+    # で "subsystem" 等を補強する)。ユーザー指摘 2026-05-27「subsystem 検索で
+    # Subsystem 1 件しか出ない」。
+    "pyflw.subsystems.ports.Inport": ("subsystem", "サブシステム", "boundary", "境界"),
+    "pyflw.subsystems.ports.Outport": ("subsystem", "サブシステム", "boundary", "境界"),
+    # NITS 反映: ``"trigger"`` / ``"enable"`` は type_path tail として
+    # searchableDisplayNames が自動で拾う (= 部分一致でヒット) ので、ここでは
+    # display_name に出ないシノニムのみ列挙する。
+    "pyflw.subsystems.control_blocks.Trigger": (
+        "subsystem",
+        "サブシステム",
+        "edge",
+        "エッジ",
+    ),
+    "pyflw.subsystems.control_blocks.Enable": (
+        "subsystem",
+        "サブシステム",
+        "gate",
+        "ゲート",
+    ),
 }
 
 
