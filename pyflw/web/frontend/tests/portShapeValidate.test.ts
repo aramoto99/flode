@@ -165,45 +165,8 @@ describe("validatePortShapeConnection", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("ADR-0036/0039: TriggeredSubsystem accepts trigger slot at the end", () => {
-    // 内部 Inport 1 つ → 外側 n_inputs = 2 (= internal 1 + trigger 1)。
-    // dst_idx=1 (trigger) への接続は scalar trigger なので OK。
-    const tsub: BlockEntry = {
-      id: "tsub",
-      type: "pyflw.subsystems.triggered.TriggeredSubsystem",
-      params: {
-        trigger_mode: "rising",
-        blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
-        ],
-        connections: [],
-      },
-    };
-    const META_TSUB: BlockMetadata = {
-      type_path: "pyflw.subsystems.triggered.TriggeredSubsystem",
-      display_name: "Triggered Subsystem",
-      category: "subsystems",
-      icon: "container.triggered",
-      docstring_summary: "",
-      params_spec: [],
-      default_n_inputs: 1,
-      default_n_outputs: 0,
-      port_shapes_in_default: [[]],
-      port_shapes_out_default: [],
-      tags: ["sm_a", "container"],
-      is_container: true,
-      mask_capable: true,
-    };
-    const tsubRegistry = indexRegistry([META_GAIN, META_TSUB]);
-    // dst_idx=0 (internal Inport)
-    expect(validatePortShapeConnection(gain1, 0, tsub, 0, tsubRegistry).ok).toBe(true);
-    // dst_idx=1 (trigger slot、末尾固定)
-    expect(validatePortShapeConnection(gain1, 0, tsub, 1, tsubRegistry).ok).toBe(true);
-    // dst_idx=2 (= n_inputs を超える) は does not exist
-    const oob = validatePortShapeConnection(gain1, 0, tsub, 2, tsubRegistry);
-    expect(oob.ok).toBe(false);
-    expect(oob.reason).toContain("does not exist");
-  });
+  // ADR-0058 v0.38.0: TriggeredSubsystem class は削除済。等価動作は Subsystem +
+  // 内部 Trigger block で実現される (describe "Subsystem + control block" 参照)。
 
   it("invalid dst port index returns descriptive error", () => {
     const r = validatePortShapeConnection(gain1, 0, gain2, 5, registry);
@@ -407,24 +370,6 @@ describe("validatePortShapeConnection", () => {
       expect(validatePortShapeConnection(gain1, 0, sub, 3, reg).ok).toBe(false);
     });
 
-    it("旧 TriggeredSubsystem (deprecation 経路): trigger 末尾 1 個のみ", () => {
-      const sub: BlockEntry = {
-        id: "sub",
-        type: "pyflw.subsystems.triggered.TriggeredSubsystem",
-        params: {
-          blocks: [
-            {
-              id: "in0",
-              type: "pyflw.subsystems.ports.Inport",
-              params: { port_idx: 0 },
-            },
-          ],
-        },
-      };
-      const reg = indexRegistry([META_GAIN]);
-      // index 1 (= trigger slot) は存在、index 2 は存在しない
-      expect(validatePortShapeConnection(gain1, 0, sub, 1, reg).ok).toBe(true);
-      expect(validatePortShapeConnection(gain1, 0, sub, 2, reg).ok).toBe(false);
-    });
+    // ADR-0058 v0.38.0: TriggeredSubsystem class 削除済のためテストケース削除。
   });
 });

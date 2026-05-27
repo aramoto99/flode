@@ -39,7 +39,6 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
 
   // -------- Subsystem (リファレンスツール風: 二重枠の少し大きめ rect) --------
   "pyflw.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
-  "pyflw.subsystems.triggered.TriggeredSubsystem": { kind: "rect", width: 96, height: 56 },
 
   // -------- 台形 --------
   "pyflw.subsystems.ports.Inport":  { kind: "trapezoid-r", width: 64, height: 38 },

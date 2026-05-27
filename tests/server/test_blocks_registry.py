@@ -152,7 +152,7 @@ class TestListBlocks:
 
     def test_control_blocks_are_in_control_category(self, client: TestClient) -> None:
         """ADR-0058: Inport / Outport / Trigger / Enable は "control" カテゴリに同居する
-        (SPEC-0007 §機能要件 8)。Subsystem / TriggeredSubsystem は "subsystems" のまま。"""
+        (SPEC-0007 §機能要件 8)。Subsystem は "subsystems" のまま。"""
         resp = client.get("/api/v1/blocks")
         blocks = {b["type_path"]: b for b in resp.json()["blocks"]}
         for type_path in (
@@ -165,11 +165,10 @@ class TestListBlocks:
             assert blocks[type_path]["category"] == "control", (
                 f"{type_path}: expected 'control', got {blocks[type_path]['category']!r}"
             )
-        # Subsystem 系は移動しない
+        # Subsystem は移動しない
         assert blocks["pyflw.subsystems.subsystem.Subsystem"]["category"] == "subsystems"
-        assert (
-            blocks["pyflw.subsystems.triggered.TriggeredSubsystem"]["category"] == "subsystems"
-        )
+        # ADR-0058 v0.38.0: 旧 TriggeredSubsystem class は registry から削除済
+        assert "pyflw.subsystems.triggered.TriggeredSubsystem" not in blocks
 
     def test_trigger_block_exposes_trigger_type_enum(self, client: TestClient) -> None:
         """ADR-0058 §論点 10: Trigger.trigger_type は 4 値の enum を露出する。"""

@@ -3,10 +3,11 @@
 import { create } from "zustand";
 
 import {
+  ENABLE_TYPE,
   getNumberParam,
   INPORT_TYPE,
   OUTPORT_TYPE,
-  TRIGGERED_SUBSYSTEM_TYPE,
+  TRIGGER_TYPE,
 } from "../lib/blockTypes";
 import { resolvePortCounts } from "../lib/dynamicPorts";
 import { findBlockPath } from "../lib/findBlockPath";
@@ -1394,10 +1395,11 @@ export function addBlockToEditing(
       };
     });
 
-    // (2) ADR-0036 §(2): TriggeredSubsystem の trigger 接続 (= 末尾固定 slot) は
-    //     内部 Inport 追加で +1 シフトする必要あり (派生 property 化と独立、
-    //     ADR-0039 §Decision §(7) で残すと確定)。
-    //     旧 trigger dst_idx = (旧 internal Inport count) → 新 dst_idx = +1
+    // (2) ADR-0058 §論点 4: Subsystem 内部に Trigger / Enable control block が
+    //     ある場合、それらの slot index は [data_inports..., enable, trigger]
+    //     順なので、新 Inport を追加すると enable / trigger の dst_idx が +1
+    //     シフトする。旧 ADR-0036 の TriggeredSubsystem 専用 shift ロジックを
+    //     filter ベースで一般化したもの。
     if (isInport && path.length > 0) {
       const parentPath = path.slice(0, -1);
       const parentSubId = path[path.length - 1]!;
@@ -1410,29 +1412,35 @@ export function addBlockToEditing(
           );
           return view;
         }
-        if (parentBlock.type !== TRIGGERED_SUBSYSTEM_TYPE) {
-          return view; // 通常 Subsystem は追従不要 (= 派生 property)
+        if (!parentBlock.type.endsWith(".Subsystem")) {
+          return view; // Subsystem 以外は対象外
         }
-        // 旧 trigger dst_idx を内部 Inport 数 (追加前) から計算する。
-        // 追加後の inner blocks には新 Inport が含まれるので、count - 1 で旧値を得る。
-        const innerBlocks = (parentBlock.params as { blocks?: BlockEntry[] }).blocks ?? [];
+        const innerBlocks =
+          (parentBlock.params as { blocks?: BlockEntry[] }).blocks ?? [];
+        const hasEnable = innerBlocks.some((b) => b.type === ENABLE_TYPE);
+        const hasTrigger = innerBlocks.some((b) => b.type === TRIGGER_TYPE);
+        if (!hasEnable && !hasTrigger) {
+          return view; // 制御ブロックなし → シフト不要
+        }
+        // 旧 (= 新 Inport 追加前) の slot index を計算。追加後の innerBlocks には
+        // 新 Inport が含まれるため、Inport count から 1 引いて旧 inport count を
+        // 得る。slot 順は [data_inports..., enable, trigger]。
         const oldInportCount =
           innerBlocks.filter((b) => b.type === INPORT_TYPE).length - 1;
-        const oldTriggerIdx = oldInportCount;
-        let triggerFound = false;
+        const oldEnableIdx = hasEnable ? oldInportCount : -1;
+        const oldTriggerIdx = hasTrigger
+          ? oldInportCount + (hasEnable ? 1 : 0)
+          : -1;
         const newConnections = view.connections.map((c) => {
-          if (c.dst === parentSubId && c.dst_idx === oldTriggerIdx) {
-            triggerFound = true;
+          if (c.dst !== parentSubId) return c;
+          if (oldEnableIdx >= 0 && c.dst_idx === oldEnableIdx) {
+            return { ...c, dst_idx: c.dst_idx + 1 };
+          }
+          if (oldTriggerIdx >= 0 && c.dst_idx === oldTriggerIdx) {
             return { ...c, dst_idx: c.dst_idx + 1 };
           }
           return c;
         });
-        if (!triggerFound && oldTriggerIdx >= 0) {
-          console.warn(
-            `[appStore] TriggeredSubsystem "${parentSubId}" has no trigger connection ` +
-              `at dst_idx=${oldTriggerIdx}. trigger slot may be inconsistent.`,
-          );
-        }
         return {
           blocks: view.blocks,
           connections: newConnections,
@@ -1508,8 +1516,9 @@ export function removeBlockFromEditing(blockId: string): void {
     // (2) 親階層 connections のシフト/削除のみ実行 (= ADR-0039: 親
     //     n_inputs / n_outputs は派生 property のため明示的な -1 は不要)。
     //     port_idx 連番再割り当てに伴って親階層の dst_idx (Inport) / src_idx
-    //     (Outport) を追従させる。TriggeredSubsystem の trigger 接続も
-    //     `dst_idx > removedPortIdx` のシフトで自動的に末尾を保つ。
+    //     (Outport) を追従させる。Subsystem 内部 Trigger / Enable 接続も
+    //     `dst_idx > removedPortIdx` のシフトで自動的に末尾を保つ
+    //     (ADR-0058 §論点 4)。
     if (isPort && path.length > 0 && removedPortIdx !== undefined) {
       const parentPath = path.slice(0, -1);
       const parentSubId = path[path.length - 1]!;

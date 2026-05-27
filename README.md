@@ -123,7 +123,8 @@ See `examples/spring_mass_damper.py` for a complete second-order system example.
 | Math       | Gain, Sum, Product, Saturation, Abs, Sign, MinMax, Divide                 |
 | Logic      | RelationalOperator, LogicalOperator                                       |
 | Routing    | Switch, Mux, Demux                                                        |
-| Subsystem  | Subsystem, TriggeredSubsystem, Inport, Outport                            |
+| Subsystem  | Subsystem (Trigger / Enable control block で挙動修飾)                       |
+| Control    | Inport, Outport, Trigger, Enable                                          |
 
 Full API reference: `docs/` (build with `sphinx-build -b html docs docs/_build`).
 
@@ -179,7 +180,7 @@ print(compiled.n_states, compiled.backend)
 `pyflw[codegen]` extras (`jax[cpu]`) を要求。GPU は `pyflw[gpu]` extras
 (`jax[cuda12]`、Linux x86_64 / NVIDIA CUDA 12 only)、実機ベンチマークは Phase
 6+ で整備予定。`Simulator.compile()` で未対応ブロック (= `StateSpace` /
-`TransferFunction` / `Subsystem` / `TriggeredSubsystem` 等) を含むモデルは
+`TransferFunction` / `Subsystem` 等) を含むモデルは
 `BlockSpecError` で拒否される。詳細: ADR-0037 / ADR-0038。
 
 ## Web GUI

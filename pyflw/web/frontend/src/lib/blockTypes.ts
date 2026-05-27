@@ -3,8 +3,6 @@
 // 崩れるリスクを排除する (= code-reviewer NITS-2)。
 
 export const SUBSYSTEM_TYPE = "pyflw.subsystems.subsystem.Subsystem";
-export const TRIGGERED_SUBSYSTEM_TYPE =
-  "pyflw.subsystems.triggered.TriggeredSubsystem";
 export const INPORT_TYPE = "pyflw.subsystems.ports.Inport";
 export const OUTPORT_TYPE = "pyflw.subsystems.ports.Outport";
 

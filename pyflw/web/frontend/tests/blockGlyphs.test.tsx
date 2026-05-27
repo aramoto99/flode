@@ -47,7 +47,6 @@ const KNOWN_TYPE_PATHS = [
   "pyflw.blocks.sinks.XYGraph",
   "pyflw.blocks.sinks.Terminator",
   "pyflw.subsystems.subsystem.Subsystem",
-  "pyflw.subsystems.triggered.TriggeredSubsystem",
   "pyflw.subsystems.ports.Inport",
   "pyflw.subsystems.ports.Outport",
 ];

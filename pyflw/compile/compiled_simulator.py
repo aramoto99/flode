@@ -179,16 +179,14 @@ def _build_compiled_simulator(
     # 持つ Subsystem は MVP で codegen 対象外。明示的に拒否してエラーメッセージで
     # 旧 numpy hot path 経路へ誘導する (= jax_backend allowlist 経由でも reject
     # されるが、ここでは「内部 control block の有無」を判定して具体的なメッセージ
-    # を返す)。schema 0.8 → 0.9 migration 後は旧 TriggeredSubsystem instance は
-    # 存在しないため、Subsystem 内部 filter で検出する。
+    # を返す)。schema 0.8 → 0.9 migration 後は class 自体が存在しないため、
+    # Subsystem 内部の Trigger / Enable filter で検出する。
     # NOTE: ``simulator.blocks`` は root 直下のフラットなリストで、ネスト Subsystem
-    # 内部の control block は本ループで検出しない。これは旧 ``isinstance(b,
-    # TriggeredSubsystem)`` 実装と同じ制限 (= 階層の最外側だけ判定すれば codegen
-    # build 時に jax tracing が同等の boundary block で hit するため十分)。
+    # 内部の control block は本ループで検出しない (= 階層の最外側だけ判定すれば
+    # codegen build 時に jax tracing が同等の boundary block で hit するため十分)。
     # NOTE: ``backend in {"jax", "numpy"}`` の両方で reject する。``backend="numpy"``
     # の compile path も JAX-style 純関数 view を生成する経路で、Trigger/Enable の
-    # state mutation を扱うランタイムを実装していない (= Phase 6+ で再設計、
-    # 旧 TriggeredSubsystem 実装と同じ制限を維持)。
+    # state mutation を扱うランタイムを実装していない (= Phase 6+ で再設計)。
     for b in simulator.blocks:
         if isinstance(b, Subsystem):
             inner_blocks = getattr(b, "_inner_blocks", [])

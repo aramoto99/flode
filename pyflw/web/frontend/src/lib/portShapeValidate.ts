@@ -7,7 +7,6 @@ import {
   INPORT_TYPE,
   OUTPORT_TYPE,
   TRIGGER_TYPE,
-  TRIGGERED_SUBSYSTEM_TYPE,
 } from "./blockTypes";
 import { hasDynamicPorts, resolvePortCounts } from "./dynamicPorts";
 
@@ -37,20 +36,17 @@ export function formatShape(shape: number[]): string {
  * → in = [[], [], []]。Mux の出力 ``[n]`` のような **param 依存 shape** までは
  * 反映しない (= count の修正のみ、shape は registry default を踏襲)。
  *
- * ADR-0039: Subsystem / TriggeredSubsystem は ``params.blocks`` 内の Inport /
- * Outport から派生する。registry default (= 空 Subsystem の port_shapes、
- * `n_inputs=0` / `n_outputs=0`) では新規 Inport を追加しても connect 検証で
- * 弾かれるため、本ヘルパで派生計算する。
+ * ADR-0039: Subsystem は ``params.blocks`` 内の Inport / Outport から派生する。
+ * registry default (= 空 Subsystem の port_shapes、`n_inputs=0` /
+ * `n_outputs=0`) では新規 Inport を追加しても connect 検証で弾かれるため、
+ * 本ヘルパで派生計算する。
  */
 export function getDefaultPortShapes(
   block: BlockEntry,
   registry: ReadonlyMap<string, BlockMetadata>,
 ): { in: number[][]; out: number[][] } {
-  // ADR-0039: Subsystem / TriggeredSubsystem は内部 Inport/Outport から派生
-  if (
-    block.type.endsWith(".Subsystem") ||
-    block.type.endsWith(".TriggeredSubsystem")
-  ) {
+  // ADR-0039: Subsystem は内部 Inport/Outport から派生
+  if (block.type.endsWith(".Subsystem")) {
     return derivePortShapesFromInner(block);
   }
 
@@ -64,8 +60,8 @@ export function getDefaultPortShapes(
   // param 変更で port 数が変わるブロック (Scope/Sum/Product/Mux/StateSpace 等)
   // は実 count に合わせて shape 列を resize する。それ以外は registry default
   // をそのまま返す (= 既存挙動を維持)。
-  // 注: Subsystem / TriggeredSubsystem も hasDynamicPorts==true だが、上で早期
-  // return 済みなので本分岐には到達しない。
+  // 注: Subsystem も hasDynamicPorts==true だが、上で早期 return 済みなので
+  // 本分岐には到達しない。
   if (!hasDynamicPorts(block.type)) {
     return { in: defaultIn, out: defaultOut };
   }
@@ -109,14 +105,12 @@ function resizeShapes(defaults: number[][], count: number): number[][] {
 }
 
 /**
- * Subsystem / TriggeredSubsystem の port_shapes を ``params.blocks`` 内の
- * Inport / Outport / Trigger / Enable の port_shape (port_idx 順) から派生計算
- * する。
+ * Subsystem の port_shapes を ``params.blocks`` 内の Inport / Outport /
+ * Trigger / Enable の port_shape (port_idx 順) から派生計算する。
  *
  * ADR-0058 §論点 4 (slot 順序 [data..., enable, trigger]): Subsystem に内部
  * ``Trigger`` / ``Enable`` block があると ``in`` の末尾に scalar ``[]`` shape を
- * 順に追加する。旧 ``TriggeredSubsystem`` クラスは deprecation 期間中も末尾 1
- * 個追加 (= 旧挙動の互換維持)。
+ * 順に追加する。
  */
 function derivePortShapesFromInner(
   block: BlockEntry,
@@ -126,8 +120,7 @@ function derivePortShapesFromInner(
   if (!Array.isArray(inner)) {
     // params.blocks 不在 (= drag prefetch 直後 等) は空で返す。Subsystem は
     // 内部に Inport を追加した時点で blocks=[] が必ず存在する。
-    const isTriggered = block.type === TRIGGERED_SUBSYSTEM_TYPE;
-    return { in: isTriggered ? [[]] : [], out: [] };
+    return { in: [], out: [] };
   }
   const inports = inner
     .filter(
@@ -153,7 +146,6 @@ function derivePortShapesFromInner(
     .map((p) => p.port_shape);
 
   // ADR-0058 §論点 4: 末尾 control slot を [enable, trigger] 順で付加。
-  // 旧 TriggeredSubsystem (deprecation factory が呼ばれた直接構築経路) は trigger 1 個分。
   const hasEnable = inner.some(
     (b): b is BlockEntry =>
       typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
@@ -165,11 +157,6 @@ function derivePortShapesFromInner(
   const inShapes: number[][] = [...inports];
   if (hasEnable) inShapes.push([]);
   if (hasTrigger) inShapes.push([]);
-  // 旧 TriggeredSubsystem (factory 廃止前の Python API 直接呼び出し経路) との
-  // 互換: 旧型は trigger 1 個固定。新方式と同居しない (= migration が走るため)。
-  if (block.type === TRIGGERED_SUBSYSTEM_TYPE && !hasTrigger) {
-    inShapes.push([]);
-  }
 
   return { in: inShapes, out: outports };
 }

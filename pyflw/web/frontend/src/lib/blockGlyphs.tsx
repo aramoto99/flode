@@ -701,23 +701,6 @@ const SubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// ADR-0054: TriggeredSubsystem glyph — 雷のみ (= trigger 信号を象徴)。
-// 旧 ADR-0036 版は外形 rect を含んでいたが、ShapeOutline と二重描画になるため
-// 削除。BlockNodeView の中央分岐で 70% × 40% boxに描画される、24×24 viewBox 中央
-// に雷を配置する。
-const TriggeredSubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
-  <svg {...G_PROPS} className={className}>
-    <polyline
-      points="14,3 9,12 13,12 10,21"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={SW}
-      strokeLinejoin="miter"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
 const InportGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <polygon points="3,6 16,6 21,12 16,18 3,18" />
@@ -755,7 +738,7 @@ const OutportGlyph = ({ className }: GlyphProps): JSX.Element => (
 // 純線画、24×24 viewBox 中央寄せ、currentColor で外側から色制御可能。
 const TriggerGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* 稲妻シルエット (Trigger を象徴、TriggeredSubsystemGlyph の縮小版) */}
+    {/* 稲妻シルエット (Trigger を象徴) */}
     <polyline
       points="14,3 9,12 13,12 10,21"
       fill="none"
@@ -872,7 +855,6 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.sinks.Terminator": TerminatorGlyph,
   // subsystems
   "pyflw.subsystems.subsystem.Subsystem": SubsystemGlyph,
-  "pyflw.subsystems.triggered.TriggeredSubsystem": TriggeredSubsystemGlyph,
   "pyflw.subsystems.ports.Inport": InportGlyph,
   "pyflw.subsystems.ports.Outport": OutportGlyph,
   // ADR-0058: Subsystem behavior modifier control blocks
