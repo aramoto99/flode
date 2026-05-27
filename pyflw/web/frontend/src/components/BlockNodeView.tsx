@@ -36,41 +36,29 @@ import type { BlockEntry } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
 
 /**
- * ADR-0058 §論点 4 / §論点 11: Subsystem (新方式 + 旧 TriggeredSubsystem) に
- * 含まれる control block の有無を ``params.blocks`` filter で判定する。slot 順序は
- * [data_inports..., enable_slot, trigger_slot]。旧 ``TriggeredSubsystem`` クラス
- * は deprecation 期間中も class 名で trigger 有とみなす。
+ * ADR-0058 §論点 4 / §論点 11: Subsystem に含まれる control block の有無を
+ * ``params.blocks`` filter で判定する。slot 順序は
+ * [data_inports..., enable_slot, trigger_slot]。
  */
 function resolveControlSlots(
-  typePath: string,
   params: Record<string, unknown> | undefined,
 ): { hasTrigger: boolean; hasEnable: boolean } {
   if (!params) {
-    if (typePath.endsWith(".TriggeredSubsystem")) {
-      return { hasTrigger: true, hasEnable: false };
-    }
     return { hasTrigger: false, hasEnable: false };
   }
   const inner = params.blocks;
-  if (Array.isArray(inner)) {
-    const hasTrigger = inner.some(
-      (b) =>
-        typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
-    );
-    const hasEnable = inner.some(
-      (b) =>
-        typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
-    );
-    // ADR-0058 §論点 11: 内部 control block が見つかったら新方式 (filter ベース)
-    // を採用。空配列 (= 内部に何もない旧 TriggeredSubsystem) は意図的に下の
-    // class 名フォールバックに落ちて hasTrigger=true を返す (= 旧 TriggeredSubsystem
-    // の trigger slot を保持する deprecation 期間中の互換動作)。
-    if (hasTrigger || hasEnable) return { hasTrigger, hasEnable };
+  if (!Array.isArray(inner)) {
+    return { hasTrigger: false, hasEnable: false };
   }
-  if (typePath.endsWith(".TriggeredSubsystem")) {
-    return { hasTrigger: true, hasEnable: false };
-  }
-  return { hasTrigger: false, hasEnable: false };
+  const hasTrigger = inner.some(
+    (b) =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
+  );
+  const hasEnable = inner.some(
+    (b) =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
+  );
+  return { hasTrigger, hasEnable };
 }
 
 interface BlockNodeViewProps extends NodeProps {
@@ -131,7 +119,6 @@ export function BlockNodeView({
   // ``params.blocks`` filter ベースで一度だけ算出。下記の slot 描画 / 中央
   // indicator / handle position 全てが共有する。
   const controlSlots = resolveControlSlots(
-    data.blockType,
     data.params as Record<string, unknown> | undefined,
   );
 
@@ -541,23 +528,6 @@ function ShapeContent({
       </div>
     );
   }
-  // ADR-0054: 旧 TriggeredSubsystem クラスは中央に雷 glyph を描画。schema 0.8 → 0.9
-  // migration 後は普通の Subsystem に変換されるため、この分岐に来るのは Python API
-  // 直接構築 + deprecation factory が走らない経路 (= 旧型 instance) のみ。
-  if (typePath.endsWith(".TriggeredSubsystem")) {
-    return (
-      <div
-        data-testid="trigger-center-glyph"
-        className="absolute inset-0 flex items-center justify-center"
-        style={{ color }}
-      >
-        <div className="h-[70%] w-[40%]">
-          <BlockGlyph typePath={typePath} />
-        </div>
-      </div>
-    );
-  }
-
   // rect (default): リファレンスツール風の専用 render を type ごとに優先する
   //   - Constant: 値そのものを大きく表示 (= "1.0", "70" 等)
   //   - Integrator: ``1/s``
@@ -925,7 +895,8 @@ const CHEVRON_STYLE: React.CSSProperties = {
   pointerEvents: "none",
 };
 
-// ADR-0054: TriggeredSubsystem の trigger 入力 (上辺中央) を識別するための
+// ADR-0054 → ADR-0058: Subsystem 内部 Trigger / Enable control block の上辺
+// slot を識別するための
 // 縦向き chevron (= ``v``)。色は amber-500 でデータ chevron (slate-600) と
 // 差別化する。rotate(135deg) で borderTop+borderRight の corner を下向きに
 // 倒した結果が ``v`` (= 信号が上から下に流れる慣習)。

@@ -197,11 +197,6 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "Subsystem",
         "subsys.subsystem",
     ),
-    "pyflw.subsystems.triggered.TriggeredSubsystem": (
-        "subsystems",
-        "Triggered Subsystem",
-        "subsys.triggered",
-    ),
     # ADR-0058: Subsystem behavior modifier control blocks (= Inport / Outport /
     # Trigger / Enable) は "control" カテゴリに集約。SPEC-0007 §機能要件 8 で
     # 「Inport / Outport / Trigger / Enable を同居」と確定。
@@ -278,7 +273,7 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "states_when_enabling": "held",
         "outputs_when_disabled": "held",
     },
-    # ADR-0039 (v2.0): Subsystem / TriggeredSubsystem の n_inputs / n_outputs は
+    # ADR-0039 (v2.0): Subsystem の n_inputs / n_outputs は
     # 派生 property に格上げ (= コンストラクタ引数廃止)。``_default_factory_args``
     # も不要 — 第 1 試行の TypeError → 第 2 試行 ``cls()`` という無駄な経路を避ける
     # ため、エントリ自体を削除する。

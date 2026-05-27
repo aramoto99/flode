@@ -395,6 +395,10 @@ def _builtin_migrate_0_6_to_0_7(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# ``TriggeredSubsystem`` class は v0.38.0 で削除済 (ADR-0058 §論点 9)。
+# 本 tuple は 0.7 → 0.8 migration が旧 JSON 内の **文字列マッチ** で旧型 entry
+# を検出するためのリテラルとして残置 (= class import ではなく文字列のみ参照、
+# 古い flw.json をロードしても migration が機能する保証)。
 _SUBSYSTEM_TYPES_FOR_MIGRATION: tuple[str, ...] = (
     "pyflw.subsystems.subsystem.Subsystem",
     "pyflw.subsystems.triggered.TriggeredSubsystem",

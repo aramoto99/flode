@@ -6,8 +6,10 @@
 //   1. port_idx の自動採番 (= 内部既存同種 count を新 Inport の port_idx に上書き)
 //   2. port_idx 連番再割り当て (= 削除時に残った同種 ports の port_idx を -1)
 //   3. 親階層 connections の dst_idx / src_idx シフト (= port_idx 連番再割り当て
-//      に同期、TriggeredSubsystem trigger 接続も同じロジックで自動末尾保持)
-//   4. TriggeredSubsystem trigger 接続 +1 シフト (= Inport 追加時、ADR-0036 §(2))
+//      に同期、Subsystem + 内部 Trigger / Enable 接続も同じロジックで自動末尾保持、
+//      ADR-0058 §論点 4)
+//   4. Subsystem + 内部 Trigger の trigger 接続 +1 シフト (= Inport 追加時、
+//      ADR-0058 §論点 4)
 
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -15,7 +17,7 @@ import {
   INPORT_TYPE,
   OUTPORT_TYPE,
   SUBSYSTEM_TYPE,
-  TRIGGERED_SUBSYSTEM_TYPE as TRIGGERED_TYPE,
+  TRIGGER_TYPE,
 } from "../src/lib/blockTypes";
 import { findBlockAtPath, resolveBlocksAtPath } from "../src/lib/pathResolver";
 import {
@@ -81,13 +83,19 @@ function makeTriggeredModel(): FlwModel {
       { id: "trig_src", type: "pyflw.blocks.sources.PulseGenerator", params: {} },
       {
         id: "tsub",
-        type: TRIGGERED_TYPE,
+        type: SUBSYSTEM_TYPE,
         params: {
-          trigger_mode: "rising",
-          // 内部 Inport 1 (= 派生 n_inputs = 1 + 1 trigger = 2)
+          // ADR-0058 v0.38.0: Subsystem + 内部 Trigger block で Triggered
+          // Subsystem 相当を構成 (= 旧 TriggeredSubsystem class は削除済)。
+          // 派生 n_inputs = 内部 Inport 1 + Trigger 1 = 2
           blocks: [
             { id: "in0", type: INPORT_TYPE, params: { port_idx: 0 } },
             { id: "out0", type: OUTPORT_TYPE, params: { port_idx: 0 } },
+            {
+              id: "trig0",
+              type: TRIGGER_TYPE,
+              params: { trigger_type: "rising" },
+            },
           ],
           connections: [],
           layout: {},
@@ -249,7 +257,7 @@ describe("ADR-0039: Subsystem port handling (derived property + port_idx renumbe
     expect(subOut[0]!.dst).toBe("snk2");
   });
 
-  it("adding an Inport into a TriggeredSubsystem shifts the trigger connection by +1", () => {
+  it("adding an Inport into a Subsystem with internal Trigger shifts the trigger connection by +1 (ADR-0058)", () => {
     useAppStore.setState({
       editingModel: makeTriggeredModel(),
       editingPath: ["tsub"],
@@ -278,7 +286,7 @@ describe("ADR-0039: Subsystem port handling (derived property + port_idx renumbe
     expect(dataConn.dst_idx).toBe(0);
   });
 
-  it("removing an Inport from a TriggeredSubsystem keeps trigger as the last slot", () => {
+  it("removing an Inport from a Subsystem with internal Trigger keeps trigger as the last slot (ADR-0058)", () => {
     const m = makeTriggeredModel();
     const tsub = m.blocks.find((b) => b.id === "tsub")!;
     tsub.params = {
@@ -287,6 +295,11 @@ describe("ADR-0039: Subsystem port handling (derived property + port_idx renumbe
         { id: "in0", type: INPORT_TYPE, params: { port_idx: 0 } },
         { id: "in1", type: INPORT_TYPE, params: { port_idx: 1 } },
         { id: "out0", type: OUTPORT_TYPE, params: { port_idx: 0 } },
+        {
+          id: "trig0",
+          type: TRIGGER_TYPE,
+          params: { trigger_type: "rising" },
+        },
       ],
     };
     m.connections = [

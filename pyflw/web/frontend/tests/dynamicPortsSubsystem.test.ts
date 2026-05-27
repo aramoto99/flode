@@ -7,7 +7,6 @@ import {
   INPORT_TYPE,
   OUTPORT_TYPE,
   SUBSYSTEM_TYPE,
-  TRIGGERED_SUBSYSTEM_TYPE,
 } from "../src/lib/blockTypes";
 import { resolvePortCounts } from "../src/lib/dynamicPorts";
 
@@ -40,27 +39,6 @@ describe("resolvePortCounts: Subsystem port derivation (ADR-0039)", () => {
   });
 });
 
-describe("resolvePortCounts: TriggeredSubsystem (= internal Inport count + 1 trigger)", () => {
-  it("adds 1 to nInputs for trigger slot", () => {
-    const params = {
-      trigger_mode: "rising",
-      blocks: [
-        { id: "in0", type: INPORT_TYPE, params: { port_idx: 0 } },
-        { id: "out0", type: OUTPORT_TYPE, params: { port_idx: 0 } },
-      ],
-    };
-    const counts = resolvePortCounts(TRIGGERED_SUBSYSTEM_TYPE, params, undefined);
-    expect(counts.nInputs).toBe(2); // internal 1 + trigger 1
-    expect(counts.nOutputs).toBe(1);
-  });
-
-  it("returns 1/0 for an empty TriggeredSubsystem (= trigger only)", () => {
-    const counts = resolvePortCounts(
-      TRIGGERED_SUBSYSTEM_TYPE,
-      { blocks: [] },
-      undefined,
-    );
-    expect(counts.nInputs).toBe(1);
-    expect(counts.nOutputs).toBe(0);
-  });
-});
+// ADR-0058 v0.38.0: TriggeredSubsystem class は削除済。Subsystem + 内部
+// Trigger block の port count 検証は dynamicPorts.test.ts の Subsystem +
+// Trigger ケースで行う。

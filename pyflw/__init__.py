@@ -7,7 +7,7 @@
 # ADR-0044) は docked split と並存。Phase 6c (Workspace JupyterLab
 # convergence) Stage 1 として ADR-0040 §Amendments §(1) で位置付け、Stage 2 /
 # 3 (= activity bar + Launcher、drag-to-split-tab) は後続 ADR で順次着手。
-__version__ = "0.37.1"
+__version__ = "0.38.0"
 
 from .analysis import (
     BodeResponse,
@@ -46,13 +46,14 @@ from .libraries import (
     load_library,
     validate_library,
 )
-from .subsystems import Inport, Outport, Subsystem, TriggeredSubsystem
+from .subsystems import Enable, Inport, Outport, Subsystem, Trigger
 
 __all__ = [
     "AlgebraicLoopError",
     "Block",
     "BlockSpecError",
     "BodeResponse",
+    "Enable",
     "Inport",
     "Library",
     "LibraryEntry",
@@ -71,7 +72,7 @@ __all__ = [
     "Simulator",
     "SolverError",
     "Subsystem",
-    "TriggeredSubsystem",
+    "Trigger",
     "UnknownBlockIdError",
     "UnknownBlockTypeError",
     "block",

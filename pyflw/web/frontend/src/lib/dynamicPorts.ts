@@ -12,7 +12,6 @@ import {
   INPORT_TYPE,
   OUTPORT_TYPE,
   TRIGGER_TYPE,
-  TRIGGERED_SUBSYSTEM_TYPE,
 } from "./blockTypes";
 
 export interface ResolvedPortCounts {
@@ -107,9 +106,6 @@ export function resolvePortCounts(
   // ----- Subsystem (ADR-0039 派生 property + ADR-0058 control block) -----
   // 内部 Inport / Outport / Trigger / Enable から自動算出。
   // ADR-0058 §論点 4: slot 順序 [data_inports..., enable_slot, trigger_slot]。
-  // 旧 TriggeredSubsystem 専用分岐は deprecation 期間中も残置するが、内部 Trigger
-  // 同居時の二重カウントを避けるため、新方式 (Subsystem + 内部 Trigger / Enable)
-  // を優先して評価する。
   if (typePath.endsWith(".Subsystem")) {
     const inner = params.blocks;
     if (Array.isArray(inner)) {
@@ -120,21 +116,6 @@ export function resolvePortCounts(
       return { nInputs: inports + hasEnable + hasTrigger, nOutputs: outports };
     }
     return { nInputs: defaultIn, nOutputs: defaultOut };
-  }
-  // 旧 TriggeredSubsystem: schema 0.8 → 0.9 migration が走るとファイルからは
-  // 消えるが、Python API 直接呼び出し経路の deprecation 期間 (v3.x) は残す。
-  // n_inputs に固定 +1 (旧 trigger slot 互換)。
-  if (
-    typePath === TRIGGERED_SUBSYSTEM_TYPE ||
-    typePath.endsWith(".TriggeredSubsystem")
-  ) {
-    const inner = params.blocks;
-    if (Array.isArray(inner)) {
-      const inports = countByType(inner, INPORT_TYPE);
-      const outports = countByType(inner, OUTPORT_TYPE);
-      return { nInputs: inports + 1, nOutputs: outports };
-    }
-    return { nInputs: defaultIn + 1, nOutputs: defaultOut };
   }
 
   // それ以外は registry default
@@ -171,7 +152,6 @@ export function hasDynamicPorts(typePath: string): boolean {
     ".DiscreteStateSpace",
     ".MimoTransferFunction",
     ".Subsystem",
-    ".TriggeredSubsystem", // ADR-0036/0039: 派生 port count + trigger slot
   ].some((suffix) => typePath.endsWith(suffix));
 }
 

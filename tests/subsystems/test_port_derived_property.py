@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Inport, Outport, Subsystem, TriggeredSubsystem
+from pyflw.subsystems import Inport, Outport, Subsystem
 
 
 class TestSubsystemDerivedNInputs:
@@ -64,37 +64,8 @@ class TestSubsystemDerivedNInputs:
             Subsystem(port_shapes_in=((3,),))  # type: ignore[call-arg]
 
 
-class TestTriggeredSubsystemDerivedNInputs:
-    def test_empty_triggered_has_n_inputs_one(self) -> None:
-        # 内部 Inport 0 + trigger 1 = 1
-        ts = TriggeredSubsystem()
-        assert ts.n_inputs == 1
-        assert ts.n_outputs == 0
-
-    def test_trigger_slot_at_end_of_input_sources(self) -> None:
-        ts = TriggeredSubsystem()
-        # 初期化時点で trigger slot 1 個が末尾に確保されている
-        assert len(ts.input_sources) == 1
-
-    def test_adding_inport_pushes_trigger_to_end(self) -> None:
-        ts = TriggeredSubsystem()
-        ts.add(Inport(port_idx=0))
-        # input_sources = [internal_Inport_0_slot, trigger_slot]
-        assert len(ts.input_sources) == 2
-        assert ts.n_inputs == 2  # internal 1 + trigger 1
-        ts.add(Inport(port_idx=1))
-        assert len(ts.input_sources) == 3
-        assert ts.n_inputs == 3
-
-    def test_port_shapes_in_includes_trigger_scalar(self) -> None:
-        ts = TriggeredSubsystem()
-        ts.add(Inport(port_idx=0, port_shape=(2,)))
-        # 内部 Inport (2,) + trigger 末尾 ()
-        assert ts.port_shapes_in == ((2,), ())
-
-    def test_legacy_n_inputs_rejected_for_triggered(self) -> None:
-        with pytest.raises(TypeError, match="were removed in v2.0"):
-            TriggeredSubsystem(n_inputs=2, n_outputs=1)  # type: ignore[call-arg]
+# ADR-0058 v0.38.0: TriggeredSubsystem class は削除済。等価動作は Subsystem +
+# 内部 Trigger control block で実現される (tests/subsystems/test_subsystem_trigger_integration.py 参照)。
 
 
 class TestPortIdxValidation:

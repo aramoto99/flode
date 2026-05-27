@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-05-27 — TriggeredSubsystem class 完全削除
+
+### BREAKING — TriggeredSubsystem class の削除 (ADR-0058 §論点 9)
+
+v0.37.0 で deprecation factory として残していた `pyflw.subsystems.TriggeredSubsystem`
+クラスを **v0.38.0 で完全削除**。schema 0.8 → 0.9 自動 migration は維持され、
+旧 JSON ファイルはロード時に `Subsystem` + 内部 `Trigger` block に変換される
+ため、**JSON 経路のユーザーへの影響は無し**。
+
+### Removed
+
+- `pyflw.subsystems.triggered` モジュールをファイルごと削除
+- `pyflw.subsystems.TriggeredSubsystem` / `_is_trigger_edge` / `TRIGGER_MODES`
+  shim を削除 (= `pyflw.subsystems.control_blocks.is_trigger_edge` / `Trigger`
+  クラスへ完全移行)
+- `pyflw.__init__.py` の `TriggeredSubsystem` export を削除
+- `pyflw.server.registry.py` の `pyflw.subsystems.triggered.TriggeredSubsystem`
+  エントリ + `registry_translations.py` の翻訳エントリ削除
+- frontend `blockTypes.ts` の `TRIGGERED_SUBSYSTEM_TYPE` 定数削除
+- frontend の `.TriggeredSubsystem` 専用分岐すべて削除
+  (`dynamicPorts.ts` / `portShapeValidate.ts` / `BlockNodeView.tsx` /
+  `appStore.ts`、filter ベース判定に統一)
+- `blockGlyphs.tsx` の `TriggeredSubsystemGlyph` 削除 (= 中央雷 glyph は
+  Subsystem 中央 indicator (12×12) に統合済)
+- 旧 unit テスト `tests/test_triggered_subsystem.py` 削除
+- frontend `tests/triggeredSubsystemPort.test.tsx` 削除
+- `test_port_derived_property.py` の `TestTriggeredSubsystemDerivedNInputs`
+  クラス削除
+
+### Changed
+
+- `appStore.ts` の Inport 追加時 dst_idx shift ロジックを `TriggeredSubsystem`
+  class 専用から「Subsystem 内部に Trigger / Enable がある場合の generic
+  shift」に書き換え (= filter ベース、ADR-0058 §論点 4)
+- `pyflw.core.persistence` の `_builtin_migrate_0_8_to_0_9` は維持
+  (= 旧 JSON 文字列 `"pyflw.subsystems.triggered.TriggeredSubsystem"` を
+  検出して新形式に変換するため必須)
+
+### Migration guide
+
+- **Python API**:
+  - 旧: `from pyflw.subsystems import TriggeredSubsystem; t = TriggeredSubsystem(trigger_mode=...)`
+  - 新: `from pyflw.subsystems import Subsystem, Trigger; t = Subsystem(blocks=[..., Trigger(trigger_type=...)])`
+  - v4.x の deprecation 期間は v0.38.0 で終了。`import` 自体が `ImportError`
+- **`_is_trigger_edge` / `TRIGGER_MODES` の旧 import path**:
+  - 旧: `from pyflw.subsystems.triggered import _is_trigger_edge, TRIGGER_MODES`
+  - 新: `from pyflw.subsystems.control_blocks import is_trigger_edge, TRIGGER_TYPES`
+    (新名 `TRIGGER_TYPES` は ADR-0058 §論点 10 で `"function-call"` を加えた 4
+    値、旧 `TRIGGER_MODES` の 3 値とは集合が異なる点に注意)
+- **JSON**: 引き続き schema 0.8 → 0.9 自動 migration、追加作業なし
+- **frontend**: 旧 TriggeredSubsystem class instance を Python API で直接構築
+  していたモデルは存在しないため (= migration 経由でしか v4.x 後の Subsystem
+  には旧型が現れない)、影響なし
+
 ## [0.37.1] - 2026-05-26 — Subsystem 制御カテゴリの palette 表示修正
 
 ### Fixed

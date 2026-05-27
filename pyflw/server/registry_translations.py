@@ -473,16 +473,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "Inport / Outport で境界を区切った内部ブロック群を 1 つのブロックにまとめる Atomic Subsystem。",
         },
     },
-    "pyflw.subsystems.triggered.TriggeredSubsystem": {
-        "en": {
-            "display_name": "Triggered Subsystem",
-            "docstring_summary": "Subsystem that fires inner blocks only on trigger edges (rising / falling / either).",
-        },
-        "ja": {
-            "display_name": "トリガー Subsystem",
-            "docstring_summary": "トリガー信号のエッジ (rising / falling / either) で内部ブロックを発火するサブシステム。",
-        },
-    },
     "pyflw.subsystems.ports.Inport": {
         "en": {
             "display_name": "Inport",
