@@ -101,6 +101,7 @@
   "palette.category.continuous": "連続系",
   "palette.category.discrete": "離散系",
   "palette.category.logic": "論理",
+  "palette.category.lookup": "ルックアップテーブル",
   "palette.category.routing": "ルーティング",
   "palette.category.sinks": "シンク",
   "palette.category.subsystems": "サブシステム",

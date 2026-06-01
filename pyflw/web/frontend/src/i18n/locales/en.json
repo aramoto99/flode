@@ -101,6 +101,7 @@
   "palette.category.continuous": "Continuous",
   "palette.category.discrete": "Discrete",
   "palette.category.logic": "Logic",
+  "palette.category.lookup": "Lookup Tables",
   "palette.category.routing": "Routing",
   "palette.category.sinks": "Sinks",
   "palette.category.subsystems": "Subsystems",
