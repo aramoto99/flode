@@ -93,6 +93,23 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "周期と Duty 比を指定できる矩形パルス信号。",
         },
     },
+    # SPEC-0010 / ADR-0059 (v5.3.0): Random / Noise source (Wave 1 第 3 弾、最終)
+    "pyflw.blocks.random_source.RandomSource": {
+        "en": {
+            "display_name": "Random Source",
+            "docstring_summary": (
+                "Stochastic source: draw a random sample at each sample_time "
+                "and hold (uniform / gaussian; seed for determinism)."
+            ),
+        },
+        "ja": {
+            "display_name": "乱数源",
+            "docstring_summary": (
+                "サンプル時刻で乱数を引いて hold する確率的入力 "
+                "(uniform / gaussian、seed で決定性)。"
+            ),
+        },
+    },
     # ----- mathops (8) ---------------------------------------------------
     "pyflw.blocks.mathops.Gain": {
         "en": {
