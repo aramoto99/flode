@@ -184,6 +184,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "Lookup Table (1-D)",
         "lookup.lookuptable1d",
     ),
+    # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
+    "pyflw.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
     # routing
     "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
     "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),

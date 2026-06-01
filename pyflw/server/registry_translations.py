@@ -254,6 +254,23 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
+    # ----- userfunc (1) ---------------------------------------------------
+    # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
+    "pyflw.blocks.userfunc.Fcn": {
+        "en": {
+            "display_name": "Fcn",
+            "docstring_summary": (
+                "Evaluate an arbitrary expression y(t, u) "
+                "(numpy funcs like sin/cos/exp and u[i]/t allowed)."
+            ),
+        },
+        "ja": {
+            "display_name": "数式ブロック",
+            "docstring_summary": (
+                "任意式 y(t, u) を評価 (sin/cos/exp 等の numpy 関数と u[i]/t を使用可)。"
+            ),
+        },
+    },
     # ----- continuous (5) -------------------------------------------------
     "pyflw.blocks.continuous.Integrator": {
         "en": {

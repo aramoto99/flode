@@ -15,6 +15,7 @@ from .discrete import (
 )
 from .logic import LogicalOperator, RelationalOperator
 from .lookup import LookupTable1D
+from .userfunc import Fcn
 from .mathops import (
     Abs,
     CompareToConstant,
@@ -48,6 +49,7 @@ __all__ = [
     "DiscreteStateSpace",
     "DiscreteTransferFunction",
     "Divide",
+    "Fcn",
     "From",
     "Gain",
     "Goto",
