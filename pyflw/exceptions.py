@@ -27,6 +27,18 @@ class BlockSpecError(PyflwError):
     """ブロック仕様の不正 (ID 衝突、不正文字、`id` と `name` 両方指定など)。"""
 
 
+class BlockEvalError(PyflwError):
+    """ブロック ``output(t, x, u)`` 内のドメインエラー。
+
+    ``__init__`` 構築時の仕様違反は ``BlockSpecError``、ソルバ起因の数値破綻は
+    ``SolverError`` を使う。本クラスは「ブロック構築は正しいが、実行時の入力
+    値・状態がブロック固有の許容ドメイン外」という意味の runtime 例外に使う。
+
+    ``block_id`` kwarg を継承するため、ADR-0056 構造化エラー protocol で
+    UI の Log tab から発生ブロックへジャンプ可能になる。
+    """
+
+
 class UnknownBlockIdError(PyflwError, KeyError):
     """`Simulator.connect` / `get_block` 等で未登録の ID 文字列が渡された。
 

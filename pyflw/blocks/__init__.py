@@ -14,6 +14,7 @@ from .discrete import (
     ZeroOrderHoldDirect,
 )
 from .logic import LogicalOperator, RelationalOperator
+from .lookup import LookupTable1D
 from .mathops import (
     Abs,
     CompareToConstant,
@@ -52,6 +53,7 @@ __all__ = [
     "Goto",
     "Integrator",
     "LogicalOperator",
+    "LookupTable1D",
     "MathFunction",
     "MimoTransferFunction",
     "MinMax",

@@ -1473,7 +1473,10 @@ class Simulator:
                     )
                 else:
                     block = block_cls(id=b_data["id"], **b_data["params"], **extra_kwargs)
-            except (TypeError, ValueError) as e:
+            except (TypeError, ValueError, BlockSpecError) as e:
+                # BlockSpecError: __init__ 検証エラー (e.g. LookupTable1D の breakpoints
+                # 非単調) も ModelLoadError にラップし、ロード時に実行前で拒否する
+                # (ADR-0008 セマンティクス + SPEC-0008 §エッジケース)。
                 raise ModelLoadError(
                     f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"
                 ) from e

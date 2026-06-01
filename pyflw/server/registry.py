@@ -178,6 +178,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # logic
     "pyflw.blocks.logic.RelationalOperator": ("logic", "Relational", "logic.relational"),
     "pyflw.blocks.logic.LogicalOperator": ("logic", "Logical", "logic.logical"),
+    # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
+    "pyflw.blocks.lookup.LookupTable1D": (
+        "lookup",
+        "Lookup Table (1-D)",
+        "lookup.lookuptable1d",
+    ),
     # routing
     "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
     "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),

@@ -236,6 +236,24 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力をゼロと比較 y = (u op 0) ? 1.0 : 0.0。",
         },
     },
+    # ----- lookup (1) -----------------------------------------------------
+    # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
+    "pyflw.blocks.lookup.LookupTable1D": {
+        "en": {
+            "display_name": "Lookup Table (1-D)",
+            "docstring_summary": (
+                "Interpolate y(t) from a 1-D breakpoint array and table values "
+                "(linear / nearest / flat; extrapolation clip / linear / error)."
+            ),
+        },
+        "ja": {
+            "display_name": "ルックアップテーブル (1-D)",
+            "docstring_summary": (
+                "1 次元ブレークポイント配列とテーブル値で y(t) を補間 "
+                "(linear / nearest / flat、外挿は clip / linear / error)。"
+            ),
+        },
+    },
     # ----- continuous (5) -------------------------------------------------
     "pyflw.blocks.continuous.Integrator": {
         "en": {
