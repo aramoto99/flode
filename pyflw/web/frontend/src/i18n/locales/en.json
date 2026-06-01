@@ -105,6 +105,7 @@
   "palette.category.routing": "Routing",
   "palette.category.sinks": "Sinks",
   "palette.category.subsystems": "Subsystems",
+  "palette.category.userfunc": "User-Defined Functions",
   "palette.category.control": "Subsystem control",
   "palette.category.uncategorized": "Other",
 

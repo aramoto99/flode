@@ -105,6 +105,7 @@
   "palette.category.routing": "ルーティング",
   "palette.category.sinks": "シンク",
   "palette.category.subsystems": "サブシステム",
+  "palette.category.userfunc": "ユーザー定義関数",
   "palette.category.control": "Subsystem 制御",
   "palette.category.uncategorized": "その他",
 
