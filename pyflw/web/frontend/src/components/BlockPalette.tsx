@@ -27,9 +27,18 @@ import type {
   LibraryMetadata,
 } from "../types/api";
 
+// 重要: このリストは palette 表示の whitelist として働く (= 含まれない category
+// のブロックは silently filter で除外される)。backend `_BUILTIN_METADATA` に新
+// category を追加するときは、ここにも追加すること。CI ガード
+// `tests/server/test_palette_category_order.py` が backend のカテゴリ集合 ⊆
+// CATEGORY_ORDER であることを継続的に検証する。
 const CATEGORY_ORDER = [
   "sources",
   "mathops",
+  // SPEC-0008 / ADR-0059 (v5.1.0): 静的非線形マップ (math 近傍)
+  "lookup",
+  // SPEC-0009 / ADR-0059 (v5.2.0): 任意式評価 (math 近傍)
+  "userfunc",
   "continuous",
   "discrete",
   "logic",
