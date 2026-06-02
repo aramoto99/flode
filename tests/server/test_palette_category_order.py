@@ -1,12 +1,14 @@
-"""ADR-0019 / ADR-0028 follow-up: backend `_BUILTIN_METADATA` の category 集合と
-frontend `BlockPalette.tsx` の `CATEGORY_ORDER` whitelist の整合性 CI ガード。
+"""ADR-0019 / ADR-0028 follow-up: backend `_BUILTIN_METADATA` と frontend
+側 (palette CATEGORY_ORDER / blockGlyphs.tsx GLYPHS / i18n keys) の整合性
+CI ガード。
 
 背景 (2026-06-02): SPEC-0008 / SPEC-0009 で新カテゴリ ``lookup`` /
-``userfunc`` を ``_BUILTIN_METADATA`` に追加したが、frontend `BlockPalette.tsx`
-の ``CATEGORY_ORDER`` への追加を忘れ、新ブロックが palette から silently
-除外される事故が発生した (filter ロジックは whitelist 方式)。本テストは backend
-側に新カテゴリを増やしたとき、frontend 側 whitelist の漏れを CI で早期検知する
-ためのガード。
+``userfunc`` を ``_BUILTIN_METADATA`` に追加した際に、frontend 側 3 箇所
+(palette CATEGORY_ORDER / blockGlyphs.tsx GLYPHS / i18n) のうち i18n だけは
+更新したが、CATEGORY_ORDER と GLYPHS の更新を 2 回連続で見落とし、
+新ブロックが palette から silently 除外され、generic fallback グリフで描画
+される事故が発生した。本テストは backend 側にブロック / カテゴリを追加した
+ときに frontend 側 3 箇所の更新漏れを CI で検知する。
 """
 
 from __future__ import annotations
@@ -85,3 +87,37 @@ def test_palette_category_i18n_keys_exist_for_all_categories() -> None:
                 f"BlockPalette.tsx CATEGORY_ORDER). Add it to "
                 f"`pyflw/web/frontend/src/i18n/locales/{locale}.json`."
             )
+
+
+def _parse_glyph_entries(tsx_path: Path) -> set[str]:
+    """``blockGlyphs.tsx`` の ``GLYPHS`` map から登録済 type_path を抽出する。
+
+    text-parse で ``"pyflw.blocks.foo.Bar": SomeGlyph,`` 形式の行を拾う。
+    """
+    text = tsx_path.read_text(encoding="utf-8")
+    # `"pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,` 等
+    # `"pyflw.subsystems.ports.Inport": InportGlyph,` も拾うため pyflw\. 始まりにする
+    return set(re.findall(r'"(pyflw\.[^"]+)":\s*\w+Glyph', text))
+
+
+def test_all_builtin_blocks_have_glyph_entries() -> None:
+    """backend `_BUILTIN_METADATA` の全 type_path が ``GLYPHS`` map に登録済。
+
+    未登録は ``GlyphFallback`` (薄い汎用 rect) に落ち、ブロック識別性が
+    失われる。SPEC-0008 / SPEC-0009 で発生した glyph 登録漏れ事故 (新ブロックが
+    全て同じ generic icon になる) を CI で検知する。
+    """
+    from pyflw.server.registry import _BUILTIN_METADATA
+
+    tsx_path = _frontend_root() / "lib" / "blockGlyphs.tsx"
+    glyph_entries = _parse_glyph_entries(tsx_path)
+    backend_type_paths = set(_BUILTIN_METADATA.keys())
+
+    missing = backend_type_paths - glyph_entries
+    assert not missing, (
+        f"blockGlyphs.tsx GLYPHS is missing entries for: {sorted(missing)}. "
+        f"Add a `*Glyph` React component and register it in `GLYPHS` "
+        f"(see `pyflw/web/frontend/src/lib/blockGlyphs.tsx`). Without an "
+        f"entry, the block falls back to `GlyphFallback` (a generic faint "
+        f"rectangle) and loses visual identity."
+    )

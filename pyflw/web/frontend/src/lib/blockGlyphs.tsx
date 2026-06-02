@@ -261,6 +261,49 @@ const CompareToZeroGlyph = ({ className }: GlyphProps): JSX.Element => (
 );
 
 // =============================================================================
+// Lookup Tables (SPEC-0008 / ADR-0059 v5.1.0)
+// =============================================================================
+
+// 補間カーブ + 4 ブレークポイント丸。breakpoints/table のテーブル参照と
+// 区分補間を視覚化する。axis は faint で省スペース。
+const LookupTable1DGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* faint axes */}
+    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
+    <line x1="3" y1="3" x2="3" y2="20" strokeWidth="0.6" opacity="0.4" />
+    {/* 3-segment polyline (区分補間) */}
+    <polyline points="5,18 10,9 15,13 20,5" />
+    {/* 4 breakpoint dots */}
+    <circle cx="5" cy="18" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="9" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="13" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="5" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+// =============================================================================
+// User-Defined Functions (SPEC-0009 / ADR-0059 v5.2.0)
+// =============================================================================
+
+// 斜体 ``f(t,u)``。MathFunction の ``f(u)`` と区別する (Fcn は t も参照可)。
+const FcnGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      f(t,u)
+    </text>
+  </svg>
+);
+
+// =============================================================================
 // Continuous
 // =============================================================================
 
@@ -639,6 +682,47 @@ const DemuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0003 / ADR-0055: Goto/From は tag ベースの仮想配線。
+// Goto: tag box (左) → 出力矢印 (右) で「tag に名前付けて送出」を表現。
+const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <rect x="3" y="8" width="10" height="8" rx="1" />
+    <text
+      x="8"
+      y="14"
+      textAnchor="middle"
+      fontSize="6"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      A
+    </text>
+    <line x1="13" y1="12" x2="19" y2="12" />
+    <polyline points="17,9 20,12 17,15" />
+  </svg>
+);
+
+// From: 入力矢印 (左) → tag box (右) で「tag から名前付き受信」を表現。
+const FromGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <line x1="3" y1="12" x2="10" y2="12" />
+    <polyline points="8,9 11,12 8,15" />
+    <rect x="11" y="8" width="10" height="8" rx="1" />
+    <text
+      x="16"
+      y="14"
+      textAnchor="middle"
+      fontSize="6"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      A
+    </text>
+  </svg>
+);
+
 // =============================================================================
 // Sinks
 // =============================================================================
@@ -828,6 +912,10 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.mathops.DeadZone": DeadZoneGlyph,
   "pyflw.blocks.mathops.CompareToConstant": CompareToConstantGlyph,
   "pyflw.blocks.mathops.CompareToZero": CompareToZeroGlyph,
+  // SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables
+  "pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,
+  // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
+  "pyflw.blocks.userfunc.Fcn": FcnGlyph,
   // continuous
   "pyflw.blocks.continuous.Integrator": IntegratorGlyph,
   "pyflw.blocks.continuous.Derivative": DerivativeGlyph,
@@ -848,6 +936,9 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.routing.Switch": SwitchGlyph,
   "pyflw.blocks.routing.Mux": MuxGlyph,
   "pyflw.blocks.routing.Demux": DemuxGlyph,
+  // SPEC-0003 / ADR-0055: tag ベース仮想配線
+  "pyflw.blocks.routing.Goto": GotoGlyph,
+  "pyflw.blocks.routing.From": FromGlyph,
   // sinks
   "pyflw.blocks.sinks.Scope": ScopeGlyph,
   "pyflw.blocks.sinks.Display": DisplayGlyph,
