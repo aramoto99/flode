@@ -211,6 +211,13 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
     "pyflw.blocks.routing.Goto": ("routing", "Goto", "routing.goto"),
     "pyflw.blocks.routing.From": ("routing", "From", "routing.from"),
+    # SPEC-0014 / ADR-0059 (v5.7.0): Wave 2 第 3 弾 = routing 拡張
+    "pyflw.blocks.routing.MultiportSwitch": (
+        "routing",
+        "Multiport Switch",
+        "routing.multiportswitch",
+    ),
+    "pyflw.blocks.routing.Merge": ("routing", "Merge", "routing.merge"),
     # sinks
     "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
     "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
@@ -313,6 +320,10 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     },
     "pyflw.blocks.routing.Mux": {"n": 2},
     "pyflw.blocks.routing.Demux": {"n": 2},
+    # SPEC-0014: n_choices / n_inputs は required 風 (default 2 だが palette
+    # drop 時の補完値として明示)
+    "pyflw.blocks.routing.MultiportSwitch": {"n_choices": 2},
+    "pyflw.blocks.routing.Merge": {"n_inputs": 2},
     # ADR-0055: tag は必須引数。ドロップ時の default は ``"Tag1"`` (= 後で
     # Inspector で編集する想定)。実モデルでは同 tag の衝突回避が必要。
     "pyflw.blocks.routing.Goto": {"tag": "Tag1"},

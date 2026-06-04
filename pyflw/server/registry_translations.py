@@ -506,6 +506,35 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "同じ tag を持つ Goto ブロックの信号を受信 (Local / Global)。",
         },
     },
+    # SPEC-0014 / ADR-0059 (v5.7.0): Wave 2 第 3 弾 = routing 拡張
+    "pyflw.blocks.routing.MultiportSwitch": {
+        "en": {
+            "display_name": "Multiport Switch",
+            "docstring_summary": (
+                "Select one of n_choices data inputs by selector index (u[0])."
+            ),
+        },
+        "ja": {
+            "display_name": "マルチポートスイッチ",
+            "docstring_summary": (
+                "selector index (u[0]) で n_choices 個のデータ入力から 1 つを選択。"
+            ),
+        },
+    },
+    "pyflw.blocks.routing.Merge": {
+        "en": {
+            "display_name": "Merge",
+            "docstring_summary": (
+                "Priority merge: output first input that differs from initial_value."
+            ),
+        },
+        "ja": {
+            "display_name": "マージ",
+            "docstring_summary": (
+                "優先度マージ: initial_value と異なる最初の入力を出力する。"
+            ),
+        },
+    },
     # ----- sinks (4) ------------------------------------------------------
     "pyflw.blocks.sinks.Scope": {
         "en": {

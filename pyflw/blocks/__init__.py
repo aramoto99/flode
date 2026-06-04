@@ -32,7 +32,7 @@ from .mathops import (
     TrigFunction,
 )
 from .random_source import RandomSource
-from .routing import Demux, From, Goto, Mux, Switch
+from .routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 from .userfunc import Fcn
@@ -59,8 +59,10 @@ __all__ = [
     "LogicalOperator",
     "LookupTable1D",
     "MathFunction",
+    "Merge",
     "MimoTransferFunction",
     "MinMax",
+    "MultiportSwitch",
     "Mux",
     "Product",
     "PulseGenerator",

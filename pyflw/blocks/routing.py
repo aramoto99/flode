@@ -416,3 +416,138 @@ class From(Block):
 
 # GotoTagVisibility は SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。
 # Phase 2 で Scoped visibility と同時に再導入予定。
+
+
+# ===========================================================================
+# SPEC-0014 / ADR-0059 (v5.7.0): Wave 2 第 3 弾 = routing 拡張
+# ===========================================================================
+
+
+class MultiportSwitch(Block):
+    """n-input マルチポートスイッチ ``y = u[1 + idx]``。
+
+    入力 ``u[0]`` を selector index (実数 → ``round`` で整数化)、
+    ``u[1..n_choices]`` をデータ入力として扱い、idx 番目のデータを出力する。
+    既存 ``Switch`` (2 入力 + 条件) の n 入力への一般化。
+
+    Args:
+        n_choices: データ入力数 (>= 1、既定 2)。総入力数は ``1 + n_choices``
+        index_base: ``"zero"`` (既定、selector 0 → data 0) / ``"one"``
+        out_of_range_mode: ``"clip"`` (既定、[0, n_choices-1] に飽和) /
+            ``"error"`` (範囲外で BlockEvalError)
+
+    Raises:
+        BlockSpecError: ``n_choices < 1``、enum 値外。
+        BlockEvalError: ``out_of_range_mode="error"`` で selector が範囲外。
+    """
+
+    _ALLOWED_INDEX_BASES: tuple[str, ...] = ("zero", "one")
+    _ALLOWED_OOR_MODES: tuple[str, ...] = ("clip", "error")
+    _param_enums = {
+        "index_base": _ALLOWED_INDEX_BASES,
+        "out_of_range_mode": _ALLOWED_OOR_MODES,
+    }
+
+    def __init__(
+        self,
+        n_choices: int = 2,
+        index_base: str = "zero",
+        out_of_range_mode: str = "clip",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        if not isinstance(n_choices, int) or isinstance(n_choices, bool):
+            raise BlockSpecError(
+                f"MultiportSwitch: n_choices must be an int, "
+                f"got {type(n_choices).__name__}"
+            )
+        if n_choices < 1:
+            raise BlockSpecError(
+                f"MultiportSwitch: n_choices must be >= 1, got {n_choices}"
+            )
+        if index_base not in self._ALLOWED_INDEX_BASES:
+            raise BlockSpecError(
+                f"MultiportSwitch: index_base must be one of "
+                f"{self._ALLOWED_INDEX_BASES}, got {index_base!r}"
+            )
+        if out_of_range_mode not in self._ALLOWED_OOR_MODES:
+            raise BlockSpecError(
+                f"MultiportSwitch: out_of_range_mode must be one of "
+                f"{self._ALLOWED_OOR_MODES}, got {out_of_range_mode!r}"
+            )
+        super().__init__(id=id, name=name, n_inputs=1 + n_choices, n_outputs=1)
+        self.n_choices = n_choices
+        self.index_base = index_base
+        self.out_of_range_mode = out_of_range_mode
+        self._params = {
+            "n_choices": n_choices,
+            "index_base": index_base,
+            "out_of_range_mode": out_of_range_mode,
+        }
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # 遅延 import で循環回避
+        from ..exceptions import BlockEvalError
+
+        selector_raw = float(u[0])
+        offset = 0 if self.index_base == "zero" else 1
+        # round で integer 化 (Python int round half-to-even)
+        idx = int(round(selector_raw)) - offset
+        if idx < 0 or idx >= self.n_choices:
+            if self.out_of_range_mode == "error":
+                raise BlockEvalError(
+                    f"MultiportSwitch[{self.name}]: selector index {idx} "
+                    f"(raw={selector_raw}, base={self.index_base}) "
+                    f"out of range [0, {self.n_choices - 1}]",
+                    block_id=self.id,
+                )
+            # clip
+            idx = max(0, min(self.n_choices - 1, idx))
+        return np.array([float(u[1 + idx])])
+
+
+class Merge(Block):
+    """n 入力 1 出力 priority merge: 最初の non-default 入力を選ぶ。
+
+    Triggered Subsystem 風の「アクティブな入力だけ非デフォルト値を持つ」パターン
+    を想定。入力 ``u[0..n_inputs-1]`` を順にスキャンし、``initial_value`` と
+    異なる最初の値を出力する。全て一致なら ``initial_value`` を出力する。
+
+    Args:
+        n_inputs: 入力ポート数 (>= 1、既定 2)
+        initial_value: デフォルト値 (既定 0.0)
+
+    Raises:
+        BlockSpecError: ``n_inputs < 1``。
+    """
+
+    def __init__(
+        self,
+        n_inputs: int = 2,
+        initial_value: float = 0.0,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        if not isinstance(n_inputs, int) or isinstance(n_inputs, bool):
+            raise BlockSpecError(
+                f"Merge: n_inputs must be an int, got {type(n_inputs).__name__}"
+            )
+        if n_inputs < 1:
+            raise BlockSpecError(f"Merge: n_inputs must be >= 1, got {n_inputs}")
+        super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)
+        self.initial_value = float(initial_value)
+        self._params = {
+            "n_inputs": n_inputs,
+            "initial_value": self.initial_value,
+        }
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # u[i] != initial_value の最初の値を返す (float 比較は厳密一致でよい:
+        # Triggered Subsystem は固定値を出すため境界揺らぎはない)
+        for i in range(self.n_inputs):
+            val = float(u[i])
+            if val != self.initial_value:
+                return np.array([val])
+        return np.array([self.initial_value])
