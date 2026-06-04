@@ -32,6 +32,7 @@ from .mathops import (
     TrigFunction,
 )
 from .random_source import RandomSource
+from .rounding import Rounding
 from .routing import Demux, From, Goto, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
@@ -70,6 +71,7 @@ __all__ = [
     "RateTransition",
     "RelationalOperator",
     "Relay",
+    "Rounding",
     "Saturation",
     "Scope",
     "Sign",

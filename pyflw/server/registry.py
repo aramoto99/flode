@@ -148,6 +148,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "Compare To Zero",
         "math.comparetozero",
     ),
+    # SPEC-0013 / ADR-0059 (v5.6.0): Rounding (Wave 2 第 2 弾)
+    "pyflw.blocks.rounding.Rounding": ("mathops", "Rounding", "math.rounding"),
     # continuous
     "pyflw.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
     "pyflw.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),

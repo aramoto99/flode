@@ -268,6 +268,17 @@ const CompareToZeroGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0013 / ADR-0059 (v5.6.0): Rounding。階段状の量子化ステップで「整数化」を示唆。
+const RoundingGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* faint axes */}
+    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
+    <line x1="3" y1="3" x2="3" y2="20" strokeWidth="0.6" opacity="0.4" />
+    {/* 階段状の量子化波形 */}
+    <polyline points="4,18 8,18 8,13 13,13 13,8 17,8 17,5 21,5" />
+  </svg>
+);
+
 // =============================================================================
 // Discontinuities (SPEC-0012 / ADR-0059 v5.5.0)
 // =============================================================================
@@ -957,6 +968,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.mathops.DeadZone": DeadZoneGlyph,
   "pyflw.blocks.mathops.CompareToConstant": CompareToConstantGlyph,
   "pyflw.blocks.mathops.CompareToZero": CompareToZeroGlyph,
+  // SPEC-0013 / ADR-0059 (v5.6.0): Rounding
+  "pyflw.blocks.rounding.Rounding": RoundingGlyph,
   // SPEC-0012 / ADR-0059 (v5.5.0): Discontinuities (Wave 2 第 1 弾)
   "pyflw.blocks.discontinuities.RateLimiter": RateLimiterGlyph,
   "pyflw.blocks.discontinuities.Relay": RelayGlyph,

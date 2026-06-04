@@ -253,6 +253,17 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力をゼロと比較 y = (u op 0) ? 1.0 : 0.0。",
         },
     },
+    # SPEC-0013 / ADR-0059 (v5.6.0): Rounding (Wave 2 第 2 弾)
+    "pyflw.blocks.rounding.Rounding": {
+        "en": {
+            "display_name": "Rounding",
+            "docstring_summary": "Round to integer: floor / ceil / round / trunc (choose with `mode`).",
+        },
+        "ja": {
+            "display_name": "丸め",
+            "docstring_summary": "整数化 floor / ceil / round / trunc (mode で選択)。",
+        },
+    },
     # ----- lookup (1) -----------------------------------------------------
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
     "pyflw.blocks.lookup.LookupTable1D": {
