@@ -736,6 +736,38 @@ const DemuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0014 / ADR-0059 (v5.7.0): MultiportSwitch glyph。selector (上左) で n 本
+// から 1 本を選ぶ「スイッチセレクタ」記号。
+const MultiportSwitchGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 上から selector 矢印 */}
+    <line x1="12" y1="3" x2="12" y2="6" strokeWidth="1" opacity="0.6" />
+    <polyline points="10,5 12,7 14,5" strokeWidth="1" opacity="0.6" />
+    {/* 3 データ接点 (左) */}
+    <circle cx="5" cy="7" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="5" cy="17" r="1.4" fill="currentColor" stroke="none" />
+    {/* スイッチアーム (中央 → 中接点へ倒れている) */}
+    <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <line x1="19" y1="12" x2="5" y2="12" />
+  </svg>
+);
+
+// SPEC-0014 / ADR-0059 (v5.7.0): Merge glyph。n 入力 (左複数) が 1 本 (右) に
+// 合流する記号。
+const MergeGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 3 入力 (左) が中央ノードに合流 */}
+    <line x1="3" y1="6" x2="12" y2="12" />
+    <line x1="3" y1="12" x2="12" y2="12" />
+    <line x1="3" y1="18" x2="12" y2="12" />
+    {/* 中央 → 右出力 */}
+    <line x1="12" y1="12" x2="21" y2="12" />
+    {/* 合流点 */}
+    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 // SPEC-0003 / ADR-0055: Goto/From は tag ベースの仮想配線。
 // Goto: tag box (左) → 出力矢印 (右) で「tag に名前付けて送出」を表現。
 const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
@@ -1000,6 +1032,9 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   // SPEC-0003 / ADR-0055: tag ベース仮想配線
   "pyflw.blocks.routing.Goto": GotoGlyph,
   "pyflw.blocks.routing.From": FromGlyph,
+  // SPEC-0014 / ADR-0059 (v5.7.0): routing 拡張
+  "pyflw.blocks.routing.MultiportSwitch": MultiportSwitchGlyph,
+  "pyflw.blocks.routing.Merge": MergeGlyph,
   // sinks
   "pyflw.blocks.sinks.Scope": ScopeGlyph,
   "pyflw.blocks.sinks.Display": DisplayGlyph,
