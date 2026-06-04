@@ -16,7 +16,12 @@ from .discrete import (
 )
 from .file_writer import FileWriter
 from .logic import LogicalOperator, RelationalOperator
-from .lookup import LookupTable1D, LookupTable2D
+from .lookup import (
+    InterpolationUsingPrelookup,
+    LookupTable1D,
+    LookupTable2D,
+    Prelookup,
+)
 from .mathops import (
     Abs,
     CompareToConstant,
@@ -60,6 +65,7 @@ __all__ = [
     "Gain",
     "Goto",
     "Integrator",
+    "InterpolationUsingPrelookup",
     "LogicalOperator",
     "LookupTable1D",
     "LookupTable2D",
@@ -69,6 +75,7 @@ __all__ = [
     "MinMax",
     "MultiportSwitch",
     "Mux",
+    "Prelookup",
     "Product",
     "PulseGenerator",
     "Ramp",
