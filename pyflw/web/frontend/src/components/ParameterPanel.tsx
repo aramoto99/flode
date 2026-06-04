@@ -13,7 +13,12 @@ import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
-import { isPrimitiveParam, parseNumericInput } from "../lib/paramEdit";
+import {
+  inferArrayElementType,
+  isLongStringParam,
+  isPrimitiveParam,
+  parseNumericInput,
+} from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
   toggleBlockFlipped,
@@ -24,8 +29,10 @@ import {
 import type { BlockEntry, MaskParamSpec } from "../types/api";
 import {
   CHECKBOX_CLS,
+  ExpressionEditor,
   INPUT_CLS,
   INPUT_MONO_CLS,
+  JsonArrayEditor,
   PropertyGrid,
   PropertyRow,
   SectionDivider,
@@ -162,10 +169,14 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   );
   const blockMeta = registryMap.get(block.type);
 
-  const commit = (k: string, raw: string, originalType: string): void => {
+  // raw の型は originalType で分岐:
+  //   - "number" / "boolean" / "string": raw は string (text input の値)
+  //   - "array": raw は unknown[] (JsonArrayEditor が parse + 検証済の配列)
+  const commit = (k: string, raw: unknown, originalType: string): void => {
     let newValue: unknown;
     if (originalType === "number") {
-      const parsed = parseNumericInput(raw);
+      // raw は string で来る (number 入力は text 入力経路)
+      const parsed = parseNumericInput(raw as string);
       if (parsed === null) {
         setError(t("inspector.invalid_number", { name: k }));
         return;
@@ -179,6 +190,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       newValue = isIntParam ? Math.trunc(parsed) : parsed;
     } else if (originalType === "boolean") {
       newValue = raw === "true";
+    } else if (originalType === "array") {
+      // SPEC-0011: JsonArrayEditor が parse + 検証済の配列を直接渡す
+      newValue = raw;
     } else {
       newValue = raw;
     }
@@ -279,6 +293,30 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     onBlur={(e) => commit(k, e.target.value, "number")}
                     className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
                   />
+                ) : Array.isArray(v) ? (
+                  // SPEC-0011 §1.1: 1-D 配列を JsonArrayEditor で編集
+                  <JsonArrayEditor
+                    value={v}
+                    elementType={inferArrayElementType(v)}
+                    testid={`param-input-${k}`}
+                    placeholder={t(
+                      "inspector.array.placeholder",
+                      "e.g. [0.0, 1.0, 2.0]",
+                    )}
+                    onCommit={(next) => commit(k, next, "array")}
+                  />
+                ) : valueType === "string" &&
+                  isLongStringParam(v as string) ? (
+                  // SPEC-0011 §1.2: 長文字列 (40 chars 超 or 改行) を ExpressionEditor
+                  <ExpressionEditor
+                    value={v as string}
+                    testid={`param-input-${k}`}
+                    placeholder={t(
+                      "inspector.expression.placeholder",
+                      "e.g. u[0]**2 + sin(t)",
+                    )}
+                    onCommit={(next) => commit(k, next, "string")}
+                  />
                 ) : (
                   <input
                     type="text"
@@ -333,8 +371,12 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   );
 }
 
-function formatForDraft(v: number | string | boolean): string {
+function formatForDraft(v: number | string | boolean | unknown[]): string {
   if (typeof v === "boolean") return v ? "true" : "false";
+  // SPEC-0011: array は JSON 形式で draft に保持 (JsonArrayEditor の初期表示と
+  // 整合)。実際の render path では Array.isArray 分岐で JsonArrayEditor が
+  // 自身の draft state を持つため、ここの draft は使われない (= 安全な fallback)
+  if (Array.isArray(v)) return JSON.stringify(v);
   return String(v);
 }
 
