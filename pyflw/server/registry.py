@@ -158,6 +158,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "MIMO TF",
         "cont.mimo_tf",
     ),
+    # SPEC-0015 / ADR-0065 (v5.8.0): Transport Delay (Wave 2 第 4 弾)
+    "pyflw.blocks.transport_delay.TransportDelay": (
+        "continuous",
+        "Transport Delay",
+        "cont.transport_delay",
+    ),
     # discrete
     "pyflw.blocks.discrete.UnitDelay": ("discrete", "Unit Delay", "disc.unit_delay"),
     "pyflw.blocks.discrete.DiscreteIntegrator": (
@@ -297,6 +303,11 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "sample_time": 0.1,
     },
     "pyflw.blocks.discrete.UnitDelay": {"sample_time": 0.1},
+    # SPEC-0015: delay_time / sample_time 共に required。palette drop 用 default
+    "pyflw.blocks.transport_delay.TransportDelay": {
+        "delay_time": 1.0,
+        "sample_time": 0.1,
+    },
     # SPEC-0010: sample_time は required (default なし)。palette drop 時の補完
     # 値として 0.1 を供給する (UnitDelay 等と同パターン)。
     "pyflw.blocks.random_source.RandomSource": {"sample_time": 0.1},

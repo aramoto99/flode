@@ -329,6 +329,23 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "連続 LTI 状態空間 x_dot = A x + B u、y = C x + D u。",
         },
     },
+    # SPEC-0015 / ADR-0065 (v5.8.0): Transport Delay (Wave 2 第 4 弾)
+    "pyflw.blocks.transport_delay.TransportDelay": {
+        "en": {
+            "display_name": "Transport Delay",
+            "docstring_summary": (
+                "Dead time y(t) ≈ u(t - delay_time) "
+                "(sample-based discrete approximation)."
+            ),
+        },
+        "ja": {
+            "display_name": "むだ時間",
+            "docstring_summary": (
+                "むだ時間 y(t) ≈ u(t - delay_time) "
+                "(sample-based discrete 近似)。"
+            ),
+        },
+    },
     "pyflw.blocks.continuous.MimoTransferFunction": {
         "en": {
             "display_name": "MIMO TF",

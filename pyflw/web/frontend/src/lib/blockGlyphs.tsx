@@ -469,6 +469,18 @@ const StateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0015 / ADR-0065 (v5.8.0): TransportDelay glyph。入力 step (左) →
+// 時間 ``T`` だけずれた step (右) で「むだ時間」を視覚化。
+const TransportDelayGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
+    <polyline points="3,18 7,18 7,8 11,8" strokeWidth="1" opacity="0.5" />
+    <polyline points="11,18 16,18 16,8 21,8" />
+    <line x1="8" y1="6" x2="14" y2="6" strokeWidth="0.6" opacity="0.4" />
+    <polyline points="13,5 14,6 13,7" strokeWidth="0.6" opacity="0.4" />
+  </svg>
+);
+
 const MimoTransferFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
@@ -970,6 +982,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.continuous.TransferFunction": TransferFunctionGlyph,
   "pyflw.blocks.continuous.StateSpace": StateSpaceGlyph,
   "pyflw.blocks.continuous.MimoTransferFunction": MimoTransferFunctionGlyph,
+  // SPEC-0015 / ADR-0065 (v5.8.0): Transport Delay
+  "pyflw.blocks.transport_delay.TransportDelay": TransportDelayGlyph,
   // discrete
   "pyflw.blocks.discrete.UnitDelay": UnitDelayGlyph,
   "pyflw.blocks.discrete.DiscreteIntegrator": DiscreteIntegratorGlyph,
