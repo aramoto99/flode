@@ -300,6 +300,42 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
+    # SPEC-0019 / ADR-0067 (v5.7.0): Wave 3 第 2 弾 = Prelookup + Interpolation 分離
+    "pyflw.blocks.lookup.Prelookup": {
+        "en": {
+            "display_name": "Prelookup",
+            "docstring_summary": (
+                "Split breakpoint search into (k=index, f=fraction) so multiple "
+                "InterpolationUsingPrelookup blocks can share the search cost. "
+                "Extrapolation: clip / linear / error."
+            ),
+        },
+        "ja": {
+            "display_name": "プレルックアップ",
+            "docstring_summary": (
+                "ブレークポイント検索を (k=index, f=fraction) に分離し、後段の "
+                "Interpolation Using Prelookup 複数本で検索コストを共有する。"
+                "外挿: clip / linear / error。"
+            ),
+        },
+    },
+    "pyflw.blocks.lookup.InterpolationUsingPrelookup": {
+        "en": {
+            "display_name": "Interpolation Using Prelookup",
+            "docstring_summary": (
+                "Combine (k, f) from Prelookup with an internal 1-D table to "
+                "produce y (linear / nearest / flat). Pair with Prelookup to "
+                "share breakpoint search across multiple lookups."
+            ),
+        },
+        "ja": {
+            "display_name": "プレルックアップを用いた補間",
+            "docstring_summary": (
+                "Prelookup の (k, f) と内部 1-D テーブルから y を生成 "
+                "(linear / nearest / flat)。Prelookup と組合せて検索コストを共有。"
+            ),
+        },
+    },
     # ----- userfunc (1) ---------------------------------------------------
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
     "pyflw.blocks.userfunc.Fcn": {

@@ -351,6 +351,45 @@ const LookupTable2DGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0019 / ADR-0067 v5.7.0: Prelookup = 1 入力 → 2 出力分離 (k, f)。
+// 中央の breakpoint 軸からの分岐を視覚化。
+const PrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 入力線 (左から中央へ) */}
+    <line x1="3" y1="12" x2="10" y2="12" />
+    {/* breakpoint 軸 (中央の縦線) */}
+    <line x1="10" y1="4" x2="10" y2="20" strokeWidth="2" />
+    {/* 軸の breakpoint 目印 */}
+    <line x1="9" y1="7" x2="11" y2="7" />
+    <line x1="9" y1="12" x2="11" y2="12" />
+    <line x1="9" y1="17" x2="11" y2="17" />
+    {/* 出力 2 本に分離 (上=k、下=f) */}
+    <line x1="10" y1="9" x2="21" y2="6" />
+    <line x1="10" y1="15" x2="21" y2="18" />
+    <text x="18" y="5" fontSize="5" fontFamily="ui-monospace,monospace" fill="currentColor" stroke="none">k</text>
+    <text x="18" y="22" fontSize="5" fontFamily="ui-monospace,monospace" fill="currentColor" stroke="none">f</text>
+  </svg>
+);
+
+// SPEC-0019 / ADR-0067 v5.7.0: InterpolationUsingPrelookup = (k, f) → y。
+// 内部 table の棒グラフ風表示で「table 内補間」を示唆。
+const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 入力 2 本が左から (上=k、下=f) */}
+    <line x1="3" y1="7" x2="9" y2="9" />
+    <line x1="3" y1="17" x2="9" y2="15" />
+    {/* 内部 table = 棒グラフ風 4 本 */}
+    <line x1="10" y1="18" x2="10" y2="12" />
+    <line x1="13" y1="18" x2="13" y2="8" />
+    <line x1="16" y1="18" x2="16" y2="10" />
+    <line x1="19" y1="18" x2="19" y2="14" />
+    {/* table の底 */}
+    <line x1="9" y1="18" x2="20" y2="18" strokeWidth="0.6" opacity="0.4" />
+    {/* 出力 1 本 (右辺へ) */}
+    <line x1="20" y1="12" x2="22" y2="12" />
+  </svg>
+);
+
 // =============================================================================
 // User-Defined Functions (SPEC-0009 / ADR-0059 v5.2.0)
 // =============================================================================
@@ -1052,6 +1091,9 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,
   // SPEC-0017 / ADR-0064 (v5.6.0): Lookup Tables 2-D (Wave 3 第 1 弾)
   "pyflw.blocks.lookup.LookupTable2D": LookupTable2DGlyph,
+  // SPEC-0019 / ADR-0067 (v5.7.0): Prelookup 分離型 (Wave 3 第 2 弾)
+  "pyflw.blocks.lookup.Prelookup": PrelookupGlyph,
+  "pyflw.blocks.lookup.InterpolationUsingPrelookup": InterpolationUsingPrelookupGlyph,
   // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
   "pyflw.blocks.userfunc.Fcn": FcnGlyph,
   // continuous

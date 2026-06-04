@@ -215,6 +215,17 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "Lookup Table (2-D)",
         "lookup.lookuptable2d",
     ),
+    # SPEC-0019 / ADR-0067 (v5.7.0): Wave 3 第 2 弾 = Prelookup + Interpolation 分離
+    "pyflw.blocks.lookup.Prelookup": (
+        "lookup",
+        "Prelookup",
+        "lookup.prelookup",
+    ),
+    "pyflw.blocks.lookup.InterpolationUsingPrelookup": (
+        "lookup",
+        "Interpolation Using Prelookup",
+        "lookup.interpolationusingprelookup",
+    ),
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
     "pyflw.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
     # routing

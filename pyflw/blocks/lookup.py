@@ -500,3 +500,222 @@ class LookupTable2D(Block):
             # 戻り値は shape (1,) なので .item() で scalar 抽出 (numpy 2.0 警告回避)。
             y = float(self._interp(np.array([[u0, u1]])).item())
         return np.array([y])
+
+
+class Prelookup(Block):
+    """1-D Prelookup: 入力 ``u`` から ``(k, f)`` を分離出力する (SPEC-0019)。
+
+    breakpoints 検索結果を `(k=index, f=fraction)` の 2 出力に分離することで、
+    後段の :class:`InterpolationUsingPrelookup` 複数本で **検索コストを共有**
+    する設計パターンに使う。1-D に対し ``u → k, f`` の前処理段。
+
+    数値仕様 (ADR-0067 §A-1 採用、純 numpy):
+
+    * 定義域内: ``k = clip(searchsorted(bp, u, side="right") - 1, 0, n-2)``、
+      ``f = (u - bp[k]) / (bp[k+1] - bp[k])``
+    * 定義域外 + ``"clip"``: ``u`` を端点に飽和してから上式
+    * 定義域外 + ``"linear"`` (ADR-0067 §B-1): 端点 cell に ``k`` を固定し、
+      ``f`` が ``[0, 1]`` を外れる値で出力。後段の線形補間式
+      ``y = table[k] + f*(table[k+1]-table[k])`` に流れることで自動で線形外挿
+    * 定義域外 + ``"error"``: :class:`BlockEvalError`
+
+    Args:
+        breakpoints: ブレークポイント配列 (厳密単調増加、長さ >= 2)。既定値
+            ``[0.0, 1.0]``。
+        extrapolation: 外挿方式 (``"clip"`` / ``"linear"`` / ``"error"``)。
+
+    Raises:
+        BlockSpecError: ``breakpoints`` の長さ不足・厳密単調増加違反、
+            ``extrapolation`` の enum 値外、または要素が float に coerce できない。
+
+    Note:
+        scipy 不使用の純 numpy 実装のため、``Simulator.compile()`` (ADR-0037)
+        経路で **XLA トレース可能候補** (SPEC-0008/0017 とは対照的)。ただし
+        ``_SUPPORTED_BLOCK_TYPES`` への正式追加は ADR-0037 follow-up で扱う
+        (Wave 3 全体方針、ADR-0067 §D-1)。
+    """
+
+    _ALLOWED_EXTRAPOLATIONS: tuple[str, ...] = ("clip", "linear", "error")
+    _param_enums = {"extrapolation": _ALLOWED_EXTRAPOLATIONS}
+
+    def __init__(
+        self,
+        breakpoints: npt.ArrayLike = (0.0, 1.0),
+        extrapolation: str = "clip",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if extrapolation not in self._ALLOWED_EXTRAPOLATIONS:
+            raise BlockSpecError(
+                f"Prelookup: extrapolation must be one of {self._ALLOWED_EXTRAPOLATIONS}, "
+                f"got {extrapolation!r}"
+            )
+
+        try:
+            bp = np.asarray(breakpoints, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise BlockSpecError(
+                f"Prelookup: breakpoints must contain numeric values: {exc}"
+            ) from exc
+
+        if bp.ndim != 1:
+            raise BlockSpecError(
+                f"Prelookup: breakpoints must be a 1-D array, got shape {bp.shape}"
+            )
+        if bp.size < 2:
+            raise BlockSpecError(
+                f"Prelookup: breakpoints must have at least 2 elements, got len={bp.size}"
+            )
+        if not np.all(np.diff(bp) > 0):
+            raise BlockSpecError(
+                f"Prelookup: breakpoints must be strictly increasing, got {bp.tolist()!r}"
+            )
+
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=2)
+
+        self._breakpoints: npt.NDArray[np.float64] = bp
+        self.extrapolation = extrapolation
+
+        self._params = {
+            "breakpoints": bp.tolist(),
+            "extrapolation": extrapolation,
+        }
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        val = float(np.asarray(u).reshape(-1)[0])
+        bp = self._breakpoints
+        n = bp.size
+
+        if np.isnan(val):
+            # nan は 1-D LookupTable と同方針で伝播
+            return np.array([float("nan"), float("nan")])
+
+        in_domain = bool(bp[0] <= val <= bp[-1])
+
+        if not in_domain:
+            if self.extrapolation == "error":
+                raise BlockEvalError(
+                    f"Prelookup[{self.name}]: input {val} is outside breakpoints "
+                    f"[{float(bp[0])}, {float(bp[-1])}] and extrapolation='error'",
+                    block_id=self.id,
+                )
+            if self.extrapolation == "linear":
+                # 端点 cell に k を固定、f は区間外値で出力 (後段で線形外挿)
+                if val < bp[0]:
+                    k = 0
+                else:  # val > bp[-1] (inf 含む)
+                    k = n - 2
+                f = (val - float(bp[k])) / (float(bp[k + 1]) - float(bp[k]))
+                return np.array([float(k), f])
+            # extrapolation == "clip": 端点に飽和
+            val = float(np.clip(val, bp[0], bp[-1]))
+
+        # 定義域内 (or clip 後): 純 numpy 検索
+        k = int(np.clip(np.searchsorted(bp, val, side="right") - 1, 0, n - 2))
+        f = (val - float(bp[k])) / (float(bp[k + 1]) - float(bp[k]))
+        return np.array([float(k), f])
+
+
+class InterpolationUsingPrelookup(Block):
+    """1-D Prelookup を用いた補間 (SPEC-0019)。
+
+    :class:`Prelookup` の出力 ``(k, f)`` を受け取り、内部 ``table`` から
+    ``y`` を計算する。同じ breakpoints を複数の table で共有する設計
+    パターン (= 検索コスト分離) のための後段ブロック。
+
+    補間方式 ``interpolation``:
+
+    * ``"linear"`` (既定) — ``y = table[k] + f * (table[k+1] - table[k])``。
+      ``f`` が ``[0, 1]`` 範囲外でも数式が自動的に線形外挿になる (Prelookup
+      側で ``extrapolation="linear"`` を選択した時の経路、ADR-0067 §B-1)
+    * ``"nearest"`` — ``y = table[k+1] if f >= 0.5 else table[k]``。
+      ``LookupTable1D(interpolation="nearest")`` は scipy の中点丸め
+      (``f=0.5`` のとき左側) を採用、本ブロックは ``f>=0.5`` で右側 (1 LSB
+      差を許容、ADR-0067 §OQ5)
+    * ``"flat"`` — ``y = table[k]`` (``f`` を無視、左側値ホールド)
+
+    ``k`` は :class:`Prelookup` が出力する想定 ``[0, n-2]`` だが、上流に
+    別のブロックが入っているケースに備えて黙って ``clip([0, n-2])`` する
+    (``BlockEvalError`` は投げない、ADR-0067 §B-1 / Consequences §ネガティブ)。
+
+    Args:
+        table: テーブル値配列 (1-D、長さ >= 2)。既定値 ``[0.0, 1.0]``。
+        interpolation: 補間方式 (``"linear"`` / ``"nearest"`` / ``"flat"``)。
+
+    Raises:
+        BlockSpecError: ``table`` の長さ不足 / 1-D 違反 / 数値 coerce 失敗、
+            ``interpolation`` の enum 値外。
+
+    Note:
+        scipy 不使用の純 numpy 実装。GPU codegen 対応は ADR-0037 follow-up
+        で扱う (ADR-0067 §D-1)。
+    """
+
+    _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")
+    _param_enums = {"interpolation": _ALLOWED_INTERPOLATIONS}
+
+    def __init__(
+        self,
+        table: npt.ArrayLike = (0.0, 1.0),
+        interpolation: str = "linear",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if interpolation not in self._ALLOWED_INTERPOLATIONS:
+            raise BlockSpecError(
+                f"InterpolationUsingPrelookup: interpolation must be one of "
+                f"{self._ALLOWED_INTERPOLATIONS}, got {interpolation!r}"
+            )
+
+        try:
+            tbl = np.asarray(table, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise BlockSpecError(
+                f"InterpolationUsingPrelookup: table must contain numeric values: {exc}"
+            ) from exc
+
+        if tbl.ndim != 1:
+            raise BlockSpecError(
+                f"InterpolationUsingPrelookup: table must be a 1-D array, got shape {tbl.shape}"
+            )
+        if tbl.size < 2:
+            raise BlockSpecError(
+                f"InterpolationUsingPrelookup: table must have at least 2 elements, "
+                f"got len={tbl.size}"
+            )
+
+        super().__init__(id=id, name=name, n_inputs=2, n_outputs=1)
+
+        self._table: npt.NDArray[np.float64] = tbl
+        self.interpolation = interpolation
+
+        self._params = {
+            "table": tbl.tolist(),
+            "interpolation": interpolation,
+        }
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        u_arr = np.asarray(u).reshape(-1)
+        k_raw = float(u_arr[0])
+        f = float(u_arr[1])
+        tbl = self._table
+        n = tbl.size
+
+        # k / f の nan は伝播 (= nan 出力)。
+        if np.isnan(k_raw) or np.isnan(f):
+            return np.array([float("nan")])
+        # k は黙って clip ([0, n-2])。Prelookup の出力域だが上流ブロック自由なので保険。
+        # ``np.clip`` を ``int()`` より先に評価することで ``k_raw=±inf`` でも
+        # OverflowError を避けて n-2 / 0 に飽和させる (ADR-0056 構造化エラー protocol)。
+        k = int(np.clip(k_raw, 0, n - 2))
+
+        if self.interpolation == "linear":
+            y = float(tbl[k]) + f * (float(tbl[k + 1]) - float(tbl[k]))
+        elif self.interpolation == "nearest":
+            y = float(tbl[k + 1]) if f >= 0.5 else float(tbl[k])
+        else:  # "flat"
+            y = float(tbl[k])
+
+        return np.array([y])
