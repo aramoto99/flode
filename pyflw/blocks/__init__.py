@@ -36,6 +36,7 @@ from .rounding import Rounding
 from .routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
+from .transport_delay import TransportDelay
 from .userfunc import Fcn
 
 __all__ = [
@@ -84,6 +85,7 @@ __all__ = [
     "Switch",
     "Terminator",
     "TransferFunction",
+    "TransportDelay",
     "TrigFunction",
     "UnitDelay",
     "XYGraph",
