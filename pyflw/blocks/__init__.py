@@ -6,6 +6,7 @@ from .continuous import (
     TransferFunction,
 )
 from .discontinuities import RateLimiter, Relay
+from .file_writer import FileWriter
 from .discrete import (
     DiscreteIntegrator,
     DiscreteStateSpace,
@@ -54,6 +55,7 @@ __all__ = [
     "DiscreteTransferFunction",
     "Divide",
     "Fcn",
+    "FileWriter",
     "From",
     "Gain",
     "Goto",
