@@ -37,7 +37,8 @@ GUI から受け取った任意式 ``y = f(t, u)`` を **自前 AST whitelist �
 from __future__ import annotations
 
 import ast
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -84,13 +85,27 @@ _ALLOWED_AST_NODES: tuple[type[ast.AST], ...] = (
     ast.Name,
     ast.Load,  # Name / Subscript の読み出し context
     ast.BinOp,
-    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.FloorDiv,
+    ast.Mod,
+    ast.Pow,
     ast.UnaryOp,
-    ast.USub, ast.UAdd, ast.Not,
+    ast.USub,
+    ast.UAdd,
+    ast.Not,
     ast.BoolOp,
-    ast.And, ast.Or,
+    ast.And,
+    ast.Or,
     ast.Compare,
-    ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
+    ast.Eq,
+    ast.NotEq,
     ast.IfExp,
     ast.Call,
     ast.Subscript,
@@ -126,23 +141,17 @@ class _AstWhitelistValidator:
         # (1) 高速な flat walk でノード総数を確認 (深いほど早く拒否したいため最初に)。
         nodes = list(ast.walk(self._tree))
         if len(nodes) > _MAX_AST_NODES:
-            raise BlockSpecError(
-                f"Fcn: AST node count {len(nodes)} exceeds limit {_MAX_AST_NODES}"
-            )
+            raise BlockSpecError(f"Fcn: AST node count {len(nodes)} exceeds limit {_MAX_AST_NODES}")
 
         # (2) 再帰 _walk で個別ノード検証 (禁止ノード型 / Name / Subscript / Pow を即時 raise)
         #     + 深さを返り値で集計。深さ超過は full walk 完了後に確認する。
         max_depth = self._walk(self._tree, depth=1)
         if max_depth > _MAX_AST_DEPTH:
-            raise BlockSpecError(
-                f"Fcn: AST depth {max_depth} exceeds limit {_MAX_AST_DEPTH}"
-            )
+            raise BlockSpecError(f"Fcn: AST depth {max_depth} exceeds limit {_MAX_AST_DEPTH}")
 
     def _walk(self, node: ast.AST, *, depth: int) -> int:
         if not isinstance(node, _ALLOWED_AST_NODES):
-            raise BlockSpecError(
-                f"Fcn: disallowed AST node {type(node).__name__!r}"
-            )
+            raise BlockSpecError(f"Fcn: disallowed AST node {type(node).__name__!r}")
         self._check_name(node)
         self._check_subscript(node)
         self._check_pow_exponent(node)
@@ -249,9 +258,7 @@ class Fcn(Block):
         if not isinstance(n_inputs, int) or isinstance(n_inputs, bool) or n_inputs < 0:
             raise BlockSpecError(f"Fcn: n_inputs must be a non-negative int, got {n_inputs!r}")
         if not isinstance(expression, str):
-            raise BlockSpecError(
-                f"Fcn: expression must be a str, got {type(expression).__name__}"
-            )
+            raise BlockSpecError(f"Fcn: expression must be a str, got {type(expression).__name__}")
         if len(expression) > _MAX_EXPR_LEN:
             raise BlockSpecError(
                 f"Fcn: expression length {len(expression)} exceeds limit {_MAX_EXPR_LEN}"

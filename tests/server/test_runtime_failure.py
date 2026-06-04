@@ -62,9 +62,7 @@ def _wait_terminal(client: TestClient, sim_id: str, timeout: float = 5.0) -> dic
 
 
 class TestStructuredFailedMessage:
-    def test_failed_includes_structured_fields(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_failed_includes_structured_fields(self, client: TestClient, workspace: Path) -> None:
         """0 除算で失敗するモデルを Run、WS の ``failed`` に構造化フィールドが入る。
 
         ``Constant 0`` ÷ ``Constant 1`` は numpy が +/-inf を返すだけで raise しない
@@ -81,9 +79,7 @@ class TestStructuredFailedMessage:
             json={
                 "model": {
                     "schema_version": "1.0",
-                    "blocks": [
-                        {"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}
-                    ],
+                    "blocks": [{"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}],
                     "connections": [],
                     "config": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
                 }
@@ -111,18 +107,14 @@ class TestStructuredFailedMessage:
         path = workspace / "loop.flw.json"
         sim.save(path)
 
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "loop.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "loop.flw.json"})
         # 代数ループは start API 段階では検出されない (= ``Simulator.load`` は通る、
         # ``run`` 内で ``_execution_order`` が raise)。WS で失敗を観測する。
         assert response.status_code == 200
         sim_id = response.json()["simulation_id"]
 
         terminal: dict | None = None
-        with client.websocket_connect(
-            f"/api/v1/simulations/{sim_id}/stream"
-        ) as ws:
+        with client.websocket_connect(f"/api/v1/simulations/{sim_id}/stream") as ws:
             for _ in range(50):
                 msg = ws.receive_json()
                 if msg["type"] in ("completed", "stopped", "failed"):
@@ -140,9 +132,7 @@ class TestStructuredFailedMessage:
 
 
 class TestReplayOnReconnect:
-    def test_reconnect_replays_terminal(
-        self, client: TestClient, workspace: Path
-    ) -> None:
+    def test_reconnect_replays_terminal(self, client: TestClient, workspace: Path) -> None:
         """終端済みシミュレーションへの再接続時、保持された terminal が 1 回 yield される。"""
         # 高速完了する正常モデルを使う。
         sim = Simulator(t_end=0.1, dt=0.01)
@@ -151,24 +141,18 @@ class TestReplayOnReconnect:
         sim.connect("src", "scope")
         sim.save(workspace / "fast.flw.json")
 
-        response = client.post(
-            "/api/v1/simulations", json={"model_path": "fast.flw.json"}
-        )
+        response = client.post("/api/v1/simulations", json={"model_path": "fast.flw.json"})
         sim_id = response.json()["simulation_id"]
 
         # 1 回目: 完了まで待つ
-        with client.websocket_connect(
-            f"/api/v1/simulations/{sim_id}/stream"
-        ) as ws:
+        with client.websocket_connect(f"/api/v1/simulations/{sim_id}/stream") as ws:
             for _ in range(200):
                 msg = ws.receive_json()
                 if msg["type"] in ("completed", "stopped", "failed"):
                     break
 
         # 2 回目 (= 再接続): terminal が 1 回だけ届くはず
-        with client.websocket_connect(
-            f"/api/v1/simulations/{sim_id}/stream"
-        ) as ws:
+        with client.websocket_connect(f"/api/v1/simulations/{sim_id}/stream") as ws:
             replay = ws.receive_json()
 
         assert replay["type"] == "completed"

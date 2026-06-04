@@ -111,9 +111,7 @@ class TestRegistry:
         cat, _, _ = _BUILTIN_METADATA["pyflw.blocks.file_writer.FileWriter"]
         assert cat == "sinks"
         assert (
-            _BLOCK_TRANSLATIONS["pyflw.blocks.file_writer.FileWriter"]["ja"][
-                "display_name"
-            ]
+            _BLOCK_TRANSLATIONS["pyflw.blocks.file_writer.FileWriter"]["ja"]["display_name"]
             == "ファイル出力"
         )
 

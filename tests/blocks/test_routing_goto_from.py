@@ -208,9 +208,7 @@ class TestGotoFromGlobal:
 
 
 class TestResolutionPriority:
-    def test_resolution_priority_local_over_global(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_resolution_priority_local_over_global(self, caplog: pytest.LogCaptureFixture) -> None:
         """同一 tag で Local と Global 並存 → Local が優先 + WARNING ログ。"""
         sim = Simulator(t_end=0.05, dt=0.01)
         c_local = sim.add(Constant(value=100.0))
@@ -225,9 +223,7 @@ class TestResolutionPriority:
         with caplog.at_level(logging.WARNING, logger="pyflw.routing.goto"):
             sim.run()
         np.testing.assert_allclose(_flat(scope), 100.0 * np.ones(6))
-        assert any(
-            "Local and Global" in r.message for r in caplog.records
-        )
+        assert any("Local and Global" in r.message for r in caplog.records)
 
 
 # ===========================================================================

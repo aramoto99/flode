@@ -196,9 +196,7 @@ class TestLookupTable1DExtrapolation:
         expected: float,
     ) -> None:
         bp, tbl = calib_curve
-        blk = LookupTable1D(
-            breakpoints=bp, table=tbl, interpolation=interp, extrapolation="clip"
-        )
+        blk = LookupTable1D(breakpoints=bp, table=tbl, interpolation=interp, extrapolation="clip")
         assert _out(blk, u_val) == pytest.approx(expected)
 
     def test_linear_extrap_with_linear_interp(
@@ -234,17 +232,13 @@ class TestLookupTable1DExtrapolation:
     ) -> None:
         """flat + linear 外挿: 同じく独自 slope 実装。"""
         bp, tbl = calib_curve
-        blk = LookupTable1D(
-            breakpoints=bp, table=tbl, interpolation="flat", extrapolation="linear"
-        )
+        blk = LookupTable1D(breakpoints=bp, table=tbl, interpolation="flat", extrapolation="linear")
         assert _out(blk, -1.0) == pytest.approx(-10.0)
         assert _out(blk, 3.0) == pytest.approx(0.0)
         # 定義域内は flat (前値ホールド)
         assert _out(blk, 0.99) == pytest.approx(0.0)
 
-    def test_error_extrapolation(
-        self, calib_curve: tuple[list[float], list[float]]
-    ) -> None:
+    def test_error_extrapolation(self, calib_curve: tuple[list[float], list[float]]) -> None:
         bp, tbl = calib_curve
         blk = LookupTable1D(
             breakpoints=bp, table=tbl, interpolation="linear", extrapolation="error"
@@ -262,9 +256,7 @@ class TestLookupTable1DExtrapolation:
     ) -> None:
         """ADR-0056 構造化エラーで UI から発生ブロックへ飛べること。"""
         bp, tbl = calib_curve
-        blk = LookupTable1D(
-            breakpoints=bp, table=tbl, extrapolation="error", name="calib"
-        )
+        blk = LookupTable1D(breakpoints=bp, table=tbl, extrapolation="error", name="calib")
         with pytest.raises(BlockEvalError) as excinfo:
             _out(blk, -1.0)
         assert "calib" in str(excinfo.value)
@@ -280,22 +272,16 @@ class TestLookupTable1DEdgeCases:
     @pytest.mark.parametrize("extrap", ["clip", "linear", "error"])
     def test_nan_input_propagates(self, extrap: str) -> None:
         """``nan`` 入力は ``extrapolation`` 設定に関わらず ``nan`` を伝播 (scipy 仕様)。"""
-        blk = LookupTable1D(
-            breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation=extrap
-        )
+        blk = LookupTable1D(breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation=extrap)
         assert math.isnan(_out(blk, float("nan")))
 
     def test_inf_input_clip(self) -> None:
-        blk = LookupTable1D(
-            breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation="clip"
-        )
+        blk = LookupTable1D(breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation="clip")
         assert _out(blk, float("inf")) == pytest.approx(5.0)
         assert _out(blk, float("-inf")) == pytest.approx(0.0)
 
     def test_inf_input_linear_extrap(self) -> None:
-        blk = LookupTable1D(
-            breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation="linear"
-        )
+        blk = LookupTable1D(breakpoints=[0, 1, 2], table=[0, 10, 5], extrapolation="linear")
         # 右側 slope = -5、+inf に向かって -inf
         assert _out(blk, float("inf")) == float("-inf")
         # 左側 slope = 10、-inf に向かって -inf

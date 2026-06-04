@@ -16,9 +16,7 @@ from pyflw.exceptions import BlockSpecError
 from pyflw.subsystems import Enable, Subsystem
 
 
-def _build_enabled(
-    states_policy: str = "held", outputs_policy: str = "held"
-) -> Subsystem:
+def _build_enabled(states_policy: str = "held", outputs_policy: str = "held") -> Subsystem:
     """1 データ入力 (Gain*2) + 1 enable 入力 + 1 出力の Subsystem。"""
     return Subsystem(
         blocks=[

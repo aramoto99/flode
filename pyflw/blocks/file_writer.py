@@ -47,9 +47,7 @@ class FileWriter(Block):
         name: str | None = None,
     ):
         if n_inputs < 1:
-            raise BlockSpecError(
-                f"FileWriter: n_inputs must be >= 1, got {n_inputs}"
-            )
+            raise BlockSpecError(f"FileWriter: n_inputs must be >= 1, got {n_inputs}")
         if labels is not None and len(labels) != n_inputs:
             raise BlockSpecError(
                 f"FileWriter: len(labels)={len(labels)} must equal n_inputs={n_inputs}"
@@ -89,7 +87,7 @@ class FileWriter(Block):
         arrays: dict[str, npt.NDArray[Any]] = {"time": np.array(self.times)}
         for i, lbl in enumerate(self.labels):
             arrays[lbl] = v[:, i] if v.size else np.empty(0)
-        np.savez(path, **arrays)
+        np.savez(path, **arrays)  # type: ignore[arg-type]
 
     def save_csv(self, path: str | Path) -> None:
         """CSV 形式で保存。1 列目=``time``、残り=labels 列。"""

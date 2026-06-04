@@ -53,9 +53,7 @@ def main() -> None:
     relay = values[:, 2]
 
     _logger.info("samples: %d", len(values))
-    _logger.info(
-        "sine range: [%.3f, %.3f] (target [-1, 1])", src.min(), src.max()
-    )
+    _logger.info("sine range: [%.3f, %.3f] (target [-1, 1])", src.min(), src.max())
     _logger.info(
         "rate-limited range: [%.3f, %.3f] (slew=±2/s → 振幅 < 1)",
         rate_limited.min(),

@@ -13,7 +13,6 @@ from pyflw.core.persistence import (
     migrate_to_current,
 )
 
-
 # ---------------------------------------------------------------------------
 # _builtin_migrate_0_8_to_0_9 単体
 # ---------------------------------------------------------------------------
@@ -46,9 +45,7 @@ def test_migrate_simple_triggered_subsystem() -> None:
                             "params": {"port_idx": 0},
                         },
                     ],
-                    "connections": [
-                        {"src": "in0", "src_idx": 0, "dst": "out0", "dst_idx": 0}
-                    ],
+                    "connections": [{"src": "in0", "src_idx": 0, "dst": "out0", "dst_idx": 0}],
                 },
             }
         ],
@@ -63,9 +60,7 @@ def test_migrate_simple_triggered_subsystem() -> None:
     assert "trigger_mode" not in entry["params"]
     # 内部 blocks に Trigger が追加される
     inner = entry["params"]["blocks"]
-    trigger_entries = [
-        b for b in inner if b["type"] == "pyflw.subsystems.control_blocks.Trigger"
-    ]
+    trigger_entries = [b for b in inner if b["type"] == "pyflw.subsystems.control_blocks.Trigger"]
     assert len(trigger_entries) == 1
     trig = trigger_entries[0]
     # ADR-0058 §論点 6: id は決定的 {parent_id}_trigger
@@ -119,9 +114,7 @@ def test_migrate_trigger_id_collision_appends_counter() -> None:
     }
     out = _builtin_migrate_0_8_to_0_9(data)
     inner = out["blocks"][0]["params"]["blocks"]
-    trig_block = next(
-        b for b in inner if b["type"] == "pyflw.subsystems.control_blocks.Trigger"
-    )
+    trig_block = next(b for b in inner if b["type"] == "pyflw.subsystems.control_blocks.Trigger")
     # 衝突したので連番 (= ts2_trigger_1)
     assert trig_block["id"] == "ts2_trigger_1"
 

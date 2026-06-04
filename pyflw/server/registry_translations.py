@@ -345,15 +345,13 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "en": {
             "display_name": "Transport Delay",
             "docstring_summary": (
-                "Dead time y(t) ≈ u(t - delay_time) "
-                "(sample-based discrete approximation)."
+                "Dead time y(t) ≈ u(t - delay_time) (sample-based discrete approximation)."
             ),
         },
         "ja": {
             "display_name": "むだ時間",
             "docstring_summary": (
-                "むだ時間 y(t) ≈ u(t - delay_time) "
-                "(sample-based discrete 近似)。"
+                "むだ時間 y(t) ≈ u(t - delay_time) (sample-based discrete 近似)。"
             ),
         },
     },
@@ -451,8 +449,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "ja": {
             "display_name": "変化率リミッタ",
             "docstring_summary": (
-                "入力の変化率 (rising / falling) をサンプル時刻で制限し、"
-                "中間時刻は前値を hold。"
+                "入力の変化率 (rising / falling) をサンプル時刻で制限し、中間時刻は前値を hold。"
             ),
         },
     },
@@ -538,9 +535,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     "pyflw.blocks.routing.MultiportSwitch": {
         "en": {
             "display_name": "Multiport Switch",
-            "docstring_summary": (
-                "Select one of n_choices data inputs by selector index (u[0])."
-            ),
+            "docstring_summary": ("Select one of n_choices data inputs by selector index (u[0])."),
         },
         "ja": {
             "display_name": "マルチポートスイッチ",
@@ -558,9 +553,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
         "ja": {
             "display_name": "マージ",
-            "docstring_summary": (
-                "優先度マージ: initial_value と異なる最初の入力を出力する。"
-            ),
+            "docstring_summary": ("優先度マージ: initial_value と異なる最初の入力を出力する。"),
         },
     },
     # ----- sinks (4) ------------------------------------------------------
@@ -658,8 +651,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "en": {
             "display_name": "Trigger",
             "docstring_summary": (
-                "Place inside a Subsystem to fire it on trigger edges "
-                "(rising / falling / either)."
+                "Place inside a Subsystem to fire it on trigger edges (rising / falling / either)."
             ),
         },
         "ja": {

@@ -105,9 +105,7 @@ class TestParser:
 
 
 class TestBuildSettingsWorkspaceMode:
-    def test_workspace_sets_workspace_root(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_workspace_sets_workspace_root(self, tmp_path: Path, isolated_home: Path) -> None:
         settings, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         assert settings.workspace_root == tmp_path.resolve()
 
@@ -123,18 +121,14 @@ class TestBuildSettingsWorkspaceMode:
         assert settings.workspace_root == (tmp_path / "ws").resolve()
         assert settings.workspace_root.is_absolute()
 
-    def test_no_deprecation_warning_emitted(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_no_deprecation_warning_emitted(self, tmp_path: Path, isolated_home: Path) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             _build_settings_from_args(_make_args(workspace=tmp_path))
 
 
 class TestBuildSettingsWorkspaceErrors:
-    def test_workspace_nonexistent_raises(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_workspace_nonexistent_raises(self, tmp_path: Path, isolated_home: Path) -> None:
         nonexistent = tmp_path / "does-not-exist"
         with pytest.raises(PyflwError, match="does not exist"):
             _build_settings_from_args(_make_args(workspace=nonexistent))
@@ -173,26 +167,20 @@ class TestBuildSettingsDefault:
 
 
 class TestBuildSettingsOtherFields:
-    def test_allow_origin_propagated(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_allow_origin_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
         origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
         settings, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, allow_origin=origins)
         )
         assert settings.allow_origins == origins
 
-    def test_scope_batch_size_propagated(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_scope_batch_size_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
         settings, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, scope_batch_size=42)
         )
         assert settings.scope_batch_size == 42
 
-    def test_host_port_propagated(
-        self, tmp_path: Path, isolated_home: Path
-    ) -> None:
+    def test_host_port_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
         _, host, port = _build_settings_from_args(
             _make_args(workspace=tmp_path, host="0.0.0.0", port=9000)
         )

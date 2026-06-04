@@ -90,9 +90,7 @@ def _start_validation(out_dir: Path) -> None:
     """
     bad = {
         "schema_version": "1.0",
-        "blocks": [
-            {"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}
-        ],
+        "blocks": [{"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}],
         "connections": [],
         "config": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
     }

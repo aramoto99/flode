@@ -80,21 +80,17 @@ class RateLimiter(Block):
     ) -> None:
         if not isinstance(sample_time, (int, float)) or isinstance(sample_time, bool):
             raise BlockSpecError(
-                f"RateLimiter: sample_time must be a number, "
-                f"got {type(sample_time).__name__}"
+                f"RateLimiter: sample_time must be a number, got {type(sample_time).__name__}"
             )
         if sample_time <= 0.0:
-            raise BlockSpecError(
-                f"RateLimiter: sample_time must be > 0, got {sample_time}"
-            )
+            raise BlockSpecError(f"RateLimiter: sample_time must be > 0, got {sample_time}")
         if rising_slew_rate <= 0.0:
             raise BlockSpecError(
                 f"RateLimiter: rising_slew_rate must be > 0, got {rising_slew_rate}"
             )
         if falling_slew_rate >= 0.0:
             raise BlockSpecError(
-                f"RateLimiter: falling_slew_rate must be < 0, "
-                f"got {falling_slew_rate}"
+                f"RateLimiter: falling_slew_rate must be < 0, got {falling_slew_rate}"
             )
 
         super().__init__(
@@ -192,18 +188,14 @@ class Relay(Block):
     ) -> None:
         if x0_state not in self._ALLOWED_X0_STATES:
             raise BlockSpecError(
-                f"Relay: x0_state must be one of {self._ALLOWED_X0_STATES}, "
-                f"got {x0_state!r}"
+                f"Relay: x0_state must be one of {self._ALLOWED_X0_STATES}, got {x0_state!r}"
             )
         if not isinstance(sample_time, (int, float)) or isinstance(sample_time, bool):
             raise BlockSpecError(
-                f"Relay: sample_time must be a number, "
-                f"got {type(sample_time).__name__}"
+                f"Relay: sample_time must be a number, got {type(sample_time).__name__}"
             )
         if sample_time <= 0.0:
-            raise BlockSpecError(
-                f"Relay: sample_time must be > 0, got {sample_time}"
-            )
+            raise BlockSpecError(f"Relay: sample_time must be > 0, got {sample_time}")
         if not (switch_off_point < switch_on_point):
             raise BlockSpecError(
                 f"Relay: switch_off_point ({switch_off_point}) must be "

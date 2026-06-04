@@ -110,9 +110,7 @@ class TestRateLimiterEvaluation:
     def test_asymmetric_rising_falling(self) -> None:
         """rising=2.0, falling=-0.5 で非対称応答。"""
         sim = Simulator(t_end=2.0, dt=0.1)
-        sim.add(
-            Step(step_time=0.5, initial_value=1.0, final_value=0.0, id="src")
-        )
+        sim.add(Step(step_time=0.5, initial_value=1.0, final_value=0.0, id="src"))
         sim.add(
             RateLimiter(
                 sample_time=0.1,
@@ -517,9 +515,7 @@ class TestRegistry:
     def test_rate_limiter_registry_metadata(self) -> None:
         from pyflw.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA[
-            "pyflw.blocks.discontinuities.RateLimiter"
-        ]
+        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.discontinuities.RateLimiter"]
         assert cat == "discontinuities"
         assert name == "Rate Limiter"
         assert icon == "discontinuities.ratelimiter"

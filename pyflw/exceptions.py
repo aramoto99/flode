@@ -61,9 +61,7 @@ class AlgebraicLoopError(PyflwError):
             ``None`` のときは空リスト扱い (= 旧互換)。
     """
 
-    def __init__(
-        self, message: str, *, block_ids: list[str] | None = None
-    ) -> None:
+    def __init__(self, message: str, *, block_ids: list[str] | None = None) -> None:
         super().__init__(message)
         self.block_ids: list[str] = list(block_ids) if block_ids else []
 

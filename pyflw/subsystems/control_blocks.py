@@ -100,8 +100,7 @@ def is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
     if mode == "either":
         return (prev <= 0.0 < curr) or (prev >= 0.0 > curr)
     raise BlockSpecError(
-        f"is_trigger_edge: unknown mode {mode!r}, expected one of "
-        f"('rising', 'falling', 'either')"
+        f"is_trigger_edge: unknown mode {mode!r}, expected one of ('rising', 'falling', 'either')"
     )
 
 
@@ -143,8 +142,7 @@ class Trigger(Block):
         # 値検証する (Inport / Outport と同じパターン)。
         if trigger_type not in TRIGGER_TYPES:
             raise BlockSpecError(
-                f"Trigger: trigger_type must be one of {TRIGGER_TYPES}, "
-                f"got {trigger_type!r}"
+                f"Trigger: trigger_type must be one of {TRIGGER_TYPES}, got {trigger_type!r}"
             )
         super().__init__(
             id=id,

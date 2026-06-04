@@ -106,8 +106,12 @@ class TestRandomSourceUniform:
     @pytest.fixture
     def samples(self) -> np.ndarray:
         sim = _build_sim(
-            sample_time=0.001, t_end=10.0,
-            distribution="uniform", low=0.0, high=1.0, seed=42,
+            sample_time=0.001,
+            t_end=10.0,
+            distribution="uniform",
+            low=0.0,
+            high=1.0,
+            seed=42,
         )
         sim.run()
         # 最初のサンプルを除外 (x0=0.0 placeholder が見える可能性は無いが念のため
@@ -136,8 +140,12 @@ class TestRandomSourceGaussian:
     @pytest.fixture
     def samples(self) -> np.ndarray:
         sim = _build_sim(
-            sample_time=0.001, t_end=10.0,
-            distribution="gaussian", mean=0.0, std=1.0, seed=42,
+            sample_time=0.001,
+            t_end=10.0,
+            distribution="gaussian",
+            mean=0.0,
+            std=1.0,
+            seed=42,
         )
         sim.run()
         return _samples(sim)
@@ -284,9 +292,7 @@ class TestRandomSourcePersistence:
         loaded = sim2.get_block("rs")
         assert loaded._params["seed"] is None
 
-    def test_load_with_invalid_data_raises_model_load_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_with_invalid_data_raises_model_load_error(self, tmp_path: Path) -> None:
         """SPEC-0008 で追加した except 経路で BlockSpecError → ModelLoadError ラップ。"""
         bad_payload = {
             "schema_version": CURRENT_SCHEMA_VERSION,
@@ -338,9 +344,7 @@ class TestRandomSourceRegistry:
     def test_registry_metadata_entry(self) -> None:
         from pyflw.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA[
-            "pyflw.blocks.random_source.RandomSource"
-        ]
+        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.random_source.RandomSource"]
         assert cat == "sources"
         assert name == "Random Source"
         assert icon == "sources.random"

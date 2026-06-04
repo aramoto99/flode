@@ -204,10 +204,7 @@ def test_payload_model_load_error_includes_message() -> None:
     exc = ModelLoadError("Unknown block type: pyflw.blocks.nonexistent.Foo")
     payload = build_failure_payload(exc, simulator=None, t=None)
     assert payload["category"] == "start_validation"
-    assert (
-        payload["template_args"]["message"]
-        == "Unknown block type: pyflw.blocks.nonexistent.Foo"
-    )
+    assert payload["template_args"]["message"] == "Unknown block type: pyflw.blocks.nonexistent.Foo"
 
 
 def test_payload_picks_up_exception_block_id() -> None:

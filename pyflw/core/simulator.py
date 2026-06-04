@@ -287,9 +287,9 @@ class Simulator:
 
         yield ((), self.blocks)
 
-        def _walk_sub(sub: Subsystem, path: tuple[Any, ...]) -> Iterator[
-            tuple[tuple[Any, ...], list[Block]]
-        ]:
+        def _walk_sub(
+            sub: Subsystem, path: tuple[Any, ...]
+        ) -> Iterator[tuple[tuple[Any, ...], list[Block]]]:
             yield (path, sub._inner_blocks)
             for inner in sub._inner_blocks:
                 if isinstance(inner, Subsystem):
@@ -414,9 +414,7 @@ class Simulator:
             # direct_feedthrough を True に書き換え。これで仮想 deps を topo sort
             # に merge した時点で「Goto → From」の順序が保証される。
             from_block.direct_feedthrough = True
-            self._add_virtual_dep(
-                from_block, from_scope, resolved_goto, scope_of
-            )
+            self._add_virtual_dep(from_block, from_scope, resolved_goto, scope_of)
 
         # ------------- Phase 4: dangling 検出 INFO (SPEC-0003 §3-5) -------------
         self._log_dangling(local_registry, global_registry, used_gotos)
@@ -484,7 +482,7 @@ class Simulator:
         goto_scope = scope_of.get(goto_block, ())
         # 共通祖先スコープ = from_scope と goto_scope の identity 一致 prefix
         common_len = 0
-        for a, b in zip(from_scope, goto_scope):
+        for a, b in zip(from_scope, goto_scope, strict=False):
             if a is b:
                 common_len += 1
             else:
@@ -492,12 +490,8 @@ class Simulator:
         common_scope = from_scope[:common_len]
         # 共通祖先スコープの「直下」のブロックを特定
         # (= scope_path[common_len] が存在すればそれ、なければブロック自身)
-        from_top: Block = (
-            from_scope[common_len] if common_len < len(from_scope) else from_block
-        )
-        goto_top: Block = (
-            goto_scope[common_len] if common_len < len(goto_scope) else goto_block
-        )
+        from_top: Block = from_scope[common_len] if common_len < len(from_scope) else from_block
+        goto_top: Block = goto_scope[common_len] if common_len < len(goto_scope) else goto_block
         # 自己依存 (= from_top is goto_top) は skip (= 同一 Subsystem 内で from
         # も goto も同じ Subsystem 配下にいる場合、その Subsystem の内部 deps で
         # 別途追加するため、外側で自己依存を作るとループになる)。
@@ -545,9 +539,7 @@ class Simulator:
                 )
         for tag, goto in global_registry.items():
             if goto not in used_gotos:
-                _logger_routing.info(
-                    "dangling Goto: tag=%r visibility=global", tag
-                )
+                _logger_routing.info("dangling Goto: tag=%r visibility=global", tag)
 
     def _check_port_shapes(self) -> None:
         """ADR-0017 §(4): 接続元出力 port_shape と接続先入力 port_shape が一致するかチェック。

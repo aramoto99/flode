@@ -410,7 +410,9 @@ class TestCopy:
 
     def test_creates_destination_parent(self, client: TestClient, workspace: Path) -> None:
         _seed_flw_json(workspace, "src.flw.json")
-        r = client.post("/api/v1/files/copy", params={"from": "src.flw.json", "to": "new_dir/sub/dst.flw.json"})
+        r = client.post(
+            "/api/v1/files/copy", params={"from": "src.flw.json", "to": "new_dir/sub/dst.flw.json"}
+        )
         assert r.status_code == 204
         assert (workspace / "new_dir" / "sub" / "dst.flw.json").is_file()
 

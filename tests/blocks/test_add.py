@@ -1,4 +1,5 @@
 """v0.35.0: Add ブロックの単体テスト (= Sum の矩形版、機能同等)。"""
+
 from __future__ import annotations
 
 import numpy as np

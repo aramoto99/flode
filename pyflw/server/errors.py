@@ -94,8 +94,14 @@ _CATEGORY_BY_EXC: tuple[tuple[type[BaseException], ErrorClassification], ...] = 
     (SolverError, ErrorClassification(_CATEGORY_SOLVER_FAILURE, "error.solver_failure")),
     (BlockSpecError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     (ModelLoadError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
-    (UnknownBlockIdError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
-    (UnknownBlockTypeError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
+    (
+        UnknownBlockIdError,
+        ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation"),
+    ),
+    (
+        UnknownBlockTypeError,
+        ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation"),
+    ),
     (SchemaVersionError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     # code-reviewer SHOULD-1: SchedulingError / ModelSerializationError は「モデル
     # 検証」ではなく内部構成エラー / 保存失敗。Phase 1 では専用カテゴリが無いため
@@ -212,9 +218,7 @@ def _template_args_for(
     if t is not None:
         args["t"] = t
 
-    if classification.category == _CATEGORY_ALGEBRAIC_LOOP and isinstance(
-        exc, AlgebraicLoopError
-    ):
+    if classification.category == _CATEGORY_ALGEBRAIC_LOOP and isinstance(exc, AlgebraicLoopError):
         args["block_labels"] = list(exc.block_ids)
     elif classification.category == _CATEGORY_SHAPE_MISMATCH:
         args.update(_shape_mismatch_args(exc))
@@ -305,15 +309,16 @@ def build_failure_payload(
             block_label = exc_block_id
 
     template_args = _template_args_for(
-        classification, exc, block=block, t=t,
+        classification,
+        exc,
+        block=block,
+        t=t,
     )
 
     raw_message = f"{type(exc).__name__}: {exc}"
     raw_traceback: str | None = None
     if include_traceback:
-        tb_str = "".join(
-            traceback.format_exception(type(exc), exc, exc.__traceback__)
-        )
+        tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         raw_traceback = _truncate_traceback(tb_str)
 
     payload: dict[str, Any] = {

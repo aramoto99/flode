@@ -50,9 +50,7 @@ def main() -> None:
 
     _logger.info("samples: %d", len(times))
     _logger.info("voltage range: [%.3f, %.3f] V", voltage.min(), voltage.max())
-    _logger.info(
-        "temperature range: [%.3f, %.3f] degC", temperature.min(), temperature.max()
-    )
+    _logger.info("temperature range: [%.3f, %.3f] degC", temperature.min(), temperature.max())
 
 
 if __name__ == "__main__":

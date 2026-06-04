@@ -46,8 +46,7 @@ class Rounding(Block):
     ) -> None:
         if mode not in self._ALLOWED_MODES:
             raise BlockSpecError(
-                f"Rounding: mode must be one of {self._ALLOWED_MODES}, "
-                f"got {mode!r}"
+                f"Rounding: mode must be one of {self._ALLOWED_MODES}, got {mode!r}"
             )
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self.mode = mode

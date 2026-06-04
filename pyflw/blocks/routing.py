@@ -213,20 +213,16 @@ def _validate_tag(tag: object, block_name: str) -> str:
         BlockSpecError: 非 str / 空文字 / 64 文字超 / 違反文字 (非 ASCII 含む)。
     """
     if not isinstance(tag, str):
-        raise BlockSpecError(
-            f"{block_name}: tag must be a str, got {type(tag).__name__}"
-        )
+        raise BlockSpecError(f"{block_name}: tag must be a str, got {type(tag).__name__}")
     if not tag:
         raise BlockSpecError(f"{block_name}: invalid tag name {tag!r} (empty)")
     if len(tag) > _TAG_MAX_LEN:
         raise BlockSpecError(
-            f"{block_name}: invalid tag name {tag!r} "
-            f"(length {len(tag)} > {_TAG_MAX_LEN})"
+            f"{block_name}: invalid tag name {tag!r} (length {len(tag)} > {_TAG_MAX_LEN})"
         )
     if not _TAG_PATTERN.match(tag):
         raise BlockSpecError(
-            f"{block_name}: invalid tag name {tag!r} "
-            f"(allowed: ASCII alphanumeric + '_' + '-')"
+            f"{block_name}: invalid tag name {tag!r} (allowed: ASCII alphanumeric + '_' + '-')"
         )
     return tag
 
@@ -306,9 +302,7 @@ class Goto(Block):
         # を BlockSpecError で気付けるようにする)。
         self._last_input: npt.NDArray[Any] | None = None
 
-    def output(
-        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
-    ) -> npt.NDArray[Any]:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: u は 1D ndarray shape (1,)。値を保持して空配列を返す
         # (n_outputs=0 のため Simulator._step は y = np.atleast_1d(...) で 1D 長 0)。
         self._last_input = np.asarray(u, dtype=float).copy()
@@ -389,9 +383,7 @@ class From(Block):
             )
         return self._resolved_goto
 
-    def output(
-        self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
-    ) -> npt.NDArray[Any]:
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: 解決済み Goto の _last_input (= 1D shape (1,)) を copy 返却。
         # ADR-0055 §論点 6 (Option 6-A): MVP は 1 copy 固定 (view 最適化は Phase 2)。
         goto = self._ensure_resolved()
@@ -459,13 +451,10 @@ class MultiportSwitch(Block):
     ) -> None:
         if not isinstance(n_choices, int) or isinstance(n_choices, bool):
             raise BlockSpecError(
-                f"MultiportSwitch: n_choices must be an int, "
-                f"got {type(n_choices).__name__}"
+                f"MultiportSwitch: n_choices must be an int, got {type(n_choices).__name__}"
             )
         if n_choices < 1:
-            raise BlockSpecError(
-                f"MultiportSwitch: n_choices must be >= 1, got {n_choices}"
-            )
+            raise BlockSpecError(f"MultiportSwitch: n_choices must be >= 1, got {n_choices}")
         if index_base not in self._ALLOWED_INDEX_BASES:
             raise BlockSpecError(
                 f"MultiportSwitch: index_base must be one of "
@@ -531,9 +520,7 @@ class Merge(Block):
         name: str | None = None,
     ) -> None:
         if not isinstance(n_inputs, int) or isinstance(n_inputs, bool):
-            raise BlockSpecError(
-                f"Merge: n_inputs must be an int, got {type(n_inputs).__name__}"
-            )
+            raise BlockSpecError(f"Merge: n_inputs must be an int, got {type(n_inputs).__name__}")
         if n_inputs < 1:
             raise BlockSpecError(f"Merge: n_inputs must be >= 1, got {n_inputs}")
         super().__init__(id=id, name=name, n_inputs=n_inputs, n_outputs=1)

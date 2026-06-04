@@ -49,9 +49,7 @@ def main() -> None:
 
     _logger.info("samples: %d", len(values))
     _logger.info("signal range: [%.3f, %.3f]", signal.min(), signal.max())
-    _logger.info(
-        "noise mean / std: %.4f / %.4f (target 0.0 / 0.1)", noise.mean(), noise.std()
-    )
+    _logger.info("noise mean / std: %.4f / %.4f (target 0.0 / 0.1)", noise.mean(), noise.std())
     _logger.info("noisy range: [%.3f, %.3f]", noisy.min(), noisy.max())
 
 

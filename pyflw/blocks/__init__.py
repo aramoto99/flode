@@ -6,7 +6,6 @@ from .continuous import (
     TransferFunction,
 )
 from .discontinuities import RateLimiter, Relay
-from .file_writer import FileWriter
 from .discrete import (
     DiscreteIntegrator,
     DiscreteStateSpace,
@@ -15,6 +14,7 @@ from .discrete import (
     UnitDelay,
     ZeroOrderHoldDirect,
 )
+from .file_writer import FileWriter
 from .logic import LogicalOperator, RelationalOperator
 from .lookup import LookupTable1D
 from .mathops import (

@@ -88,10 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         metavar="PATH",
-        help=(
-            "Path to TOML config file. If omitted, ~/.pyflw/config.toml is searched. "
-            "SPEC-0004."
-        ),
+        help=("Path to TOML config file. If omitted, ~/.pyflw/config.toml is searched. SPEC-0004."),
     )
     parser.add_argument(
         "--generate-config",

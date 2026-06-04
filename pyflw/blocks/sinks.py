@@ -62,9 +62,7 @@ class Scope(Block):
         self.labels = labels or [f"in{i}" for i in range(n_inputs)]
         if buffer_mode not in self._BUFFER_MODES:
             allowed = " / ".join(repr(m) for m in self._BUFFER_MODES)
-            raise BlockSpecError(
-                f"Scope: buffer_mode must be {allowed}, got {buffer_mode!r}"
-            )
+            raise BlockSpecError(f"Scope: buffer_mode must be {allowed}, got {buffer_mode!r}")
         if buffer_mode != "unbounded" and buffer_capacity < 1:
             raise BlockSpecError(f"Scope: buffer_capacity must be >= 1, got {buffer_capacity!r}")
         self.buffer_mode: ScopeBufferMode = buffer_mode

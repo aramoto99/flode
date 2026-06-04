@@ -133,9 +133,7 @@ class TestRegistry:
         cat, _, _ = _BUILTIN_METADATA["pyflw.blocks.transport_delay.TransportDelay"]
         assert cat == "continuous"
         assert (
-            _BLOCK_TRANSLATIONS["pyflw.blocks.transport_delay.TransportDelay"]["ja"][
-                "display_name"
-            ]
+            _BLOCK_TRANSLATIONS["pyflw.blocks.transport_delay.TransportDelay"]["ja"]["display_name"]
             == "むだ時間"
         )
 

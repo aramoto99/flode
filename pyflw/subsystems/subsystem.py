@@ -274,9 +274,7 @@ class Subsystem(Block):
             # Enable は末尾側 control 群の最初 (= Trigger があるならその前)。
             # ``isinstance(b, Trigger)`` で Trigger 有無を判定。block 自身は Enable
             # なので Trigger には該当せず、自動的に除外される。
-            trigger_present = any(
-                isinstance(b, Trigger) for b in self._inner_blocks
-            )
+            trigger_present = any(isinstance(b, Trigger) for b in self._inner_blocks)
             if trigger_present:
                 # 末尾 Trigger slot の 1 つ前に挿入
                 self.input_sources.insert(-1, None)
@@ -780,9 +778,7 @@ class Subsystem(Block):
             return False
         return val > 0.0
 
-    def _compute_y_from_outputs(
-        self, outputs: dict[Block, npt.NDArray[Any]]
-    ) -> npt.NDArray[Any]:
+    def _compute_y_from_outputs(self, outputs: dict[Block, npt.NDArray[Any]]) -> npt.NDArray[Any]:
         """内部 ``outputs`` 辞書から Outport を集めて y ベクトルを作る。"""
         y = np.zeros(self.n_outputs)
         for port_idx in range(self.n_outputs):
@@ -910,9 +906,7 @@ class Subsystem(Block):
 
         # Trigger edge 検出と prev 更新 (旧 TriggeredSubsystem.update と同じ semantics)
         if self._has_trigger:
-            assert (
-                self._trigger_slot_idx is not None and self._trigger_block is not None
-            )
+            assert self._trigger_slot_idx is not None and self._trigger_block is not None
             curr_trig = float(u[self._trigger_slot_idx])
             edge = is_trigger_edge(
                 self._prev_trigger_value, curr_trig, self._trigger_block.trigger_type

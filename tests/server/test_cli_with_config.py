@@ -41,7 +41,8 @@ class TestCliWithConfigFile:
         with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
             main([])
         warning_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelno >= logging.WARNING and r.name.startswith("pyflw.server.config")
         ]
         assert not warning_records, f"Unexpected warnings: {warning_records}"
@@ -93,17 +94,14 @@ class TestCliWithConfigFile:
         ws.mkdir()
         explicit = tmp_path / "alt.toml"
         explicit.write_text(
-            "[server]\nport = 9200\n"
-            "[settings]\n"
-            f'workspace = "{ws.as_posix()}"\n',
+            f'[server]\nport = 9200\n[settings]\nworkspace = "{ws.as_posix()}"\n',
             encoding="utf-8",
         )
         # 暗黙探索の方には 9100 を書いておく → 明示 --config が優先されることを確認
         default_cfg = isolated_home / ".pyflw" / "config.toml"
         default_cfg.parent.mkdir(parents=True)
         default_cfg.write_text(
-            "[server]\nport = 9100\n[settings]\n"
-            f'workspace = "{ws.as_posix()}"\n',
+            f'[server]\nport = 9100\n[settings]\nworkspace = "{ws.as_posix()}"\n',
             encoding="utf-8",
         )
         monkeypatch.chdir(tmp_path)
@@ -123,9 +121,7 @@ class TestCliWithConfigFile:
         cfg = isolated_home / ".pyflw" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text(
-            "[server]\nport = 9100\n"
-            "[settings]\n"
-            f'workspace = "{ws.as_posix()}"\n',
+            f'[server]\nport = 9100\n[settings]\nworkspace = "{ws.as_posix()}"\n',
             encoding="utf-8",
         )
         monkeypatch.chdir(tmp_path)

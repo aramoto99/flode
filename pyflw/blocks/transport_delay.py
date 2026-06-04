@@ -47,22 +47,16 @@ class TransportDelay(Block):
     ) -> None:
         if not isinstance(delay_time, (int, float)) or isinstance(delay_time, bool):
             raise BlockSpecError(
-                f"TransportDelay: delay_time must be a number, "
-                f"got {type(delay_time).__name__}"
+                f"TransportDelay: delay_time must be a number, got {type(delay_time).__name__}"
             )
         if delay_time <= 0.0:
-            raise BlockSpecError(
-                f"TransportDelay: delay_time must be > 0, got {delay_time}"
-            )
+            raise BlockSpecError(f"TransportDelay: delay_time must be > 0, got {delay_time}")
         if not isinstance(sample_time, (int, float)) or isinstance(sample_time, bool):
             raise BlockSpecError(
-                f"TransportDelay: sample_time must be a number, "
-                f"got {type(sample_time).__name__}"
+                f"TransportDelay: sample_time must be a number, got {type(sample_time).__name__}"
             )
         if sample_time <= 0.0:
-            raise BlockSpecError(
-                f"TransportDelay: sample_time must be > 0, got {sample_time}"
-            )
+            raise BlockSpecError(f"TransportDelay: sample_time must be > 0, got {sample_time}")
 
         # N = ceil(delay/sample) + 1。+1 は Simulator の update-before-output 順序
         # (ADR-0015) を補正するため (左シフトで失われる 1 サンプル分を吸収)。

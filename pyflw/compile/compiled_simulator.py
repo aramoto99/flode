@@ -190,9 +190,7 @@ def _build_compiled_simulator(
     for b in simulator.blocks:
         if isinstance(b, Subsystem):
             inner_blocks = getattr(b, "_inner_blocks", [])
-            has_control = any(
-                isinstance(ib, (Trigger, Enable)) for ib in inner_blocks
-            )
+            has_control = any(isinstance(ib, (Trigger, Enable)) for ib in inner_blocks)
             if has_control:
                 raise BlockSpecError(
                     f"Simulator.compile: Subsystem {b.id!r} contains a Trigger / "

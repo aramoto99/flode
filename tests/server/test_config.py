@@ -30,7 +30,7 @@ class TestLoadConfigFile:
     def test_parses_full_schema(self, tmp_path: Path) -> None:
         cfg_path = tmp_path / "config.toml"
         cfg_path.write_text(
-            '[server]\n'
+            "[server]\n"
             'host = "0.0.0.0"\n'
             "port = 9000\n"
             "\n"
@@ -193,9 +193,7 @@ class TestSettingsResolver:
         assert host == "127.0.0.1"
         assert port == 8770
 
-    def test_workspace_expanduser(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_workspace_expanduser(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
         ws = home / "projA"
         ws.mkdir(parents=True)

@@ -243,9 +243,9 @@ class TestFcnSecurityRejection:
     @pytest.mark.parametrize(
         "expr",
         [
-            "u[0][0]",   # chained subscript: u[0] の戻り値への subscript
+            "u[0][0]",  # chained subscript: u[0] の戻り値への subscript
             "(u + u)[0]",  # BinOp 結果への subscript
-            "(-u)[0]",   # UnaryOp 結果への subscript
+            "(-u)[0]",  # UnaryOp 結果への subscript
         ],
     )
     def test_non_name_subscript_target_rejected(self, expr: str) -> None:
@@ -389,9 +389,7 @@ class TestFcnPersistence:
         assert loaded.expression == "u[0] * (1 + 0.05 * u[0]**2)"
         assert loaded.n_inputs == 1
 
-    def test_load_with_attack_expression_raises_model_load_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_with_attack_expression_raises_model_load_error(self, tmp_path: Path) -> None:
         """``.flw.json`` 経由で流入した攻撃式はロード時に ``ModelLoadError`` で実行前拒否。"""
         bad_payload = {
             "schema_version": CURRENT_SCHEMA_VERSION,

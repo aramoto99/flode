@@ -178,9 +178,7 @@ class TestListBlocks:
             for b in resp.json()["blocks"]
             if b["type_path"] == "pyflw.subsystems.control_blocks.Trigger"
         )
-        trigger_type_param = next(
-            p for p in trig["params_spec"] if p["name"] == "trigger_type"
-        )
+        trigger_type_param = next(p for p in trig["params_spec"] if p["name"] == "trigger_type")
         assert trigger_type_param["enum_values"] == [
             "rising",
             "falling",
@@ -307,9 +305,7 @@ class TestSearchKeywords:
             "pyflw.subsystems.control_blocks.Enable",
         ):
             kw = blocks[type_path]["search_keywords"]
-            assert "subsystem" in kw, (
-                f"{type_path}: missing 'subsystem' search keyword, got {kw}"
-            )
+            assert "subsystem" in kw, f"{type_path}: missing 'subsystem' search keyword, got {kw}"
             assert "サブシステム" in kw, (
                 f"{type_path}: missing 'サブシステム' search keyword, got {kw}"
             )

@@ -159,26 +159,24 @@ class TestIsTriggerEdgeBoundaryZero:
         "prev, curr, mode, expected",
         [
             # rising: prev==0 は "0 → positive" なので edge (prev<=0 < curr)
-            (0.0, 1e-300, "rising", True),   # 極小の正方向への変化
-            (0.0, 1.0, "rising", True),       # 典型ケース (0 → positive)
-            (0.0, 0.0, "rising", False),      # prev==curr==0: 変化なし
-            (-0.0, 1.0, "rising", True),      # -0.0 は +0.0 と等価なので edge
-            (0.0, -1.0, "rising", False),     # 0 → negative: rising でない
+            (0.0, 1e-300, "rising", True),  # 極小の正方向への変化
+            (0.0, 1.0, "rising", True),  # 典型ケース (0 → positive)
+            (0.0, 0.0, "rising", False),  # prev==curr==0: 変化なし
+            (-0.0, 1.0, "rising", True),  # -0.0 は +0.0 と等価なので edge
+            (0.0, -1.0, "rising", False),  # 0 → negative: rising でない
             # falling: prev==0 は "0 → negative" なので edge (prev>=0 > curr)
-            (0.0, -1.0, "falling", True),     # 典型ケース
+            (0.0, -1.0, "falling", True),  # 典型ケース
             (0.0, -1e-300, "falling", True),  # 極小の負方向への変化
-            (0.0, 0.0, "falling", False),     # 変化なし
-            (-0.0, -1.0, "falling", True),    # -0.0 も >=0 なので edge
-            (0.0, 1.0, "falling", False),     # 0 → positive: falling でない
+            (0.0, 0.0, "falling", False),  # 変化なし
+            (-0.0, -1.0, "falling", True),  # -0.0 も >=0 なので edge
+            (0.0, 1.0, "falling", False),  # 0 → positive: falling でない
             # either: 0 を境界にして変化があれば edge
-            (0.0, 1.0, "either", True),       # 上昇 edge
-            (0.0, -1.0, "either", True),      # 下降 edge
-            (0.0, 0.0, "either", False),      # 変化なし
+            (0.0, 1.0, "either", True),  # 上昇 edge
+            (0.0, -1.0, "either", True),  # 下降 edge
+            (0.0, 0.0, "either", False),  # 変化なし
         ],
     )
-    def test_zero_boundary(
-        self, prev: float, curr: float, mode: str, expected: bool
-    ) -> None:
+    def test_zero_boundary(self, prev: float, curr: float, mode: str, expected: bool) -> None:
         # 0.0 境界での符号変化は仕様通り検出される
         assert is_trigger_edge(prev, curr, mode) is expected
 
@@ -190,23 +188,21 @@ class TestIsTriggerEdgeExtremeValues:
         "prev, curr, mode, expected",
         [
             # 極小値 (非ゼロだが非常に小さい正)
-            (1e-300, 1e-299, "rising", False),   # 正 → 正: rising でない
-            (-1e-300, 1e-300, "rising", True),   # 負 → 正: rising edge
+            (1e-300, 1e-299, "rising", False),  # 正 → 正: rising でない
+            (-1e-300, 1e-300, "rising", True),  # 負 → 正: rising edge
             # 極大値
-            (1e300, 2e300, "rising", False),      # 正 → 正: edge なし
-            (-1e300, 1e300, "either", True),      # 極小負 → 極大正
+            (1e300, 2e300, "rising", False),  # 正 → 正: edge なし
+            (-1e300, 1e300, "either", True),  # 極小負 → 極大正
             # 無限大
-            (math.inf, 1.0, "falling", False),    # +inf → 正: falling でない (curr>0)
-            (-math.inf, 0.0, "rising", False),    # -inf → 0: rising でない (curr は正でない)
-            (-math.inf, 1.0, "rising", True),     # -inf → 正: rising edge
+            (math.inf, 1.0, "falling", False),  # +inf → 正: falling でない (curr>0)
+            (-math.inf, 0.0, "rising", False),  # -inf → 0: rising でない (curr は正でない)
+            (-math.inf, 1.0, "rising", True),  # -inf → 正: rising edge
             (math.inf, -math.inf, "falling", True),  # +inf → -inf: falling edge
-            (-math.inf, math.inf, "either", True),   # 両極: either edge
-            (1.0, math.inf, "rising", False),     # 正 → +inf: prev>0 なのでrising でない
+            (-math.inf, math.inf, "either", True),  # 両極: either edge
+            (1.0, math.inf, "rising", False),  # 正 → +inf: prev>0 なのでrising でない
         ],
     )
-    def test_extreme_values(
-        self, prev: float, curr: float, mode: str, expected: bool
-    ) -> None:
+    def test_extreme_values(self, prev: float, curr: float, mode: str, expected: bool) -> None:
         # 極値・無限大でも通常の比較セマンティクスが維持される
         assert is_trigger_edge(prev, curr, mode) is expected
 
@@ -254,10 +250,10 @@ class TestIsTriggerEdgeNegativeBothSides:
     @pytest.mark.parametrize(
         "prev, curr, mode, expected",
         [
-            (-2.0, -1.0, "rising", False),   # 負 → 負 (大きくなる方向): rising でない
+            (-2.0, -1.0, "rising", False),  # 負 → 負 (大きくなる方向): rising でない
             (-1.0, -2.0, "falling", False),  # 負 → 負 (小さくなる方向): falling でない
-            (-2.0, -1.0, "either", False),   # 符号変化なし: either でも edge なし
-            (-1.0, -2.0, "either", False),   # 同上
+            (-2.0, -1.0, "either", False),  # 符号変化なし: either でも edge なし
+            (-1.0, -2.0, "either", False),  # 同上
         ],
     )
     def test_negative_to_negative(

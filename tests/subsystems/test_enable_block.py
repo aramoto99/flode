@@ -177,9 +177,7 @@ class TestEnableMultipleInstances:
             ("reset", "reset"),
         ],
     )
-    def test_all_policy_combinations_independent(
-        self, swe: str, owd: str
-    ) -> None:
+    def test_all_policy_combinations_independent(self, swe: str, owd: str) -> None:
         # 全 policy 組み合わせを同時生成しても干渉しない
         e = Enable(states_when_enabling=swe, outputs_when_disabled=owd)  # type: ignore[arg-type]
         assert e.states_when_enabling == swe

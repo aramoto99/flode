@@ -103,22 +103,17 @@ class RandomSource(Block):
             )
         if not isinstance(sample_time, (int, float)) or isinstance(sample_time, bool):
             raise BlockSpecError(
-                f"RandomSource: sample_time must be a number, "
-                f"got {type(sample_time).__name__}"
+                f"RandomSource: sample_time must be a number, got {type(sample_time).__name__}"
             )
         if sample_time <= 0.0:
-            raise BlockSpecError(
-                f"RandomSource: sample_time must be > 0, got {sample_time}"
-            )
+            raise BlockSpecError(f"RandomSource: sample_time must be > 0, got {sample_time}")
         # 後で distribution を切り替えたときの罠を回避するため、両方の制約を強制する。
         if not (low < high):
             raise BlockSpecError(
                 f"RandomSource: require low < high for uniform, got [{low}, {high}]"
             )
         if std <= 0.0:
-            raise BlockSpecError(
-                f"RandomSource: require std > 0 for gaussian, got {std}"
-            )
+            raise BlockSpecError(f"RandomSource: require std > 0 for gaussian, got {std}")
         # bool は int 派生だが、論理値を seed として受け取らない (型の意図と乖離)。
         if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
             raise BlockSpecError(
@@ -127,9 +122,7 @@ class RandomSource(Block):
         try:
             rng = np.random.default_rng(seed)
         except (OverflowError, ValueError) as exc:
-            raise BlockSpecError(
-                f"RandomSource: invalid seed {seed!r}: {exc}"
-            ) from exc
+            raise BlockSpecError(f"RandomSource: invalid seed {seed!r}: {exc}") from exc
 
         super().__init__(
             id=id,

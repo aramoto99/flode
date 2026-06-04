@@ -51,8 +51,8 @@ class TestRoundingModes:
             # round (banker's)
             ("round", 2.7, 3.0),
             ("round", -2.7, -3.0),
-            ("round", 2.5, 2.0),   # banker's: 2.5 → 2 (even)
-            ("round", 3.5, 4.0),   # banker's: 3.5 → 4 (even)
+            ("round", 2.5, 2.0),  # banker's: 2.5 → 2 (even)
+            ("round", 3.5, 4.0),  # banker's: 3.5 → 4 (even)
             # trunc
             ("trunc", 2.7, 2.0),
             ("trunc", -2.7, -2.0),

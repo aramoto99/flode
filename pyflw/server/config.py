@@ -38,9 +38,9 @@ _logger = logging.getLogger("pyflw.server.config")
 # ``Settings.workspace_root`` は TOML では ``workspace`` キーとして書く (= path 全体
 # を root に統一するための alias)。それ以外のフィールド名は dataclass と TOML で同じ。
 _WORKSPACE_TOML_KEY = "workspace"
-_SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(
-    f.name for f in dataclasses.fields(Settings)
-) - {"workspace_root"}
+_SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dataclasses.fields(Settings)) - {
+    "workspace_root"
+}
 
 _KNOWN_SECTIONS = ("server", "settings")
 _KNOWN_SERVER_KEYS: frozenset[str] = frozenset({"host", "port"})
@@ -252,13 +252,10 @@ class SettingsResolver:
         else:
             if not isinstance(host_raw, str):
                 raise PyflwError(
-                    f"Invalid type for [server].host: expected str, "
-                    f"got {type(host_raw).__name__}"
+                    f"Invalid type for [server].host: expected str, got {type(host_raw).__name__}"
                 )
             if not host_raw:
-                raise PyflwError(
-                    "Invalid value for [server].host: must be a non-empty string."
-                )
+                raise PyflwError("Invalid value for [server].host: must be a non-empty string.")
             host = host_raw
 
         port_raw = self._lookup("port", section="server")
@@ -268,8 +265,7 @@ class SettingsResolver:
             # bool は int のサブクラスなので明示的に弾く (port = true を許さない)
             if isinstance(port_raw, bool) or not isinstance(port_raw, int):
                 raise PyflwError(
-                    f"Invalid type for [server].port: expected int, "
-                    f"got {type(port_raw).__name__}"
+                    f"Invalid type for [server].port: expected int, got {type(port_raw).__name__}"
                 )
             port_value = port_raw
         return host, port_value
@@ -322,10 +318,9 @@ class SettingsResolver:
             return default
         if isinstance(raw, bool) or not isinstance(raw, int):
             raise PyflwError(
-                f"Invalid type for [{section}].{key}: expected int, "
-                f"got {type(raw).__name__}"
+                f"Invalid type for [{section}].{key}: expected int, got {type(raw).__name__}"
             )
-        return raw
+        return int(raw)
 
     def _resolve_bool_field(self, key: str, *, section: str, default: bool) -> bool:
         raw = self._lookup(key, section=section)
@@ -333,14 +328,11 @@ class SettingsResolver:
             return default
         if not isinstance(raw, bool):
             raise PyflwError(
-                f"Invalid type for [{section}].{key}: expected bool, "
-                f"got {type(raw).__name__}"
+                f"Invalid type for [{section}].{key}: expected bool, got {type(raw).__name__}"
             )
         return raw
 
-    def _resolve_str_list_field(
-        self, key: str, *, section: str, default: list[str]
-    ) -> list[str]:
+    def _resolve_str_list_field(self, key: str, *, section: str, default: list[str]) -> list[str]:
         raw = self._lookup(key, section=section)
         if raw is None:
             return list(default)
@@ -438,9 +430,7 @@ def generate_config_template(path: Path, *, force: bool) -> None:
         PyflwError: ``force=False`` で既存ファイルあり。
     """
     if path.exists() and not force:
-        raise PyflwError(
-            f"Config file already exists: {path}. Use --force to overwrite."
-        )
+        raise PyflwError(f"Config file already exists: {path}. Use --force to overwrite.")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_TEMPLATE, encoding="utf-8")
     _logger.info("Wrote config template to %s", path)
