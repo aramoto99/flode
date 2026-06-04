@@ -24,7 +24,8 @@
 //    section の中身は indent しない (= ラベル右寄せ整列で揃える)。
 // 8. **背景色 / ダークモード**: 永続的 out-of-scope (memory `feedback_no_dark_mode`)。
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 // ---------------------------------------------------------------------------
 // Native widget Tailwind class constants
@@ -474,6 +475,186 @@ export function TextInput({
       data-testid={testId}
       aria-label={ariaLabel}
       className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass}`}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-0011 (v5.4.0): Array & expression editor primitives
+// ---------------------------------------------------------------------------
+//
+// 既存の NumberInput / TextInput が `<input>` ベースなのに対し、本セクションの
+// primitive は `<textarea>` ベース。配列・長文字列を Inspector で直接編集
+// できるようにする。
+//
+// 検証ポリシー: JsonArrayEditor は blur 時に JSON.parse + 要素型チェックを行い、
+// 失敗時は textarea 直下に inline error 表示する (commit しない、既存
+// NumberInput が空文字列で commit しないのと同方針)。
+// ExpressionEditor は検証なし (block `__init__` 側で構文 reject、ADR-0053
+// 寛容方針)。
+
+interface JsonArrayEditorProps {
+  value: unknown[];
+  onCommit: (next: unknown[]) => void;
+  elementType: "number" | "string";
+  testid?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  widthClass?: string;
+}
+
+/**
+ * 1-D 配列を JSON textarea で編集する primitive (SPEC-0011 §1.1)。
+ *
+ * 編集中は内部 draft state を持ち、blur 時に JSON.parse + Array.isArray +
+ * 要素型一致を検証する。検証 OK なら `onCommit(parsed)`、NG なら textarea 直下に
+ * inline error 表示 + commit しない。
+ *
+ * @example
+ *   <JsonArrayEditor
+ *     value={[0.0, 1.0, 2.0]}
+ *     elementType="number"
+ *     onCommit={(next) => updateBlock("breakpoints", next)}
+ *   />
+ */
+export function JsonArrayEditor({
+  value,
+  onCommit,
+  elementType,
+  testid,
+  placeholder,
+  disabled = false,
+  widthClass = "min-w-0 flex-1 max-w-[220px]",
+}: JsonArrayEditorProps): JSX.Element {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<string>(() => JSON.stringify(value));
+  const [error, setError] = useState<string | null>(null);
+
+  // value を canonical JSON で memo 化することで、useEffect の依存配列に
+  // 関数呼び出し結果を直接渡す形 (ESLint 警告 + 毎 render stringify) を回避する。
+  // 親が参照のみ変えて内容が同じケース (= re-render only) では draft を触らない。
+  const canonical = useMemo(() => JSON.stringify(value), [value]);
+  useEffect(() => {
+    setDraft((prev) => (prev === canonical ? prev : canonical));
+    setError(null);
+  }, [canonical]);
+
+  const handleBlur = (): void => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draft);
+    } catch (e) {
+      setError(
+        t("inspector.array.parse_error", {
+          message: (e as Error).message,
+        }),
+      );
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      setError(t("inspector.array.not_array"));
+      return;
+    }
+    const elementOK =
+      elementType === "number"
+        ? parsed.every(
+            (x) => typeof x === "number" && Number.isFinite(x),
+          )
+        : parsed.every((x) => typeof x === "string");
+    if (!elementOK) {
+      setError(
+        t("inspector.array.element_type", { expected: elementType }),
+      );
+      return;
+    }
+    setError(null);
+    onCommit(parsed);
+  };
+
+  const rows = Math.max(2, draft.split("\n").length);
+
+  return (
+    <div className={`flex flex-col ${widthClass}`}>
+      <textarea
+        value={draft}
+        rows={rows}
+        spellCheck={false}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={handleBlur}
+        data-testid={testid}
+        aria-label={testid}
+        aria-invalid={error !== null}
+        className={`${INPUT_MONO_CLS} w-full resize-y`}
+      />
+      {error !== null && (
+        <div
+          role="alert"
+          data-testid={testid ? `${testid}-error` : undefined}
+          className="mt-0.5 text-[10px] text-rose-700"
+        >
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ExpressionEditorProps {
+  value: string;
+  onCommit: (next: string) => void;
+  testid?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  widthClass?: string;
+  maxRows?: number;
+}
+
+/**
+ * 長文字列 (Fcn.expression 等) を多行 textarea で編集する primitive
+ * (SPEC-0011 §1.2)。
+ *
+ * monospace、auto-resize (min 2 / max `maxRows` 行、default 8)。検証は
+ * 行わず、blur 時に raw draft を `onCommit` に渡す。構文 reject は block
+ * `__init__` 側で行われ Run 時に構造化エラーとして表示される。
+ *
+ * @example
+ *   <ExpressionEditor
+ *     value="u[0]**2 + sin(t)"
+ *     onCommit={(next) => updateBlock("expression", next)}
+ *   />
+ */
+export function ExpressionEditor({
+  value,
+  onCommit,
+  testid,
+  placeholder,
+  disabled = false,
+  widthClass = "min-w-0 flex-1 max-w-[220px]",
+  maxRows = 8,
+}: ExpressionEditorProps): JSX.Element {
+  const [draft, setDraft] = useState<string>(value);
+
+  // value が外部から変わった場合 (model load 等) は draft を同期する。
+  useEffect(() => {
+    setDraft((prev) => (prev === value ? prev : value));
+  }, [value]);
+
+  const rows = Math.max(2, Math.min(maxRows, draft.split("\n").length));
+
+  return (
+    <textarea
+      value={draft}
+      rows={rows}
+      spellCheck={false}
+      placeholder={placeholder}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onCommit(draft)}
+      data-testid={testid}
+      aria-label={testid}
+      className={`${INPUT_MONO_CLS} resize-y ${widthClass}`}
     />
   );
 }
