@@ -5,6 +5,7 @@ from .continuous import (
     StateSpace,
     TransferFunction,
 )
+from .discontinuities import RateLimiter, Relay
 from .discrete import (
     DiscreteIntegrator,
     DiscreteStateSpace,
@@ -65,8 +66,10 @@ __all__ = [
     "PulseGenerator",
     "Ramp",
     "RandomSource",
+    "RateLimiter",
     "RateTransition",
     "RelationalOperator",
+    "Relay",
     "Saturation",
     "Scope",
     "Sign",

@@ -98,6 +98,7 @@
   "palette.no_match": "No blocks match.",
   "palette.category.sources": "Sources",
   "palette.category.mathops": "Math",
+  "palette.category.discontinuities": "Discontinuities",
   "palette.category.continuous": "Continuous",
   "palette.category.discrete": "Discrete",
   "palette.category.logic": "Logic",

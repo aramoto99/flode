@@ -184,6 +184,17 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # logic
     "pyflw.blocks.logic.RelationalOperator": ("logic", "Relational", "logic.relational"),
     "pyflw.blocks.logic.LogicalOperator": ("logic", "Logical", "logic.logical"),
+    # SPEC-0012 / ADR-0059 (v5.5.0): Wave 2 第 1 弾 = stateful discontinuities
+    "pyflw.blocks.discontinuities.RateLimiter": (
+        "discontinuities",
+        "Rate Limiter",
+        "discontinuities.ratelimiter",
+    ),
+    "pyflw.blocks.discontinuities.Relay": (
+        "discontinuities",
+        "Relay",
+        "discontinuities.relay",
+    ),
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
     "pyflw.blocks.lookup.LookupTable1D": (
         "lookup",
@@ -289,6 +300,9 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     # SPEC-0010: sample_time は required (default なし)。palette drop 時の補完
     # 値として 0.1 を供給する (UnitDelay 等と同パターン)。
     "pyflw.blocks.random_source.RandomSource": {"sample_time": 0.1},
+    # SPEC-0012: 両ブロックとも sample_time required。同パターンで補完。
+    "pyflw.blocks.discontinuities.RateLimiter": {"sample_time": 0.1},
+    "pyflw.blocks.discontinuities.Relay": {"sample_time": 0.1},
     "pyflw.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
     # ADR-0036: RateTransition は input_sample_time / output_sample_time が

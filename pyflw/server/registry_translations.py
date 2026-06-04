@@ -411,6 +411,39 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "2 入力を ==、!=、<、<=、>、>= で比較。",
         },
     },
+    # SPEC-0012 / ADR-0059 (v5.5.0): Wave 2 第 1 弾 = stateful discontinuities
+    "pyflw.blocks.discontinuities.RateLimiter": {
+        "en": {
+            "display_name": "Rate Limiter",
+            "docstring_summary": (
+                "Limit input slew rate (rising / falling) sample-by-sample, "
+                "holding between samples."
+            ),
+        },
+        "ja": {
+            "display_name": "変化率リミッタ",
+            "docstring_summary": (
+                "入力の変化率 (rising / falling) をサンプル時刻で制限し、"
+                "中間時刻は前値を hold。"
+            ),
+        },
+    },
+    "pyflw.blocks.discontinuities.Relay": {
+        "en": {
+            "display_name": "Relay",
+            "docstring_summary": (
+                "Hysteresis ON / OFF switch: state flips when input crosses "
+                "switch_on_point / switch_off_point thresholds."
+            ),
+        },
+        "ja": {
+            "display_name": "リレー",
+            "docstring_summary": (
+                "ヒステリシス付き ON / OFF スイッチ: "
+                "switch_on_point / switch_off_point でしきい値遷移。"
+            ),
+        },
+    },
     "pyflw.blocks.logic.LogicalOperator": {
         "en": {
             "display_name": "Logical",

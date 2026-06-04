@@ -35,6 +35,9 @@ import type {
 const CATEGORY_ORDER = [
   "sources",
   "mathops",
+  // SPEC-0012 / ADR-0059 (v5.5.0): 状態を持つ非線形要素 (Rate Limiter / Relay)。
+  // 業界標準ツールと同じ「discontinuities」名。mathops の隣で「動的な非線形」を集約。
+  "discontinuities",
   // SPEC-0008 / ADR-0059 (v5.1.0): 静的非線形マップ (math 近傍)
   "lookup",
   // SPEC-0009 / ADR-0059 (v5.2.0): 任意式評価 (math 近傍)

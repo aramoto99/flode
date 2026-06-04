@@ -98,6 +98,7 @@
   "palette.no_match": "該当するブロックがありません。",
   "palette.category.sources": "ソース",
   "palette.category.mathops": "演算",
+  "palette.category.discontinuities": "不連続要素",
   "palette.category.continuous": "連続系",
   "palette.category.discrete": "離散系",
   "palette.category.logic": "論理",

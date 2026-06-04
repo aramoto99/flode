@@ -269,6 +269,41 @@ const CompareToZeroGlyph = ({ className }: GlyphProps): JSX.Element => (
 );
 
 // =============================================================================
+// Discontinuities (SPEC-0012 / ADR-0059 v5.5.0)
+// =============================================================================
+
+// RateLimiter: 急峻 step 入力 (波線) → slew-limited ramp 出力 (滑らか) の対比を
+// 1 viewbox で表現。左半分は jagged な入力、右半分は傾き制限された出力。
+const RateLimiterGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* faint axis */}
+    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
+    {/* 入力 step (急峻、左半分) */}
+    <polyline points="3,18 7,18 7,5 11,5" strokeWidth="1" opacity="0.5" />
+    {/* 出力 ramp (slew-limited、入力 step を滑らかに追従) */}
+    <polyline points="11,18 14,12 17,8 21,5" />
+  </svg>
+);
+
+// Relay: ヒステリシス入出力特性 (input-output curve、閉じた矩形ループ)。
+// 実線 = OFF→ON 遷移経路 (下行き)、点線 = ON→OFF 遷移経路 (上行き)。
+// 中央の矢印で時計回り方向を示唆。
+const RelayGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* OFF hold (下) → ON 遷移 (右辺上昇) → ON hold (上) を実線で */}
+    <polyline points="3,17 14,17 14,7 21,7" />
+    {/* ON hold (上) → OFF 遷移 (左辺下降) → OFF hold (下) を破線で (戻り経路) */}
+    <polyline
+      points="21,7 10,7 10,17 3,17"
+      strokeDasharray="2 1.2"
+      opacity="0.55"
+    />
+    {/* 中央の矢印ヒント (時計回り = 右辺で下から上へ ON 遷移) */}
+    <polyline points="12,15 14,12 16,15" strokeWidth="1" opacity="0.7" />
+  </svg>
+);
+
+// =============================================================================
 // Lookup Tables (SPEC-0008 / ADR-0059 v5.1.0)
 // =============================================================================
 
@@ -922,6 +957,9 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.mathops.DeadZone": DeadZoneGlyph,
   "pyflw.blocks.mathops.CompareToConstant": CompareToConstantGlyph,
   "pyflw.blocks.mathops.CompareToZero": CompareToZeroGlyph,
+  // SPEC-0012 / ADR-0059 (v5.5.0): Discontinuities (Wave 2 第 1 弾)
+  "pyflw.blocks.discontinuities.RateLimiter": RateLimiterGlyph,
+  "pyflw.blocks.discontinuities.Relay": RelayGlyph,
   // SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables
   "pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,
   // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
