@@ -32,6 +32,7 @@ import {
   ExpressionEditor,
   INPUT_CLS,
   INPUT_MONO_CLS,
+  GridEditor,
   JsonArrayEditor,
   PropertyGrid,
   PropertyRow,
@@ -292,6 +293,36 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     }}
                     onBlur={(e) => commit(k, e.target.value, "number")}
                     className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
+                  />
+                ) : Array.isArray(v) && Array.isArray(v[0]) ? (
+                  // SPEC-0017 §UI 設計: 2-D 配列を GridEditor で編集
+                  // breakpoints_row / breakpoints_col の長さで shape link 警告
+                  <GridEditor
+                    value={v as number[][]}
+                    rowCountLink={
+                      Array.isArray(
+                        (block.params as Record<string, unknown>)["breakpoints_row"],
+                      )
+                        ? (
+                            (block.params as Record<string, unknown>)[
+                              "breakpoints_row"
+                            ] as unknown[]
+                          ).length
+                        : undefined
+                    }
+                    colCountLink={
+                      Array.isArray(
+                        (block.params as Record<string, unknown>)["breakpoints_col"],
+                      )
+                        ? (
+                            (block.params as Record<string, unknown>)[
+                              "breakpoints_col"
+                            ] as unknown[]
+                          ).length
+                        : undefined
+                    }
+                    testid={`param-input-${k}`}
+                    onChange={(next) => commit(k, next, "array")}
                   />
                 ) : Array.isArray(v) ? (
                   // SPEC-0011 §1.1: 1-D 配列を JsonArrayEditor で編集

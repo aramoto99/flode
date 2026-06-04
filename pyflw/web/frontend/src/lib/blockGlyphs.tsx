@@ -335,6 +335,22 @@ const LookupTable1DGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0017 / ADR-0064 v5.6.0: 2-D Lookup の格子 + 4 セル + 中心の補間点。
+// 1-D の曲線 vs 2-D の格子で視覚的に区別する。
+const LookupTable2DGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 3x3 格子 (= 2x2 cells) */}
+    <line x1="5" y1="5" x2="19" y2="5" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+    <line x1="5" y1="19" x2="19" y2="19" />
+    <line x1="5" y1="5" x2="5" y2="19" />
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="19" y1="5" x2="19" y2="19" />
+    {/* 中央セル内の補間点 */}
+    <circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 // =============================================================================
 // User-Defined Functions (SPEC-0009 / ADR-0059 v5.2.0)
 // =============================================================================
@@ -1034,6 +1050,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.discontinuities.Relay": RelayGlyph,
   // SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables
   "pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,
+  // SPEC-0017 / ADR-0064 (v5.6.0): Lookup Tables 2-D (Wave 3 第 1 弾)
+  "pyflw.blocks.lookup.LookupTable2D": LookupTable2DGlyph,
   // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
   "pyflw.blocks.userfunc.Fcn": FcnGlyph,
   // continuous

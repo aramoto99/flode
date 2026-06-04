@@ -658,3 +658,280 @@ export function ExpressionEditor({
     />
   );
 }
+
+// ---------------------------------------------------------------------------
+// GridEditor (SPEC-0017 / ADR-0064)
+// ---------------------------------------------------------------------------
+//
+// 2-D 数値配列 (= LookupTable2D の table) を Property Inspector 風スタイルで
+// 編集する primitive。SPEC-0018 (n-D Lookup) / SPEC-0019 (Prelookup) で再利用
+// 予定。
+//
+// 設計判断:
+// - 各セルは ``<input type="number">`` + ``INPUT_MONO_CLS`` (NumberInput と
+//   同じ class)。onBlur で commit。
+// - 行/列追加は ``[+ Row]`` / ``[+ Col]`` の SecondaryButton (右クリックメニュー
+//   不採用 — discoverability 優先、ADR-0064 §C-1)。
+// - 行/列削除は header の hover 表示 ``[×]`` ボタン (確認 dialog なし)。
+// - shape link: ``rowCountLink`` / ``colCountLink`` で breakpoints の長さと
+//   shape の整合性を表示。不一致時は ! 警告。
+// - 50×50 を超えると上部に警告メッセージ (実用上限指針)。
+// - ``[JSON ▼]`` トグルで JsonArrayEditor (2-D 配列) にフォールバック。
+
+const GRID_WARNING_THRESHOLD = 50;
+
+interface GridEditorProps {
+  /** 2-D 数値配列。jagged は呼び出し側で防ぐ前提 (= 構築時 validate)。 */
+  value: number[][];
+  /** commit 時のコールバック (cell edit / row|col add|remove / JSON mode commit)。 */
+  onChange: (next: number[][]) => void;
+  /** 行ラベル (省略時は ``r[i]``)。 */
+  rowLabels?: string[];
+  /** 列ラベル (省略時は ``c[j]``)。 */
+  colLabels?: string[];
+  /** breakpoints_row.length。表示の shape 整合性チェック用。 */
+  rowCountLink?: number;
+  /** breakpoints_col.length。同上。 */
+  colCountLink?: number;
+  /** disable 全セル / ボタン。 */
+  readOnly?: boolean;
+  /** test selector base。 */
+  testid?: string;
+}
+
+/**
+ * 2-D 数値テーブルを編集する primitive (SPEC-0017 §UI 設計)。
+ *
+ * - セル個別編集 + 行/列追加削除 + JSON モードフォールバック
+ * - shape link: breakpoints の長さと一致しない場合に警告表示
+ * - 50×50 を超えるとパフォーマンス警告
+ *
+ * @example
+ *   <GridEditor
+ *     value={[[0, 10], [20, 30]]}
+ *     rowCountLink={bp_row.length}
+ *     colCountLink={bp_col.length}
+ *     onChange={(next) => updateBlock("table", next)}
+ *   />
+ */
+export function GridEditor({
+  value,
+  onChange,
+  rowLabels,
+  colLabels,
+  rowCountLink,
+  colCountLink,
+  readOnly = false,
+  testid,
+}: GridEditorProps): JSX.Element {
+  const { t } = useTranslation();
+  const [jsonMode, setJsonMode] = useState(false);
+
+  const nRows = value.length;
+  const nCols = nRows > 0 ? value[0]!.length : 0;
+
+  const shapeMismatch =
+    (rowCountLink !== undefined && rowCountLink !== nRows) ||
+    (colCountLink !== undefined && colCountLink !== nCols);
+  const tooLarge = nRows > GRID_WARNING_THRESHOLD || nCols > GRID_WARNING_THRESHOLD;
+
+  const handleCellChange = (i: number, j: number, raw: string): void => {
+    const parsed = parseFloat(raw);
+    // 空文字列 / NaN 入力では commit しない (NumberInput と同方針)。
+    // "nan" / "inf" の明示文字列は input type=text モードがないので、
+    // 入力は数値以外を受けない。tests でも NumberInput と同じ前提。
+    if (raw.trim() === "" || Number.isNaN(parsed)) return;
+    const next = value.map((row, ri) =>
+      ri === i ? row.map((v, ci) => (ci === j ? parsed : v)) : row.slice(),
+    );
+    onChange(next);
+  };
+
+  const handleAddRow = (): void => {
+    const newRow = nCols > 0 ? new Array(nCols).fill(0) : [0];
+    onChange([...value.map((r) => r.slice()), newRow]);
+  };
+
+  const handleAddCol = (): void => {
+    if (nRows === 0) {
+      onChange([[0]]);
+      return;
+    }
+    onChange(value.map((row) => [...row, 0]));
+  };
+
+  const handleRemoveRow = (i: number): void => {
+    if (nRows <= 1) return;
+    onChange(value.filter((_, ri) => ri !== i).map((r) => r.slice()));
+  };
+
+  const handleRemoveCol = (j: number): void => {
+    if (nCols <= 1) return;
+    onChange(value.map((row) => row.filter((_, ci) => ci !== j)));
+  };
+
+  const handleJsonCommit = (parsed: unknown[]): void => {
+    // 2-D 配列であることと、行ごとの長さが揃っていることを確認。
+    if (!Array.isArray(parsed) || parsed.length === 0) return;
+    const isRegular2D = parsed.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === (parsed[0] as unknown[]).length &&
+        row.every((cell) => typeof cell === "number" && Number.isFinite(cell)),
+    );
+    if (!isRegular2D) return;
+    onChange(parsed as number[][]);
+    setJsonMode(false);
+  };
+
+  if (jsonMode) {
+    return (
+      <div className="flex flex-col gap-1" data-testid={testid}>
+        <div className="flex items-center justify-end gap-1">
+          <SecondaryButton
+            onClick={() => setJsonMode(false)}
+            testId={testid ? `${testid}-back-to-grid` : undefined}
+          >
+            {t("inspector.grid.back_to_grid")}
+          </SecondaryButton>
+        </div>
+        <JsonArrayEditor
+          value={value as unknown[]}
+          elementType="number"
+          onCommit={handleJsonCommit}
+          testid={testid ? `${testid}-json` : undefined}
+          widthClass="w-full"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1" data-testid={testid}>
+      <div className="flex items-center justify-between gap-1">
+        {tooLarge ? (
+          <span className="text-[10px] text-amber-700" role="status">
+            {t("inspector.grid.large_warning", { rows: nRows, cols: nCols })}
+          </span>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-1">
+          <SecondaryButton
+            onClick={handleAddRow}
+            disabled={readOnly}
+            testId={testid ? `${testid}-add-row` : undefined}
+          >
+            {t("inspector.grid.add_row")}
+          </SecondaryButton>
+          <SecondaryButton
+            onClick={handleAddCol}
+            disabled={readOnly}
+            testId={testid ? `${testid}-add-col` : undefined}
+          >
+            {t("inspector.grid.add_col")}
+          </SecondaryButton>
+          <SecondaryButton
+            onClick={() => setJsonMode(true)}
+            testId={testid ? `${testid}-to-json` : undefined}
+          >
+            {t("inspector.grid.json_mode")}
+          </SecondaryButton>
+        </div>
+      </div>
+
+      <table
+        className="border-collapse border border-slate-400 text-[11px]"
+        data-testid={testid ? `${testid}-table` : undefined}
+      >
+        <thead>
+          <tr>
+            <th className="w-8 border border-slate-400 bg-slate-100" />
+            {Array.from({ length: nCols }, (_, j) => (
+              <th
+                key={`col-${j}`}
+                className="group relative border border-slate-400 bg-slate-100 px-1 text-center font-normal text-slate-600"
+              >
+                <span>{colLabels?.[j] ?? `c[${j}]`}</span>
+                {!readOnly && nCols > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCol(j)}
+                    className="absolute right-0 top-0 hidden h-4 w-4 cursor-pointer items-center justify-center text-rose-600 group-hover:flex"
+                    aria-label={t("inspector.grid.remove_col", { index: j })}
+                    data-testid={testid ? `${testid}-remove-col-${j}` : undefined}
+                  >
+                    ×
+                  </button>
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {value.map((row, i) => (
+            <tr key={`row-${i}`} className="group">
+              <th className="relative border border-slate-400 bg-slate-100 px-1 text-center font-normal text-slate-600">
+                <span>{rowLabels?.[i] ?? `r[${i}]`}</span>
+                {!readOnly && nRows > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveRow(i)}
+                    className="absolute right-0 top-0 hidden h-4 w-4 cursor-pointer items-center justify-center text-rose-600 group-hover:flex"
+                    aria-label={t("inspector.grid.remove_row", { index: i })}
+                    data-testid={testid ? `${testid}-remove-row-${i}` : undefined}
+                  >
+                    ×
+                  </button>
+                )}
+              </th>
+              {row.map((cell, j) => (
+                <td
+                  key={`cell-${i}-${j}`}
+                  className="border border-slate-400 p-0"
+                >
+                  <input
+                    type="number"
+                    step="any"
+                    defaultValue={cell}
+                    disabled={readOnly}
+                    onBlur={(e) => handleCellChange(i, j, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className={`${INPUT_MONO_CLS} w-16 border-0`}
+                    data-testid={
+                      testid ? `${testid}-cell-${i}-${j}` : undefined
+                    }
+                    aria-label={
+                      testid ? `${testid}-cell-${i}-${j}` : `cell-${i}-${j}`
+                    }
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="text-[10px] text-slate-500" data-testid={testid ? `${testid}-shape` : undefined}>
+        {shapeMismatch ? (
+          <span className="text-amber-700" role="alert">
+            {t("inspector.grid.shape_mismatch", {
+              rows: nRows,
+              cols: nCols,
+              expectedRows: rowCountLink ?? nRows,
+              expectedCols: colCountLink ?? nCols,
+            })}
+          </span>
+        ) : (
+          <span>
+            {t("inspector.grid.shape", { rows: nRows, cols: nCols })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
