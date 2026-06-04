@@ -85,7 +85,7 @@ function makeFcnModel(expression: string): FlwModel {
 }
 
 function makeStateSpaceModel(): FlwModel {
-  // 2-D 配列は readOnly 維持 (SPEC §スコープ外)
+  // SPEC-0017: 2-D 数値配列は GridEditor で editable に昇格
   return {
     schema_version: "0.9",
     simulator: {
@@ -108,6 +108,39 @@ function makeStateSpaceModel(): FlwModel {
           B: [[0], [1]],
           C: [[1, 0]],
           D: [[0]],
+        },
+      },
+    ],
+    connections: [],
+    layout: {},
+  };
+}
+
+function makeLookupTable2DModel(): FlwModel {
+  return {
+    schema_version: "0.9",
+    simulator: {
+      t_end: 1,
+      dt: 0.01,
+      solver: "RK45",
+      rtol: 1e-3,
+      atol: 1e-6,
+      dt_base: null,
+    },
+    blocks: [
+      {
+        id: "LT2D_1",
+        type: "pyflw.blocks.lookup.LookupTable2D",
+        params: {
+          breakpoints_row: [0.0, 1.0, 2.0],
+          breakpoints_col: [0.0, 0.5, 1.0],
+          table: [
+            [0.0, 1.0, 2.0],
+            [3.0, 4.0, 5.0],
+            [6.0, 7.0, 8.0],
+          ],
+          interpolation: "linear",
+          extrapolation: "clip",
         },
       },
     ],
@@ -226,19 +259,50 @@ describe("ParameterPanel: SPEC-0011 array & expression editor branches", () => {
     ).toBe("TEXTAREA");
   });
 
-  it("keeps 2-D arrays in readOnly section (StateSpace.A)", () => {
+  it("SPEC-0017: 2-D numeric arrays render GridEditor (StateSpace.A)", () => {
+    // SPEC-0017 で 2-D 数値配列が editable に昇格 (SPEC-0011 時点では readOnly)
     useAppStore.setState({
       editingModel: makeStateSpaceModel(),
       editingPath: [],
       selectedNodeId: "SS_1",
     });
     renderPanel();
-    // 2-D 配列は editable に上がらず、JsonArrayEditor は render されない
-    expect(screen.queryByTestId("param-input-A")).toBeNull();
-    expect(screen.queryByTestId("param-input-B")).toBeNull();
-    // readOnly JSON 表示が存在することの確認 (details 内に A/B/C/D が見える)
-    const readOnlyPre = document.querySelector("details pre");
-    expect(readOnlyPre).toBeTruthy();
-    expect(readOnlyPre!.textContent).toContain('"A"');
+    // GridEditor の base testid (param-input-A) が table を含む
+    expect(screen.queryByTestId("param-input-A-table")).toBeTruthy();
+  });
+
+  it("SPEC-0017: LookupTable2D.table renders GridEditor with shape link", () => {
+    useAppStore.setState({
+      editingModel: makeLookupTable2DModel(),
+      editingPath: [],
+      selectedNodeId: "LT2D_1",
+    });
+    renderPanel();
+    // table param が GridEditor で render される
+    expect(screen.queryByTestId("param-input-table-table")).toBeTruthy();
+    // breakpoints_row / breakpoints_col は JsonArrayEditor (textarea)
+    expect(
+      screen.queryByTestId("param-input-breakpoints_row")?.tagName,
+    ).toBe("TEXTAREA");
+    expect(
+      screen.queryByTestId("param-input-breakpoints_col")?.tagName,
+    ).toBe("TEXTAREA");
+  });
+
+  it("SPEC-0017: GridEditor cell edit commits to model", () => {
+    useAppStore.setState({
+      editingModel: makeLookupTable2DModel(),
+      editingPath: [],
+      selectedNodeId: "LT2D_1",
+    });
+    renderPanel();
+    const cell = screen.getByTestId(
+      "param-input-table-cell-1-1",
+    ) as HTMLInputElement;
+    fireEvent.change(cell, { target: { value: "999" } });
+    fireEvent.blur(cell);
+    const m = useAppStore.getState().editingModel!;
+    const blk = m.blocks.find((b) => b.id === "LT2D_1")!;
+    expect((blk.params.table as number[][])[1]![1]).toBe(999);
   });
 });

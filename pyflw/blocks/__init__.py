@@ -16,7 +16,7 @@ from .discrete import (
 )
 from .file_writer import FileWriter
 from .logic import LogicalOperator, RelationalOperator
-from .lookup import LookupTable1D
+from .lookup import LookupTable1D, LookupTable2D
 from .mathops import (
     Abs,
     CompareToConstant,
@@ -62,6 +62,7 @@ __all__ = [
     "Integrator",
     "LogicalOperator",
     "LookupTable1D",
+    "LookupTable2D",
     "MathFunction",
     "Merge",
     "MimoTransferFunction",
