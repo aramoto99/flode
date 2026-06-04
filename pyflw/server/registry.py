@@ -117,6 +117,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "pyflw.blocks.sources.Ramp": ("sources", "Ramp", "sources.ramp"),
     "pyflw.blocks.sources.Clock": ("sources", "Clock", "sources.clock"),
     "pyflw.blocks.sources.PulseGenerator": ("sources", "Pulse Generator", "sources.pulse"),
+    # SPEC-0010 / ADR-0059 (v5.3.0): Random / Noise source (Wave 1 第 3 弾、最終)
+    "pyflw.blocks.random_source.RandomSource": (
+        "sources",
+        "Random Source",
+        "sources.random",
+    ),
     # math
     "pyflw.blocks.mathops.Gain": ("mathops", "Gain", "math.gain"),
     "pyflw.blocks.mathops.Sum": ("mathops", "Sum", "math.sum"),
@@ -280,6 +286,9 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "sample_time": 0.1,
     },
     "pyflw.blocks.discrete.UnitDelay": {"sample_time": 0.1},
+    # SPEC-0010: sample_time は required (default なし)。palette drop 時の補完
+    # 値として 0.1 を供給する (UnitDelay 等と同パターン)。
+    "pyflw.blocks.random_source.RandomSource": {"sample_time": 0.1},
     "pyflw.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
     "pyflw.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
     # ADR-0036: RateTransition は input_sample_time / output_sample_time が

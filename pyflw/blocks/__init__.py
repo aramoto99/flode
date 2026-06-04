@@ -15,7 +15,6 @@ from .discrete import (
 )
 from .logic import LogicalOperator, RelationalOperator
 from .lookup import LookupTable1D
-from .userfunc import Fcn
 from .mathops import (
     Abs,
     CompareToConstant,
@@ -31,9 +30,11 @@ from .mathops import (
     Sum,
     TrigFunction,
 )
+from .random_source import RandomSource
 from .routing import Demux, From, Goto, Mux, Switch
 from .sinks import Display, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
+from .userfunc import Fcn
 
 __all__ = [
     "Abs",
@@ -63,6 +64,7 @@ __all__ = [
     "Product",
     "PulseGenerator",
     "Ramp",
+    "RandomSource",
     "RateTransition",
     "RelationalOperator",
     "Saturation",
