@@ -385,6 +385,8 @@ const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Elemen
     <line x1="19" y1="18" x2="19" y2="14" />
     {/* table の底 */}
     <line x1="9" y1="18" x2="20" y2="18" strokeWidth="0.6" opacity="0.4" />
+    {/* 出力 1 本 (右辺へ) */}
+    <line x1="20" y1="12" x2="22" y2="12" />
   </svg>
 );
 

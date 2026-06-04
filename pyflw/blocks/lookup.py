@@ -637,7 +637,7 @@ class InterpolationUsingPrelookup(Block):
 
     ``k`` は :class:`Prelookup` が出力する想定 ``[0, n-2]`` だが、上流に
     別のブロックが入っているケースに備えて黙って ``clip([0, n-2])`` する
-    (``BlockEvalError`` は投げない、ADR-0067 §R3)。
+    (``BlockEvalError`` は投げない、ADR-0067 §B-1 / Consequences §ネガティブ)。
 
     Args:
         table: テーブル値配列 (1-D、長さ >= 2)。既定値 ``[0.0, 1.0]``。
@@ -703,11 +703,13 @@ class InterpolationUsingPrelookup(Block):
         tbl = self._table
         n = tbl.size
 
-        # k の nan / inf は黙って伝播 (= nan 出力)。それ以外は clip。
+        # k / f の nan は伝播 (= nan 出力)。
         if np.isnan(k_raw) or np.isnan(f):
             return np.array([float("nan")])
         # k は黙って clip ([0, n-2])。Prelookup の出力域だが上流ブロック自由なので保険。
-        k = int(np.clip(int(k_raw), 0, n - 2))
+        # ``np.clip`` を ``int()`` より先に評価することで ``k_raw=±inf`` でも
+        # OverflowError を避けて n-2 / 0 に飽和させる (ADR-0056 構造化エラー protocol)。
+        k = int(np.clip(k_raw, 0, n - 2))
 
         if self.interpolation == "linear":
             y = float(tbl[k]) + f * (float(tbl[k + 1]) - float(tbl[k]))

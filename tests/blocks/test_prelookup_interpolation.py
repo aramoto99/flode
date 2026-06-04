@@ -11,10 +11,21 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from pyflw.blocks import InterpolationUsingPrelookup, LookupTable1D, Prelookup
+from pyflw import Simulator
+from pyflw.blocks import (
+    InterpolationUsingPrelookup,
+    LookupTable1D,
+    Prelookup,
+    Scope,
+    Sine,
+)
+from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
 from pyflw.exceptions import BlockEvalError, BlockSpecError
 
 _EMPTY_X = np.array([])
@@ -61,6 +72,11 @@ class TestPrelookupConstruction:
     def test_invalid_extrapolation_raises(self) -> None:
         with pytest.raises(BlockSpecError, match="extrapolation must be one of"):
             Prelookup(extrapolation="reflect")
+
+    def test_empty_bp_raises(self) -> None:
+        """空配列も長さ不足として弾かれる (size=0 経路)。"""
+        with pytest.raises(BlockSpecError, match="at least 2"):
+            Prelookup(breakpoints=[])
 
 
 # ===========================================================================
@@ -276,6 +292,44 @@ class TestInterpolationUsingPrelookupKBoundary:
 # ===========================================================================
 
 
+class TestInterpolationEdgeCases:
+    """SPEC §テスト戦略 §TestInterpolationEdgeCases: nan/inf 入力と table 内 nan。"""
+
+    def test_nan_k_propagates(self) -> None:
+        blk = InterpolationUsingPrelookup(table=[0.0, 10.0, 20.0])
+        y = blk.output(0.0, _EMPTY_X, np.array([float("nan"), 0.5]))
+        assert np.isnan(y[0])
+
+    def test_nan_f_propagates(self) -> None:
+        blk = InterpolationUsingPrelookup(table=[0.0, 10.0, 20.0])
+        y = blk.output(0.0, _EMPTY_X, np.array([0, float("nan")]))
+        assert np.isnan(y[0])
+
+    def test_inf_k_clipped_silently(self) -> None:
+        """code-reviewer MUST 1 回帰: k=+inf でも OverflowError ではなく n-2 に clip。"""
+        blk = InterpolationUsingPrelookup(table=[0.0, 10.0, 20.0])  # n=3, n-2=1
+        # k=+inf → clip → 1 → table[1] + 0.5 * (table[2] - table[1]) = 15
+        y = blk.output(0.0, _EMPTY_X, np.array([float("inf"), 0.5]))
+        assert float(y[0]) == pytest.approx(15.0)
+
+    def test_neg_inf_k_clipped_silently(self) -> None:
+        blk = InterpolationUsingPrelookup(table=[0.0, 10.0, 20.0])
+        y = blk.output(0.0, _EMPTY_X, np.array([float("-inf"), 0.5]))
+        assert float(y[0]) == pytest.approx(5.0)  # k clip→0、(0+10)/2
+
+    def test_inf_f_linear_extrap(self) -> None:
+        """f=+inf は線形補間式で +inf になる (table 値が有限なら sign 保持)。"""
+        blk = InterpolationUsingPrelookup(table=[0.0, 10.0])
+        y = blk.output(0.0, _EMPTY_X, np.array([0, float("inf")]))
+        assert float(y[0]) == float("inf")
+
+    def test_nan_table_propagates(self) -> None:
+        """table 内 nan は補間で伝播 (= 「未定義領域」表現として許容)。"""
+        blk = InterpolationUsingPrelookup(table=[float("nan"), 10.0, 20.0])
+        y = blk.output(0.0, _EMPTY_X, np.array([0, 0.5]))
+        assert np.isnan(y[0])
+
+
 class TestPrelookupInterpolationCombined:
     @pytest.mark.parametrize("u", [0.0, 0.3, 1.0, 1.5, 2.7, 3.0])
     def test_linear_matches_lookup_table_1d(self, u: float) -> None:
@@ -304,6 +358,38 @@ class TestPrelookupInterpolationCombined:
             y_pipeline = float(iup.output(0.0, _EMPTY_X, kf)[0])
             y_direct = float(lt.output(0.0, _EMPTY_X, np.array([u]))[0])
             assert y_pipeline == pytest.approx(y_direct), f"mismatch at u={u}"
+
+    @pytest.mark.parametrize("u", [0.0, 0.3, 1.5, 2.7])
+    def test_flat_matches_lookup_table_1d(self, u: float) -> None:
+        """flat 補間も LookupTable1D(flat) と数値一致 (定義域内のみ)。"""
+        bp = [0.0, 1.0, 2.0, 3.0]
+        tbl = [0.0, 10.0, 30.0, 60.0]
+        p = Prelookup(breakpoints=bp)
+        iup = InterpolationUsingPrelookup(table=tbl, interpolation="flat")
+        lt = LookupTable1D(breakpoints=bp, table=tbl, interpolation="flat")
+
+        kf = p.output(0.0, _EMPTY_X, np.array([u]))
+        y_pipeline = float(iup.output(0.0, _EMPTY_X, kf)[0])
+        y_direct = float(lt.output(0.0, _EMPTY_X, np.array([u]))[0])
+        assert y_pipeline == pytest.approx(y_direct)
+
+    @pytest.mark.parametrize("u", [0.0, 0.3, 0.7, 1.3, 2.7])
+    def test_nearest_non_boundary_matches_lookup_table_1d(self, u: float) -> None:
+        """nearest 補間 (f != 0.5) は LookupTable1D(nearest) と数値一致。
+
+        f = 0.5 ちょうどは scipy ``kind="nearest"`` が左側採用 vs 本実装が右側採用で
+        1 LSB 差ありなので除外 (ADR-0067 §OQ5)。
+        """
+        bp = [0.0, 1.0, 2.0, 3.0]
+        tbl = [0.0, 10.0, 30.0, 60.0]
+        p = Prelookup(breakpoints=bp)
+        iup = InterpolationUsingPrelookup(table=tbl, interpolation="nearest")
+        lt = LookupTable1D(breakpoints=bp, table=tbl, interpolation="nearest")
+
+        kf = p.output(0.0, _EMPTY_X, np.array([u]))
+        y_pipeline = float(iup.output(0.0, _EMPTY_X, kf)[0])
+        y_direct = float(lt.output(0.0, _EMPTY_X, np.array([u]))[0])
+        assert y_pipeline == pytest.approx(y_direct)
 
     def test_shared_breakpoints_multiple_tables(self) -> None:
         """1 Prelookup → 複数 Interpolation で異なる table を補間できる (SPEC §設計目的)。"""
@@ -347,3 +433,87 @@ class TestPrelookupRegistry:
             assert "ja" in entry and "en" in entry
             assert entry["ja"]["display_name"]
             assert entry["en"]["display_name"]
+
+
+# ===========================================================================
+# Integration: end-to-end Simulator runs + save/load round-trip
+# ===========================================================================
+
+
+class TestPrelookupInModel:
+    def test_end_to_end_single_pair(self) -> None:
+        """Sine → Prelookup → InterpolationUsingPrelookup → Scope の end-to-end 実行。"""
+        sim = Simulator(t_end=0.5, dt=0.05)
+        sim.add(Sine(amplitude=1.0, frequency=1.0, id="src"))
+        sim.add(Prelookup(breakpoints=[-1.0, 0.0, 1.0], id="prel"))
+        sim.add(
+            InterpolationUsingPrelookup(table=[-10.0, 0.0, 10.0], interpolation="linear", id="iup")
+        )
+        sim.add(Scope(n_inputs=1, id="scope"))
+
+        sim.connect("src", "prel")
+        sim.connect("prel", "iup", src_idx=0, dst_idx=0)
+        sim.connect("prel", "iup", src_idx=1, dst_idx=1)
+        sim.connect("iup", "scope")
+
+        sim.run()
+        scope = sim.get_block("scope")
+        assert len(scope.times) > 0
+        values = np.asarray(scope.values).flatten()
+        # table=[-10, 0, 10] と Sine([-1,1]) の線形補間で値は ±10 範囲内
+        assert float(values.max()) <= 10.0 + 1e-9
+        assert float(values.min()) >= -10.0 - 1e-9
+
+    def test_save_load_roundtrip(self, tmp_path: Path) -> None:
+        """`.flw.json` save/load round-trip でブロック params が復元される。"""
+        sim = Simulator(t_end=0.1, dt=0.01)
+        sim.add(
+            Prelookup(
+                breakpoints=[0.0, 1.0, 2.5, 5.0],
+                extrapolation="linear",
+                id="prel_persist",
+            )
+        )
+        sim.add(
+            InterpolationUsingPrelookup(
+                table=[0.0, 5.0, 12.5, 25.0],
+                interpolation="nearest",
+                id="iup_persist",
+            )
+        )
+
+        path = tmp_path / "model.flw.json"
+        sim.save(str(path))
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
+
+        sim_loaded = Simulator.load(str(path))
+        prel = sim_loaded.get_block("prel_persist")
+        iup = sim_loaded.get_block("iup_persist")
+        assert isinstance(prel, Prelookup)
+        assert isinstance(iup, InterpolationUsingPrelookup)
+        assert prel._params["breakpoints"] == [0.0, 1.0, 2.5, 5.0]
+        assert prel._params["extrapolation"] == "linear"
+        assert iup._params["table"] == [0.0, 5.0, 12.5, 25.0]
+        assert iup._params["interpolation"] == "nearest"
+
+    def test_fan_out_three_lookups(self) -> None:
+        """1 Prelookup → 3 InterpolationUsingPrelookup の fan-out モデル (SPEC §設計目的)。"""
+        sim = Simulator(t_end=0.3, dt=0.05)
+        sim.add(Sine(amplitude=1.0, frequency=1.0, id="src"))
+        sim.add(Prelookup(breakpoints=[-1.0, 0.0, 1.0], id="prel"))
+        for i, tbl in enumerate(([0.0, 5.0, 10.0], [0.0, 10.0, 20.0], [0.0, 50.0, 100.0])):
+            sim.add(InterpolationUsingPrelookup(table=tbl, id=f"iup_{i}"))
+            sim.connect("prel", f"iup_{i}", src_idx=0, dst_idx=0)
+            sim.connect("prel", f"iup_{i}", src_idx=1, dst_idx=1)
+        sim.add(Scope(n_inputs=3, id="scope"))
+        sim.connect("src", "prel")
+        for i in range(3):
+            sim.connect(f"iup_{i}", "scope", dst_idx=i)
+
+        sim.run()
+        scope = sim.get_block("scope")
+        values = np.asarray(scope.values)
+        # 3 つの出力は table の比 (1:2:10) に比例 (線形補間の線形性)
+        assert values.shape[1] == 3
