@@ -777,6 +777,21 @@ const ScopeGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0016 / ADR-0066 (v0.39.0): FileWriter glyph。ディスクアイコン + 矢印で
+// 「データをファイルに書く」を視覚化。
+const FileWriterGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 矢印 (入力 → ディスク) */}
+    <line x1="3" y1="12" x2="9" y2="12" />
+    <polyline points="7,10 9,12 7,14" strokeWidth="1" />
+    {/* ディスク (文書アイコン風) */}
+    <polyline points="11,5 18,5 21,8 21,19 11,19 11,5" />
+    <line x1="13" y1="10" x2="19" y2="10" strokeWidth="1" opacity="0.7" />
+    <line x1="13" y1="13" x2="19" y2="13" strokeWidth="1" opacity="0.7" />
+    <line x1="13" y1="16" x2="17" y2="16" strokeWidth="1" opacity="0.7" />
+  </svg>
+);
+
 const TerminatorGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <line x1="4" y1="12" x2="16" y2="12" />
@@ -992,6 +1007,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.sinks.Display": DisplayGlyph,
   "pyflw.blocks.sinks.XYGraph": XYGraphGlyph,
   "pyflw.blocks.sinks.Terminator": TerminatorGlyph,
+  // SPEC-0016 / ADR-0066 (v0.39.0): FileWriter
+  "pyflw.blocks.file_writer.FileWriter": FileWriterGlyph,
   // subsystems
   "pyflw.subsystems.subsystem.Subsystem": SubsystemGlyph,
   "pyflw.subsystems.ports.Inport": InportGlyph,

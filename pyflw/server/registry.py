@@ -216,6 +216,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
     "pyflw.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
     "pyflw.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
+    # SPEC-0016 / ADR-0066 (v0.39.0): FileWriter (Wave 2 最終、データエクスポート)
+    "pyflw.blocks.file_writer.FileWriter": ("sinks", "File Writer", "sinks.file_writer"),
     # subsystems
     "pyflw.subsystems.subsystem.Subsystem": (
         "subsystems",
