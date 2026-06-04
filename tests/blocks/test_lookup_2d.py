@@ -181,12 +181,17 @@ class TestLookupTable2DInterpolationFlat:
             (0.0, 0.0, 0.0),  # 左下角 = table[0][0]
             (0.5, 0.5, 0.0),  # cell (0, 0) 内 → table[0][0]
             (0.99, 0.99, 0.0),  # cell (0, 0) 内 → table[0][0]
+            # 右端 breakpoint `u = bp[-1]`: 2×2 では cell が 1 つしかなく、
+            # 「右上 cell」が物理的に存在しない (= clip(len-1, 0, len-2) = 0)。
+            # よって左下 cell の値 table[0][0] にフォールバック。3×3 以上では
+            # `test_flat_3x3_right_top_cell` が右上 cell の挙動を担保する。
+            (1.0, 1.0, 0.0),
         ],
     )
     def test_flat_2x2_cell_left_bottom(
         self, simple_2x2: dict, u0: float, u1: float, expected: float
     ) -> None:
-        """2×2 では cell が 1 つだけ。常に table[0][0] = 左下角値。"""
+        """2×2 では cell が 1 つだけ。境界点も含めて常に table[0][0] = 左下角値。"""
         blk = LookupTable2D(**simple_2x2, interpolation="flat")
         assert _out(blk, u0, u1) == pytest.approx(expected)
 

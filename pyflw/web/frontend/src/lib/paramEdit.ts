@@ -11,8 +11,9 @@ export function isEditableParam(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** ParameterPanel が直接編集可能な型 (number / string / bool / 1-D array)。
- *  v5.4.0 (SPEC-0011) で 1-D 配列を editable に追加。2-D 以上は readOnly 維持。 */
+/** ParameterPanel が直接編集可能な型 (number / string / bool / 1-D array / 2-D array)。
+ *  v5.4.0 (SPEC-0011) で 1-D 配列を editable に追加。
+ *  v5.6.0 (SPEC-0017) で 2-D 数値配列 (= LookupTable2D.table) を GridEditor 経由で追加。 */
 export type PrimitiveParam = number | string | boolean | unknown[];
 
 /**
@@ -20,15 +21,26 @@ export type PrimitiveParam = number | string | boolean | unknown[];
  *
  * - number / string / bool: 既存通り editable
  * - 1-D 配列 (全要素が number / string): SPEC-0011 で editable に追加
- * - 2-D 以上の配列 / dict / null / ndarray: readOnly JSON 表示
+ * - 2-D 数値配列 (= 行が全て number 配列で regular shape): SPEC-0017 GridEditor 対応
+ * - 3-D 以上の配列 / dict / null / ndarray: readOnly JSON 表示
  */
 export function isPrimitiveParam(value: unknown): value is PrimitiveParam {
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "string") return true;
   if (typeof value === "boolean") return true;
   if (Array.isArray(value)) {
-    // 1-D のみ: 全要素が number / string のみ受け入れる (= 2-D 配列 / object
-    // 要素を含むものは readOnly に落とす、SPEC-0011 §スコープ外)
+    if (value.length === 0) return true; // 空配列は 1-D 扱い (元の挙動維持)
+    // 2-D 数値配列 (SPEC-0017): 全行が number 配列で長さが揃っている
+    if (Array.isArray(value[0])) {
+      const firstLen = (value[0] as unknown[]).length;
+      return value.every(
+        (row) =>
+          Array.isArray(row) &&
+          row.length === firstLen &&
+          row.every((cell) => typeof cell === "number"),
+      );
+    }
+    // 1-D: 全要素が number / string
     return value.every((v) => typeof v === "number" || typeof v === "string");
   }
   return false;

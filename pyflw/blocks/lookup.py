@@ -478,7 +478,7 @@ class LookupTable2D(Block):
                 raise BlockEvalError(
                     f"LookupTable2D[{self.name}]: input ({u0}, {u1}) is outside "
                     f"breakpoints_row [{float(self._bp_row[0])}, {float(self._bp_row[-1])}] "
-                    f"x breakpoints_col [{float(self._bp_col[0])}, {float(self._bp_col[-1])}] "
+                    f"× breakpoints_col [{float(self._bp_col[0])}, {float(self._bp_col[-1])}] "
                     f"and extrapolation='error'",
                     block_id=self.id,
                 )

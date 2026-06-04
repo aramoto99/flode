@@ -736,11 +736,19 @@ export function GridEditor({
   const tooLarge = nRows > GRID_WARNING_THRESHOLD || nCols > GRID_WARNING_THRESHOLD;
 
   const handleCellChange = (i: number, j: number, raw: string): void => {
-    const parsed = parseFloat(raw);
-    // 空文字列 / NaN 入力では commit しない (NumberInput と同方針)。
-    // "nan" / "inf" の明示文字列は input type=text モードがないので、
-    // 入力は数値以外を受けない。tests でも NumberInput と同じ前提。
-    if (raw.trim() === "" || Number.isNaN(parsed)) return;
+    const trimmed = raw.trim();
+    if (trimmed === "") return;
+    // SPEC-0017 §エッジケース: "nan" / "inf" / "-inf" の明示文字列を許容
+    // (table 内 nan は「未定義領域」表現として LookupTable2D が伝播する)。
+    const lower = trimmed.toLowerCase();
+    let parsed: number;
+    if (lower === "nan") parsed = NaN;
+    else if (lower === "inf" || lower === "+inf" || lower === "infinity") parsed = Infinity;
+    else if (lower === "-inf" || lower === "-infinity") parsed = -Infinity;
+    else {
+      parsed = parseFloat(trimmed);
+      if (Number.isNaN(parsed)) return;
+    }
     const next = value.map((row, ri) =>
       ri === i ? row.map((v, ci) => (ci === j ? parsed : v)) : row.slice(),
     );
@@ -772,12 +780,14 @@ export function GridEditor({
 
   const handleJsonCommit = (parsed: unknown[]): void => {
     // 2-D 配列であることと、行ごとの長さが揃っていることを確認。
+    // nan / inf は許容 (LookupTable2D が「未定義領域」として伝播するため、
+    // table 内 NaN / Inf は UI でも保持する。SPEC-0017 §エッジケース)。
     if (!Array.isArray(parsed) || parsed.length === 0) return;
     const isRegular2D = parsed.every(
       (row) =>
         Array.isArray(row) &&
         row.length === (parsed[0] as unknown[]).length &&
-        row.every((cell) => typeof cell === "number" && Number.isFinite(cell)),
+        row.every((cell) => typeof cell === "number"),
     );
     if (!isRegular2D) return;
     onChange(parsed as number[][]);
