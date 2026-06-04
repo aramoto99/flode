@@ -80,6 +80,14 @@ const PulseGeneratorGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0010 / ADR-0059 (v5.3.0): RandomSource glyph。サンプル時刻で hold する
+// 確率的入力を「ジャギー (noise-like) な階段波」で表現。axis 省略でコンパクト。
+const RandomSourceGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <polyline points="3,14 6,14 6,8 9,8 9,17 12,17 12,11 15,11 15,6 18,6 18,15 21,15" />
+  </svg>
+);
+
 // =============================================================================
 // Math
 // =============================================================================
@@ -896,6 +904,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "pyflw.blocks.sources.Ramp": RampGlyph,
   "pyflw.blocks.sources.Clock": ClockGlyph,
   "pyflw.blocks.sources.PulseGenerator": PulseGeneratorGlyph,
+  // SPEC-0010 / ADR-0059 (v5.3.0): Random / Noise source
+  "pyflw.blocks.random_source.RandomSource": RandomSourceGlyph,
   // math
   "pyflw.blocks.mathops.Gain": GainGlyph,
   "pyflw.blocks.mathops.Sum": SumGlyph,
