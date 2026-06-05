@@ -5,6 +5,122 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-06-05 — 標準ブロックライブラリ拡張 (ADR-0059 Wave 1 + 2 + 3 完了)
+
+ADR-0059 で計画された標準ブロックライブラリの 3 つの Wave を統合リリース。
+業界標準ブロック線図ツールからの移行ユーザーが頻出する **テーブル補間** /
+**任意式** / **ノイズ源** / **不連続要素** / **多ポートルーティング** /
+**輸送遅延** / **データエクスポート** の網羅性ギャップを解消する。
+
+新規ブロック **15 個**、Inspector primitive **3 個** (JsonArrayEditor /
+ExpressionEditor / GridEditor)、registry スキーマ拡張 (動的 `n_inputs`
+resolver) を含む大型 minor リリース。
+
+### Added — Wave 1: Lookup / UserFunc / Random の 3 大ブロッカー解消
+
+- **SPEC-0008 / ADR-0059** `LookupTable1D`: 1 次元区分補間ブロック
+  (linear / nearest / flat × clip / linear / error)。`scipy.interpolate.interp1d`
+  で構築、breakpoints の厳密単調検証 + `BlockSpecError` ラップ
+- **SPEC-0009 / ADR-0059** `Fcn`: ユーザー定義の任意式 `y = f(t, u)` を
+  **AST whitelist 三重防御** (compile mode="eval" + AST node 検証 +
+  builtins={}) で安全評価。許可関数 15 個 (sin/cos/exp/log/sqrt/abs/
+  min/max/clip/atan2 等)
+- **SPEC-0010 / ADR-0059** `RandomSource`: 離散時間 sample-and-hold 乱数源
+  (uniform / normal / band-limited、`np.random.Generator` で seed 決定性)。
+  `solve_ivp` の可変ステップ下でも同一 t で同一値を返す state hold 設計
+
+### Added — Wave 2: 既存カテゴリの穴を埋める 5 ブロック
+
+- **SPEC-0012 / ADR-0059** `RateLimiter` + `Relay`: state を持つ非線形要素
+  (`discontinuities` カテゴリ新設)。サンプル境界での slew rate 制限と
+  ヒステリシス遷移
+- **SPEC-0013 / ADR-0059** `Rounding`: 整数化 (`floor` / `ceil` / `round` /
+  `trunc`) を `mode` で切替
+- **SPEC-0014 / ADR-0059** `MultiportSwitch` + `Merge`: routing 拡張
+  (制御信号で N 入力から 1 つ選択 / 任意 N 入力の最後発火を pass through)
+- **SPEC-0015 / ADR-0065** `TransportDelay`: 純粋な信号遅延ブロック
+  (delay buffer = `ceil(delay_time / sample_time) + 1`)。連続時間モデルで
+  パイプライン遅延を表現
+- **SPEC-0016 / ADR-0066** `FileWriter`: シミュレーション中の信号を `.csv`
+  / `.npz` に保存する sink ブロック (run 終了時に flush)
+
+### Added — Wave 3: Lookup / UserFunc の深化 (4 SPEC)
+
+- **SPEC-0011 / ADR-0028** (Wave 3 前準備): Inspector primitives
+  `<JsonArrayEditor>` + `<ExpressionEditor>` を `inspector.tsx` に新設。
+  Property Inspector 風で 1-D 配列 / 長文字列を編集可能 (`isPrimitiveParam`
+  拡張)
+- **SPEC-0017 / ADR-0064** `LookupTable2D`: 2 次元 (双線形) 補間。
+  `scipy.interpolate.RegularGridInterpolator` で構築、flat / linear 外挿を
+  独自実装。Inspector primitive **`<GridEditor>`** を新設 (`[+ Row]` /
+  `[+ Col]` / `[×]` 行列削除 / `[JSON ▼]` フォールバック / 50×50 超で警告 /
+  shape link)
+- **SPEC-0019 / ADR-0067** `Prelookup` + `InterpolationUsingPrelookup`:
+  分離型 lookup パターン (検索コスト共有)。**純 numpy 実装** (XLA
+  トレース可能候補、SPEC-0017/0008 とは対照的)。2 段階 1-D 外挿合成で
+  Prelookup 側が extrapolation を集約
+- **SPEC-0018 / ADR-0068** `LookupTableND`: n 次元 (3〜6 軸推奨) lookup。
+  registry スキーマに **動的 `n_inputs`** 追加 (`n_inputs_resolver:
+  "len(params.breakpoints_axes)"` の safe evaluator、prototype-chain 遮断 +
+  own-property 限定)。3-D 以上の table 編集は `<JsonArrayEditor>` の
+  `elementType="nested"` で受理 (slice viewer は将来 SPEC)
+- **SPEC-0020** Fcn 関数集合拡張: 双曲線 (sinh / cosh / tanh) / log2 / exp2 /
+  丸め系 (floor / ceil / round / trunc / sign) / hypot / fmod の **12 関数**
+  と定数 **pi / e** を追加。三重防御の構造は不変、純粋追加
+
+### Added — Inspector primitive と frontend 整備
+
+- `<JsonArrayEditor>` (SPEC-0011): 1-D 配列を JSON textarea で編集 +
+  blur 時 `JSON.parse` + 要素型検証 + inline error 表示
+- `<ExpressionEditor>` (SPEC-0011): Fcn.expression 等の長文字列を monospace
+  textarea (auto-resize)
+- `<GridEditor>` (SPEC-0017): 2-D 数値配列の Property Inspector 風 grid
+  編集 UI
+- `BlockMetadata.n_inputs_resolver?: string` (SPEC-0018): registry payload
+  に動的 port 数の resolver 式を optional 同梱
+- `resolveNInputs()` (SPEC-0018): `len(params.<attr>)` のみ受理する
+  safe evaluator (security-reviewer 監査済)
+
+### Added — 新規 ADR
+
+- **ADR-0064**: SPEC-0017 LookupTable2D + GridEditor primitive 設計判断
+  (scipy RegularGridInterpolator 採用、flat 補間左下角ホールド、
+  2 段階 1-D 外挿合成、GridEditor `[+ Row] / [+ Col]` 明示ボタン)
+- **ADR-0065**: SPEC-0015 TransportDelay 設計判断 (delay buffer 設計)
+- **ADR-0066**: SPEC-0016 FileWriter 設計判断 (.csv / .npz 形式)
+- **ADR-0067**: SPEC-0019 Prelookup 設計判断 (純 numpy / 2 段階 1-D 外挿)
+- **ADR-0068**: SPEC-0018 LookupTableND 設計判断 (registry 動的 `n_inputs` /
+  slice viewer / 軸数 6 警告)
+
+### Changed
+
+- `isPrimitiveParam` (`pyflw/web/frontend/src/lib/paramEdit.ts`):
+  2-D / n-D 数値配列 (regular shape) を editable に昇格 (SPEC-0017 + 0018)
+- `JsonArrayEditor.elementType` (`pyflw/web/frontend/src/components/ui/inspector.tsx`):
+  `"nested"` mode 追加 (再帰的 number 検証で n-D 配列を受理、SPEC-0018)
+- `ParameterPanel` の widget 切替分岐:
+  1-D 配列 → JsonArrayEditor / 2-D 数値配列 → GridEditor / 3-D 以上 →
+  JsonArrayEditor (nested) の 3 段階に整理
+
+### Fixed
+
+- `chore: ruff format + mypy fix` (commit `9952d6d`, 2026-06-03):
+  Wave 2 マージ後の CI lint 失敗を解消 (41 ファイル一括 format +
+  `np.savez` / `_resolve_int_field` の mypy 修正)
+
+### Frontend bundle / CI
+
+- bundle 影響: GridEditor primitive で +3〜5 KB (ADR-0023 1MB 予算の 0.5%)
+- CI ガード追加: registry vs frontend 3 連携 (CATEGORY_ORDER / i18n keys /
+  GLYPHS) の整合性テスト (`tests/server/test_palette_category_order.py`)
+
+### Compatibility
+
+- **JSON schema**: 0.9 維持 (全 SPEC で純粋追加、optional param のみ)。
+  v5.0.x で保存した `.flw.json` は v0.39.0 で完全互換でロード可
+- **公開 API**: 既存 `LookupTable1D` / `Fcn` / `Subsystem` 等の挙動・API
+  ともに変更なし (ADR-0038 v0.13.0 凍結対象)。本リリースは新規追加のみ
+
 ## [0.38.1] - 2026-05-27 — control category ブロックを「subsystem」検索でヒット可能に
 
 ### Fixed
