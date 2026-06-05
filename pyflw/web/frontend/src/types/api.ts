@@ -192,6 +192,10 @@ export interface BlockMetadata {
   search_keywords?: string[];
   // ADR-0021 §(5): drilldown / mask 可否のヒント
   is_container: boolean;
+  // SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver 式 (optional)。
+  // DSL: ``len(params.<attr_name>)`` のみ受理 (safe evaluator)。設定された
+  // ブロックは drop 時 / params 編集時に port 数を再計算する。
+  n_inputs_resolver?: string;
   mask_capable: boolean;
 }
 

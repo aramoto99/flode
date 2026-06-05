@@ -351,6 +351,23 @@ const LookupTable2DGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0018 / ADR-0068 v5.8.0: n-D Lookup の cube 透視図風。3 軸方向の格子を
+// 簡素に描き、n-D 拡張を示唆。
+const LookupTableNDGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    {/* 前面の四角 (x-y 平面) */}
+    <rect x="4" y="8" width="12" height="12" />
+    {/* 背面の四角 (透視図のオフセット) */}
+    <line x1="4" y1="8" x2="8" y2="4" />
+    <line x1="16" y1="8" x2="20" y2="4" />
+    <line x1="16" y1="20" x2="20" y2="16" />
+    <line x1="8" y1="4" x2="20" y2="4" />
+    <line x1="20" y1="4" x2="20" y2="16" />
+    {/* 中央の補間点 */}
+    <circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 // SPEC-0019 / ADR-0067 v5.7.0: Prelookup = 1 入力 → 2 出力分離 (k, f)。
 // 中央の breakpoint 軸からの分岐を視覚化。
 const PrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
@@ -1094,6 +1111,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   // SPEC-0019 / ADR-0067 (v5.7.0): Prelookup 分離型 (Wave 3 第 2 弾)
   "pyflw.blocks.lookup.Prelookup": PrelookupGlyph,
   "pyflw.blocks.lookup.InterpolationUsingPrelookup": InterpolationUsingPrelookupGlyph,
+  // SPEC-0018 / ADR-0068 (v5.8.0): N-D Lookup (Wave 3 第 3 弾)
+  "pyflw.blocks.lookup.LookupTableND": LookupTableNDGlyph,
   // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
   "pyflw.blocks.userfunc.Fcn": FcnGlyph,
   // continuous
