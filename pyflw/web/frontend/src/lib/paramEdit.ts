@@ -11,10 +11,36 @@ export function isEditableParam(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** ParameterPanel が直接編集可能な型 (number / string / bool / 1-D array / 2-D array)。
+/** ParameterPanel が直接編集可能な型 (number / string / bool / n-D array)。
  *  v5.4.0 (SPEC-0011) で 1-D 配列を editable に追加。
- *  v5.6.0 (SPEC-0017) で 2-D 数値配列 (= LookupTable2D.table) を GridEditor 経由で追加。 */
+ *  v5.6.0 (SPEC-0017) で 2-D 数値配列 (= LookupTable2D.table) を GridEditor 経由で追加。
+ *  v5.8.0 (SPEC-0018) で 3-D 以上の n-D 数値配列 (= LookupTableND.table) を JSON 編集で追加。 */
 export type PrimitiveParam = number | string | boolean | unknown[];
+
+/**
+ * 値が n-D 数値配列 (regular shape、全要素 number) かを再帰判定する。
+ * 空配列は規則的とみなす (= true)。
+ */
+function isRegularNumericArray(value: unknown): boolean {
+  if (typeof value === "number") return true;
+  if (!Array.isArray(value)) return false;
+  if (value.length === 0) return true;
+  // 全要素が同じ shape (= 同じ深さ + 同じ長さ) でなければならない
+  const first = value[0];
+  if (typeof first === "number") {
+    return value.every((v) => typeof v === "number");
+  }
+  if (Array.isArray(first)) {
+    const firstLen = first.length;
+    return value.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === firstLen &&
+        isRegularNumericArray(row),
+    );
+  }
+  return false;
+}
 
 /**
  * パラメータ値が直接編集可能か判定する。
@@ -22,7 +48,8 @@ export type PrimitiveParam = number | string | boolean | unknown[];
  * - number / string / bool: 既存通り editable
  * - 1-D 配列 (全要素が number / string): SPEC-0011 で editable に追加
  * - 2-D 数値配列 (= 行が全て number 配列で regular shape): SPEC-0017 GridEditor 対応
- * - 3-D 以上の配列 / dict / null / ndarray: readOnly JSON 表示
+ * - 3-D 以上の n-D 数値配列 (regular shape): SPEC-0018 LookupTableND 対応 (JSON 編集)
+ * - dict / null / ndarray: readOnly JSON 表示
  */
 export function isPrimitiveParam(value: unknown): value is PrimitiveParam {
   if (typeof value === "number") return Number.isFinite(value);
@@ -30,18 +57,14 @@ export function isPrimitiveParam(value: unknown): value is PrimitiveParam {
   if (typeof value === "boolean") return true;
   if (Array.isArray(value)) {
     if (value.length === 0) return true; // 空配列は 1-D 扱い (元の挙動維持)
-    // 2-D 数値配列 (SPEC-0017): 全行が number 配列で長さが揃っている
-    if (Array.isArray(value[0])) {
-      const firstLen = (value[0] as unknown[]).length;
-      return value.every(
-        (row) =>
-          Array.isArray(row) &&
-          row.length === firstLen &&
-          row.every((cell) => typeof cell === "number"),
-      );
-    }
     // 1-D: 全要素が number / string
-    return value.every((v) => typeof v === "number" || typeof v === "string");
+    if (typeof value[0] === "number" || typeof value[0] === "string") {
+      return value.every((v) => typeof v === "number" || typeof v === "string");
+    }
+    // 2-D 以上: 全要素 number の regular shape
+    if (Array.isArray(value[0])) {
+      return isRegularNumericArray(value);
+    }
   }
   return false;
 }

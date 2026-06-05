@@ -294,9 +294,12 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     onBlur={(e) => commit(k, e.target.value, "number")}
                     className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
                   />
-                ) : Array.isArray(v) && Array.isArray(v[0]) ? (
+                ) : Array.isArray(v) &&
+                  Array.isArray(v[0]) &&
+                  !Array.isArray((v[0] as unknown[])[0]) ? (
                   // SPEC-0017 §UI 設計: 2-D 配列を GridEditor で編集
-                  // breakpoints_row / breakpoints_col の長さで shape link 警告
+                  // (3-D 以上は下の Array.isArray(v) 分岐で JsonArrayEditor へ、
+                  //  SPEC-0018 MVP: slice viewer は Phase 2 で実装)
                   <GridEditor
                     value={v as number[][]}
                     rowCountLink={
@@ -326,9 +329,15 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   />
                 ) : Array.isArray(v) ? (
                   // SPEC-0011 §1.1: 1-D 配列を JsonArrayEditor で編集
+                  // SPEC-0018: 3-D 以上の n-D 数値配列 (= LookupTableND.table)
+                  // も elementType="nested" でここに流れる (Phase 1 = JSON 編集のみ)
                   <JsonArrayEditor
                     value={v}
-                    elementType={inferArrayElementType(v)}
+                    elementType={
+                      Array.isArray(v[0])
+                        ? "nested"
+                        : inferArrayElementType(v)
+                    }
                     testid={`param-input-${k}`}
                     placeholder={t(
                       "inspector.array.placeholder",

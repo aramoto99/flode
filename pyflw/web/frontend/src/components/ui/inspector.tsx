@@ -496,11 +496,33 @@ export function TextInput({
 interface JsonArrayEditorProps {
   value: unknown[];
   onCommit: (next: unknown[]) => void;
-  elementType: "number" | "string";
+  /** ``"number"`` / ``"string"`` は 1-D 配列、``"nested"`` は n-D 数値配列 (SPEC-0018)。 */
+  elementType: "number" | "string" | "nested";
   testid?: string;
   placeholder?: string;
   disabled?: boolean;
   widthClass?: string;
+}
+
+/** ``"nested"`` mode の検証: n-D 数値配列 (regular shape、全要素 number)。 */
+function isNestedNumericArray(value: unknown): boolean {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (!Array.isArray(value)) return false;
+  if (value.length === 0) return true;
+  const first = value[0];
+  if (typeof first === "number") {
+    return value.every((v) => typeof v === "number" && Number.isFinite(v));
+  }
+  if (Array.isArray(first)) {
+    const firstLen = first.length;
+    return value.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === firstLen &&
+        isNestedNumericArray(row),
+    );
+  }
+  return false;
 }
 
 /**
@@ -555,12 +577,17 @@ export function JsonArrayEditor({
       setError(t("inspector.array.not_array"));
       return;
     }
-    const elementOK =
-      elementType === "number"
-        ? parsed.every(
-            (x) => typeof x === "number" && Number.isFinite(x),
-          )
-        : parsed.every((x) => typeof x === "string");
+    let elementOK: boolean;
+    if (elementType === "number") {
+      elementOK = parsed.every(
+        (x) => typeof x === "number" && Number.isFinite(x),
+      );
+    } else if (elementType === "string") {
+      elementOK = parsed.every((x) => typeof x === "string");
+    } else {
+      // "nested": n-D 数値配列 (SPEC-0018)、regular shape を再帰検証
+      elementOK = isNestedNumericArray(parsed);
+    }
     if (!elementOK) {
       setError(
         t("inspector.array.element_type", { expected: elementType }),
