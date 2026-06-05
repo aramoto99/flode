@@ -483,3 +483,221 @@ class TestFcnInModel:
         # 線形成分 + 3 次成分 → 振幅は ±1 を少し超える
         assert np.max(y2) > 1.0
         assert np.max(y2) < 1.2
+
+
+# ===========================================================================
+# SPEC-0020: 追加関数 12 個 + 定数 2 個の網羅テスト
+# ===========================================================================
+
+
+def _eval(expr: str, *u_vals: float, t: float = 0.0) -> float:
+    """SPEC-0020 関数評価ヘルパ。``Fcn(expr, n_inputs=len(u_vals)).output(t)``。"""
+    blk = Fcn(expression=expr, n_inputs=len(u_vals))
+    y = blk.output(t, _EMPTY_X, np.array(u_vals, dtype=float))
+    return float(y[0])
+
+
+class TestFcnHyperbolicFunctions:
+    """SPEC-0020: 双曲線関数 sinh / cosh / tanh。"""
+
+    def test_sinh_zero(self) -> None:
+        assert _eval("sinh(u[0])", 0.0) == pytest.approx(0.0)
+
+    def test_sinh_one(self) -> None:
+        # sinh(1) ≈ 1.1752
+        assert _eval("sinh(u[0])", 1.0) == pytest.approx(math.sinh(1.0))
+
+    def test_cosh_zero(self) -> None:
+        assert _eval("cosh(u[0])", 0.0) == pytest.approx(1.0)
+
+    def test_cosh_one(self) -> None:
+        assert _eval("cosh(u[0])", 1.0) == pytest.approx(math.cosh(1.0))
+
+    def test_tanh_zero(self) -> None:
+        assert _eval("tanh(u[0])", 0.0) == pytest.approx(0.0)
+
+    def test_tanh_large(self) -> None:
+        # tanh(10) ≈ 1.0
+        assert _eval("tanh(u[0])", 10.0) == pytest.approx(1.0, abs=1e-6)
+
+
+class TestFcnExtendedLogExp:
+    """SPEC-0020: log2 / exp2。"""
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        [(1.0, 0.0), (2.0, 1.0), (8.0, 3.0), (1024.0, 10.0)],
+    )
+    def test_log2_powers_of_2(self, u: float, expected: float) -> None:
+        assert _eval("log2(u[0])", u) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        [(0.0, 1.0), (1.0, 2.0), (3.0, 8.0), (10.0, 1024.0)],
+    )
+    def test_exp2_powers_of_2(self, u: float, expected: float) -> None:
+        assert _eval("exp2(u[0])", u) == pytest.approx(expected)
+
+    def test_log2_negative_returns_nan(self) -> None:
+        """log2(-1) は nan (numpy 仕様、ADR-0053 寛容方針)。"""
+        assert math.isnan(_eval("log2(u[0])", -1.0))
+
+    def test_log2_zero_returns_neg_inf(self) -> None:
+        assert _eval("log2(u[0])", 0.0) == float("-inf")
+
+
+class TestFcnRoundingFunctions:
+    """SPEC-0020: floor / ceil / round / trunc / sign。"""
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        [(1.7, 1.0), (-1.2, -2.0), (0.0, 0.0), (-0.5, -1.0)],
+    )
+    def test_floor(self, u: float, expected: float) -> None:
+        assert _eval("floor(u[0])", u) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        [(1.2, 2.0), (-1.7, -1.0), (0.0, 0.0), (0.5, 1.0)],
+    )
+    def test_ceil(self, u: float, expected: float) -> None:
+        assert _eval("ceil(u[0])", u) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        # np.round は banker's rounding (= round half to even)
+        # SPEC §エッジケース: round(0.5) → 0.0 (バンカーズ丸めの典型例)
+        [(1.4, 1.0), (1.5, 2.0), (2.5, 2.0), (-1.5, -2.0), (0.5, 0.0), (-0.5, 0.0)],
+    )
+    def test_round(self, u: float, expected: float) -> None:
+        assert _eval("round(u[0])", u) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        # trunc は toward-zero (np.trunc)
+        [(1.7, 1.0), (-1.7, -1.0), (0.0, 0.0)],
+    )
+    def test_trunc(self, u: float, expected: float) -> None:
+        assert _eval("trunc(u[0])", u) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u, expected",
+        # SPEC §エッジケース: sign(-0.0) → 0.0 (IEEE 754 -0 は +0 として扱う)
+        [(3.0, 1.0), (-3.0, -1.0), (0.0, 0.0), (-0.0, 0.0)],
+    )
+    def test_sign(self, u: float, expected: float) -> None:
+        assert _eval("sign(u[0])", u) == pytest.approx(expected)
+
+
+class TestFcnExtendedBinaryFunctions:
+    """SPEC-0020: hypot / fmod。"""
+
+    @pytest.mark.parametrize(
+        "u0, u1, expected",
+        [(3.0, 4.0, 5.0), (5.0, 12.0, 13.0), (0.0, 0.0, 0.0), (1.0, 0.0, 1.0)],
+    )
+    def test_hypot_pythagorean(self, u0: float, u1: float, expected: float) -> None:
+        assert _eval("hypot(u[0], u[1])", u0, u1) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "u0, u1, expected",
+        [(7.0, 3.0, 1.0), (10.0, 4.0, 2.0), (-7.0, 3.0, -1.0)],
+    )
+    def test_fmod(self, u0: float, u1: float, expected: float) -> None:
+        # np.fmod は C 風 (= 被除数の符号に従う)、% とは負数で挙動が異なる
+        assert _eval("fmod(u[0], u[1])", u0, u1) == pytest.approx(expected)
+
+
+class TestFcnConstants:
+    """SPEC-0020: pi / e の定数参照。"""
+
+    def test_pi_literal(self) -> None:
+        assert _eval("pi") == pytest.approx(math.pi)
+
+    def test_e_literal(self) -> None:
+        assert _eval("e") == pytest.approx(math.e)
+
+    def test_sin_pi(self) -> None:
+        # sin(pi) ≈ 0 (numerical 誤差で 1e-16 程度)
+        assert _eval("sin(pi)") == pytest.approx(0.0, abs=1e-10)
+
+    def test_cos_pi(self) -> None:
+        assert _eval("cos(pi)") == pytest.approx(-1.0)
+
+    def test_log_e_equals_one(self) -> None:
+        assert _eval("log(e)") == pytest.approx(1.0)
+
+    def test_compound_expression_with_constants(self) -> None:
+        # 2*pi*frequency*t を想定した式
+        # u=[freq], t=0.25, expr=sin(2*pi*u[0]*t) で sin(2*pi*1*0.25) = sin(pi/2) = 1
+        assert _eval("sin(2*pi*u[0]*t)", 1.0, t=0.25) == pytest.approx(1.0)
+
+
+class TestFcnExtendedSecurityRefute:
+    """SPEC-0020: 三重防御が依然有効 (構造変更なし、関数追加のみ)。"""
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            "import math",
+            "__import__('os').system('id')",
+            "open('/etc/passwd')",
+            "eval('1')",
+            # pi / e 定数追加に乗じた attack (Attribute は AST whitelist で reject)
+            "pi.__class__",
+            "e.__class__.mro()",
+            # 新規追加関数名を引いて attribute 参照
+            "sinh.__class__",
+            "hypot.__name__",
+        ],
+    )
+    def test_attack_expression_still_rejected(self, expr: str) -> None:
+        with pytest.raises(BlockSpecError):
+            Fcn(expression=expr)
+
+
+class TestFcnExtendedFunctionsEdgeCases:
+    """SPEC-0020 §エッジケース。"""
+
+    def test_tan_near_pi_half_large(self) -> None:
+        """tan(pi/2 - small) で大きな値 (asymptote 近傍)。"""
+        y = _eval("tan(pi/2 - 1e-15)")
+        assert abs(y) > 1e10 or math.isinf(y)
+
+    def test_asin_out_of_domain_returns_nan(self) -> None:
+        """asin(2) は nan (ドメイン外、numpy 仕様)。"""
+        assert math.isnan(_eval("asin(u[0])", 2.0))
+
+    def test_hypot_with_inf(self) -> None:
+        """hypot(inf, 0) = inf。"""
+        assert _eval("hypot(u[0], u[1])", float("inf"), 0.0) == float("inf")
+
+    def test_floor_inf_propagates(self) -> None:
+        """floor(inf) = inf。"""
+        assert _eval("floor(u[0])", float("inf")) == float("inf")
+
+    def test_sign_nan_propagates(self) -> None:
+        """sign(nan) = nan。"""
+        assert math.isnan(_eval("sign(u[0])", float("nan")))
+
+
+class TestFcnExtendedBackwardCompat:
+    """SPEC-0020: 既存 SPEC-0009 式の完全互換確認 (純粋追加なので破壊変更なし)。"""
+
+    @pytest.mark.parametrize(
+        "expr, u, expected",
+        [
+            ("sin(u[0])", (0.0,), 0.0),
+            ("cos(u[0])", (0.0,), 1.0),
+            ("exp(u[0])", (0.0,), 1.0),
+            ("sqrt(u[0])", (4.0,), 2.0),
+            ("abs(u[0])", (-3.0,), 3.0),
+            ("log(u[0])", (math.e,), 1.0),
+            ("clip(u[0], 0, 10)", (15.0,), 10.0),
+            ("min(u[0], u[1])", (3.0, 4.0), 3.0),
+            ("max(u[0], u[1])", (3.0, 4.0), 4.0),
+            ("atan2(u[0], u[1])", (1.0, 1.0), math.pi / 4),
+        ],
+    )
+    def test_legacy_expressions(self, expr: str, u: tuple[float, ...], expected: float) -> None:
+        assert _eval(expr, *u) == pytest.approx(expected)
