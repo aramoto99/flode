@@ -566,7 +566,8 @@ class TestFcnRoundingFunctions:
     @pytest.mark.parametrize(
         "u, expected",
         # np.round は banker's rounding (= round half to even)
-        [(1.4, 1.0), (1.5, 2.0), (2.5, 2.0), (-1.5, -2.0)],
+        # SPEC §エッジケース: round(0.5) → 0.0 (バンカーズ丸めの典型例)
+        [(1.4, 1.0), (1.5, 2.0), (2.5, 2.0), (-1.5, -2.0), (0.5, 0.0), (-0.5, 0.0)],
     )
     def test_round(self, u: float, expected: float) -> None:
         assert _eval("round(u[0])", u) == pytest.approx(expected)
@@ -581,7 +582,8 @@ class TestFcnRoundingFunctions:
 
     @pytest.mark.parametrize(
         "u, expected",
-        [(3.0, 1.0), (-3.0, -1.0), (0.0, 0.0)],
+        # SPEC §エッジケース: sign(-0.0) → 0.0 (IEEE 754 -0 は +0 として扱う)
+        [(3.0, 1.0), (-3.0, -1.0), (0.0, 0.0), (-0.0, 0.0)],
     )
     def test_sign(self, u: float, expected: float) -> None:
         assert _eval("sign(u[0])", u) == pytest.approx(expected)

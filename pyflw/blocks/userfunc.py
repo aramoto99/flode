@@ -241,16 +241,18 @@ class Fcn(Block):
 
     式は **単一式** (式文 = ``compile(mode="eval")`` が受け入れる構文) で記述する。
     使える名前は ``u[i]`` (入力ベクトル、``n_inputs`` で長さ指定) と ``t`` (時刻)、
-    および ``sin`` / ``cos`` / ``exp`` / ``log`` 等の許可関数 15 個 (SPEC-0009
-    §1.2)。``import`` / 代入 / 関数定義 / comprehension / attribute access /
-    lambda は **構文 / AST レベルで拒否**される (SPEC-0009 §1.3、§1.5)。
+    許可関数 **27 個** (``sin`` / ``cos`` / ``tan`` / ``sinh`` / ``log`` /
+    ``log2`` / ``exp`` / ``floor`` / ``ceil`` / ``round`` / ``sign`` /
+    ``hypot`` 等、SPEC-0009 §1.2 + SPEC-0020 §1.1)、許可定数 ``pi`` / ``e``
+    (SPEC-0020 §1.2)。``import`` / 代入 / 関数定義 / comprehension / attribute
+    access / lambda は **構文 / AST レベルで拒否**される (SPEC-0009 §1.3、§1.5)。
 
     三重防御の概要:
 
     1. ``compile(mode="eval")`` で statement を構文レベル拒否
     2. AST whitelist で許可ノード型・許可 Name・許可 Subscript のみ通す
     3. ``eval(code, {"__builtins__": {}}, ns)`` で builtins を空にし、
-       評価名前空間に ``u`` / ``t`` / 許可関数のみを注入
+       評価名前空間に ``u`` / ``t`` / 許可関数 / 許可定数のみを注入
 
     Args:
         expression: 評価する単一式 (既定 ``"u[0]"``)。`u[i]` で入力ベクトル、
