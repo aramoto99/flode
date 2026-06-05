@@ -1,15 +1,20 @@
-"""SPEC-0008 + SPEC-0017 / ADR-0059 (v5.1.0 / v5.6.0): ルックアップテーブルブロック群。
+"""SPEC-0008 + SPEC-0017 + SPEC-0018 + SPEC-0019 / ADR-0059 (v5.1.0+): ルックアップ系ブロック群。
 
-業界標準ブロック線図ツールの "Lookup Tables" カテゴリ。Wave 1 で 1-D
-(:class:`LookupTable1D`)、Wave 3 第 1 弾で 2-D (:class:`LookupTable2D`) を追加。
-n-D は SPEC-0018 で後続。
+業界標準ブロック線図ツールの "Lookup Tables" カテゴリ全種を提供する。
+
+* Wave 1: :class:`LookupTable1D` (SPEC-0008, v5.1.0)
+* Wave 3 第 1 弾: :class:`LookupTable2D` (SPEC-0017, v5.6.0)
+* Wave 3 第 2 弾: :class:`Prelookup` + :class:`InterpolationUsingPrelookup`
+  (SPEC-0019, v5.7.0)
+* Wave 3 第 3 弾: :class:`LookupTableND` (SPEC-0018, v5.8.0、3〜n 次元)
 
 補間オブジェクトは ``__init__`` で 1 度だけ構築し、``output`` のホットパスでは
-評価のみ行う (ADR-0064 §A-1)。
+評価のみ行う (ADR-0064 §A-1、ADR-0068 §A-1)。
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -18,6 +23,12 @@ from scipy.interpolate import RegularGridInterpolator, interp1d
 
 from ..core.block import Block
 from ..exceptions import BlockEvalError, BlockSpecError
+
+_logger = logging.getLogger(__name__)
+
+#: ADR-0068 §D-1: 軸数がこの値を超えると ``LookupTableND`` 構築時に warning を出す
+#: (hard limit ではない)。
+LOOKUP_ND_AXIS_WARNING_THRESHOLD = 6
 
 
 class LookupTable1D(Block):
@@ -718,4 +729,271 @@ class InterpolationUsingPrelookup(Block):
         else:  # "flat"
             y = float(tbl[k])
 
+        return np.array([y])
+
+
+class LookupTableND(Block):
+    """n 次元ルックアップテーブル ``y = f(u[0], u[1], ..., u[n-1])`` (SPEC-0018)。
+
+    軸数 n は ``len(breakpoints_axes)`` で動的に決まる。``LookupTable1D`` (n=1) /
+    ``LookupTable2D`` (n=2) の自然な n-D 拡張。3〜6 軸を想定スコープ、7 軸以上は
+    warning + 構築可能 (hard limit なし、ADR-0068 §D-1)。
+
+    軸の意味付け:
+        ``breakpoints_axes[i]`` は軸 ``i`` の breakpoints。``table`` は
+        ``np.ndarray`` 化したとき shape ``tuple(len(bp) for bp in breakpoints_axes)``
+        を持つ。``table[i0, i1, ..., i_{n-1}]`` =
+        ``(breakpoints_axes[0][i0], ..., breakpoints_axes[n-1][i_{n-1}])`` の値。
+
+    補間方式 ``interpolation``:
+
+    * ``"linear"`` — n 線形 (= tensorial linear) 補間。
+      ``scipy.interpolate.RegularGridInterpolator(method="linear")``
+    * ``"nearest"`` — 最も近い格子点の値。各軸独立に中点で切替
+    * ``"flat"`` — 左下角ホールド (SPEC-0017 と同方針)。各軸独立に
+      ``np.searchsorted(side="right")`` で cell を特定
+
+    外挿方式 ``extrapolation``:
+
+    * ``"clip"`` — 各軸で端点に飽和してから補間
+    * ``"linear"`` — 2 段階 1-D 外挿の合成を n 軸に再帰拡張 (ADR-0068 §C-1)。
+      各軸独立 1-D 線形延長の合成で n 軸線形外挿が自動成立 (cross term 含む)
+    * ``"error"`` — 定義域外で :class:`BlockEvalError` を raise
+
+    Args:
+        breakpoints_axes: 各軸 breakpoints のリスト (各々厳密単調増加、長さ >= 2)。
+            軸数 (= ``len(breakpoints_axes)``) は >= 2 必須。既定値
+            ``[[0.0, 1.0], [0.0, 1.0]]`` (= 2 軸ゼロ平面、``LookupTable2D``
+            既定と等価)。
+        table: n-D テーブル値。shape は
+            ``tuple(len(bp) for bp in breakpoints_axes)`` と一致必須。
+        interpolation: 補間方式 (``"linear"`` / ``"nearest"`` / ``"flat"``)。
+        extrapolation: 外挿方式 (``"clip"`` / ``"linear"`` / ``"error"``)。
+
+    Raises:
+        BlockSpecError: 軸数 < 2 / 各軸長さ < 2 / 厳密単調増加違反 / shape 不一致 /
+            enum 値外 / 数値 coerce 失敗。
+
+    Note:
+        ``Simulator.compile()`` (ADR-0037) 経路では ``RegularGridInterpolator``
+        が XLA トレース不可なため fallback 対象 (LookupTable1D/2D と同方針、
+        ADR-0037 follow-up で正式対応)。
+    """
+
+    _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")
+    _ALLOWED_EXTRAPOLATIONS: tuple[str, ...] = ("clip", "linear", "error")
+    _param_enums = {
+        "interpolation": _ALLOWED_INTERPOLATIONS,
+        "extrapolation": _ALLOWED_EXTRAPOLATIONS,
+    }
+
+    def __init__(
+        self,
+        breakpoints_axes: list[npt.ArrayLike] | None = None,
+        table: npt.ArrayLike | None = None,
+        interpolation: str = "linear",
+        extrapolation: str = "clip",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if interpolation not in self._ALLOWED_INTERPOLATIONS:
+            raise BlockSpecError(
+                f"LookupTableND: interpolation must be one of {self._ALLOWED_INTERPOLATIONS}, "
+                f"got {interpolation!r}"
+            )
+        if extrapolation not in self._ALLOWED_EXTRAPOLATIONS:
+            raise BlockSpecError(
+                f"LookupTableND: extrapolation must be one of {self._ALLOWED_EXTRAPOLATIONS}, "
+                f"got {extrapolation!r}"
+            )
+
+        # 既定: 2 軸ゼロ平面 (LookupTable2D 既定と等価、palette drop 時の自明な初期値)。
+        if breakpoints_axes is None:
+            breakpoints_axes = [[0.0, 1.0], [0.0, 1.0]]
+        if table is None:
+            table = [[0.0, 0.0], [0.0, 0.0]]
+
+        if not isinstance(breakpoints_axes, list) or len(breakpoints_axes) < 2:
+            raise BlockSpecError(
+                f"LookupTableND: breakpoints_axes must be a list of length >= 2, "
+                f"got {breakpoints_axes!r}"
+            )
+
+        n_axes = len(breakpoints_axes)
+        if n_axes > LOOKUP_ND_AXIS_WARNING_THRESHOLD:
+            _logger.warning(
+                "LookupTableND: %d axes exceeds the recommended threshold of %d. "
+                "Construction is allowed but memory usage scales exponentially.",
+                n_axes,
+                LOOKUP_ND_AXIS_WARNING_THRESHOLD,
+            )
+
+        # 各軸 breakpoints の検証 (SPEC-0008 / 0017 と同パターン)
+        bp_arrays: list[npt.NDArray[np.float64]] = []
+        for axis_i, bp_raw in enumerate(breakpoints_axes):
+            try:
+                bp = np.asarray(bp_raw, dtype=float)
+            except (TypeError, ValueError) as exc:
+                raise BlockSpecError(
+                    f"LookupTableND: breakpoints_axes[{axis_i}] must contain numeric values: {exc}"
+                ) from exc
+            if bp.ndim != 1:
+                raise BlockSpecError(
+                    f"LookupTableND: breakpoints_axes[{axis_i}] must be 1-D, got shape {bp.shape}"
+                )
+            if bp.size < 2:
+                raise BlockSpecError(
+                    f"LookupTableND: breakpoints_axes[{axis_i}] must have at "
+                    f"least 2 elements, got len={bp.size}"
+                )
+            if not np.all(np.diff(bp) > 0):
+                raise BlockSpecError(
+                    f"LookupTableND: breakpoints_axes[{axis_i}] must be "
+                    f"strictly increasing, got {bp.tolist()!r}"
+                )
+            bp_arrays.append(bp)
+
+        try:
+            tbl = np.asarray(table, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise BlockSpecError(
+                f"LookupTableND: table must be a regular n-D array of numeric "
+                f"values (got jagged shape or non-numeric): {exc}"
+            ) from exc
+
+        if tbl.ndim != n_axes:
+            raise BlockSpecError(
+                f"LookupTableND: table must be {n_axes}-D (matching "
+                f"len(breakpoints_axes)), got ndim={tbl.ndim} shape={tbl.shape}"
+            )
+        expected_shape = tuple(int(bp.size) for bp in bp_arrays)
+        if tbl.shape != expected_shape:
+            raise BlockSpecError(
+                f"LookupTableND: table.shape={tbl.shape} must equal "
+                f"tuple(len(bp) for bp in breakpoints_axes)={expected_shape}"
+            )
+
+        super().__init__(id=id, name=name, n_inputs=n_axes, n_outputs=1)
+
+        self._bp_arrays: list[npt.NDArray[np.float64]] = bp_arrays
+        self._table: npt.NDArray[np.float64] = tbl
+        self._n_axes: int = n_axes
+        self.interpolation = interpolation
+        self.extrapolation = extrapolation
+
+        scipy_method = "linear" if interpolation == "linear" else "nearest"
+        self._interp = RegularGridInterpolator(
+            tuple(bp_arrays),
+            tbl,
+            method=scipy_method,
+            bounds_error=False,
+            fill_value=np.nan,
+        )
+
+        self._params = {
+            "breakpoints_axes": [bp.tolist() for bp in bp_arrays],
+            "table": tbl.tolist(),
+            "interpolation": interpolation,
+            "extrapolation": extrapolation,
+        }
+
+    def _flat_lookup(self, u_vals: npt.NDArray[np.float64]) -> float:
+        """各軸独立に左下角 cell を特定し ``table[i0, i1, ..., i_{n-1}]`` を返す。
+
+        SPEC-0017 の 2-D ``_flat_lookup`` を n 軸に一般化。``searchsorted(side="right")``
+        + ``clip([0, n-2])`` を各軸で行い、最終 index タプルで table から取得。
+        """
+        idx: list[int] = []
+        for axis_i in range(self._n_axes):
+            bp = self._bp_arrays[axis_i]
+            ii = int(
+                np.clip(
+                    np.searchsorted(bp, u_vals[axis_i], side="right") - 1,
+                    0,
+                    bp.size - 2,
+                )
+            )
+            idx.append(ii)
+        return float(self._table[tuple(idx)])
+
+    def _linear_extrapolate(self, u_vals: npt.NDArray[np.float64]) -> float:
+        """n 軸線形外挿を「2 段階 1-D 外挿の合成」の n 軸再帰拡張で計算 (ADR-0068 §C-1)。
+
+        軸 0 から順に 1-D 線形補間/外挿で table を縮約: 軸 0 で u[0] を eval すると
+        shape (n_1, n_2, ..., n_{n-1}) の strip → 軸 1 で u[1] を eval すると
+        shape (n_2, ..., n_{n-1}) → ... → 最終的にスカラー。
+
+        ``interp1d(axis=0, kind="linear", fill_value="extrapolate")`` を各軸で
+        逐次適用 (= n 回構築・eval)。外挿経路はホットパス外なので allocation
+        は許容 (SPEC-0017 §非機能要件と同方針)。
+        """
+        current = self._table
+        for axis_i in range(self._n_axes):
+            bp = self._bp_arrays[axis_i]
+            # axis=0 で 1-D 線形外挿 (= 最初の残存軸を消費)
+            interp_1d = interp1d(
+                bp,
+                current,
+                axis=0,
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+                assume_sorted=True,
+            )
+            current = np.asarray(interp_1d(float(u_vals[axis_i])))
+        # current は 0-D scalar (np.ndarray) になっているはず
+        return float(np.asarray(current).item())
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        u_arr = np.asarray(u, dtype=float).reshape(-1)
+        if u_arr.size != self._n_axes:
+            raise BlockEvalError(
+                f"LookupTableND[{self.name}]: expected {self._n_axes} inputs, got {u_arr.size}",
+                block_id=self.id,
+            )
+
+        # 各軸の定義域内判定 (nan は <=/>= で False になり外挿経路へ)
+        in_domain_flags = [
+            bool(self._bp_arrays[i][0] <= u_arr[i] <= self._bp_arrays[i][-1])
+            for i in range(self._n_axes)
+        ]
+        all_in_domain = all(in_domain_flags)
+
+        if not all_in_domain:
+            if self.extrapolation == "error":
+                bounds_repr = ", ".join(
+                    f"axis[{i}] [{float(self._bp_arrays[i][0])}, {float(self._bp_arrays[i][-1])}]"
+                    for i in range(self._n_axes)
+                )
+                raise BlockEvalError(
+                    f"LookupTableND[{self.name}]: input {u_arr.tolist()} is "
+                    f"outside {bounds_repr} and extrapolation='error'",
+                    block_id=self.id,
+                )
+            if self.extrapolation == "linear":
+                # nan 含むときは結果も nan (interp1d が nan 伝播)
+                y = self._linear_extrapolate(u_arr)
+                return np.array([y])
+            # extrapolation == "clip": 各軸独立に端点飽和
+            u_arr = np.array(
+                [
+                    float(
+                        np.clip(
+                            u_arr[i],
+                            self._bp_arrays[i][0],
+                            self._bp_arrays[i][-1],
+                        )
+                    )
+                    for i in range(self._n_axes)
+                ]
+            )
+
+        if self.interpolation == "flat":
+            if bool(np.any(np.isnan(u_arr))):
+                return np.array([float("nan")])
+            y = self._flat_lookup(u_arr)
+        else:
+            # RegularGridInterpolator は shape (npts, ndim) を期待 → (1, n_axes)。
+            y = float(self._interp(u_arr.reshape(1, -1)).item())
         return np.array([y])

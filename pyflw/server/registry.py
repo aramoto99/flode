@@ -99,6 +99,11 @@ class BlockMetadata:
     # type_path では空 dict (= 旧 ``display_name`` / ``docstring_summary`` のみ提供)。
     display_name_i18n: dict[str, str] = field(default_factory=dict)
     docstring_summary_i18n: dict[str, str] = field(default_factory=dict)
+    # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs。``params`` の特定キーから派生する
+    # block で、frontend が drop 時 / params 編集時に再評価して port 数を決める。
+    # DSL は ``len(params.<attr_name>)`` のみ受理 (= 単純属性参照、safe evaluator)。
+    # 既存ブロック (固定 n_inputs) は ``None`` (= 旧挙動継続)。
+    n_inputs_resolver: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +230,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "lookup",
         "Interpolation Using Prelookup",
         "lookup.interpolationusingprelookup",
+    ),
+    # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
+    "pyflw.blocks.lookup.LookupTableND": (
+        "lookup",
+        "Lookup Table (N-D)",
+        "lookup.lookuptablend",
     ),
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
     "pyflw.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
@@ -372,6 +383,22 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
     # 派生 property に格上げ (= コンストラクタ引数廃止)。``_default_factory_args``
     # も不要 — 第 1 試行の TypeError → 第 2 試行 ``cls()`` という無駄な経路を避ける
     # ため、エントリ自体を削除する。
+}
+
+
+# ---------------------------------------------------------------------------
+# Dynamic n_inputs resolver (SPEC-0018 / ADR-0068 §A-1)
+# ---------------------------------------------------------------------------
+#
+# ``params`` の特定キーから派生する n_inputs を持つブロックの resolver 式を
+# 登録する。frontend は registry payload の ``n_inputs_resolver`` 文字列を
+# safe evaluator (= ``len(params.<attr_name>)`` のみ受理) で評価し、drop 時 /
+# params 編集時に port 数を再計算する。
+#
+# DSL 仕様: ``len(params.<attr_name>)`` のみ受理 (= 単純属性参照、安全)。
+# eval / Function / 任意式は禁止。
+_BUILTIN_DYNAMIC_PORTS: dict[str, str] = {
+    "pyflw.blocks.lookup.LookupTableND": "len(params.breakpoints_axes)",
 }
 
 
@@ -595,6 +622,8 @@ def build_metadata(cls: type) -> BlockMetadata:
         search_keywords=_resolve_search_keywords(cls),
         is_container=is_container,
         mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
+        # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver
+        n_inputs_resolver=_BUILTIN_DYNAMIC_PORTS.get(type_path),
         display_name_i18n=display_name_i18n,
         docstring_summary_i18n=docstring_summary_i18n,
     )
@@ -692,6 +721,10 @@ def metadata_to_dict(
         "is_container": meta.is_container,
         "mask_capable": meta.mask_capable,
     }
+    # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver (optional)。
+    # ``None`` のとき payload に乗せない (= 既存 builtin の後方互換)。
+    if meta.n_inputs_resolver is not None:
+        out["n_inputs_resolver"] = meta.n_inputs_resolver
     if include_full_docstring:
         out["docstring_full"] = meta.docstring_full
     return out

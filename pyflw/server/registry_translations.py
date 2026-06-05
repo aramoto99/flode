@@ -336,6 +336,25 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
+    # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
+    "pyflw.blocks.lookup.LookupTableND": {
+        "en": {
+            "display_name": "Lookup Table (N-D)",
+            "docstring_summary": (
+                "Interpolate y = f(u[0], ..., u[n-1]) from n breakpoint arrays "
+                "and an n-D table (n-linear / nearest / flat; extrapolation "
+                "clip / linear / error). 3-6 axes recommended."
+            ),
+        },
+        "ja": {
+            "display_name": "ルックアップテーブル (N-D)",
+            "docstring_summary": (
+                "n 個のブレークポイント配列と n-D テーブルで y = f(u[0], ..., "
+                "u[n-1]) を補間 (n 線形 / nearest / flat、外挿は clip / linear "
+                "/ error)。推奨 3〜6 軸。"
+            ),
+        },
+    },
     # ----- userfunc (1) ---------------------------------------------------
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
     "pyflw.blocks.userfunc.Fcn": {

@@ -20,6 +20,7 @@ from .lookup import (
     InterpolationUsingPrelookup,
     LookupTable1D,
     LookupTable2D,
+    LookupTableND,
     Prelookup,
 )
 from .mathops import (
@@ -69,6 +70,7 @@ __all__ = [
     "LogicalOperator",
     "LookupTable1D",
     "LookupTable2D",
+    "LookupTableND",
     "MathFunction",
     "Merge",
     "MimoTransferFunction",
