@@ -55,7 +55,12 @@ class TestLookupTableNDConstruction:
         assert blk.n_inputs == 3
 
     def test_too_few_axes_raises(self) -> None:
-        with pytest.raises(BlockSpecError, match="length >= 2"):
+        with pytest.raises(BlockSpecError, match="at least 2 axes"):
+            LookupTableND(breakpoints_axes=[[0.0, 1.0]], table=[0.0, 1.0])
+
+    def test_too_few_axes_error_message_suggests_1d(self) -> None:
+        """エラーメッセージで LookupTable1D への誘導を含む (SPEC-0018 §1.3)。"""
+        with pytest.raises(BlockSpecError, match="use LookupTable1D for 1-D"):
             LookupTableND(breakpoints_axes=[[0.0, 1.0]], table=[0.0, 1.0])
 
     def test_axis_too_short_raises(self) -> None:
@@ -404,6 +409,26 @@ class TestLookupTableNDCrossCheck2D:
             y_nd = float(lt_nd.output(0.0, _EMPTY_X, np.array(u))[0])
             y_2d = float(lt_2d.output(0.0, _EMPTY_X, np.array(u))[0])
             assert y_nd == pytest.approx(y_2d)
+
+    @pytest.mark.parametrize(
+        "u",
+        [(-0.5, 0.5), (1.5, 0.5), (0.5, -0.5), (0.5, 1.5), (-0.5, -0.5), (1.5, 1.5)],
+    )
+    def test_2d_linear_extrapolation_matches(self, u: tuple[float, float]) -> None:
+        """code-reviewer SHOULD: extrapolation="linear" でも LookupTable2D と数値一致。
+
+        ADR-0068 §C-1 の「2 段階 1-D 外挿合成」が 2-D 縮退で SPEC-0017 §B-1 と
+        完全一致することを RTOL=1e-12 で確認。
+        """
+        bp = [0.0, 1.0]
+        tbl = [[0.0, 10.0], [20.0, 30.0]]
+        lt_nd = LookupTableND(breakpoints_axes=[bp, bp], table=tbl, extrapolation="linear")
+        lt_2d = LookupTable2D(
+            breakpoints_row=bp, breakpoints_col=bp, table=tbl, extrapolation="linear"
+        )
+        y_nd = float(lt_nd.output(0.0, _EMPTY_X, np.array(u))[0])
+        y_2d = float(lt_2d.output(0.0, _EMPTY_X, np.array(u))[0])
+        assert y_nd == pytest.approx(y_2d, rel=1e-12)
 
 
 # ===========================================================================

@@ -50,4 +50,27 @@ describe("resolveNInputs", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("rejects prototype-chain attribute names (security-reviewer §S1)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveNInputs("len(params.__proto__)", {}, 99)).toBe(99);
+    expect(resolveNInputs("len(params.constructor)", {}, 99)).toBe(99);
+    expect(resolveNInputs("len(params.prototype)", {}, 99)).toBe(99);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("ignores length-spoofing non-array objects (security-reviewer §S2)", () => {
+    // { length: 999 } は Array.isArray が false なので 0 を返す
+    expect(resolveNInputs("len(params.foo)", { foo: { length: 999 } })).toBe(0);
+    // string は length プロパティがあるが Array でない
+    expect(resolveNInputs("len(params.foo)", { foo: "abc" })).toBe(0);
+  });
+
+  it("returns fallback for empty / whitespace resolver", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveNInputs("", {}, 5)).toBe(5);
+    expect(resolveNInputs("   ", {}, 5)).toBe(5);
+    warn.mockRestore();
+  });
 });

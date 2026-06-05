@@ -45,6 +45,20 @@ export function resolveNInputs(
   }
 
   const attrName = match[1]!;
+  // security: prototype-chain 経路を遮断 (security-reviewer §S1)
+  if (
+    attrName === "__proto__" ||
+    attrName === "constructor" ||
+    attrName === "prototype"
+  ) {
+    console.warn(
+      `[registryResolver] Reserved attribute name in n_inputs_resolver: ` +
+        `${attrName}. Falling back to ${fallback}.`,
+    );
+    return fallback;
+  }
+  // own-property のみ参照 (prototype chain を辿らない)
+  if (!Object.prototype.hasOwnProperty.call(params, attrName)) return 0;
   const value = params[attrName];
   if (!Array.isArray(value)) return 0;
   return value.length;

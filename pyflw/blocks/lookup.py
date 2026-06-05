@@ -815,9 +815,10 @@ class LookupTableND(Block):
             table = [[0.0, 0.0], [0.0, 0.0]]
 
         if not isinstance(breakpoints_axes, list) or len(breakpoints_axes) < 2:
+            got_len = len(breakpoints_axes) if isinstance(breakpoints_axes, list) else 0
             raise BlockSpecError(
-                f"LookupTableND: breakpoints_axes must be a list of length >= 2, "
-                f"got {breakpoints_axes!r}"
+                f"LookupTableND: breakpoints_axes must have at least 2 axes "
+                f"(got {got_len}); use LookupTable1D for 1-D"
             )
 
         n_axes = len(breakpoints_axes)
@@ -925,8 +926,21 @@ class LookupTableND(Block):
         shape (n_2, ..., n_{n-1}) → ... → 最終的にスカラー。
 
         ``interp1d(axis=0, kind="linear", fill_value="extrapolate")`` を各軸で
-        逐次適用 (= n 回構築・eval)。外挿経路はホットパス外なので allocation
-        は許容 (SPEC-0017 §非機能要件と同方針)。
+        逐次適用 (= n 回構築・eval)。
+
+        **設計上の注意 (ADR-0068 §C-1 の「補間/外挿の直交分離」)**:
+        本メソッドは ``extrapolation == "linear"`` かつ 1 軸でも定義域外のとき
+        呼ばれ、**全軸を線形で処理する** (定義域内の他軸も含めて)。これは
+        ``interpolation`` 設定 (``"nearest"`` / ``"flat"`` でも) に依存せず常に
+        線形で外挿する SPEC-0017 / SPEC-0018 共通方針 (= 内側補間と外側外挿の
+        分離原則)。1-D / 2-D 版とも同じ判断。
+
+        **性能上の注意**: 2-D 版 (``LookupTable2D``) は ``__init__`` で
+        ``_row_extrap_1d`` を 1 つだけ事前構築し、col 軸の ``interp1d`` のみを
+        外挿経路で構築する。n-D 版は軸数が動的なため全軸の ``interp1d`` を
+        事前保持せず、毎外挿呼び出しで n 回構築する。外挿経路はホットパス外
+        (clip / 定義域内なら通らない) のため許容するが、外挿が頻発するモデル
+        では性能影響あり。
         """
         current = self._table
         for axis_i in range(self._n_axes):
