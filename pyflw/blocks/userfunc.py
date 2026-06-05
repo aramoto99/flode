@@ -47,12 +47,14 @@ from ..core.block import Block
 from ..exceptions import BlockEvalError, BlockSpecError
 
 # ---------------------------------------------------------------------------
-# 許可関数 (15 個、SPEC-0009 §1.2)
+# 許可関数 (27 個、SPEC-0009 §1.2 + SPEC-0020 §1.1)
 # ---------------------------------------------------------------------------
 # numpy 関数を bind し、Python builtin (例: 組み込み ``abs``) には届かないように
 # 名前空間を完全制御する。``min`` / ``max`` は numpy.minimum / maximum (2 入力
 # element-wise) として bind する。
+# SPEC-0020 で双曲線 / log2/exp2 / 丸め系 / hypot / fmod の 12 関数を追加。
 _ALLOWED_FUNCS: dict[str, Callable[..., Any]] = {
+    # SPEC-0009 §1.2 (15 関数、Wave 1)
     "sin": np.sin,
     "cos": np.cos,
     "tan": np.tan,
@@ -68,13 +70,36 @@ _ALLOWED_FUNCS: dict[str, Callable[..., Any]] = {
     "min": np.minimum,
     "max": np.maximum,
     "clip": np.clip,
+    # SPEC-0020 §1.1 (12 関数、Wave 3 第 4 弾)
+    "sinh": np.sinh,
+    "cosh": np.cosh,
+    "tanh": np.tanh,
+    "log2": np.log2,
+    "exp2": np.exp2,
+    "floor": np.floor,
+    "ceil": np.ceil,
+    "round": np.round,
+    "trunc": np.trunc,
+    "sign": np.sign,
+    "hypot": np.hypot,
+    "fmod": np.fmod,
 }
 
-# 許可 Name: u (ndarray, shape=(n_inputs,)) / t (float) / 許可関数名。
+# 許可定数 (SPEC-0020 §1.2): AST ``Name`` ノードで ``pi`` / ``e`` を式中に書ける。
+# 関数ではないため ``_ALLOWED_FUNCS`` ではなく独立の辞書で管理し、eval スコープ
+# に値を入れる。AST 検証では ``_ALLOWED_NAMES`` への追加で通過させる。
+_ALLOWED_CONSTANTS: dict[str, float] = {
+    "pi": float(np.pi),
+    "e": float(np.e),
+}
+
+# 許可 Name: u (ndarray, shape=(n_inputs,)) / t (float) / 許可関数名 / 許可定数名。
 # u を直接 BoolOp 等に渡すと ndarray のまま評価されるため、output() で
 # BlockEvalError になることがある (test_boolop_with_numpy_array_wraps 参照)。
 # Subscript の対象は u のみ。
-_ALLOWED_NAMES: frozenset[str] = frozenset({"u", "t"}) | frozenset(_ALLOWED_FUNCS.keys())
+_ALLOWED_NAMES: frozenset[str] = (
+    frozenset({"u", "t"}) | frozenset(_ALLOWED_FUNCS.keys()) | frozenset(_ALLOWED_CONSTANTS.keys())
+)
 
 # ---------------------------------------------------------------------------
 # 許可 AST ノード型 (SPEC-0009 §1.3)
@@ -280,8 +305,12 @@ class Fcn(Block):
 
         self.expression = expression
         # 評価コンテキスト基底 (毎呼び出し copy して u / t を上書きする)。
-        # ``_ALLOWED_FUNCS`` をモジュール定数として共有しているため shallow copy で十分。
-        self._base_namespace: dict[str, Any] = dict(_ALLOWED_FUNCS)
+        # ``_ALLOWED_FUNCS`` / ``_ALLOWED_CONSTANTS`` をモジュール定数として
+        # 共有しているため shallow copy で十分。
+        self._base_namespace: dict[str, Any] = {
+            **_ALLOWED_FUNCS,
+            **_ALLOWED_CONSTANTS,
+        }
         self._params = {"expression": expression, "n_inputs": n_inputs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
