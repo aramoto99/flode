@@ -118,16 +118,6 @@ class PathTraversalError(PyflwError):
     """
 
 
-class FileWriteError(PyflwError):
-    """``FileWriter`` の自動 save がディスク書き込みに失敗 (SPEC-0016 amendment)。
-
-    ``Simulator.run()`` 終了時の ``_finalize`` で OSError (permission /
-    no-space / not-found 等) や :class:`PathTraversalError` をラップする。
-    block_id kwarg を含むため、UI の Log tab から FileWriter ブロックへ
-    ジャンプ可能 (ADR-0056)。
-    """
-
-
 class BufferOverflowWarning(UserWarning):
     """``Scope.buffer_mode = "bounded"`` で capacity に達した直後に 1 回だけ発火 (ADR-0042 §2)。
 

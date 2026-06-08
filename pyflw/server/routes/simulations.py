@@ -175,10 +175,6 @@ async def start_simulation(request: Request) -> dict[str, str]:
 
     simulator, display_id = _resolve_simulator(request, payload)
 
-    # SPEC-0016 v0.39.1: FileWriter 等の自動 save が ADR-0041 path traversal
-    # 検証で workspace 配下に閉じるよう、workspace_root を simulator に注入。
-    simulator._workspace_root = request.app.state.settings.workspace_root
-
     manager = _manager(request)
     loop = asyncio.get_running_loop()
     sim_id = manager.start(
