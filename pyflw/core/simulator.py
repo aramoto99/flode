@@ -98,6 +98,10 @@ class Simulator:
         self.on_step_callback: StepCallback | None = on_step_callback
         # 停止要求フラグ (run() 中に外部から `request_stop()` で True にすると graceful 停止)
         self._stop_requested: bool = False
+        # SPEC-0016 v0.39.1: server 経由実行時の workspace root (ADR-0041 path
+        # traversal 検証用)。FileWriter._finalize 等が参照。Python 直接実行 / CLI /
+        # pytest では None のまま (= 絶対パス / CWD 相対パスを生で扱う)。
+        self._workspace_root: Path | None = None
         # ADR-0020 §Decision (3): 直近 ``Simulator.load()`` で読んだファイルの
         # top-level ``layout`` を保持する。GUI が ``last_loaded_layout`` を取り出して
         # React Flow に渡すために使う。CLI / pytest からは無視できる (動作不変)。
@@ -1028,10 +1032,41 @@ class Simulator:
         # 既存ホットパスを完全に維持 (= 541 件テストへの影響ゼロ)。
         # f_continuous は loop method 内で定義する (= ``discrete_state`` の再代入を
         # closure が正しく拾えるようにする)。
-        if sm_a_mode:
-            self._run_sm_a_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
-        else:
-            self._run_sm_b_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
+        # SPEC-0016 v0.39.1: ループ終了 / 中断 / 例外いずれの経路でも全ブロックの
+        # ``_finalize(workspace_root)`` を呼べるよう try/finally で wrap。FileWriter
+        # の自動 save 等が依存する。
+        try:
+            if sm_a_mode:
+                self._run_sm_a_loop(
+                    n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
+                )
+            else:
+                self._run_sm_b_loop(
+                    n_steps, dt_base, n_total, order, layout, x_cont, discrete_state
+                )
+        finally:
+            self._finalize_blocks()
+
+    def _finalize_blocks(self) -> None:
+        """``run()`` 終了時に全ブロックの ``_finalize`` フックを呼ぶ (SPEC-0016 v0.39.1)。
+
+        ``reset`` と同じ hasattr 経由の optional 呼び出しパターン。各ブロックの
+        ``_finalize(workspace_root)`` 内で例外が出ても他のブロックの finalize を
+        妨げないよう、ログに記録して継続する (= 部分的成功を許容)。最初の例外は
+        再 raise する (=「自動 save 失敗」を呼び出し側が検知できる)。
+        """
+        first_exception: Exception | None = None
+        for b in self.blocks:
+            if not hasattr(b, "_finalize"):
+                continue
+            try:
+                b._finalize(workspace_root=self._workspace_root)
+            except Exception as exc:  # noqa: BLE001 — 全ブロック finalize を保証
+                _logger.error("Block %r _finalize failed: %s", getattr(b, "id", "<?>"), exc)
+                if first_exception is None:
+                    first_exception = exc
+        if first_exception is not None:
+            raise first_exception
 
     def _run_sm_a_loop(
         self,

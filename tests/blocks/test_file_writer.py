@@ -1,4 +1,8 @@
-"""SPEC-0016 / ADR-0066 (v0.39.0): FileWriter の網羅テスト。"""
+"""SPEC-0016 / ADR-0066 (v0.39.0+): FileWriter の網羅テスト。
+
+v0.39.1 amendment: auto-save (path / format param + _finalize lifecycle) の
+テストを追加。
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ import pytest
 
 from pyflw import Simulator
 from pyflw.blocks import FileWriter, Sine
-from pyflw.exceptions import BlockSpecError
+from pyflw.exceptions import BlockSpecError, FileWriteError
 
 
 class TestConstruction:
@@ -134,3 +138,191 @@ class TestInModel:
         csv_path = tmp_path / "out.csv"
         fw.save_csv(csv_path)
         assert csv_path.exists()
+
+
+# ===========================================================================
+# SPEC-0016 v0.39.1 amendment: auto-save (path / format param + _finalize)
+# ===========================================================================
+
+
+class TestAutoSaveConstruction:
+    def test_default_path_empty(self) -> None:
+        fw = FileWriter()
+        assert fw.path == ""
+        assert fw.format == "auto"
+
+    def test_format_csv_explicit(self) -> None:
+        fw = FileWriter(path="out.csv", format="csv")
+        assert fw.format == "csv"
+        assert fw._resolved_format == "csv"
+
+    def test_format_npz_explicit(self) -> None:
+        fw = FileWriter(path="data.npz", format="npz")
+        assert fw._resolved_format == "npz"
+
+    def test_format_auto_infers_csv(self) -> None:
+        fw = FileWriter(path="result.csv")
+        assert fw._resolved_format == "csv"
+
+    def test_format_auto_infers_npz(self) -> None:
+        fw = FileWriter(path="result.NPZ")
+        # 拡張子は大文字小文字無視
+        assert fw._resolved_format == "npz"
+
+    def test_format_auto_unknown_extension_raises(self) -> None:
+        with pytest.raises(BlockSpecError, match="cannot infer format"):
+            FileWriter(path="out.txt")
+
+    def test_format_invalid_enum_raises(self) -> None:
+        with pytest.raises(BlockSpecError, match="format must be one of"):
+            FileWriter(format="xml")  # type: ignore[arg-type]
+
+    def test_path_persisted_in_params(self) -> None:
+        fw = FileWriter(path="out.csv")
+        assert fw._params["path"] == "out.csv"
+        assert fw._params["format"] == "auto"
+
+
+class TestAutoSaveAtRunEnd:
+    """``path`` 指定時に ``Simulator.run()`` 終了時に自動 save される。"""
+
+    def test_auto_save_csv(self, tmp_path: Path) -> None:
+        out_path = tmp_path / "auto.csv"
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(amplitude=1.0, frequency=1.0, id="src"))
+        sim.add(FileWriter(n_inputs=1, labels=["sine"], path=str(out_path), id="fw"))
+        sim.connect("src", "fw")
+        sim.run()
+        assert out_path.exists()
+        with out_path.open() as f:
+            rows = list(csv_module.reader(f))
+        assert rows[0] == ["time", "sine"]
+        assert len(rows) > 1
+
+    def test_auto_save_npz(self, tmp_path: Path) -> None:
+        out_path = tmp_path / "auto.npz"
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path=str(out_path), id="fw"))
+        sim.connect("src", "fw")
+        sim.run()
+        assert out_path.exists()
+        loaded = np.load(out_path)
+        assert "time" in loaded.files
+        assert "in0" in loaded.files
+
+    def test_no_auto_save_when_path_empty(self, tmp_path: Path) -> None:
+        """``path=""`` (旧挙動) では自動 save しない。"""
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, id="fw"))  # path=""
+        sim.connect("src", "fw")
+        sim.run()
+        # tmp_path 配下にファイルは生成されない
+        assert list(tmp_path.iterdir()) == []
+
+    def test_auto_save_with_relative_path_uses_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """workspace_root=None (Python 直接実行) で相対パスは CWD 基準。"""
+        monkeypatch.chdir(tmp_path)
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path="relative.csv", id="fw"))
+        sim.connect("src", "fw")
+        sim.run()
+        assert (tmp_path / "relative.csv").exists()
+
+    def test_auto_save_handles_path_overwrite(self, tmp_path: Path) -> None:
+        """同じ path に 2 回目の run でも上書きできる。"""
+        out_path = tmp_path / "overwrite.csv"
+        out_path.write_text("stale content\n")
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path=str(out_path), id="fw"))
+        sim.connect("src", "fw")
+        sim.run()
+        # 上書きされている (= "stale" は残っていない)
+        assert "stale" not in out_path.read_text()
+
+
+class TestAutoSaveWorkspaceRoot:
+    """SPEC-0016 v0.39.1 + ADR-0041: server 経由実行時の path traversal 防御。"""
+
+    def test_workspace_root_relative_resolves_under_root(self, tmp_path: Path) -> None:
+        """``workspace_root`` 指定時、相対パスは workspace 配下に解決。"""
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path="sub/out.csv", id="fw"))
+        sim.connect("src", "fw")
+        sim._workspace_root = tmp_path
+        (tmp_path / "sub").mkdir()
+        sim.run()
+        assert (tmp_path / "sub" / "out.csv").exists()
+
+    def test_workspace_root_blocks_escape(self, tmp_path: Path) -> None:
+        """``../`` で workspace 外を狙うと FileWriteError (PathTraversalError ラップ)。"""
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path="../escape.csv", id="fw"))
+        sim.connect("src", "fw")
+        sim._workspace_root = workspace
+        with pytest.raises(FileWriteError, match="escapes workspace root"):
+            sim.run()
+
+    def test_workspace_root_blocks_absolute_outside(self, tmp_path: Path) -> None:
+        """workspace 外への絶対パスも reject。"""
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        outside = tmp_path / "outside.csv"
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path=str(outside), id="fw"))
+        sim.connect("src", "fw")
+        sim._workspace_root = workspace
+        with pytest.raises(FileWriteError):
+            sim.run()
+
+
+class TestAutoSavePersistence:
+    """``path`` / ``format`` が ``.flw.json`` round-trip で保持される。"""
+
+    def test_save_load_roundtrip(self, tmp_path: Path) -> None:
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(
+            FileWriter(
+                n_inputs=2,
+                labels=["x", "y"],
+                path="output.csv",
+                format="csv",
+                id="fw_persist",
+            )
+        )
+        model_path = tmp_path / "model.flw.json"
+        sim.save(str(model_path))
+
+        sim_loaded = Simulator.load(str(model_path))
+        fw_loaded = sim_loaded.get_block("fw_persist")
+        assert isinstance(fw_loaded, FileWriter)
+        assert fw_loaded.path == "output.csv"
+        assert fw_loaded.format == "csv"
+        assert fw_loaded._resolved_format == "csv"
+
+
+class TestAutoSaveErrorPropagation:
+    """``_finalize`` の例外が ``FileWriteError`` で構造化される。"""
+
+    def test_block_id_in_error(self, tmp_path: Path) -> None:
+        """FileWriteError は block_id kwarg を保持 (ADR-0056)。"""
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        sim = Simulator(t_end=0.3, dt=0.1)
+        sim.add(Sine(id="src"))
+        sim.add(FileWriter(n_inputs=1, path="../escape.csv", id="fw_struct_err"))
+        sim.connect("src", "fw_struct_err")
+        sim._workspace_root = workspace
+        with pytest.raises(FileWriteError) as exc_info:
+            sim.run()
+        assert exc_info.value.block_id == "fw_struct_err"

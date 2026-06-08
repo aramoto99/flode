@@ -676,14 +676,14 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "display_name": "File Writer",
             "docstring_summary": (
                 "Sink: record samples for export to .npz / .csv "
-                "(call save_npz / save_csv after run)."
+                "(auto-saved at run end if `path` is set, .csv/.npz inferred from extension)."
             ),
         },
         "ja": {
             "display_name": "ファイル出力",
             "docstring_summary": (
                 "シンク: サンプルを蓄積し .npz / .csv に出力 "
-                "(run 後に save_npz / save_csv を呼ぶ)。"
+                "(`path` 指定で run 終了時に自動保存、拡張子 .csv/.npz から format 推測)。"
             ),
         },
     },

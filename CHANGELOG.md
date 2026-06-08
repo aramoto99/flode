@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.1] - 2026-06-08 — FileWriter auto-save (path 指定で run 終了時に自動出力)
+
+v0.39.0 で追加した `FileWriter` ブロックは Python API (`save_csv` / `save_npz`)
+を明示呼び出す必要があり、**GUI で配置するだけでは何も書き出されない**
+設計上の欠陥があった (ユーザー指摘 2026-06-08)。本 patch で `path` / `format`
+パラメータを追加し、`Simulator.run()` 終了時に自動 save する経路を実装。
+
+### Fixed — SPEC-0016 amendment: auto-save
+
+- `pyflw.blocks.file_writer.FileWriter` に `path: str = ""` /
+  `format: Literal["auto", "csv", "npz"] = "auto"` パラメータを追加
+- `path` 非空時、`Simulator.run()` 終了時に自動でファイル出力
+  (CSV / NPZ、`format="auto"` は拡張子から推測)
+- `path=""` (省略) のときは旧挙動 (自動 save 無効、Python API のみ) で
+  **完全後方互換**
+- server 経由実行時は ADR-0041 path traversal 防御が効く: `workspace_root`
+  基準で resolve + escape 検出時に `FileWriteError(PathTraversalError)`
+  をラップ。Python 直接実行時は絶対パス / CWD 相対パスをそのまま使う
+
+### Added
+
+- `pyflw.exceptions.FileWriteError`: 自動 save 失敗時の構造化例外
+  (ADR-0056、`block_id` kwarg 付き)
+- `pyflw.core.Simulator._finalize_blocks()`: `run()` 終了時に全ブロックの
+  `_finalize(workspace_root)` を呼ぶ lifecycle hook (将来の sink で再利用可)
+- `pyflw.core.Simulator._workspace_root`: server 経由実行時の path traversal
+  検証基準。`pyflw/server/routes/simulations.py` で `settings.workspace_root`
+  を自動注入
+- FileWriter テスト +30 件 (auto-save / workspace_root / persistence /
+  構造化エラー)
+
+### Compatibility
+
+- JSON schema 0.9 維持 (optional param 追加のみ)
+- v0.39.0 で保存した `.flw.json` は v0.39.1 で完全互換でロード可能
+- v0.39.0 の `FileWriter` 使用コード (Python API `save_csv` / `save_npz`)
+  は無変更で動作
+
 ## [0.39.0] - 2026-06-05 — 標準ブロックライブラリ拡張 (ADR-0059 Wave 1 + 2 + 3 完了)
 
 ADR-0059 で計画された標準ブロックライブラリの 3 つの Wave を統合リリース。
