@@ -149,26 +149,56 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const prevBlockIdRef = useRef<string | undefined>(undefined);
 
+  const blockMeta = registryMap.get(block.type);
+
   // ブロック切替時に draft を最新値で初期化
+  // SPEC-0016 v0.39.1 amendment: registry.params_spec で宣言されているが
+  // block.params にない param も default 値で draft に入れて Inspector で
+  // 編集可能にする (= 旧モデルでも新 param が表示される)。
   useEffect(() => {
     if (block.id === prevBlockIdRef.current) return;
     prevBlockIdRef.current = block.id;
     const next: Record<string, string> = {};
+    const seen = new Set<string>();
     for (const [k, v] of Object.entries(block.params)) {
       if (isPrimitiveParam(v)) next[k] = formatForDraft(v);
+      seen.add(k);
+    }
+    if (blockMeta) {
+      for (const p of blockMeta.params_spec) {
+        if (seen.has(p.name)) continue;
+        if (p.has_default && isPrimitiveParam(p.default)) {
+          next[p.name] = formatForDraft(p.default);
+        }
+      }
     }
     setDraft(next);
     setError(null);
-  }, [block]);
-
+  }, [block, blockMeta]);
   const allEntries = Object.entries(block.params);
-  const editableEntries = allEntries.filter(([, v]) => isPrimitiveParam(v));
-  const readOnlyEntries = allEntries.filter(([, v]) => !isPrimitiveParam(v));
+
+  // SPEC-0016 v0.39.1 amendment: registry.params_spec に宣言されているが
+  // block.params にない param を default 値で補完 (= 旧モデルで保存された
+  // ブロックでも新 param を Inspector で編集可能にする)。
+  // 旧モデル + 新 backend で FileWriter に path / format が追加されたケース
+  // などに有効。commit 時に block.params に key が追加されて永続化される。
+  const knownKeys = new Set(allEntries.map(([k]) => k));
+  const missingEntries: [string, unknown][] = [];
+  if (blockMeta) {
+    for (const p of blockMeta.params_spec) {
+      if (!knownKeys.has(p.name) && p.has_default) {
+        missingEntries.push([p.name, p.default]);
+      }
+    }
+  }
+  const mergedEntries: [string, unknown][] = [...allEntries, ...missingEntries];
+
+  const editableEntries = mergedEntries.filter(([, v]) => isPrimitiveParam(v));
+  const readOnlyEntries = mergedEntries.filter(([, v]) => !isPrimitiveParam(v));
   const readOnlyJson = useMemo(
     () => JSON.stringify(Object.fromEntries(readOnlyEntries), null, 2),
     [readOnlyEntries],
   );
-  const blockMeta = registryMap.get(block.type);
 
   // raw の型は originalType で分岐:
   //   - "number" / "boolean" / "string": raw は string (text input の値)
