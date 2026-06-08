@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] - 2026-06-08 — FileWriter ブロック完全削除
+
+### BREAKING — `pyflw.blocks.FileWriter` の削除
+
+v0.39.0 で追加した `FileWriter` ブロックは GUI 経由でファイル出力する経路を
+最後まで動作させられなかったため、v0.40.0 で完全削除する。v0.39.1 / 5.9.2 で
+試みた auto-save / ParameterPanel merge 改修も含めて全て撤回。
+
+**影響範囲**:
+- `from pyflw.blocks import FileWriter` を使っていたコードは ImportError
+- `.flw.json` 内の `"class_name": "FileWriter"` は ModelLoadError
+  (= 未知ブロック型) で読み込み失敗
+
+**代替手段** (Python API):
+シミュレーション結果のファイル出力は `Scope` ブロックの `times` / `values`
+を直接取り出して numpy / csv モジュールで保存:
+
+```python
+sim.add(Scope(n_inputs=1, labels=["sine"], id="scope"))
+sim.connect("src", "scope")
+sim.run()
+scope = sim.get_block("scope")
+np.savez("output.npz", time=scope.times, sine=scope.values[:, 0])
+```
+
+### Removed
+
+- `pyflw/blocks/file_writer.py` (本体ファイル)
+- `tests/blocks/test_file_writer.py` (テストファイル)
+- `pyflw.exceptions.FileWriteError` 例外クラス
+- `pyflw/server/registry.py` の `FileWriter` metadata エントリ
+- `pyflw/server/registry_translations.py` の翻訳
+- `pyflw/web/frontend/src/lib/blockGlyphs.tsx` の `FileWriterGlyph`
+- `pyflw/server/routes/simulations.py` の `simulator._workspace_root`
+  自動注入 (FileWriter 専用だったため)
+- `pyflw.core.Simulator._workspace_root` 属性 (FileWriter 専用)
+- `pyflw.core.Simulator._finalize_blocks()` メソッド (FileWriter 専用、
+  他に `_finalize` を必要とするブロックがないため)
+
+### Kept
+
+- `pyflw/web/frontend/src/components/ParameterPanel.tsx` の
+  registry.params_spec ↔ block.params merge ロジック (v0.39.2 で追加):
+  本機能は将来 backend に param 追加された全ブロック種で再利用可能なため
+  保持
+
+### Compatibility
+
+- v0.39.0 〜 5.9.2 で `FileWriter` ブロックを含む `.flw.json` を保存している
+  場合、v0.40.0 で読み込み不可。**該当ブロックを削除してから save し直し**
+  が必要
+
 ## [0.39.2] - 2026-06-08 — ParameterPanel: registry.params_spec と block.params の merge
 
 v0.39.1 で `FileWriter` に追加した `path` / `format` パラメータが、**旧モデルで

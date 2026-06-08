@@ -14,7 +14,6 @@ from .discrete import (
     UnitDelay,
     ZeroOrderHoldDirect,
 )
-from .file_writer import FileWriter
 from .logic import LogicalOperator, RelationalOperator
 from .lookup import (
     InterpolationUsingPrelookup,
@@ -61,7 +60,6 @@ __all__ = [
     "DiscreteTransferFunction",
     "Divide",
     "Fcn",
-    "FileWriter",
     "From",
     "Gain",
     "Goto",

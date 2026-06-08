@@ -670,23 +670,6 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力信号を破棄 (未接続出力の警告を抑制)。",
         },
     },
-    # SPEC-0016 / ADR-0066 (v0.39.0): FileWriter (Wave 2 最終)
-    "pyflw.blocks.file_writer.FileWriter": {
-        "en": {
-            "display_name": "File Writer",
-            "docstring_summary": (
-                "Sink: record samples for export to .npz / .csv "
-                "(auto-saved at run end if `path` is set, .csv/.npz inferred from extension)."
-            ),
-        },
-        "ja": {
-            "display_name": "ファイル出力",
-            "docstring_summary": (
-                "シンク: サンプルを蓄積し .npz / .csv に出力 "
-                "(`path` 指定で run 終了時に自動保存、拡張子 .csv/.npz から format 推測)。"
-            ),
-        },
-    },
     # ----- subsystems (3) -------------------------------------------------
     "pyflw.subsystems.subsystem.Subsystem": {
         "en": {
