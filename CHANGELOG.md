@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.2] - 2026-06-08 — ParameterPanel: registry.params_spec と block.params の merge
+
+v0.39.1 で `FileWriter` に追加した `path` / `format` パラメータが、**旧モデルで
+保存されたブロック (v0.39.0 以前で配置済)** の Inspector に表示されない問題を
+修正 (ユーザー報告 2026-06-08)。
+
+### Fixed
+
+- `pyflw/web/frontend/src/components/ParameterPanel.tsx`:
+  - `block.params` (= モデルに保存された param) と
+    `registry.params_spec` (= backend の `__init__` 引数) を **merge** し、
+    モデルに無い param も registry の default 値で Inspector に表示する
+  - draft 初期化も同様にマージし、ブロック切替時に新 param 値も draft に
+    入る
+  - commit 時にユーザーが値を変更すると `block.params` に新 key が
+    自動追加されて永続化される (= モデル update 経路で扱われる)
+
+### 影響範囲
+
+- 旧 backend の `.flw.json` を新 backend (より多い param) でロードした
+  ケース全般で、新規 param を Inspector で編集できるようになる
+- 既存 param の値は **block.params が優先** されるため上書きされない
+- `params_spec` に宣言が無い param は引き続き block.params の値だけが
+  表示される (= 後方互換)
+
+### Added
+
+- 新規テスト `parameterPanelParamsMerge.test.tsx` (3 件):
+  - 旧 FileWriter モデルで path / format が Inspector に表示
+  - 既存 n_inputs の値が registry default に上書きされない
+  - 新 param を edit すると block.params に key が追加される
+
 ## [0.39.1] - 2026-06-08 — FileWriter auto-save (path 指定で run 終了時に自動出力)
 
 v0.39.0 で追加した `FileWriter` ブロックは Python API (`save_csv` / `save_npz`)
