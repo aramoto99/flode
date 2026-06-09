@@ -490,11 +490,6 @@ interface AppState {
 
   // Scope データ (scope_id -> 時系列)
   scopes: Record<string, ScopeBuffer>;
-  appendScopeBatch: (
-    scope_id: string,
-    times: number[],
-    values: number[][],
-  ) => void;
   resetScopes: () => void;
 
   // 受信ハンドラ (WebSocket メッセージから状態に反映)
@@ -1199,7 +1194,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationId: null,
   status: "idle",
   progress: null,
-  startedSimulation: (simId) =>
+  startedSimulation: (simId) => {
+    // 前 run の未 flush pending (scope_batch / progress) が新 run に漏れ込まない
+    // よう、予約済み rAF を解除して pending を破棄してから開始する。
+    cancelPendingStream();
     set({
       simulationId: simId,
       status: "running",
@@ -1209,7 +1207,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastFailure: null,
       lastFailureSource: null,
       activeErrorTab: false,
-    }),
+    });
+  },
   setStatus: (status) => set({ status }),
   setProgress: (current_t, t_end) => set({ progress: { current_t, t_end } }),
   resetSimulation: () =>
@@ -1255,33 +1254,43 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   scopes: {},
-  appendScopeBatch: (scope_id, times, values) =>
-    set((state) => {
-      const current = state.scopes[scope_id] ?? createScopeBuffer();
-      return {
-        scopes: {
-          ...state.scopes,
-          [scope_id]: appendScopeBatchSoA(current, times, values),
-        },
-      };
-    }),
-  resetScopes: () => set({ scopes: {} }),
+  resetScopes: () => {
+    cancelPendingStream();
+    set({ scopes: {} });
+  },
 
   handleStreamMessage: (msg) => {
     switch (msg.type) {
       case "progress":
-        set({ progress: { current_t: msg.current_t, t_end: msg.t_end } });
+        // rAF coalescing: 最新 progress のみ保持し 1 フレーム後に反映する
+        // (= 毎ステップ届く progress で React 再レンダを煽らない)。
+        pendingProgress = { current_t: msg.current_t, t_end: msg.t_end };
+        scheduleScopeFlush();
         break;
       case "scope_batch":
-        // appendScopeBatch ロジックを再利用 (= 同じ SoA 追記パスを通すことで
-        // 整合性管理が 1 か所に集約される)。
-        get().appendScopeBatch(msg.scope_id, msg.times, msg.values);
+        // rAF coalescing: pending に積み、1 フレーム 1 回だけ flush する。
+        // 1 frame 内に複数バッチが届いても uPlot 再描画は 1 回に畳む
+        // (= カクつき/CPU 浪費の解消)。append ロジック自体は flush 側で
+        // ``appendScopeBatchSoA`` を直接呼び、整合性管理を 1 か所に集約する。
+        pendingScopeBatches.push({
+          scope_id: msg.scope_id,
+          times: msg.times,
+          values: msg.values,
+        });
+        scheduleScopeFlush();
         break;
       case "completed":
       case "stopped":
+        // 終端: 予約済み pending を同期 drain してからステータス確定する
+        // (= バックエンドの最終バッチの取りこぼし・順序逆転を防ぐ)。
+        flushPendingStream();
+        cancelPendingStream();
         set({ status: msg.type });
         break;
       case "failed": {
+        // 終端: progress / scope_batch の pending を同期 drain してから失敗確定。
+        flushPendingStream();
+        cancelPendingStream();
         // ADR-0056 §F2: ``failed`` に ``category`` フィールドが付いていれば構造化
         // エラーとして lastFailure に保存し Error tab を自動 focus。``category``
         // 無し (= 旧フォーマット or 想定外) なら詳細無しで status だけ立てる。
@@ -1313,6 +1322,93 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+// ---------------------------------------------------------------------------
+// Scope ストリームの rAF coalescing (描画 cadence を最大 60fps に間引く性能最適化)。
+//
+// 背景: WebSocket の ``scope_batch`` / ``progress`` は、実時間非同期で最速計算する
+// バックエンドから 1 フレーム (16ms) 内に何本も届きうる。受信ごとに同期 ``set()``
+// すると 1 フレームで複数回の React 再レンダ + uPlot canvas 再描画が走り、カクつき
+// / CPU 浪費の原因になる。届いたメッセージを pending に溜め、
+// ``requestAnimationFrame`` で 1 フレーム 1 回だけまとめて 1 ``set()`` に畳む。
+//
+// 観測挙動 (= 最終的に描かれるグラフ) は不変で、描画頻度のみを整える。終端メッセージ
+// (completed / stopped / failed) は ``flushPendingStream()`` で同期 drain してから
+// ステータスを確定し、最終バッチの取りこぼし・順序逆転を防ぐ。
+// ---------------------------------------------------------------------------
+
+interface PendingScopeBatch {
+  scope_id: string;
+  times: readonly number[];
+  values: readonly (readonly number[])[];
+}
+
+let pendingScopeBatches: PendingScopeBatch[] = [];
+let pendingProgress: { current_t: number; t_end: TEnd } | null = null;
+let scopeFlushHandle: number | null = null;
+
+/** rAF 非対応環境 (SSR 等) での setTimeout fallback 間隔 (≒ 60fps = 1000/60 ms)。 */
+const RAF_FALLBACK_MS = 16;
+
+// request / cancel はともに「呼び出し時点」で rAF の有無を判定する。モジュール
+// 評価時に固定しないことで、環境差・テストの global stub・dev HMR の差し替えに
+// 追従する (= request したら同系統で cancel される保証を実行時に取り直す)。
+function requestFrame(cb: () => void): number {
+  if (typeof requestAnimationFrame === "function") {
+    return requestAnimationFrame(cb);
+  }
+  return setTimeout(cb, RAF_FALLBACK_MS) as unknown as number;
+}
+function cancelFrame(handle: number): void {
+  if (typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(handle);
+  } else {
+    clearTimeout(handle);
+  }
+}
+
+/** pending を 1 フレーム後に flush するよう予約する (二重予約はしない)。 */
+function scheduleScopeFlush(): void {
+  if (scopeFlushHandle !== null) return;
+  scopeFlushHandle = requestFrame(() => {
+    scopeFlushHandle = null;
+    flushPendingStream();
+  });
+}
+
+/** 溜まった scope_batch / progress を 1 回の ``set()`` にまとめて反映する。
+ *  pending が空なら no-op。終端メッセージ処理から同期呼び出しもされる。 */
+function flushPendingStream(): void {
+  if (pendingScopeBatches.length === 0 && pendingProgress === null) return;
+  const batches = pendingScopeBatches;
+  const progress = pendingProgress;
+  pendingScopeBatches = [];
+  pendingProgress = null;
+  useAppStore.setState((state) => {
+    const patch: Partial<AppState> = {};
+    if (batches.length > 0) {
+      // scopes の shallow copy は 1 フレームにつき 1 回だけ (= 旧実装はバッチ毎)。
+      const scopes = { ...state.scopes };
+      for (const b of batches) {
+        const current = scopes[b.scope_id] ?? createScopeBuffer();
+        scopes[b.scope_id] = appendScopeBatchSoA(current, b.times, b.values);
+      }
+      patch.scopes = scopes;
+    }
+    if (progress !== null) patch.progress = progress;
+    return patch;
+  });
+}
+
+/** 予約済み flush を解除し pending を破棄する (run 開始 / scope リセット時)。 */
+function cancelPendingStream(): void {
+  if (scopeFlushHandle !== null) {
+    cancelFrame(scopeFlushHandle);
+    scopeFlushHandle = null;
+  }
+  pendingScopeBatches = [];
+  pendingProgress = null;
+}
 
 // ---------------------------------------------------------------------------
 // ADR-0019 §(5) / ADR-0021 §(2) helper functions:
