@@ -82,5 +82,5 @@ pyflw/web/frontend/test-results/
 pyflw/web/frontend/playwright-report/
 pyflw/web/frontend/playwright/.cache/
 
-# Claude Code local overrides
-.claude/settings.local.json
+# Claude Code config / docs — local-only, not tracked (public 化しても非公開)
+.claude/
