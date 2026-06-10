@@ -169,7 +169,6 @@
   "modal.shortcuts.desc.drag_branch": "Branch from any point on a wire to block.in[0]",
   "modal.shortcuts.desc.branch_connect": "Branch from existing wire to block.in[0]",
   "modal.shortcuts.desc.new_file": "New file",
-  "modal.shortcuts.desc.open": "Open",
   "modal.shortcuts.desc.save": "Save",
   "modal.shortcuts.desc.save_as": "Save As",
   "modal.shortcuts.desc.undo": "Undo",
@@ -289,7 +288,6 @@
 
   "app.empty.title": "No file open",
   "app.empty.hint_new": "File → New (Ctrl+N) to create a model",
-  "app.empty.hint_open": "File → Open… (Ctrl+O) to open an existing model",
   "app.scope.no_output": "No scope output. Run a simulation to plot data.",
   "app.inspector.locked": "Open a model to inspect block parameters.",
 

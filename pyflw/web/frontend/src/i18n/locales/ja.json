@@ -169,7 +169,6 @@
   "modal.shortcuts.desc.drag_branch": "配線の任意の位置から block.in[0] へドラッグ&ドロップで分岐",
   "modal.shortcuts.desc.branch_connect": "既存の配線から block.in[0] へ分岐",
   "modal.shortcuts.desc.new_file": "新規ファイル",
-  "modal.shortcuts.desc.open": "開く",
   "modal.shortcuts.desc.save": "保存",
   "modal.shortcuts.desc.save_as": "名前を付けて保存",
   "modal.shortcuts.desc.undo": "元に戻す",
@@ -289,7 +288,6 @@
 
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",
-  "app.empty.hint_open": "ファイル → 開く… (Ctrl+O) で既存モデルを開く",
   "app.scope.no_output": "Scope 出力なし。シミュレーションを実行するとデータが描画されます。",
   "app.inspector.locked": "モデルを開くとブロックのパラメータを編集できます。",
 

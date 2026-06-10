@@ -87,7 +87,10 @@ export function useAutoSave(): void {
   // Ctrl+S で即時 PUT
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // !e.shiftKey: Ctrl+Shift+S は MenuBar 側の Save As が扱うため除外
+      // (= 二重発火防止)。Shift 押下時の e.key は "S" になり現状でも二重発火は
+      // しないが、判定意図を明示しておく。
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "s") {
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
         void flush();
