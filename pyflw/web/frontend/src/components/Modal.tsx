@@ -342,7 +342,6 @@ export function KeyboardShortcutsDialog({
       title: t("modal.shortcuts.section.file"),
       rows: [
         { keys: "Ctrl+N", description: t("modal.shortcuts.desc.new_file") },
-        { keys: "Ctrl+O", description: t("modal.shortcuts.desc.open") },
         { keys: "Ctrl+S", description: t("modal.shortcuts.desc.save") },
         { keys: "Ctrl+Shift+S", description: t("modal.shortcuts.desc.save_as") },
       ],

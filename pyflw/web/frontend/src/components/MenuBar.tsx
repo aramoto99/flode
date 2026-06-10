@@ -221,18 +221,38 @@ export function MenuBar(): JSX.Element {
     }
   };
 
-  // ---- keyboard shortcuts: Ctrl+N ----
-  // Ctrl+O は legacy Open dialog 用だったが v0.21.0 で削除済 → 現状は無効。
-  // Ctrl+S は useAutoSave 側で扱う。
+  // ---- keyboard shortcuts: Ctrl+N / Ctrl+Shift+S ----
+  // Ctrl+O は legacy Open dialog 用だったが v0.21.0 で削除済 → 現状は無効
+  // (Help ダイアログからも撤去済、開く導線は FileBrowser / Ctrl+P に集約)。
+  // Ctrl+S は useAutoSave 側で扱う (= Shift 無しの "s")。
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         void handleNew();
+        return;
+      }
+      // Ctrl+Shift+S = Save As。一部ブラウザの "ページを保存" 等と重複するため
+      // preventDefault で pyflw を優先。selectedFilePath は空依存 useEffect の
+      // stale closure を避けるため getState() で最新値を読む。
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "s"
+      ) {
+        // ファイル未選択なら何もしない。preventDefault より前で return し、
+        // ブラウザ既定 (ページを保存) を塞いだまま無反応になるのを避ける。
+        if (useAppStore.getState().selectedFilePath === null) return;
+        e.preventDefault();
+        setOpenMenu(null);
+        setModal({ kind: "save-as-path" });
+        return;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+    // setOpenMenu / setModal は stable な useState setter、可変な selectedFilePath は
+    // getState() で都度最新を読むため、Save As 分岐に stale closure は生じない。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -296,7 +316,7 @@ export function MenuBar(): JSX.Element {
 
   const fileItems: MenuItemSpec[] = [
     { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: () => void handleNew() },
-    { label: t("menu.file.open"), shortcut: "Ctrl+O", onClick: handleOpen, disabled: true },
+    { label: t("menu.file.open"), onClick: handleOpen, disabled: true },
     { label: "", divider: true },
     // ADR-0043 §論点 4: Recent Files セクション
     { label: t("menu.file.recent", "Recent Files"), disabled: true },
@@ -308,7 +328,12 @@ export function MenuBar(): JSX.Element {
       onClick: handleSave,
       disabled: !hasModel,
     },
-    { label: t("menu.file.save_as"), onClick: handleSaveAs, disabled: !hasModel },
+    {
+      label: t("menu.file.save_as"),
+      shortcut: "Ctrl+Shift+S",
+      onClick: handleSaveAs,
+      disabled: !hasModel,
+    },
     { label: "", divider: true },
     { label: t("menu.file.close"), onClick: handleClose, disabled: !hasModel },
     {
