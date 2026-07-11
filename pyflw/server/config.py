@@ -43,7 +43,7 @@ _SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dataclasses.fi
 }
 
 _KNOWN_SECTIONS = ("server", "settings")
-_KNOWN_SERVER_KEYS: frozenset[str] = frozenset({"host", "port"})
+_KNOWN_SERVER_KEYS: frozenset[str] = frozenset({"host", "port", "open_browser", "port_retries"})
 # Settings dataclass の field 名 + workspace alias を許容する (二重管理を避けるため
 # dataclass フィールドから動的生成、code-reviewer SHOULD 修正)。
 _KNOWN_SETTINGS_KEYS: frozenset[str] = _SETTINGS_FIELD_NAMES | {_WORKSPACE_TOML_KEY}
@@ -57,6 +57,10 @@ _KNOWN_SETTINGS_KEYS: frozenset[str] = _SETTINGS_FIELD_NAMES | {_WORKSPACE_TOML_
 
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 8770
+# SPEC-0021: 起動 UX。ブラウザ自動オープンは既定 ON、ポートフォールバックは
+# JupyterLab の既定 (50) に合わせる。
+_DEFAULT_OPEN_BROWSER = True
+_DEFAULT_PORT_RETRIES = 50
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +274,36 @@ class SettingsResolver:
             port_value = port_raw
         return host, port_value
 
+    def build_launch_options(self) -> tuple[bool, int]:
+        """起動オプション ``(open_browser, port_retries)`` を返す (SPEC-0021 §3)。
+
+        ``host`` / ``port`` と同じく ``Settings`` dataclass には含めず、CLI 層の
+        起動シーケンス (ブラウザ自動オープン / ポートフォールバック) 専用に別管理する
+        (SPEC-0004 の責務分離方針を踏襲)。
+
+        Returns:
+            ``(open_browser, port_retries)``。CLI > file > default の順で解決済み。
+
+        Raises:
+            PyflwError: 型違反 (``open_browser`` が bool でない、``port_retries`` が
+                int でない / 負値 / bool)。
+        """
+        open_browser = self._resolve_bool_field(
+            "open_browser",
+            section="server",
+            default=_DEFAULT_OPEN_BROWSER,
+        )
+        port_retries = self._resolve_int_field(
+            "port_retries",
+            section="server",
+            default=_DEFAULT_PORT_RETRIES,
+        )
+        if port_retries < 0:
+            raise PyflwError(
+                f"Invalid value for [server].port_retries: must be >= 0, got {port_retries}"
+            )
+        return open_browser, port_retries
+
     # --- internals -----------------------------------------------------------
 
     def _lookup(self, key: str, *, section: str) -> Any:
@@ -392,6 +426,15 @@ _TEMPLATE = """# ~/.pyflw/config.toml — pyflw-server configuration (SPEC-0004)
 [server]
 host = "127.0.0.1"   # bind host (default: "127.0.0.1")
 port = 8770          # bind port (default: 8770)
+
+# Open the default web browser after the server starts listening (SPEC-0021).
+# Disable permanently here, or per-run with `pyflw-server --no-browser`.
+open_browser = true
+
+# When the requested port is busy, try port+1, port+2, ... up to this many
+# times (default: 50, matching JupyterLab). Set 0 to disable fallback and
+# fail immediately (fixed-port / reverse-proxy setups). SPEC-0021.
+port_retries = 50
 
 # === pyflw.server.Settings dataclass fields ===
 # These are passed to `create_app(settings=Settings(...))`.

@@ -308,6 +308,81 @@ class TestSettingsResolver:
 
 
 # ---------------------------------------------------------------------------
+# SettingsResolver.build_launch_options (SPEC-0021)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildLaunchOptions:
+    def test_defaults(self) -> None:
+        """未指定なら (open_browser=True, port_retries=50) (SPEC-0021 §3)。"""
+        resolver = SettingsResolver(cli={}, file_config={})
+        open_browser, port_retries = resolver.build_launch_options()
+        assert open_browser is True
+        assert port_retries == 50
+
+    def test_file_overrides_defaults(self) -> None:
+        resolver = SettingsResolver(
+            cli={},
+            file_config={"server": {"open_browser": False, "port_retries": 10}},
+        )
+        open_browser, port_retries = resolver.build_launch_options()
+        assert open_browser is False
+        assert port_retries == 10
+
+    def test_cli_no_browser_wins_over_file(self) -> None:
+        """CLI --no-browser は file の open_browser=true を上書きする (優先順位一貫)。"""
+        resolver = SettingsResolver(
+            cli={"open_browser": False},
+            file_config={"server": {"open_browser": True}},
+        )
+        open_browser, _ = resolver.build_launch_options()
+        assert open_browser is False
+
+    def test_port_retries_zero_allowed(self) -> None:
+        """0 は「フォールバック無効」の正当な値 (SPEC-0021 §4-2)。"""
+        resolver = SettingsResolver(
+            cli={},
+            file_config={"server": {"port_retries": 0}},
+        )
+        _, port_retries = resolver.build_launch_options()
+        assert port_retries == 0
+
+    def test_open_browser_type_mismatch_raises(self) -> None:
+        resolver = SettingsResolver(
+            cli={},
+            file_config={"server": {"open_browser": "yes"}},
+        )
+        with pytest.raises(PyflwError, match="open_browser"):
+            resolver.build_launch_options()
+
+    def test_port_retries_negative_raises(self) -> None:
+        resolver = SettingsResolver(
+            cli={},
+            file_config={"server": {"port_retries": -1}},
+        )
+        with pytest.raises(PyflwError, match="port_retries"):
+            resolver.build_launch_options()
+
+    def test_port_retries_bool_raises(self) -> None:
+        """bool は int のサブクラスなので明示的に弾く (SPEC-0004 の port と同じガード)。"""
+        resolver = SettingsResolver(
+            cli={},
+            file_config={"server": {"port_retries": True}},
+        )
+        with pytest.raises(PyflwError, match="port_retries"):
+            resolver.build_launch_options()
+
+    def test_new_keys_do_not_warn_as_unknown(self, caplog: pytest.LogCaptureFixture) -> None:
+        """open_browser / port_retries は既知キー (_KNOWN_SERVER_KEYS) であること。"""
+        with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
+            SettingsResolver(
+                cli={},
+                file_config={"server": {"open_browser": False, "port_retries": 5}},
+            )
+        assert not caplog.records
+
+
+# ---------------------------------------------------------------------------
 # generate_config_template
 # ---------------------------------------------------------------------------
 
@@ -329,6 +404,9 @@ class TestGenerateConfigTemplate:
         assert "allow_origins" in content
         assert "library_paths" in content
         assert "bundle_builtin_libraries" in content
+        # SPEC-0021: 起動 UX の新キー
+        assert "open_browser" in content
+        assert "port_retries" in content
 
     def test_refuses_existing_file(self, tmp_path: Path) -> None:
         cfg = tmp_path / "config.toml"

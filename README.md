@@ -4,17 +4,33 @@ A block-diagram dynamic system simulator for Python. Build continuous, discrete,
 and hybrid models by wiring pre-built blocks, then integrate with
 `scipy.solve_ivp` (default: RK45).
 
-**Stable as of v0.14.0** (2026-05-09, ADR-0039). Public API + JSON schema 0.8 +
-REST `/api/v1/*` + extras names (`pyflw[gui/control/codegen/gpu]`) frozen under
-SemVer.
+**Current: v0.41.0** (2026-07-11). pyflw follows
+[ZeroVer](https://0ver.org/) (永久 0.x) — within `0.x`, a **minor** bump is a
+feature or breaking change and a **patch** bump is a fix. The public Python API,
+`.flw.json` JSON schema (now **0.9**), REST `/api/v1/*` surface, and extras
+names (`pyflw[gui/control/codegen/gpu]`) are kept stable across patch releases;
+breaking changes are called out in `CHANGELOG.md` and bump the minor.
 
-**Active line: v3.5.x** (2026-05-11) — Phase 6+ UX additions on top of v2 core:
-JupyterLab-style local file editing (ADR-0041), Stop Time = `inf` with ring
-buffer scope (ADR-0042), workspace enhancement with multi-tab + Recent Files +
-fuzzy search (ADR-0043), scope plot settings + floating windows (ADR-0044), and
-a Property-Inspector-style UI design system. All additions are
-backward-compatible — `.flw.json` schema 0.8 and the public Python API are
-preserved.
+Recent highlights on top of the v2 core:
+
+- **JupyterLab-parity startup UX** (v0.41.0, SPEC-0021) — `pyflw-server` opens
+  your default browser automatically and falls back to the next free port when
+  the requested one is busy (`--no-browser` / `[server] port_retries = 0` to
+  opt out).
+- **Standard block library expansion** (v0.39.0, ADR-0059) — 15 new blocks:
+  N-D lookup tables, arbitrary-expression `Fcn`, noise sources, discontinuity
+  elements (Relay / RateLimiter), multiport routing (Goto / From / Merge /
+  MultiportSwitch), transport delay, and more.
+- **JupyterLab-style workspace** — local file direct editing (ADR-0041),
+  multi-tab editor + Recent Files + fuzzy search (ADR-0043), and staged
+  JupyterLab convergence (multi-pane / activity bar / drag-to-split,
+  ADR-0045 / 0051 / 0052).
+- **Open-ended runs** — Stop Time = `inf` with a ring-buffer scope (ADR-0042).
+- **Scope UX** — per-scope plot settings + floating scope windows (ADR-0044).
+- **Subsystem behavior modifiers** — Trigger / Enable as in-subsystem control
+  blocks (ADR-0058); the standalone `TriggeredSubsystem` class was removed in
+  v0.38.0.
+- **Property-Inspector-style UI design system** across every settings dialog.
 
 ## Requirements
 
@@ -60,8 +76,17 @@ cd ../../..
 # Install the Python side (FastAPI server + bundled static)
 pip install -e ".[gui]"
 
-# Start the server
+# Start the server — opens your default browser automatically (SPEC-0021).
+# If port 8770 is busy it falls back to 8771, 8772, ... (up to 50 tries).
+pyflw-server
+
+# Options: custom workspace/port, headless (no browser)
 pyflw-server --workspace ./workspace --port 8770
+pyflw-server --no-browser
+# Fixed-port setups (reverse proxy etc.): set `[server] port_retries = 0`
+# in ~/.pyflw/config.toml to fail immediately instead of falling back.
+# `pyflw-server --generate-config` writes a commented template with all
+# keys ([server] open_browser / port_retries etc.).
 ```
 
 Re-run `npm run build` after any `git pull` that touches
@@ -114,17 +139,20 @@ See `examples/spring_mass_damper.py` for a complete second-order system example.
 
 ## Block Library
 
-| Category   | Blocks                                                                    |
-|------------|---------------------------------------------------------------------------|
-| Sources    | Constant, Step, Sine, Ramp, Clock, PulseGenerator                        |
-| Sinks      | Scope, Terminator, Display, XYGraph                                       |
-| Continuous | Integrator, StateSpace, TransferFunction, MimoTransferFunction, Derivative |
-| Discrete   | UnitDelay, DiscreteIntegrator, ZeroOrderHoldDirect, DiscreteStateSpace, DiscreteTransferFunction, RateTransition |
-| Math       | Gain, Sum, Product, Saturation, Abs, Sign, MinMax, Divide                 |
-| Logic      | RelationalOperator, LogicalOperator                                       |
-| Routing    | Switch, Mux, Demux                                                        |
-| Subsystem  | Subsystem (Trigger / Enable control block で挙動修飾)                       |
-| Control    | Inport, Outport, Trigger, Enable                                          |
+| Category        | Blocks                                                                    |
+|-----------------|---------------------------------------------------------------------------|
+| Sources         | Constant, Step, Sine, Ramp, Clock, PulseGenerator, RandomSource          |
+| Sinks           | Scope, Terminator, Display, XYGraph                                       |
+| Continuous      | Integrator, StateSpace, TransferFunction, MimoTransferFunction, Derivative, TransportDelay |
+| Discrete        | UnitDelay, DiscreteIntegrator, ZeroOrderHoldDirect, DiscreteStateSpace, DiscreteTransferFunction, RateTransition |
+| Math            | Gain, Sum, Add, Product, Divide, Saturation, Abs, Sign, MinMax, MathFunction, TrigFunction, Rounding |
+| Discontinuities | DeadZone, Relay, RateLimiter, CompareToConstant, CompareToZero            |
+| Lookup          | LookupTable1D, LookupTable2D, LookupTableND, Prelookup, InterpolationUsingPrelookup |
+| Logic           | RelationalOperator, LogicalOperator                                       |
+| Routing         | Switch, MultiportSwitch, Mux, Demux, Merge, Goto, From                    |
+| User Function   | Fcn (AST-whitelisted arbitrary expression `y = f(t, u)`)                  |
+| Subsystem       | Subsystem (Trigger / Enable control block で挙動修飾、ADR-0058)            |
+| Control         | Inport, Outport, Trigger, Enable                                          |
 
 Full API reference: `docs/` (build with `sphinx-build -b html docs docs/_build`).
 
@@ -306,8 +334,12 @@ sphinx-build -b html docs docs/_build
 ```
 pyflw/
   core/       Block base class, Simulator, @block decorator, JSON persistence
-  blocks/     Block implementations (sources, sinks, continuous, discrete, ...)
-  subsystems/ Atomic Subsystem and Inport / Outport (ADR-0009)
+  blocks/     Block implementations (sources, mathops, continuous, discrete,
+              logic, routing, sinks, lookup, discontinuities, ...)
+  subsystems/ Subsystem, Triggered/Enable behavior, ports, mask (ADR-0009 / 0058)
+  analysis/   linearize / frequency_response / stability (ADR-0026 / 0027)
+  compile/    compiled_simulator / jax_backend codegen (ADR-0037, pyflw[codegen])
+  libraries/  Block library loader + std.flwlib.json (ADR-0029)
   server/     Optional FastAPI Web GUI backend (pyflw[gui])
   web/
     frontend/ Vite + React + TypeScript GUI source (built into server/static)

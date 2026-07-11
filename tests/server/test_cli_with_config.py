@@ -26,6 +26,21 @@ def mock_uvicorn(mocker: MockerFixture) -> object:
     return mocker.patch.object(uvicorn, "run")
 
 
+@pytest.fixture(autouse=True)
+def suppress_startup_side_effects(mocker: MockerFixture) -> None:
+    """SPEC-0021 の起動シーケンスを本モジュールでは無効化する。
+
+    - ``_launch_browser_thread``: 実ブラウザを開かせない
+    - ``find_free_port``: 実 socket プローブを行わず要求ポートをそのまま返す
+      (開発機で 8770 等が偶然使用中でも port の assert が壊れないよう決定化)。
+    起動 UX 自体のテストは ``test_cli_startup.py`` が担う。
+    """
+    from pyflw.server import cli
+
+    mocker.patch.object(cli, "_launch_browser_thread")
+    mocker.patch.object(cli, "find_free_port", side_effect=lambda host, port, retries: port)
+
+
 class TestCliWithConfigFile:
     def test_no_config_starts_with_defaults(
         self,

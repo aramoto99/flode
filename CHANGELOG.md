@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] - 2026-07-11 — 起動 UX: ブラウザ自動オープン + ポート自動フォールバック
+
+JupyterLab パリティの起動体験 (SPEC-0021 / ADR-0069)。`pyflw-server` と打つだけで
+ブラウザが開き、ポートが塞がっていても自動で次の空きポートで起動する。
+
+### Added
+
+- **ブラウザ自動オープン** — サーバの listen 確立を確認してからデフォルトブラウザで
+  UI を開く (`webbrowser`、新規依存なし)。非 loopback バインド
+  (`--host 0.0.0.0` / `::`) では loopback URL (`127.0.0.1` / `[::1]`) に正規化して
+  開く。ヘッドレス環境では WARNING に URL を出して起動継続
+- **`--no-browser` フラグ** — ブラウザ自動オープンをそのランだけ無効化
+  (ヘッドレス / CI / バックグラウンド起動向け)
+- **ポート自動フォールバック** — 要求ポートが使用中なら +1 ずつ最大
+  `port_retries` 回 (既定 50、JupyterLab 準拠) 試行し、最初の空きポートで起動。
+  ずれた場合は WARNING (`Port 8770 is in use, using 8771 instead.`) を出し、
+  起動ログ・ブラウザとも実ポートを使う
+- **`~/.pyflw/config.toml` の `[server]` に新キー** — `open_browser` (bool, 既定
+  `true`) / `port_retries` (int >= 0, 既定 `50`、`0` でフォールバック無効)。
+  `--generate-config` の雛形にも追記
+
+### Changed
+
+- **[挙動変更] 起動時にデフォルトブラウザが開くようになった** (既定 ON)。従来の
+  「開かない」挙動に戻すには `--no-browser`、恒久的には
+  `[server] open_browser = false`
+- **[挙動変更] ポート使用中でも起動が失敗しなくなった** (自動フォールバック)。
+  リバースプロキシ等の固定ポート運用で従来どおり即失敗させたい場合は
+  `[server] port_retries = 0`
+
 ## [0.40.0] - 2026-06-08 — FileWriter ブロック完全削除
 
 ### BREAKING — `pyflw.blocks.FileWriter` の削除

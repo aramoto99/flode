@@ -33,6 +33,7 @@ def _make_args(**overrides: object) -> argparse.Namespace:
         "migrate_models_to": None,
         "legacy_models_dir": None,
         "force": False,
+        "no_browser": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -106,7 +107,7 @@ class TestParser:
 
 class TestBuildSettingsWorkspaceMode:
     def test_workspace_sets_workspace_root(self, tmp_path: Path, isolated_home: Path) -> None:
-        settings, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
+        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         assert settings.workspace_root == tmp_path.resolve()
 
     def test_workspace_resolves_to_absolute(
@@ -117,7 +118,7 @@ class TestBuildSettingsWorkspaceMode:
     ) -> None:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "ws").mkdir()
-        settings, _, _ = _build_settings_from_args(_make_args(workspace=Path("ws")))
+        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=Path("ws")))
         assert settings.workspace_root == (tmp_path / "ws").resolve()
         assert settings.workspace_root.is_absolute()
 
@@ -155,7 +156,7 @@ class TestBuildSettingsDefault:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        settings, host, port = _build_settings_from_args(_make_args())
+        settings, host, port, _, _ = _build_settings_from_args(_make_args())
         assert settings.workspace_root == tmp_path.resolve()
         assert host == "127.0.0.1"
         assert port == 8770
@@ -169,19 +170,19 @@ class TestBuildSettingsDefault:
 class TestBuildSettingsOtherFields:
     def test_allow_origin_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
         origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
-        settings, _, _ = _build_settings_from_args(
+        settings, _, _, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, allow_origin=origins)
         )
         assert settings.allow_origins == origins
 
     def test_scope_batch_size_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
-        settings, _, _ = _build_settings_from_args(
+        settings, _, _, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, scope_batch_size=42)
         )
         assert settings.scope_batch_size == 42
 
     def test_host_port_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
-        _, host, port = _build_settings_from_args(
+        _, host, port, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, host="0.0.0.0", port=9000)
         )
         assert host == "0.0.0.0"
@@ -201,7 +202,7 @@ class TestCreateAppIntegration:
     ) -> None:
         from pyflw.server import create_app
 
-        settings, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
+        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         app = create_app(settings=settings)
         assert app.state.settings.workspace_root == tmp_path.resolve()
 

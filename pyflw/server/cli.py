@@ -15,14 +15,23 @@ SPEC-0004 (v3.17.0~): ``~/.pyflw/config.toml`` をサポート。優先順位は
 v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` を削除。旧 ``models/``
 ディレクトリから workspace への移行は ``pyflw-server --migrate-models-to=DIR``
 で実行する (= サーバ起動せず migrate のみ)。
+
+SPEC-0021 (v0.41.0~): JupyterLab パリティの起動 UX。起動後にデフォルトブラウザで
+UI を開き (``--no-browser`` / ``[server] open_browser`` で無効化)、要求ポートが
+使用中なら +1 ずつ自動フォールバックする (``[server] port_retries``、``0`` で無効)。
 """
 
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import logging
+import socket
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +48,189 @@ from .migrations import migrate_models_to
 from .settings import Settings
 
 _logger = logging.getLogger("pyflw.server.cli")
+
+# SPEC-0021 / ADR-0069 論点 2-b: ブラウザ自動オープンは listen 確立を TCP 接続で
+# 確認してから行う (固定 sleep より堅牢)。0.1s x 100 回 = 最大約 10 秒待って
+# best-effort で開く。
+_BROWSER_POLL_INTERVAL_S = 0.1
+_BROWSER_POLL_MAX_TRIES = 100
+
+# Windows では使用中ポートへの bind が WSAEACCES (winerror 10013) になるケースがある
+# (SO_EXCLUSIVEADDRUSE 済みポート・Hyper-V 等の予約ポート範囲)。JupyterLab と同様に
+# 「使用中」扱いで次ポートへフォールバックする。真の権限エラーと区別できない既知の
+# トレードオフだが、Windows は Unix と違い特権ポート (<1024) の bind 制限がなく、
+# WSAEACCES の実質的な発生源は予約範囲のため「使用中」扱いが妥当 (code-reviewer SHOULD)。
+_WINERROR_WSAEACCES = 10013
+
+# TCP ポート番号の上限。port_retries の誤設定 (極端に大きい値) で 65535 超のポートを
+# 探索しないよう find_free_port で範囲を打ち切る (code-reviewer SHOULD)。
+_MAX_TCP_PORT = 65535
+
+
+# ---------------------------------------------------------------------------
+# ポート自動フォールバック (SPEC-0021 §4 / ADR-0069 論点 1-a)
+# ---------------------------------------------------------------------------
+
+
+def _probe_bind(host: str, port: int) -> bool:
+    """``host:port`` に bind できるか判定する。
+
+    ``SO_REUSEADDR`` は付けない (Windows では使用中ポートへの bind が通ってしまい
+    誤判定するため。ADR-0069 実装メモ 1)。
+
+    注意: address family は ``getaddrinfo`` の先頭要素で決めるため、dual-stack な
+    hostname (例: ``localhost``) では probe した family と uvicorn が実際に bind する
+    family がずれる可能性がある (既定 host ``127.0.0.1`` は単一 family のため影響なし)。
+
+    Args:
+        host: bind host。
+        port: 試行するポート。
+
+    Returns:
+        bind 成功 (= 空きポート) で ``True``、使用中で ``False``。
+
+    Raises:
+        PyflwError: host の解決失敗、または使用中以外の理由での bind 失敗。
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise PyflwError(f"Cannot resolve bind host {host!r}: {e}") from e
+    family, socktype, proto, _, sockaddr = infos[0]
+    sock = socket.socket(family, socktype, proto)
+    try:
+        sock.bind(sockaddr)
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE or getattr(e, "winerror", None) == _WINERROR_WSAEACCES:
+            return False
+        raise PyflwError(f"Failed to bind {_display_host(host)}:{port}: {e}") from e
+    finally:
+        sock.close()
+    return True
+
+
+def find_free_port(host: str, port0: int, retries: int) -> int:
+    """``port0`` から ``port0 + retries`` まで順に試し、最初の空きポートを返す。
+
+    事前 bind プローブ方式のため probe close 〜 uvicorn の実 bind 間に微小な
+    TOCTOU 窓があるが、奪われた場合は uvicorn が従来どおり起動失敗として
+    表面化する (ADR-0069 で許容済み)。
+
+    Args:
+        host: bind host。
+        port0: 最初に試すポート。
+        retries: フォールバック試行回数 (``0`` で port0 のみ = フォールバック無効)。
+
+    Returns:
+        bind 可能だった最初のポート。
+
+    Raises:
+        PyflwError: ``port0`` がポート番号上限 (65535) を超えている、範囲内に
+            空きポートがない、または bind 失敗が使用中以外の理由。
+    """
+    if port0 > _MAX_TCP_PORT:
+        raise PyflwError(f"Invalid port {port0}: TCP port numbers must be <= {_MAX_TCP_PORT}.")
+    # port_retries の誤設定 (例: 100000) で 65535 超を探索しないよう上限で打ち切る
+    port_end = min(port0 + retries, _MAX_TCP_PORT)
+    for port in range(port0, port_end + 1):
+        if _probe_bind(host, port):
+            return port
+    raise PyflwError(
+        f"No free port found in range {port0}-{port_end} "
+        f"(tried {port_end - port0 + 1} port(s)). Stop other servers, or adjust "
+        f"[server].port / [server].port_retries in ~/.pyflw/config.toml."
+    )
+
+
+# ---------------------------------------------------------------------------
+# ブラウザ自動オープン (SPEC-0021 §1 / ADR-0069 論点 2-b)
+# ---------------------------------------------------------------------------
+
+
+def _display_host(host: str) -> str:
+    """URL / ログ表示用の host 文字列を返す (IPv6 literal は角括弧で囲む)。
+
+    Args:
+        host: bind または接続先 host。
+
+    Returns:
+        URL に埋め込める host 表記 (例: ``::1`` → ``[::1]``、IPv4 はそのまま)。
+    """
+    return f"[{host}]" if ":" in host else host
+
+
+def normalize_browser_host(bind_host: str) -> str:
+    """bind host からブラウザ接続先 host を導く (SPEC-0021 §4-D)。
+
+    ワイルドカードバインド (``0.0.0.0`` / ``::``) はそのまま接続先にできないため
+    loopback へ正規化する。具体 IP / hostname はそのまま返す。
+
+    Args:
+        bind_host: サーバの bind host。
+
+    Returns:
+        ブラウザ / 接続確認から到達可能な host (角括弧なし)。
+    """
+    if bind_host in ("0.0.0.0", "localhost"):
+        return "127.0.0.1"
+    if bind_host == "::":
+        return "::1"
+    return bind_host
+
+
+def _browser_url(host: str, port: int) -> str:
+    """ブラウザで開く URL を組み立てる。
+
+    Args:
+        host: 正規化済みの接続先 host (角括弧なし)。
+        port: 実際に bind したポート。
+
+    Returns:
+        ``http://<host>:<port>`` 形式の URL (IPv6 literal は角括弧で囲む)。
+    """
+    return f"http://{_display_host(host)}:{port}"
+
+
+def _open_browser_when_ready(host: str, port: int, url: str) -> None:
+    """listen 確立を TCP 接続で確認してからデフォルトブラウザで ``url`` を開く。
+
+    daemon スレッドで実行される。接続確認が上限試行に達した場合も best-effort で
+    1 回開く。ブラウザが開けなくても WARNING に URL を出すだけで、サーバ起動は
+    止めない (SPEC-0021 非機能要件)。
+
+    Args:
+        host: 接続確認先 host (正規化済み、IPv6 は角括弧なし)。
+        port: 接続確認先ポート (= 実際に bind したポート)。
+        url: ブラウザで開く URL。
+    """
+    for _ in range(_BROWSER_POLL_MAX_TRIES):
+        try:
+            with socket.create_connection((host, port), timeout=_BROWSER_POLL_INTERVAL_S):
+                break
+        except OSError:
+            time.sleep(_BROWSER_POLL_INTERVAL_S)
+    try:
+        opened = webbrowser.open(url, new=2)
+    except (webbrowser.Error, OSError) as e:
+        _logger.warning("Could not open a web browser (%s). Open %s manually.", e, url)
+        return
+    if not opened:
+        _logger.warning("No web browser available. Open %s manually.", url)
+
+
+def _launch_browser_thread(bind_host: str, port: int) -> None:
+    """ブラウザ自動オープン用の daemon スレッドを起動する (SPEC-0021 §1)。
+
+    daemon=True のためプロセス終了時に置き去りにならない (ADR-0069 実装メモ 9)。
+    """
+    connect_host = normalize_browser_host(bind_host)
+    url = _browser_url(connect_host, port)
+    threading.Thread(
+        target=_open_browser_when_ready,
+        args=(connect_host, port, url),
+        daemon=True,
+        name="pyflw-browser-open",
+    ).start()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -81,6 +273,16 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Scope batch size sent over WebSocket (default: 100).",
+    )
+    # SPEC-0021: ブラウザ自動オープンは既定 ON。恒久無効化は
+    # ~/.pyflw/config.toml の [server] open_browser = false。
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help=(
+            "Do not open the web browser after startup (for headless / CI / "
+            "background use). Default is to open it. SPEC-0021."
+        ),
     )
     # SPEC-0004: 設定ファイル機能
     parser.add_argument(
@@ -134,14 +336,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_settings_from_args(args: argparse.Namespace) -> tuple[Settings, str, int]:
-    """argparse Namespace から ``(Settings, host, port)`` を構築する (SPEC-0004)。
+def _build_settings_from_args(
+    args: argparse.Namespace,
+) -> tuple[Settings, str, int, bool, int]:
+    """argparse Namespace から ``(Settings, host, port, open_browser, port_retries)``
+    を構築する (SPEC-0004 / SPEC-0021)。
 
     SPEC-0004 §4: ``CLI > 設定ファイル > default`` の優先順位で解決する。
 
     Returns:
-        ``(Settings, host, port)`` のタプル。``Settings`` は ``create_app`` に、
-        ``host``/``port`` は ``uvicorn.run`` に渡す。
+        ``(Settings, host, port, open_browser, port_retries)`` のタプル。
+        ``Settings`` は ``create_app`` に、``host``/``port`` は ``uvicorn.run`` に、
+        ``open_browser``/``port_retries`` は起動シーケンス (SPEC-0021) に渡す。
 
     Raises:
         PyflwError: 設定ファイルのパースエラー、型違反、workspace path 不在など。
@@ -164,11 +370,16 @@ def _build_settings_from_args(args: argparse.Namespace) -> tuple[Settings, str, 
     # 「ユーザーが明示的にゼロ個指定した」を意味する (現状ありえないが、防御的に)。
     if args.allow_origin is not None:
         cli_dict["allow_origins"] = args.allow_origin
+    # SPEC-0021: --no-browser は CLI 最優先で open_browser を False に上書き。
+    # 未指定時はキーを渡さない (= file or default にフォールバック)。
+    if args.no_browser:
+        cli_dict["open_browser"] = False
 
     resolver = SettingsResolver(cli=cli_dict, file_config=file_cfg)
     settings = resolver.build_settings(default_workspace=Path.cwd().resolve())
     host, port = resolver.build_server_bind()
-    return settings, host, port
+    open_browser, port_retries = resolver.build_launch_options()
+    return settings, host, port, open_browser, port_retries
 
 
 def _run_migration(src: Path | None, dst: Path, *, force: bool) -> int:
@@ -231,7 +442,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(exit_code)
 
-    settings, host, port = _build_settings_from_args(args)
+    settings, host, port0, open_browser, port_retries = _build_settings_from_args(args)
     app = create_app(settings=settings)
     # ``uvicorn`` を遅延 import: extras 未インストール時にユーザーへ明確に誘導するため
     # (code-reviewer MUST 修正)。
@@ -241,12 +452,19 @@ def main(argv: list[str] | None = None) -> None:
         raise PyflwError(
             "pyflw-server requires uvicorn. Install with: pip install pyflw[gui]"
         ) from e
+    # SPEC-0021 §4: ポート自動フォールバック。実際に bind するポートを確定する。
+    port = find_free_port(host, port0, port_retries)
+    if port != port0:
+        _logger.warning("Port %d is in use, using %d instead.", port0, port)
     _logger.info(
         "Starting pyflw-server on http://%s:%d (workspace=%s)",
-        host,
+        _display_host(host),
         port,
         settings.workspace_root,
     )
+    # SPEC-0021 §1: ブラウザ自動オープン (listen 確立を確認してから開く)
+    if open_browser:
+        _launch_browser_thread(host, port)
     uvicorn.run(app, host=host, port=port)
 
 
