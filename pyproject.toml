@@ -24,7 +24,7 @@ Homepage = "https://github.com/aramoto99/pyflw"
 Issues = "https://github.com/aramoto99/pyflw/issues"
 
 [project.scripts]
-# SPEC-0021: `pyflw` が主コマンド (JupyterLab の `jupyter lab` 相当の一発起動)。
+# SPEC-0021: `pyflw` が主コマンド (コマンド 1 つでサーバ起動からブラウザオープンまで完結)。
 # `pyflw-server` は既存利用の互換のため同一エントリポイントの alias として維持。
 pyflw = "pyflw.server.cli:main"
 pyflw-server = "pyflw.server.cli:main"

@@ -292,7 +292,7 @@ interface AppState {
   closeScopePanel: (scopeId: string) => void;
   closeAllScopePanels: () => void;
 
-  // ADR-0045 §(1) Workspace JupyterLab Stage 1: Diagram + Scope の multi-pane split。
+  // ADR-0045 §(1) Workspace convergence Stage 1: Diagram + Scope の multi-pane split。
   // モデル別 (= ``workspaceHash`` + ``activeTabFilePath`` 単位) に
   // ``pyflw.workspace_layout.<hash>.<b64url(path)>`` で永続化。
   workspaceLayout: SplitTree;
@@ -447,7 +447,7 @@ interface AppState {
   inspectorWidth: number;
   setInspectorWidth: (px: number) => void;
 
-  // v0.31.0: FileBrowser の cwd (= 現在表示中のフォルダ相対パス、JupyterLab
+  // v0.31.0: FileBrowser の cwd (= 現在表示中のフォルダ相対パス、リファレンス Web IDE
   // 流儀)。``""`` で root。permanent 永続化なし (= session 内のみ、起動時は
   // root) — workspace 切替で root reset したいため localStorage 不適。
   fileBrowserCwd: string;
@@ -544,7 +544,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   closeAllScopePanels: () => set({ scopePanels: [] }),
 
-  // ADR-0045 §(1) Workspace JupyterLab Stage 1: multi-pane split state + actions。
+  // ADR-0045 §(1) Workspace convergence Stage 1: multi-pane split state + actions。
   // 永続化は各 mutator action 内で同期的に行う (= setLeftSidebarWidth と同じ慣例)。
   workspaceLayout: DEFAULT_TREE,
   loadWorkspaceLayout: (storedRaw, legacyRaw, hasVisibleScopes) =>
@@ -1071,7 +1071,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeInspectorWidth(clamped);
     set({ inspectorWidth: clamped });
   },
-  // v0.31.0: FileBrowser cwd (= JupyterLab 流儀の「中に入る」ナビゲーション)
+  // v0.31.0: FileBrowser cwd (= リファレンス Web IDE 流儀の「中に入る」ナビゲーション)
   fileBrowserCwd: "",
   setFileBrowserCwd: (path) => set({ fileBrowserCwd: path }),
   workspaceCollapsed: readWorkspaceCollapsed(),

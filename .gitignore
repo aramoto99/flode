@@ -45,7 +45,7 @@ desktop.ini
 # Logs
 *.log
 
-# Jupyter (workspace は JupyterLab 方向、checkpoints は無視)
+# Notebook checkpoints (自動生成物) を無視
 .ipynb_checkpoints/
 
 # Generated artifacts (regenerate via examples/*.py)

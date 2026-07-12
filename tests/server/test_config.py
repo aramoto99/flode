@@ -1,6 +1,6 @@
 """``pyflw.server.config`` のユニットテスト (SPEC-0004)。
 
-Jupyter Lab 準拠の挙動 (= 不在は default で黙起動、不正値は厳格エラー、未知キーは
+リファレンス Web IDE 準拠の挙動 (= 不在は default で黙起動、不正値は厳格エラー、未知キーは
 warning + 継続) を確認する。``~/.pyflw/config.toml`` の探索パスは ``Path.home()`` を
 monkeypatch して隔離する。
 """

@@ -1,4 +1,4 @@
-// ADR-0051 §(3): Workspace JupyterLab Stage 2 = Launcher。
+// ADR-0051 §(3): Workspace convergence Stage 2 = Launcher。
 // ファイル未選択時 (= ``hasOpenedModel === false``) に表示される画面。
 // 旧 ``EmptyState`` (= 単純な「ファイルが開かれていません」メッセージ) を置換。
 //
@@ -78,7 +78,7 @@ export function Launcher(): JSX.Element {
     );
     if (!input) return;
     const name = input.endsWith(".flw.json") ? input : `${input}.flw.json`;
-    // cwd 配下に作成 (= JupyterLab 流、breadcrumb で見えてる場所に作る)
+    // cwd 配下に作成 (= リファレンス Web IDE 流、breadcrumb で見えてる場所に作る)
     const fileBrowserCwd = useAppStore.getState().fileBrowserCwd;
     const path = fileBrowserCwd ? `${fileBrowserCwd}/${name}` : name;
     try {

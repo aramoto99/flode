@@ -1,4 +1,4 @@
-// ADR-0045 §(2) / §(3-D): Workspace JupyterLab Stage 1 の split tree データ構造と
+// ADR-0045 §(2) / §(3-D): Workspace convergence Stage 1 の split tree データ構造と
 // 純関数。SplitTree は LeafNode (= 単一 pane) と SplitNode (= 縦/横分割) の
 // 再帰的構造で、Diagram + Scope 群を `<main>` 内に任意配置するための骨格。
 //

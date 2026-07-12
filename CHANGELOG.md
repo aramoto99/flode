@@ -7,14 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.41.0] - 2026-07-11 — 起動 UX: ブラウザ自動オープン + ポート自動フォールバック
 
-JupyterLab パリティの起動体験 (SPEC-0021 / ADR-0069)。`pyflw` と打つだけで
+一発起動の体験 (SPEC-0021 / ADR-0069)。`pyflw` と打つだけで
 ブラウザが開き、ポートが塞がっていても自動で次の空きポートで起動する。
 
 ### Added
 
 - **`pyflw` コマンド** — `pyflw` と打つだけでサーバ起動 + ブラウザオープンまで
-  完結する (JupyterLab の `jupyter lab` 相当の一発起動)。従来の `pyflw-server` は
-  互換 alias として維持 (同一エントリポイント)
+  完結する。従来の `pyflw-server` は互換 alias として維持 (同一エントリポイント)
 - **ブラウザ自動オープン** — サーバの listen 確立を確認してからデフォルトブラウザで
   UI を開く (`webbrowser`、新規依存なし)。非 loopback バインド
   (`--host 0.0.0.0` / `::`) では loopback URL (`127.0.0.1` / `[::1]`) に正規化して
@@ -22,7 +21,7 @@ JupyterLab パリティの起動体験 (SPEC-0021 / ADR-0069)。`pyflw` と打�
 - **`--no-browser` フラグ** — ブラウザ自動オープンをそのランだけ無効化
   (ヘッドレス / CI / バックグラウンド起動向け)
 - **ポート自動フォールバック** — 要求ポートが使用中なら +1 ずつ最大
-  `port_retries` 回 (既定 50、JupyterLab 準拠) 試行し、最初の空きポートで起動。
+  `port_retries` 回 (既定 50) 試行し、最初の空きポートで起動。
   ずれた場合は WARNING (`Port 8770 is in use, using 8771 instead.`) を出し、
   起動ログ・ブラウザとも実ポートを使う
 - **`~/.pyflw/config.toml` の `[server]` に新キー** — `open_browser` (bool, 既定
@@ -549,7 +548,7 @@ B+C (上辺配置 + 縦向き ▽ + 中央雷) で 3 軸冗長な識別を導入
 ところに表示している？」。`App.tsx` 冒頭にデスクトップアプリ風の装飾 title bar
 を置いていたが、ブラウザのタブタイトル本来の役割を肩代わりさせる二重表示で、
 縦スペースも 28px 消費していた。version は StatusBar 右端で既に表示済み (=
-完全重複)。JupyterLab 方向性 (= タブタイトル運用) とも整合させる。
+完全重複)。リファレンス Web IDE への収斂方向 (= タブタイトル運用) とも整合させる。
 
 ### Changed
 
@@ -1214,7 +1213,7 @@ dead code) は対象外。実機で render されていないため触らない�
   (`border-blue-500/60 bg-blue-300/20`) overlay を描画、mouseup で矩形と
   各 row の `getBoundingClientRect()` が重なる path を `selectedPaths` に
   まとめて設定 (= 既存集合を置換)
-- **空白クリック (= drag 距離 < 4 px) で選択クリア** (JupyterLab 流)
+- **空白クリック (= drag 距離 < 4 px) で選択クリア** (リファレンス Web IDE 流)
 
 ### Implementation Notes
 
@@ -1280,7 +1279,7 @@ dead code) は対象外。実機で render されていないため触らない�
   `tabIndex={-1}` + `outline-none` で focusable にし、`onMouseDown` で focus
   を取る。これにより
   - Diagram canvas など FileBrowser 外でキーを押しても誤発火しない
-  - JupyterLab 流「アイテム選択中はファイル操作ショートカットが有効」UX が成立
+  - リファレンス Web IDE 流「アイテム選択中はファイル操作ショートカットが有効」UX が成立
   - `document.activeElement` が input/textarea のときは全ショートカット無効
     (= 既存 F2 の振る舞いを継承)
 
@@ -1334,7 +1333,7 @@ FileBrowser が自動更新されない (= 手動で 🔄 を押すまで反映�
 
 ## [0.31.3] - 2026-05-13 — FileBrowser ヘッダーに新規ファイル/フォルダ アイコン追加 + 右クリック context menu の発火範囲修正
 
-JupyterLab 流の FileBrowser に寄せる UX 改善。ユーザー指摘:
+リファレンス Web IDE 流の FileBrowser に寄せる UX 改善。ユーザー指摘:
 
 1. サブフォルダ作成の動線が**右クリック context menu の中だけ**で発見性が低い
 2. **FileBrowser のヘッダーや余白で右クリックすると、ブラウザのデフォルト
@@ -1345,7 +1344,7 @@ JupyterLab 流の FileBrowser に寄せる UX 改善。ユーザー指摘:
 
 - **FileBrowser ヘッダーに「新規ファイル」「新規フォルダ」アイコンボタン**
   (= Refresh アイコンと並ぶ 3 つの SVG アイコン)。クリックすると `prompt` を
-  経て現在の `fileBrowserCwd` 直下にエントリ作成、JupyterLab toolbar と同じ動線
+  経て現在の `fileBrowserCwd` 直下にエントリ作成、リファレンス Web IDE の toolbar と同じ動線
 - **Refresh ボタンを SVG アイコン化** (`⟳` テキスト → `RefreshIcon`)。
   3 ボタンの視覚的一貫性を確保
 - i18n キー追加: `filebrowser.action.new_file` / `filebrowser.action.new_folder`
@@ -1403,7 +1402,7 @@ v0.31.0 までは `Launcher` / `MenuBar` の "New file" 押下で `nextUntitledF
   - 新 v0.31.1: **`window.prompt` でファイル名をユーザーに明示要求**、空 /
     Cancel で **no-op** (= ディスク書き込みなし)
   - 入力ファイル名が `.flw.json` で終わっていない場合は自動付与
-  - 作成先は **現在の cwd** (= FileBrowser breadcrumb に従う、JupyterLab 流)
+  - 作成先は **現在の cwd** (= FileBrowser breadcrumb に従う、リファレンス Web IDE 流)
 - `nextUntitledFilePath` の import を撤去 (backend API は残置、不要)
 
 ### Added (C: 一括クリーンアップコマンド)
@@ -1436,7 +1435,7 @@ v0.31.0 までは `Launcher` / `MenuBar` の "New file" 押下で `nextUntitledF
 
 ### 既知の制約 (= 次の minor 候補)
 
-- **真の解決 = JupyterLab 流の memory-only unsaved** は別途 ADR で扱う (=
+- **真の解決 = リファレンス Web IDE 流の memory-only unsaved** は別途 ADR で扱う (=
   本 hotfix では即決ファイル化を維持、prompt で明示化に留める)
 
 ### Verification
@@ -1444,10 +1443,10 @@ v0.31.0 までは `Launcher` / `MenuBar` の "New file" 押下で `nextUntitledF
 - typecheck: clean
 - vitest: 349 全 pass
 
-## [0.31.0] - 2026-05-13 — FileBrowser を JupyterLab 流 cwd フォーカス型に書き換え
+## [0.31.0] - 2026-05-13 — FileBrowser をリファレンス Web IDE 流 cwd フォーカス型に書き換え
 
 ユーザー要望「ワークスペースのカレントディレクトリ移動」に対応。FileBrowser を
-**展開ツリー → cwd フォーカス型 flat list** に書き換え。JupyterLab の
+**展開ツリー → cwd フォーカス型 flat list** に書き換え。リファレンス Web IDE の
 FileBrowser 流儀 (= フォルダクリックで cd、breadcrumb で上に戻る) に統一。
 
 ### Added
@@ -1631,7 +1630,7 @@ v0.30.0 直後の code-reviewer agent 指摘 (= MUST 0 / SHOULD 3 / NITS 2) を�
 - vitest: 349 全 pass
 - ADR-0052 §Confidence の判断者への問いに反する事項なし
 
-## [0.30.0] - 2026-05-12 — Workspace JupyterLab Stage 3 = Drag-to-split-tab + Inspector pane 化 (ADR-0052)
+## [0.30.0] - 2026-05-12 — Workspace convergence Stage 3 = Drag-to-split-tab + Inspector pane 化 (ADR-0052)
 
 ADR-0052 採択 (Phase 6c Stage 3、Accepted 2026-05-12)。**Phase 6c の最終 Stage**:
 タブを drag → 別 pane に split / Inspector を 3 mode (sidebar/pane/float) で
@@ -1723,8 +1722,8 @@ Inspector float)。
 
 ### Phase 6c 完了
 
-本 release で **Phase 6c (Workspace JupyterLab convergence)** の 3 段階すべて
-が Accepted + 実装完了。Stage 4 以降の予約はなし (= 目標 JupyterLab UX
+本 release で **Phase 6c (Workspace convergence)** の 3 段階すべて
+が Accepted + 実装完了。Stage 4 以降の予約はなし (= 目標の Web IDE UX
 converge は概ね達成)。Phase 6 全体の完了は **Phase 6b (Codegen + GPU)** の
 完了 (= 新 ADR-0050) 待ち、別系列。
 
@@ -1878,7 +1877,7 @@ v0.29.0 コマンドパレットを拡張、現在のワークスペースの **
 
 ## [0.29.0] - 2026-05-12 — コマンドパレット (Ctrl+Shift+P) を追加
 
-JupyterLab / VSCode 流のコマンドパレットを実装。`Ctrl+Shift+P` で modal 表示、
+一般的な Web IDE 流のコマンドパレットを実装。`Ctrl+Shift+P` で modal 表示、
 検索 input + コマンドリスト + キーボード操作で **既存機能を名前検索で発火**
 できる。ADR 不要 (= 既存機能の発見性向上、新規機能追加ではない)、新規依存
 追加なし。
@@ -2025,9 +2024,9 @@ ADR-0041 §論点 7-A で v0.19.0 送りとされていた drag-drop による�
 - typecheck: clean
 - vitest: 349 全 pass
 
-## [0.28.0] - 2026-05-12 — Workspace JupyterLab Stage 2 = Activity bar + Launcher (ADR-0051)
+## [0.28.0] - 2026-05-12 — Workspace convergence Stage 2 = Activity bar + Launcher (ADR-0051)
 
-ADR-0051 採択 (Phase 6c Stage 2)。Workspace UI を JupyterLab/VSCode 流の
+ADR-0051 採択 (Phase 6c Stage 2)。Workspace UI を一般的な Web IDE 流の
 「activity bar + sidebar mode 切替 + Launcher」構造に刷新する大規模改修。
 **見た目が大きく変わる初の Stage** (= Stage 1 = v0.27.0〜3.6.2 は内部レイアウト
 機能の追加で見た目変化は限定的だった)。
@@ -2173,9 +2172,9 @@ UX-2 「Scope pane タイトルを block name で表示」は調査結果 cancel
 そのままリファレンスツールでいう Block Name に相当するため、現状の挙動 (= scope_id raw
 表示) が正しいことを確認。
 
-## [0.27.0] - 2026-05-11 — Workspace JupyterLab Stage 1 = multi-pane split (ADR-0045)
+## [0.27.0] - 2026-05-11 — Workspace convergence Stage 1 = multi-pane split (ADR-0045)
 
-ADR-0045 採択。**Phase 6c (Workspace JupyterLab convergence) Stage 1** として
+ADR-0045 採択。**Phase 6c (Workspace convergence) Stage 1** として
 Workspace の multi-pane split を導入。`<main>` 内の Diagram + Scope を縦/横
 任意配置可能に、SplitTree state を localStorage に永続化する。新規依存追加なし
 (= 既存 `react-resizable-panels@4.11.0` のネスト split を活用)。
@@ -2850,9 +2849,9 @@ ADR-0042 採択。リファレンスツール互換で Toolbar の Stop Time フ
 - typecheck + production build: clean
 - `examples/spring_mass_damper.py`: Final x=0.2505, x_dot=0.0031 (数値完全不変)
 
-## [0.21.0] - 2026-05-10 — JupyterLab 流ローカルファイル直接編集 + legacy API 削除 (BREAKING)
+## [0.21.0] - 2026-05-10 — リファレンス Web IDE 流ローカルファイル直接編集 + legacy API 削除 (BREAKING)
 
-ADR-0041 (JupyterLab 流ローカルファイル直接編集) の本格移行に伴う major
+ADR-0041 (リファレンス Web IDE 流ローカルファイル直接編集) の本格移行に伴う major
 release。v2.x で並行サポートしていた legacy ``/api/v1/models/*`` REST と
 ``--model-dir`` CLI を **完全削除** し、frontend を ``selectedFilePath`` 一本化
 した。詳細は ADR-0038 §Amendments §(3) / ADR-0041 §論点 4-A 参照。
@@ -2860,8 +2859,7 @@ release。v2.x で並行サポートしていた legacy ``/api/v1/models/*`` RES
 ### Breaking changes
 
 - **REST `/api/v1/models/*` を全削除** — `POST/GET/PUT/DELETE/COPY` +
-  `next-untitled` (= 7 endpoint)。利用者は `/api/v1/files/*` (= JupyterLab
-  contents API 互換) に移行する。
+  `next-untitled` (= 7 endpoint)。利用者は `/api/v1/files/*` (= 汎用 contents API 形式) に移行する。
 - **`POST /api/v1/simulations` の `model_id` body を削除** — `model_path`
   (workspace 相対 path) または `model` (inline FlwModel dict) のみ受け付ける。
 - **`pyflw-server --model-dir DIR` を削除**、**`--workspace DIR` を必須化** —
@@ -2921,7 +2919,7 @@ migration 後は通常の `pyflw-server --workspace=./workspace` で起動する
    コピー
 2. 起動コマンドを `pyflw-server --workspace=./workspace` に置換
 3. 自作 REST クライアントを使っていた場合: `/api/v1/models/*` の呼び出しを
-   `/api/v1/files/*` 経路に置換 (= JupyterLab contents API 互換)
+   `/api/v1/files/*` 経路に置換 (= 汎用 contents API 形式)
 4. backend に直接依存していた場合: `Settings(workspace_root=Path("..."))` で
    構築、`create_app(settings=...)` の keyword 必須引数化
 
@@ -3440,7 +3438,7 @@ ADR-0041 frontend 段階の **part 3 (= 残作業 closure)**。外部エディ�
     で上書き)
   - etag 不一致 + ``dirty == true`` → ``window.confirm`` で 「外部変更を取り
     込む / 自分の変更を残す」 を選択 (本格モーダルは v0.20.0 で別途実装可)
-  - JupyterLab 既定と整合 (= 5 秒間隔)、OS 別 file watcher は採用しない
+  - リファレンス Web IDE の既定と整合 (= 5 秒間隔)、OS 別 file watcher は採用しない
 - **``SaveAsPathDialog``** (= ADR-0041 §論点 10-A 本格版):
   - ``Modal.tsx`` に追加、``ModalShell`` ベース
   - workspace 相対 path 入力 (POSIX 形式)、autofocus 時に拡張子前 stem を選択
@@ -3494,7 +3492,7 @@ Simulation Controls が非表示だった)。
   - root 領域の右クリックで New file / New folder のみ表示
 - **FileBrowser inline rename (F2)**: 選択中ファイルで F2 押下 → input が
   オーバーレイ表示、Enter で確定 / Escape でキャンセル / blur でも確定。
-  拡張子前 (= stem 部分) を自動選択 (= JupyterLab 流儀)
+  拡張子前 (= stem 部分) を自動選択 (= リファレンス Web IDE 流儀)
 - **dirty 確認ダイアログ** (= ADR-0041 §論点 9-A): 別ファイルを開く時に
   ``dirty == true`` なら ``window.confirm`` で破棄確認 (専用モーダルは
   v0.19.0 で実装、簡易版)
@@ -3542,7 +3540,7 @@ Simulation Controls が非表示だった)。
 ## [0.17.0] - 2026-05-10 — FileBrowser サイドバー (ADR-0041 §論点 7-A / 8-A)
 
 SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集」の **frontend 段階 part 1**。
-v0.16.0 で導入した backend File API を前提に、左サイドバーに **JupyterLab 流儀
+v0.16.0 で導入した backend File API を前提に、左サイドバーに **リファレンス Web IDE 流儀
 の workspace ツリービュー** を新設し、ユーザーが ``.flw.json`` ファイルを直接
 ブラウズしてクリック 1 つで開けるようにした。
 
@@ -3605,19 +3603,19 @@ v0.16.0 で導入した backend File API を前提に、左サイドバーに **
 
 ## [0.16.0] - 2026-05-10 — File API + ワークスペース対応 (ADR-0041 §1〜§5)
 
-SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集 (JupyterLab 流儀)」の **backend
+SPEC-0001 Phase 6+ #55 「ローカルファイル直接編集 (リファレンス Web IDE 流儀)」の **backend
 段階** を ADR-0041 §論点 1〜5 に基づき実装。frontend FileBrowser
 (= ADR-0041 §論点 7-A) は次の minor リリース、`/api/v1/models/*` 削除と
 ``--model-dir`` 削除は v3.0 (= ADR-0041 §論点 4-A、§論点 12-A 段階移行)。
 
 **v0.16.0 は後方互換 minor**: 既存 endpoint 削除なし、Public API 凍結
 (ADR-0038) を破壊せず、新 endpoint 追加 + deprecation 予告のみ。`pyflw-server`
-の既定 workspace は **CWD** に変更 (= JupyterLab 既定と整合)。
+の既定 workspace は **CWD** に変更 (= リファレンス Web IDE の既定と整合)。
 
 ### Added
 
 - **REST File API** (`/api/v1/files/*`、6 endpoint、ADR-0041 §論点 1-A、
-  JupyterLab `jupyter_server.contents` 互換):
+  汎用 contents API 互換):
   - `GET /api/v1/files/tree?path=<rel>` ディレクトリ列挙 (1 階層)
   - `GET /api/v1/files/content?path=<rel>` parsed JSON 内容 + mtime + etag
   - `PUT /api/v1/files/content?path=<rel>` 書き込み (etag 楽観ロック対応)

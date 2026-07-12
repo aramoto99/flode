@@ -1,6 +1,6 @@
 """File API エンドポイント (ADR-0041 §論点 1-A)。
 
-JupyterLab ``jupyter_server.contents`` API 互換の 6 endpoint を提供する。
+汎用 contents API 形式 (ファイル CRUD REST) の 6 endpoint を提供する。
 ``.flw.json`` ファイル自身を **唯一の真実** とし、frontend FileBrowser から
 ローカル workspace のディレクトリツリーを直接操作できるようにする。
 
@@ -361,7 +361,7 @@ def put_content(
                 },
             )
 
-    # 親ディレクトリ auto-create (= JupyterLab 互換、ADR-0041 §Risks #13)。
+    # 親ディレクトリ auto-create (= リファレンス Web IDE 互換、ADR-0041 §Risks #13)。
     # ``resolved`` は ``_resolve`` を通過済 (= containment check で workspace
     # root 配下が保証される) ため、その parent も workspace 配下に収まる
     # (= root と同一か、root 内のサブディレクトリ)。よって mkdir で root 外に
@@ -522,7 +522,7 @@ def copy_path(
     from_: str = Query(alias="from"),
     to: str = Query(),
 ) -> Response:
-    """ファイル / ディレクトリを複製 (= JupyterLab "Duplicate" の汎用版)。
+    """ファイル / ディレクトリを複製 (= リファレンス Web IDE の "Duplicate" 相当の汎用版)。
 
     Frontend の Ctrl+C / Ctrl+V (v0.31.9) から呼ばれる。同一 workspace 内の
     src → dst 複製のみサポート (workspace 越え禁止は ``_resolve`` の path

@@ -134,7 +134,7 @@ describe("FileBrowser tree rendering", () => {
     });
     renderWithProvider(<FileBrowser />);
     await screen.findByText("controllers");
-    // v0.31.0: JupyterLab 流 flat list なので folder の auto-expand はなし。
+    // v0.31.0: リファレンス Web IDE 流 flat list なので folder の auto-expand はなし。
     // cwd="" で fetch 1 回のみ。folder クリックで初めて cd して fetch する。
     expect(fileTree).toHaveBeenCalledWith("");
     expect(fileTree).not.toHaveBeenCalledWith("controllers");

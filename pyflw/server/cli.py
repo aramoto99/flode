@@ -12,13 +12,13 @@
 
 SPEC-0004 (v3.17.0~): ``~/.pyflw/config.toml`` をサポート。優先順位は
 ``CLI 引数 > 設定ファイル > default``。設定ファイル不在時は warning なしで default
-起動 (Jupyter Lab 準拠)。
+起動 (リファレンス Web IDE 準拠)。
 
 v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` を削除。旧 ``models/``
 ディレクトリから workspace への移行は ``pyflw --migrate-models-to=DIR``
 で実行する (= サーバ起動せず migrate のみ)。
 
-SPEC-0021 (v0.41.0~): JupyterLab パリティの起動 UX。起動後にデフォルトブラウザで
+SPEC-0021 (v0.41.0~): 一発起動の UX。起動後にデフォルトブラウザで
 UI を開き (``--no-browser`` / ``[server] open_browser`` で無効化)、要求ポートが
 使用中なら +1 ずつ自動フォールバックする (``[server] port_retries``、``0`` で無効)。
 """
@@ -58,7 +58,7 @@ _BROWSER_POLL_INTERVAL_S = 0.1
 _BROWSER_POLL_MAX_TRIES = 100
 
 # Windows では使用中ポートへの bind が WSAEACCES (winerror 10013) になるケースがある
-# (SO_EXCLUSIVEADDRUSE 済みポート・Hyper-V 等の予約ポート範囲)。JupyterLab と同様に
+# (SO_EXCLUSIVEADDRUSE 済みポート・Hyper-V 等の予約ポート範囲)。リファレンス Web IDE と同様に
 # 「使用中」扱いで次ポートへフォールバックする。真の権限エラーと区別できない既知の
 # トレードオフだが、Windows は Unix と違い特権ポート (<1024) の bind 制限がなく、
 # WSAEACCES の実質的な発生源は予約範囲のため「使用中」扱いが妥当 (code-reviewer SHOULD)。

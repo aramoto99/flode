@@ -127,7 +127,7 @@ export function SaveAsPathDialog({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onFocus={(e) => {
-              // 既定値の拡張子前 stem を選択 (= JupyterLab 流儀)
+              // 既定値の拡張子前 stem を選択 (= リファレンス Web IDE 流儀)
               const ext = defaultValue.lastIndexOf(".flw.json");
               const stemEnd = ext > 0 ? ext : defaultValue.length;
               e.target.setSelectionRange(0, stemEnd);

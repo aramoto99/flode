@@ -1,4 +1,4 @@
-// ADR-0041 §論点 7-A: 自前実装 FileBrowser (= JupyterLab 流儀のワークスペース
+// ADR-0041 §論点 7-A: 自前実装 FileBrowser (= リファレンス Web IDE 流儀のワークスペース
 // ツリービュー)。
 //
 // v0.17.0 スコープ:
@@ -207,7 +207,7 @@ export function FileBrowser(): JSX.Element {
   // 新 v0.31.6: FileBrowser ルート div を tabIndex={-1} で focusable にし、
   // onKeyDown で F2 / Delete (Backspace) / Enter / Escape を処理する。
   // CwdView 内の click 時に root div へ focus を移す (= onMouseDown で focus()
-  // 呼出し)。これで JupyterLab 流の「アイテム選択中はファイル操作ショートカットが
+  // 呼出し)。これでリファレンス Web IDE 流の「アイテム選択中はファイル操作ショートカットが
   // 有効」UX が成立する。
   const rootRef = useRef<HTMLDivElement>(null);
   const focusRoot = useCallback(() => {
@@ -502,7 +502,7 @@ export function FileBrowser(): JSX.Element {
 
   // v0.31.9: Ctrl+V 貼り付け。クリップボードの各 path を現在の cwd 配下に
   // copyFile で複製。target name は basename 衝突を回避するため "(copy)" suffix を
-  // 動的に付与 (= JupyterLab 流の "Duplicate" と同じ挙動)。
+  // 動的に付与 (= リファレンス Web IDE 流の "Duplicate" と同じ挙動)。
   const handlePaste = useCallback(async () => {
     if (clipboard.length === 0) return;
     const treeData = queryClient.getQueryData<FileTreeResponse>([
@@ -658,7 +658,7 @@ export function FileBrowser(): JSX.Element {
       // 抑止して、現在の cwd を対象にカスタム context menu を出す。
       onContextMenu={(e) => handleContextMenu(e, fileBrowserCwd, true)}
       // v0.31.6: クリックで root div に focus を移し、F2/Delete/Enter/Escape の
-      // ショートカットを有効化する (= JupyterLab 流 "アイテム選択中はキーが有効")。
+      // ショートカットを有効化する (= リファレンス Web IDE 流 "アイテム選択中はキーが有効")。
       // tabIndex=-1 にしているため Tab navigation には現れず、mousedown 経由のみで
       // フォーカスが当たる。
       onMouseDown={focusRoot}
@@ -671,7 +671,7 @@ export function FileBrowser(): JSX.Element {
           {t("filebrowser.title", "Workspace")}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
-          {/* v0.31.3: 新規ファイル / 新規フォルダ アイコンボタン (= JupyterLab 流) */}
+          {/* v0.31.3: 新規ファイル / 新規フォルダ アイコンボタン (= リファレンス Web IDE 流) */}
           <button
             type="button"
             onClick={() => void handleNewFile(fileBrowserCwd)}
@@ -1122,7 +1122,7 @@ function InlineRename({
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // mount 時に focus + 拡張子を除く部分を選択 (= JupyterLab 流儀)
+    // mount 時に focus + 拡張子を除く部分を選択 (= リファレンス Web IDE 流儀)
     const input = ref.current;
     if (!input) return;
     input.focus();
@@ -1153,7 +1153,7 @@ function InlineRename({
           }
         }}
         onBlur={() => {
-          // blur で確定 (= JupyterLab と同じ、Esc で cancel 経由のみ取消)
+          // blur で確定 (= リファレンス Web IDE と同じ、Esc で cancel 経由のみ取消)
           onSubmit(value);
         }}
         className="flex-1 border border-blue-500 bg-white px-1 text-[12px] outline-none"
@@ -1283,7 +1283,7 @@ function FileIcon({ flw }: { flw: boolean }): JSX.Element {
   );
 }
 
-// v0.31.3: FileBrowser ヘッダーのアクション アイコン (= JupyterLab toolbar 風)
+// v0.31.3: FileBrowser ヘッダーのアクション アイコン (= リファレンス Web IDE の toolbar 風)
 function NewFileIcon(): JSX.Element {
   return (
     <svg
@@ -1341,7 +1341,7 @@ function RefreshIcon(): JSX.Element {
   );
 }
 
-// v0.31.0: JupyterLab 流の cwd フォーカス型 FileBrowser。
+// v0.31.0: リファレンス Web IDE 流の cwd フォーカス型 FileBrowser。
 // 旧 v3.9.x まで: 階層ツリー展開 (DirectoryNode で再帰)
 // 新 v0.31.0: 1 階層 flat list + breadcrumb + フォルダクリックで cd
 // 既存 DirectoryNode / TreeEntry は dead code (= 削除せず温存、ロールバック用)。
@@ -1495,7 +1495,7 @@ function CwdView({
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       onContextMenu={(e) => onContextMenu(e, cwd, true)}
     >
-      {/* Breadcrumb 行 (JupyterLab 風) */}
+      {/* Breadcrumb 行 (リファレンス Web IDE 風) */}
       <div className="flex h-6 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-slate-50 px-1 text-[11px] text-slate-600">
         <button
           type="button"

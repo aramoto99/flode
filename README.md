@@ -13,7 +13,7 @@ breaking changes are called out in `CHANGELOG.md` and bump the minor.
 
 Recent highlights on top of the v2 core:
 
-- **JupyterLab-parity startup UX** (v0.41.0, SPEC-0021) — `pyflw` opens
+- **One-command startup UX** (v0.41.0, SPEC-0021) — `pyflw` opens
   your default browser automatically and falls back to the next free port when
   the requested one is busy (`--no-browser` / `[server] port_retries = 0` to
   opt out).
@@ -21,9 +21,9 @@ Recent highlights on top of the v2 core:
   N-D lookup tables, arbitrary-expression `Fcn`, noise sources, discontinuity
   elements (Relay / RateLimiter), multiport routing (Goto / From / Merge /
   MultiportSwitch), transport delay, and more.
-- **JupyterLab-style workspace** — local file direct editing (ADR-0041),
+- **IDE-style workspace** — local file direct editing (ADR-0041),
   multi-tab editor + Recent Files + fuzzy search (ADR-0043), and staged
-  JupyterLab convergence (multi-pane / activity bar / drag-to-split,
+  workspace convergence (multi-pane / activity bar / drag-to-split,
   ADR-0045 / 0051 / 0052).
 - **Open-ended runs** — Stop Time = `inf` with a ring-buffer scope (ADR-0042).
 - **Scope UX** — per-scope plot settings + floating scope windows (ADR-0044).
@@ -259,7 +259,7 @@ directory).
 
 ### What the browser UI gives you
 
-- **JupyterLab-style file tree** (subdirectories, rename / new / delete via
+- **IDE-style file tree** (subdirectories, rename / new / delete via
   context menu, drag-and-drop reorder, ADR-0041 / ADR-0043).
 - **Multi-tab editor** with dirty indicator (`●`) + "Save all" + close-other
   tabs, last-active tab restored across reload per workspace (ADR-0043).
@@ -287,8 +287,8 @@ directory).
   float simultaneously; positions persist in localStorage; switching models
   closes all open scopes (ADR-0044).
 
-All file operations go through `/api/v1/files/*` (= JupyterLab contents API
-compatible). The model itself is just JSON in your workspace — open it in any
+All file operations go through `/api/v1/files/*` (= contents-style REST
+API). The model itself is just JSON in your workspace — open it in any
 editor and the changes appear in the UI on next focus (external-changes poll).
 
 ### Migration from v2.x

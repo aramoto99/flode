@@ -1,4 +1,4 @@
-// ADR-0051 §(1) §(2): Workspace JupyterLab Stage 2 = 列 0 = activity bar。
+// ADR-0051 §(1) §(2): Workspace convergence Stage 2 = 列 0 = activity bar。
 // 列 1 (left sidebar) の中身を「File / Library / Search」の 3 mode で切替する
 // アイコンバー。固定幅 32 px、上から下へ縦並びの icon button + 選択 mode に
 // 左 2 px の青い accent bar。

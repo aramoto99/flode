@@ -1,4 +1,4 @@
-// ADR-0045 §(1) §(2) §(6): Workspace JupyterLab Stage 1 = multi-pane split。
+// ADR-0045 §(1) §(2) §(6): Workspace convergence Stage 1 = multi-pane split。
 // 上位の SplitTree (= ``useAppStore.workspaceLayout``) を再帰的に
 // ``<PanelGroup>`` + ``<Panel>`` に展開し、各葉ノード paneId に応じて
 // Diagram slot / Scope / scopes-stack を描画する。

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-// ADR-0045 Stage 1 (= v0.27.0): Workspace JupyterLab Stage 1 = multi-pane split。
+// ADR-0045 Stage 1 (= v0.27.0): Workspace convergence Stage 1 = multi-pane split。
 // `<main>` 内 Diagram + Scope の縦/横任意配置、localStorage 永続化、floating panel
 // 並存を検証する E2E spec。
 //

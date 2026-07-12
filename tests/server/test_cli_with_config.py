@@ -52,7 +52,7 @@ class TestCliWithConfigFile:
     ) -> None:
         monkeypatch.chdir(tmp_path)
         # SPEC-0004 §7: 設定ファイル不在時は WARNING ログを出さず default で起動する
-        # (Jupyter Lab 準拠の lenient な不在処理)。
+        # (リファレンス Web IDE 準拠の lenient な不在処理)。
         with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
             main([])
         warning_records = [

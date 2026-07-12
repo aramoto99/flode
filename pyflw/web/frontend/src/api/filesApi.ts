@@ -1,5 +1,5 @@
 // ADR-0041 §論点 1-A: File API client (= /api/v1/files/*)。
-// JupyterLab 互換の 6 endpoint を呼び出すラッパー。Path traversal 防御は backend
+// 汎用 contents API 形式の 6 endpoint を呼び出すラッパー。Path traversal 防御は backend
 // (= pyflw/server/security/paths.py) に集約、frontend は単純に POSIX path を
 // encodeURIComponent して送るだけ。
 

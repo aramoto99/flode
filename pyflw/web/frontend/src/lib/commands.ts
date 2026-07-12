@@ -1,7 +1,7 @@
 // v0.29.0: コマンドパレット (Ctrl+Shift+P) 用の command registry。
 //
 // pyflw 内の主要操作を 1 ヶ所に集約し、ユーザーが名前検索で発火できるように
-// する (= JupyterLab / VSCode 流)。
+// する (= 一般的な Web IDE 流)。
 //
 // **実装方針**: 各 command の ``action`` は **store action 直接呼出し** か
 // **synthetic keyboard event dispatch** で既存 shortcut path を再利用する。

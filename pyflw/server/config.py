@@ -1,7 +1,7 @@
 """``pyflw-server`` 設定ファイル loader + Resolver (SPEC-0004)。
 
 ``~/.pyflw/config.toml`` の探索・パース・優先順位マージ・雛形生成を担う。
-挙動は Jupyter Lab に合わせる:
+挙動はリファレンス Web IDE に合わせる:
 
 - 設定ファイル不在: ``None`` を返す (呼び出し側は default で起動)
 - TOML syntax error: :class:`PyflwError`
@@ -58,7 +58,7 @@ _KNOWN_SETTINGS_KEYS: frozenset[str] = _SETTINGS_FIELD_NAMES | {_WORKSPACE_TOML_
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 8770
 # SPEC-0021: 起動 UX。ブラウザ自動オープンは既定 ON、ポートフォールバックは
-# JupyterLab の既定 (50) に合わせる。
+# 既定は 50 回 (リファレンス Web IDE の既定に合わせた値)。
 _DEFAULT_OPEN_BROWSER = True
 _DEFAULT_PORT_RETRIES = 50
 
@@ -96,7 +96,7 @@ def resolve_config_path(*, explicit: Path | None) -> Path | None:
 
     Raises:
         PyflwError: ``explicit`` 指定で path が存在しない / file ではない。
-            暗黙探索の不在はエラーにせず ``None`` を返す (Jupyter Lab 準拠)。
+            暗黙探索の不在はエラーにせず ``None`` を返す (リファレンス Web IDE 準拠)。
     """
     if explicit is not None:
         p = _expand_home(explicit).resolve()
@@ -386,7 +386,7 @@ class SettingsResolver:
         return result
 
     def _warn_unknown_sections_and_keys(self) -> None:
-        """未知のセクション / キーに対して WARNING ログを出す (Jupyter lenient)。"""
+        """未知のセクション / キーに対して WARNING ログを出す (lenient 方針)。"""
         for section_name, section_value in self._file.items():
             if section_name not in _KNOWN_SECTIONS:
                 _logger.warning(
@@ -432,7 +432,7 @@ port = 8770          # bind port (default: 8770)
 open_browser = true
 
 # When the requested port is busy, try port+1, port+2, ... up to this many
-# times (default: 50, matching JupyterLab). Set 0 to disable fallback and
+# times (default: 50). Set 0 to disable fallback and
 # fail immediately (fixed-port / reverse-proxy setups). SPEC-0021.
 port_retries = 50
 

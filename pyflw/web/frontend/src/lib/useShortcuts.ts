@@ -182,7 +182,7 @@ export function useShortcuts(): void {
         return;
       }
 
-      // v0.29.0: Ctrl+Shift+P = コマンドパレットを open (= JupyterLab / VSCode 流)
+      // v0.29.0: Ctrl+Shift+P = コマンドパレットを open (= 一般的な Web IDE 流)
       if (ctrl && e.shiftKey && key.toLowerCase() === "p") {
         e.preventDefault();
         useAppStore.getState().setCommandPaletteOpen(true);
