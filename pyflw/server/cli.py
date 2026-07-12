@@ -1,10 +1,12 @@
-"""``pyflw-server`` コマンドのエントリポイント (ADR-0013 §(2) / ADR-0041 §3 / SPEC-0004)。
+"""``pyflw`` コマンドのエントリポイント (ADR-0013 §(2) / ADR-0041 §3 / SPEC-0004)。
 
 ``pip install pyflw[gui]`` 後、コマンドラインから::
 
-    pyflw-server --workspace ./project --port 8770
+    pyflw
 
-で FastAPI サーバを起動する。``pyflw[gui]`` extras が無い場合は
+だけで FastAPI サーバが起動しブラウザで UI が開く (``--workspace`` / ``--port``
+等で上書き可)。``pyflw-server`` は互換 alias として同じエントリポイントを指す
+(SPEC-0021)。``pyflw[gui]`` extras が無い場合は
 ``pyflw.server`` の import 時点で ``PyflwError`` が出るので、ユーザーが extras を
 インストールするよう誘導される。
 
@@ -13,7 +15,7 @@ SPEC-0004 (v3.17.0~): ``~/.pyflw/config.toml`` をサポート。優先順位は
 起動 (Jupyter Lab 準拠)。
 
 v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` を削除。旧 ``models/``
-ディレクトリから workspace への移行は ``pyflw-server --migrate-models-to=DIR``
+ディレクトリから workspace への移行は ``pyflw --migrate-models-to=DIR``
 で実行する (= サーバ起動せず migrate のみ)。
 
 SPEC-0021 (v0.41.0~): JupyterLab パリティの起動 UX。起動後にデフォルトブラウザで
@@ -234,9 +236,10 @@ def _launch_browser_thread(bind_host: str, port: int) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    # prog は主コマンド名に固定 (alias の pyflw-server で呼ばれても help は pyflw を案内)
     parser = argparse.ArgumentParser(
-        prog="pyflw-server",
-        description="Run the pyflw FastAPI server.",
+        prog="pyflw",
+        description="Run the pyflw server and open the UI in your browser.",
     )
     # SPEC-0004: 「CLI 明示指定」と「未指定 (= file or default にフォールバック)」を
     # 区別するため、設定ファイルから上書きされうるフラグは default=None にする。
@@ -413,7 +416,7 @@ def _run_migration(src: Path | None, dst: Path, *, force: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """``pyflw-server`` のエントリポイント。
+    """``pyflw`` (alias: ``pyflw-server``) のエントリポイント。
 
     Args:
         argv: テスト用に明示的な argv を渡せる。``None`` で ``sys.argv[1:]`` を使う。
@@ -450,14 +453,14 @@ def main(argv: list[str] | None = None) -> None:
         import uvicorn
     except ImportError as e:
         raise PyflwError(
-            "pyflw-server requires uvicorn. Install with: pip install pyflw[gui]"
+            "pyflw requires uvicorn to run the server. Install with: pip install pyflw[gui]"
         ) from e
     # SPEC-0021 §4: ポート自動フォールバック。実際に bind するポートを確定する。
     port = find_free_port(host, port0, port_retries)
     if port != port0:
         _logger.warning("Port %d is in use, using %d instead.", port0, port)
     _logger.info(
-        "Starting pyflw-server on http://%s:%d (workspace=%s)",
+        "Starting pyflw on http://%s:%d (workspace=%s)",
         _display_host(host),
         port,
         settings.workspace_root,

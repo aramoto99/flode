@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.41.0] - 2026-07-11 — 起動 UX: ブラウザ自動オープン + ポート自動フォールバック
 
-JupyterLab パリティの起動体験 (SPEC-0021 / ADR-0069)。`pyflw-server` と打つだけで
+JupyterLab パリティの起動体験 (SPEC-0021 / ADR-0069)。`pyflw` と打つだけで
 ブラウザが開き、ポートが塞がっていても自動で次の空きポートで起動する。
 
 ### Added
 
+- **`pyflw` コマンド** — `pyflw` と打つだけでサーバ起動 + ブラウザオープンまで
+  完結する (JupyterLab の `jupyter lab` 相当の一発起動)。従来の `pyflw-server` は
+  互換 alias として維持 (同一エントリポイント)
 - **ブラウザ自動オープン** — サーバの listen 確立を確認してからデフォルトブラウザで
   UI を開く (`webbrowser`、新規依存なし)。非 loopback バインド
   (`--host 0.0.0.0` / `::`) では loopback URL (`127.0.0.1` / `[::1]`) に正規化して

@@ -13,7 +13,7 @@ breaking changes are called out in `CHANGELOG.md` and bump the minor.
 
 Recent highlights on top of the v2 core:
 
-- **JupyterLab-parity startup UX** (v0.41.0, SPEC-0021) — `pyflw-server` opens
+- **JupyterLab-parity startup UX** (v0.41.0, SPEC-0021) — `pyflw` opens
   your default browser automatically and falls back to the next free port when
   the requested one is busy (`--no-browser` / `[server] port_retries = 0` to
   opt out).
@@ -78,14 +78,15 @@ pip install -e ".[gui]"
 
 # Start the server — opens your default browser automatically (SPEC-0021).
 # If port 8770 is busy it falls back to 8771, 8772, ... (up to 50 tries).
-pyflw-server
+# (`pyflw-server` also works as a compatibility alias.)
+pyflw
 
 # Options: custom workspace/port, headless (no browser)
-pyflw-server --workspace ./workspace --port 8770
-pyflw-server --no-browser
+pyflw --workspace ./workspace --port 8770
+pyflw --no-browser
 # Fixed-port setups (reverse proxy etc.): set `[server] port_retries = 0`
 # in ~/.pyflw/config.toml to fail immediately instead of falling back.
-# `pyflw-server --generate-config` writes a commented template with all
+# `pyflw --generate-config` writes a commented template with all
 # keys ([server] open_browser / port_retries etc.).
 ```
 
@@ -217,10 +218,11 @@ After installing the `gui` extras, launch the FastAPI server with a workspace
 root (= directory containing your `.flw.json` files, ADR-0041):
 
 ```bash
-pyflw-server --workspace ./workspace --port 8770
+pyflw --workspace ./workspace --port 8770
 ```
 
-Then open `http://127.0.0.1:8770` in a browser.
+Your default browser opens the UI automatically (SPEC-0021; `--no-browser`
+to disable). `pyflw-server` still works as a compatibility alias.
 
 ### Persisting server defaults (`~/.pyflw/config.toml`)
 
@@ -229,11 +231,11 @@ every time, persist them in `~/.pyflw/config.toml` (SPEC-0004). Generate a
 commented template with:
 
 ```bash
-pyflw-server --generate-config
+pyflw --generate-config
 ```
 
 The template lives at `~/.pyflw/config.toml` (or `%USERPROFILE%\.pyflw\config.toml`
-on Windows). Edit it, then just run `pyflw-server` with no arguments:
+on Windows). Edit it, then just run `pyflw` with no arguments:
 
 ```toml
 [server]
@@ -295,7 +297,7 @@ If you previously ran pyflw with the legacy `--model-dir DIR` (= v2.x),
 migrate the flat layout to a workspace once with:
 
 ```bash
-pyflw-server --migrate-models-to=./workspace --legacy-models-dir=./old_models
+pyflw --migrate-models-to=./workspace --legacy-models-dir=./old_models
 ```
 
 then start with `--workspace=./workspace`. The migration command is provided

@@ -106,7 +106,8 @@ CI 上で:
   pip install -i https://test.pypi.org/simple/ \
               --extra-index-url https://pypi.org/simple/ \
               "pyflw==0.X.YrcN"
-  pyflw-server --help
+  pyflw --help
+  pyflw-server --help   # 互換 alias も確認 (SPEC-0021)
   ```
 
 ### 2-5. final tag を切って本 PyPI publish
@@ -128,7 +129,8 @@ CI 上で:
 ```bash
 pip install pyflw==0.X.Y
 python -c "import pyflw; print(pyflw.__version__)"
-pyflw-server --help
+pyflw --help
+pyflw-server --help   # 互換 alias も確認 (SPEC-0021)
 ```
 
 ---
