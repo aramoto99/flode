@@ -77,8 +77,6 @@
   "search.no_result": "No matches.",
   "search.truncated": "Showing first {{n}} results.",
   "menu.placeholder.empty": "(no actions yet)",
-  "menu.help.about": "About pyflw",
-  "menu.help.documentation": "Documentation",
   "menu.help.shortcuts": "Keyboard shortcuts",
 
   "toolbar.save": "Save (Ctrl+S)",
@@ -154,10 +152,6 @@
   "modal.dirty_confirm.message": "You have unsaved changes in \"{{currentName}}\". Open \"{{nextName}}\" anyway?",
   "modal.dirty_confirm.discard": "Discard changes",
   "modal.dirty_confirm.save_and_open": "Save & Open",
-
-  "modal.about.title": "About pyflw",
-  "modal.about.description": "Block-diagram dynamic system simulator.",
-  "modal.about.license": "MIT License",
 
   "modal.shortcuts.title": "Keyboard shortcuts",
   "modal.shortcuts.section.file": "File",

@@ -77,8 +77,6 @@
   "search.no_result": "一致なし。",
   "search.truncated": "最初の {{n}} 件のみ表示。",
   "menu.placeholder.empty": "(項目なし)",
-  "menu.help.about": "pyflw について",
-  "menu.help.documentation": "ドキュメント",
   "menu.help.shortcuts": "キーボードショートカット",
 
   "toolbar.save": "保存 (Ctrl+S)",
@@ -154,10 +152,6 @@
   "modal.dirty_confirm.message": "「{{currentName}}」に未保存の変更があります。「{{nextName}}」を開きますか?",
   "modal.dirty_confirm.discard": "変更を破棄",
   "modal.dirty_confirm.save_and_open": "保存して開く",
-
-  "modal.about.title": "pyflw について",
-  "modal.about.description": "ブロック線図ベースの動的システムシミュレータ。",
-  "modal.about.license": "MIT ライセンス",
 
   "modal.shortcuts.title": "キーボードショートカット",
   "modal.shortcuts.section.file": "ファイル",

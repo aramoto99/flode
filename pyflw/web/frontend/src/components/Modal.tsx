@@ -255,67 +255,6 @@ export function DirtyConfirmDialog({
 }
 
 // ---------------------------------------------------------------------------
-// AboutDialog (v0.20.0)
-// ---------------------------------------------------------------------------
-
-interface AboutDialogProps {
-  onClose: () => void;
-}
-
-/**
- * pyflw の About ダイアログ (= MenuBar Help > About から開く)。
- * バージョン / GitHub link / license をシンプルに表示。
- */
-export function AboutDialog({ onClose }: AboutDialogProps): JSX.Element {
-  const { t } = useTranslation();
-  return (
-    <ModalShell
-      title={t("modal.about.title", { defaultValue: "About pyflw" })}
-      onClose={onClose}
-      width="w-[400px]"
-    >
-      <div className="flex flex-col gap-3 p-5 text-sm text-slate-700">
-        <div className="flex items-center gap-3">
-          <div className="text-3xl font-bold tracking-tight text-blue-600">
-            pyflw
-          </div>
-          <div className="font-mono text-sm text-slate-500">
-            v{__APP_VERSION__}
-          </div>
-        </div>
-        <p className="text-[12px] text-slate-600">
-          {t("modal.about.description", {
-            defaultValue: "Block-diagram dynamic system simulator.",
-          })}
-        </p>
-        <div className="flex flex-col gap-1 text-[12px]">
-          <a
-            href="https://github.com/aramoto99/pyflw"
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-600 hover:underline"
-          >
-            github.com/aramoto99/pyflw
-          </a>
-          <span className="text-slate-500">
-            {t("modal.about.license", { defaultValue: "MIT License" })}
-          </span>
-        </div>
-      </div>
-      <div className="flex justify-end border-t border-slate-100 bg-slate-50/50 px-3 py-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-        >
-          {t("modal.button.close", { defaultValue: "Close" })}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // KeyboardShortcutsDialog (v0.20.0)
 // ---------------------------------------------------------------------------
 

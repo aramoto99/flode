@@ -27,17 +27,12 @@ import {
 import { dialog } from "../lib/dialogService";
 import { useAppStore } from "../store/appStore";
 import type { FlwModel } from "../types/api";
-import {
-  AboutDialog,
-  KeyboardShortcutsDialog,
-  SaveAsPathDialog,
-} from "./Modal";
+import { KeyboardShortcutsDialog, SaveAsPathDialog } from "./Modal";
 import { ModelSettingsModal } from "./ModelSettingsModal";
 
 type DialogKind =
   | { kind: "save-as-path" }
   | { kind: "model-settings" }
-  | { kind: "about" }
   | { kind: "shortcuts" }
   | null;
 
@@ -348,24 +343,6 @@ export function MenuBar(): JSX.Element {
   // v0.20.0: Help メニュー
   const helpItems: MenuItemSpec[] = [
     {
-      label: t("menu.help.about", { defaultValue: "About pyflw" }),
-      onClick: () => {
-        setOpenMenu(null);
-        setModal({ kind: "about" });
-      },
-    },
-    {
-      label: t("menu.help.documentation", { defaultValue: "Documentation" }),
-      onClick: () => {
-        setOpenMenu(null);
-        window.open(
-          "https://github.com/aramoto99/pyflw",
-          "_blank",
-          "noopener,noreferrer",
-        );
-      },
-    },
-    {
       label: t("menu.help.shortcuts", { defaultValue: "Keyboard shortcuts" }),
       onClick: () => {
         setOpenMenu(null);
@@ -463,9 +440,6 @@ export function MenuBar(): JSX.Element {
       )}
       {modal?.kind === "model-settings" && (
         <ModelSettingsModal onClose={() => setModal(null)} />
-      )}
-      {modal?.kind === "about" && (
-        <AboutDialog onClose={() => setModal(null)} />
       )}
       {modal?.kind === "shortcuts" && (
         <KeyboardShortcutsDialog onClose={() => setModal(null)} />
