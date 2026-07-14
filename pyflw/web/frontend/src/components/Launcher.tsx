@@ -22,30 +22,9 @@ import {
   putFileContent,
 } from "../api/filesApi";
 import { dialog } from "../lib/dialogService";
+import { emptyModel } from "../lib/emptyModel";
 import { readRecentFiles } from "../lib/recentFiles";
 import { useAppStore } from "../store/appStore";
-import type { FlwModel } from "../types/api";
-
-// ADR-0036 + ADR-0039 (= MenuBar.tsx と同期): 新規モデル schema_version。
-const CURRENT_SCHEMA_VERSION = "0.8";
-
-function emptyModel(name: string): FlwModel {
-  return {
-    schema_version: CURRENT_SCHEMA_VERSION,
-    metadata: { name, created_at: new Date().toISOString(), tool: "pyflw" },
-    simulator: {
-      t_end: 10,
-      dt: 0.01,
-      solver: "RK45",
-      rtol: 1e-6,
-      atol: 1e-9,
-      dt_base: null,
-    },
-    blocks: [],
-    connections: [],
-    layout: {},
-  };
-}
 
 const RECENT_DISPLAY_LIMIT = 5;
 

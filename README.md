@@ -4,15 +4,20 @@ A block-diagram dynamic system simulator for Python. Build continuous, discrete,
 and hybrid models by wiring pre-built blocks, then integrate with
 `scipy.solve_ivp` (default: RK45).
 
-**Current: v0.41.0** (2026-07-11). pyflw follows
+**Current: v0.42.0** (2026-07-14). pyflw follows
 [ZeroVer](https://0ver.org/) (永久 0.x) — within `0.x`, a **minor** bump is a
 feature or breaking change and a **patch** bump is a fix. The public Python API,
 `.flw.json` JSON schema (now **0.9**), REST `/api/v1/*` surface, and extras
 names (`pyflw[gui/control/codegen/gpu]`) are kept stable across patch releases;
 breaking changes are called out in `CHANGELOG.md` and bump the minor.
 
-Recent highlights on top of the v2 core:
+Recent highlights:
 
+- **Trustworthy GUI pass** (v0.42.0) — scope waveforms are reconciled with
+  `GET /results` after every run (no more silent WebSocket drops), every
+  settings field now actually affects the plot (minor grid, per-signal
+  markers), and new Edit / View menus expose the full command surface that
+  was previously shortcut-only.
 - **One-command startup UX** (v0.41.0, SPEC-0021) — `pyflw` opens
   your default browser automatically and falls back to the next free port when
   the requested one is busy (`--no-browser` / `[server] port_retries = 0` to
@@ -152,7 +157,7 @@ See `examples/spring_mass_damper.py` for a complete second-order system example.
 | Logic           | RelationalOperator, LogicalOperator                                       |
 | Routing         | Switch, MultiportSwitch, Mux, Demux, Merge, Goto, From                    |
 | User Function   | Fcn (AST-whitelisted arbitrary expression `y = f(t, u)`)                  |
-| Subsystem       | Subsystem (Trigger / Enable control block で挙動修飾、ADR-0058)            |
+| Subsystem       | Subsystem (behavior modified via inner Trigger / Enable control blocks, ADR-0058) |
 | Control         | Inport, Outport, Trigger, Enable                                          |
 
 Full API reference: `docs/` (build with `sphinx-build -b html docs docs/_build`).
@@ -197,20 +202,21 @@ sim.connect(integ, (err, 1))
 sim.connect(err, gain)
 sim.connect(gain, integ)
 
-# jax.jacfwd で機械精度 (atol=1e-12) の (A, B, C, D) を取得
+# machine-precision (A, B, C, D) via jax.jacfwd (atol=1e-12)
 ls = linearize(sim, method="jax")
 print(ls.A.shape, ls.eigenvalues())
 
-# CompiledSimulator (Phase 6+ で run() 本格実装予定)
+# CompiledSimulator (full run() support planned for Phase 6+)
 compiled = sim.compile(backend="jax")
 print(compiled.n_states, compiled.backend)
 ```
 
-`pyflw[codegen]` extras (`jax[cpu]`) を要求。GPU は `pyflw[gpu]` extras
-(`jax[cuda12]`、Linux x86_64 / NVIDIA CUDA 12 only)、実機ベンチマークは Phase
-6+ で整備予定。`Simulator.compile()` で未対応ブロック (= `StateSpace` /
-`TransferFunction` / `Subsystem` 等) を含むモデルは
-`BlockSpecError` で拒否される。詳細: ADR-0037 / ADR-0038。
+Requires the `pyflw[codegen]` extras (`jax[cpu]`). The GPU backend uses the
+`pyflw[gpu]` extras (`jax[cuda12]`, Linux x86_64 / NVIDIA CUDA 12 only);
+real-machine benchmarks are planned for Phase 6+. Models containing blocks
+not yet supported by `Simulator.compile()` (`StateSpace` /
+`TransferFunction` / `Subsystem`, ...) are rejected with `BlockSpecError`.
+Details: ADR-0037 / ADR-0038.
 
 ## Web GUI
 
@@ -291,17 +297,17 @@ All file operations go through `/api/v1/files/*` (= contents-style REST
 API). The model itself is just JSON in your workspace — open it in any
 editor and the changes appear in the UI on next focus (external-changes poll).
 
-### Migration from v2.x
+### Migration from the legacy `--model-dir` layout (pre-v0.21)
 
-If you previously ran pyflw with the legacy `--model-dir DIR` (= v2.x),
-migrate the flat layout to a workspace once with:
+If you previously ran pyflw with the legacy `--model-dir DIR` flag (removed
+in v0.21), migrate the flat layout to a workspace once with:
 
 ```bash
 pyflw --migrate-models-to=./workspace --legacy-models-dir=./old_models
 ```
 
-then start with `--workspace=./workspace`. The migration command is provided
-for one release only.
+then start with `--workspace=./workspace`. The migration command is
+deprecated and will be removed in a future release.
 
 ### Notes
 
@@ -348,7 +354,6 @@ pyflw/
 examples/     Runnable scripts (e.g. spring_mass_damper.py)
 tests/        pytest test suite
 docs/         Sphinx source
-.claude/      Internal design documents (SPECs, ADRs)
 ```
 
 ## License

@@ -25,6 +25,7 @@ import {
   type SupportedLanguage,
 } from "../i18n";
 import { cleanupUntitled } from "../lib/commands";
+import { emptyModel } from "../lib/emptyModel";
 import {
   clearRecentFiles,
   readRecentFiles,
@@ -40,7 +41,6 @@ import {
   toggleBlockFlipped,
   useAppStore,
 } from "../store/appStore";
-import type { FlwModel } from "../types/api";
 import { KeyboardShortcutsDialog, SaveAsPathDialog } from "./Modal";
 import { ModelSettingsModal } from "./ModelSettingsModal";
 
@@ -49,28 +49,6 @@ type DialogKind =
   | { kind: "model-settings" }
   | { kind: "shortcuts" }
   | null;
-
-// ADR-0036 (v0.7) + ADR-0039 (v2.0、schema 0.8): 新規モデル作成時の初期
-// schema_version。
-const CURRENT_SCHEMA_VERSION = "0.8";
-
-function emptyModel(name: string): FlwModel {
-  return {
-    schema_version: CURRENT_SCHEMA_VERSION,
-    metadata: { name, tool: "pyflw GUI" },
-    simulator: {
-      t_end: 10.0,
-      dt: 0.01,
-      solver: "RK45",
-      rtol: 1e-3,
-      atol: 1e-6,
-      dt_base: null,
-    },
-    blocks: [],
-    connections: [],
-    layout: {},
-  };
-}
 
 interface MenuItemSpec {
   label: string;

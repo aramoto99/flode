@@ -35,6 +35,7 @@ import {
   renameFile,
 } from "../api/filesApi";
 import { dialog } from "../lib/dialogService";
+import { emptyModel } from "../lib/emptyModel";
 import { useAppStore } from "../store/appStore";
 import { DirtyConfirmDialog } from "./Modal";
 
@@ -409,22 +410,10 @@ export function FileBrowser(): JSX.Element {
       if (!name) return;
       const fullPath = parentPath ? `${parentPath}/${name}` : name;
       try {
-        // 空モデル (= legacy emptyModel と同じ scaffold) を書き込む
-        await putFileContent(fullPath, {
-          schema_version: "0.8",
-          metadata: { name: name.replace(/\.flw\.json$/, ""), tool: "pyflw GUI" },
-          simulator: {
-            t_end: 10.0,
-            dt: 0.01,
-            solver: "RK45",
-            rtol: 1e-3,
-            atol: 1e-6,
-            dt_base: null,
-          },
-          blocks: [],
-          connections: [],
-          layout: {},
-        });
+        await putFileContent(
+          fullPath,
+          emptyModel(name.replace(/\.flw\.json$/, "")),
+        );
         await refresh();
       } catch (e) {
         console.error("New file failed:", e);

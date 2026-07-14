@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spec が「出力」復帰ボタン (v0.30.3) 追加後のタイトル文言衝突と、廃止済みの
   diagram pane split ボタン (v0.30.2) を前提にしたまま放置されていた。pane 葉
   に `data-testid` を付与し、text 依存の脆い assertion を安定セレクタに置換
+- **新規モデル作成 scaffold の一元化** — GUI の 3 経路 (File > New / Launcher /
+  FileBrowser) が同じ雛形を重複定義しており、schema_version が旧 "0.8" のまま
+  (エンジンは 0.9)、Launcher 経由のみ rtol/atol が別値 (1e-6/1e-9) という
+  ドリフトが起きていた。共通 `emptyModel()` (schema 0.9、エンジン既定の
+  rtol=1e-3 / atol=1e-6) に統一。あわせて `metadata.tool` を `"pyflw GUI"` に、
+  `metadata.created_at` を全経路で付与するよう統一 (従来は経路により有無・値が
+  異なった)
+- **README の是正** — 存在しないバージョン表記 (「v2 core」「Migration from
+  v2.x」= ZeroVer リマップ前の旧番号)、repo に存在しない `.claude/` の
+  Directory Layout 記載、stale なバージョン表記、英語文書への日本語混入を修正
 
 ### Added
 
