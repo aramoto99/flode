@@ -22,10 +22,6 @@ interface PaneTitleBarProps {
    * Scope pane のみで提供 (= Inspector float は別 UI = App.tsx の Inspector
    * sidebar header で切替)。 */
   onDetach?: (() => void) | null;
-  /** v0.30.3: 「Scope エリアを表示」アクション。``null`` で hide。
-   * Diagram pane で scopes-stack 葉が tree に無いときのみ表示
-   * (= ユーザーが scopes-stack を × で閉じた後の復活経路)。 */
-  onShowScopes?: (() => void) | null;
   /** v0.27.1 UX-3: split 系ボタンを **hide ではなく disabled** で表示する。
    * onSplitRight / onSplitDown が ``null`` でも、本 prop が非 null なら button を
    * 描画して disabled + title=disabledReason に「なぜ押せないか」を出す。 */
@@ -38,7 +34,6 @@ export function PaneTitleBar({
   onSplitDown,
   onUnsplit,
   onDetach,
-  onShowScopes,
   disabledSplitReason,
 }: PaneTitleBarProps): JSX.Element {
   const { t } = useTranslation();
@@ -53,31 +48,6 @@ export function PaneTitleBar({
         {title}
       </span>
       <div className="flex items-center gap-0.5">
-        {/* v0.30.3: Diagram pane 専用「Scope エリアを表示」(= scopes-stack
-            復活経路、× で閉じた後の救済) */}
-        {onShowScopes !== undefined && onShowScopes !== null && (
-          <button
-            type="button"
-            onClick={onShowScopes}
-            title={t("workspace.show_scopes_area")}
-            aria-label={t("workspace.show_scopes_area")}
-            className="flex h-5 items-center gap-1 border border-slate-300 bg-white px-1.5 text-[10px] normal-case tracking-normal text-slate-700 hover:bg-slate-100"
-          >
-            {/* + Scope icon */}
-            <svg
-              viewBox="0 0 16 16"
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            >
-              <line x1="3" y1="8" x2="13" y2="8" />
-              <line x1="8" y1="3" x2="8" y2="13" />
-            </svg>
-            <span>{t("workspace.show_scopes_area.short")}</span>
-          </button>
-        )}
         {(onSplitRight !== null || showSplitDisabled) && (
           <PaneActionButton
             label={t("workspace.split.right")}

@@ -7,11 +7,11 @@ import { expect, type Page, test } from "@playwright/test";
 // 検証範囲 (= ADR-0045 §(8) 主要シナリオ E2E):
 //   1. レイアウト初期化: Scope ブロックを持つモデルなら diagram + scopes-stack
 //      の縦 split が表示される (= DEFAULT_TREE_WITH_SCOPES)
-//   2. 分割解除: scopes-stack pane の unsplit ボタンで diagram のみに縮約
-//   3. 再分割: 縮約後は diagram title bar の「出力エリアを表示」復帰ボタン
-//      (v0.30.3、diagram からの split は v0.30.2 で禁止) で scopes-stack を再追加
-//   4. 永続化: 操作後にリロードしても同じレイアウトが復元される
-//   5. floating panel 並存: Scope ブロックの dblclick で react-rnd panel が出る
+//   2. 常設化 (v0.42.x ユーザー要望): scopes-stack は × (分割解除) で閉じられず、
+//      旧「出力エリアを表示」復帰ボタンも存在しない
+//   3. 自動復元: 旧仕様で「閉じた状態」が永続化された layout (= diagram 単独) を
+//      復元しても、Scope ブロックを持つモデルなら scopes-stack が自動再追加される
+//   4. floating panel 並存: Scope ブロックの dblclick で react-rnd panel が出る
 //
 // **scope buffer 依存テスト (= scope:<id> 葉の split out)** はシミュレーション実行が
 // 必要なため Stage 1 E2E では割愛 (= sim を始動して buffer を populate する別 spec が要)。
@@ -53,79 +53,76 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     ).toBeVisible();
   });
 
-  test("unsplit button removes scopes-stack pane", async ({ page }) => {
-    await openFixture(page);
-    // scopes-stack pane に unsplit ボタンがある (= aria-label "Close pane" en /
-    // "分割解除" ja)。pane title bar 内なので first() で十分。
-    const unsplitBtn = page
-      .getByRole("button", { name: /^(Close pane|分割解除)$/ })
-      .first();
-    await expect(unsplitBtn).toBeVisible();
-    await unsplitBtn.click();
-    // unsplit 後は scopes-stack pane が消える。v0.30.3 以降、diagram 側に
-    // 「出力を表示」復帰ボタン (= text "Output/出力") が出るため、pane の
-    // 有無は text ではなく pane 葉の data-testid で判定する。
-    await expect(
-      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
-    ).toHaveCount(0);
-    // diagram pane は残る
-    await expect(
-      page.locator("[data-testid='workspace-pane-diagram-slot']"),
-    ).toBeVisible();
-  });
-
-  test("after unsplit, show-output-area button re-adds scopes-stack pane", async ({
+  test("scopes-stack pane is permanent (no close button, no restore button)", async ({
     page,
   }) => {
     await openFixture(page);
-    // まず scopes-stack を unsplit して diagram のみに
-    await page
-      .getByRole("button", { name: /^(Close pane|分割解除)$/ })
-      .first()
-      .click();
-    await expect(
-      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
-    ).toHaveCount(0);
-    // v0.30.2 で diagram pane からの split は禁止され、代わりに v0.30.3 の
-    // 「出力を表示」復帰ボタン (aria-label = "Show output area...") が
-    // scopes-stack pane を再追加する正規経路になった
-    const showScopesBtn = page
-      .getByRole("button", {
-        name: /^(Show output area|出力エリアを表示)/,
-      })
-      .first();
-    await expect(showScopesBtn).toBeVisible();
-    await showScopesBtn.click();
-    // scopes-stack pane が再出現
     await expect(
       page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toBeVisible();
+    // v0.42.x: scopes-stack に unsplit (= 分割解除) ボタンは付かない。
+    // 初期レイアウトでは他に閉じられる pane も無いため、画面全体で 0 個。
+    await expect(
+      page.getByRole("button", { name: /^(Close pane|分割解除)$/ }),
+    ).toHaveCount(0);
+    // 旧「出力エリアを表示」復帰ボタン (v0.30.3) も廃止済み
+    await expect(
+      page.getByRole("button", { name: /^(Show output area|出力エリアを表示)/ }),
+    ).toHaveCount(0);
   });
 
-  test("layout persists across page reload", async ({ page }) => {
+  test("legacy 'closed output area' layout is auto-restored on reload", async ({
+    page,
+  }) => {
     await openFixture(page);
-    // scopes-stack を unsplit → diagram only に変更 (= localStorage に永続化される)
-    await page
-      .getByRole("button", { name: /^(Close pane|分割解除)$/ })
-      .first()
-      .click();
     await expect(
       page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
-    ).toHaveCount(0);
-
-    // リロード後、last_active 経由で fixture が自動復元される (ADR-0043 §論点 8-A)
+    ).toBeVisible();
+    // 旧仕様 (× で閉じられた) の永続 layout を再現: 保存済みキーを
+    // diagram 単独 tree で上書きしてからリロードする
+    await page.evaluate(() => {
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith("pyflw.workspace_layout.")) {
+          window.localStorage.setItem(
+            key,
+            JSON.stringify({ kind: "leaf", paneId: "diagram" }),
+          );
+        }
+      }
+    });
     await page.reload();
     await expect(page.locator(".react-flow__viewport")).toBeVisible({
       timeout: 15_000,
     });
-    // 永続化された SplitTree (= diagram のみ) が復元 → scopes-stack pane 不在
+    // Scope ブロックを持つモデルなので scopes-stack が自動再追加される
     await expect(
       page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
-    ).toHaveCount(0);
-    // diagram pane は復元される
+    ).toBeVisible();
     await expect(
       page.locator("[data-testid='workspace-pane-diagram-slot']"),
     ).toBeVisible();
+  });
+
+  test("split layout persists across page reload (Ctrl+\\ tab split)", async ({
+    page,
+  }) => {
+    // scopes-stack 常設化と無関係な汎用 split 操作で、splitPane → localStorage
+    // 永続化 → reload 復元 のパイプラインを検証する (旧 unsplit ベースのテスト
+    // の置き換え)。Ctrl+\ = active tab を diagram の右に split (ADR-0052 §(6))。
+    await openFixture(page);
+    const tabLeaf = page.locator(
+      `[data-testid='workspace-pane-leaf-tab:${FIXTURE_FILENAME}']`,
+    );
+    await expect(tabLeaf).toHaveCount(0);
+    await page.keyboard.press("Control+\\");
+    await expect(tabLeaf).toBeVisible();
+
+    await page.reload();
+    await expect(page.locator(".react-flow__viewport")).toBeVisible({
+      timeout: 15_000,
+    });
+    // 永続化された tab 葉入り SplitTree が復元される
+    await expect(tabLeaf).toBeVisible();
   });
 
   test("floating Scope panel coexists with docked multi-pane (ADR-0044)", async ({

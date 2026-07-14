@@ -10,7 +10,7 @@
 // **永続化**: drag resize の最終 ratio は ``<PanelGroup onLayout>`` で受け取り、
 // `store.setWorkspaceSplitRatio` で localStorage に書き出す (ADR §(1))。
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Group as PanelGroup,
@@ -94,6 +94,23 @@ export function WorkspaceSplit({
 
   const leafCount = getLeafPaneIds(layout).length;
   const hasScopesStackLeaf = findLeaf(layout, "scopes-stack");
+
+  // v0.42.x (ユーザー要望): 出力エリア (scopes-stack) は手動で閉じる対象ではなく、
+  // モデルが Scope/XYGraph ブロックを持つ間は常設。この effect が presence を
+  // hasScopeBlocks に自動追従させる:
+  // - 旧仕様 (× で閉じられた) の永続 layout を復元した場合 → 再追加
+  // - 最初の Scope ブロックを追加した場合 → 追加
+  // - Scope ブロックをすべて削除した場合 → 撤去
+  // 旧「出力エリアを表示」復帰ボタン (v0.30.3) はこの自動化により撤去。
+  // 注意: splitPane / unsplitPane (= persist する mutator) ではなく、永続化
+  // しない専用 action を使う (= boot 時に本 effect が App の layout 復元より
+  // 先に走っても、保存済み layout を clobber しない)。
+  const normalizeScopesStackPresence = useAppStore(
+    (s) => s.normalizeScopesStackPresence,
+  );
+  useEffect(() => {
+    normalizeScopesStackPresence(hasScopeBlocks);
+  }, [hasScopeBlocks, hasScopesStackLeaf, normalizeScopesStackPresence]);
 
   // v0.27.1 UX-1: 空 scopes-stack pane の表示文言を出し分けるための判定情報。
   // - splitOutAnyScope=true → 「全分離済」(= 個別 pane に分離 + stack は空)
@@ -293,9 +310,11 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
 
   // unsplit:
   // - Diagram: 必ず存在すべき pane なので不許可
+  // - scopes-stack: v0.42.x で常設化 (= presence は hasScopeBlocks に自動追従、
+  //   手動で閉じる仕様と「出力エリアを表示」復帰ボタンを廃止)
   // - 残葉数が 1 のときは不許可 (= unsplit すると tree 全消滅)
   const onUnsplit =
-    !isDiagram && ctx.leafCount > 1
+    !isDiagram && !isStack && ctx.leafCount > 1
       ? () => ctx.unsplitPane(paneId)
       : null;
 
@@ -378,14 +397,6 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       }
     : null;
 
-  // v0.30.3: Diagram pane で scopes-stack 葉が tree に無く、かつ Scope ブロックを
-  // 持つモデルのとき「Scope エリアを表示」ボタンを提供 (= × で閉じた後の復活
-  // 経路、ユーザー要望)
-  const onShowScopes =
-    isDiagram && !ctx.hasScopesStackLeaf && ctx.hasScopeBlocks
-      ? () => ctx.splitPane("diagram", "vertical", "scopes-stack", "after")
-      : null;
-
   return (
     <PaneLeafShell
       titleKey={titleKey}
@@ -394,7 +405,6 @@ function renderLeaf(paneId: string, ctx: RenderContext): JSX.Element {
       onSplitDown={onSplitDown}
       onUnsplit={onUnsplit}
       onDetach={onDetach}
-      onShowScopes={onShowScopes}
       disabledSplitReason={disabledSplitReason}
       paneId={paneId}
       onTabDrop={(zone, filePath) => handleTabDrop(ctx, paneId, zone, filePath)}
@@ -475,7 +485,6 @@ function PaneLeafShell({
   onSplitDown,
   onUnsplit,
   onDetach,
-  onShowScopes,
   disabledSplitReason,
   paneId,
   onTabDrop,
@@ -491,8 +500,6 @@ function PaneLeafShell({
   onUnsplit: (() => void) | null;
   /** ADR-0052 §(3) Stage 3: Scope detach action (= float に切替)。null で hide。 */
   onDetach: (() => void) | null;
-  /** v0.30.3: Diagram pane 専用「Scope エリアを表示」action。null で hide。 */
-  onShowScopes: (() => void) | null;
   /** v0.27.1 UX-3: split 無効時の tooltip 文言。 */
   disabledSplitReason: string | null;
   /** ADR-0052 §(1) Stage 3: drop target identification。 */
@@ -560,7 +567,6 @@ function PaneLeafShell({
         onSplitDown={onSplitDown}
         onUnsplit={onUnsplit}
         onDetach={onDetach}
-        onShowScopes={onShowScopes}
         disabledSplitReason={disabledSplitReason}
       />
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>

@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ctrl+Shift+E / Ctrl+Shift+P / Ctrl+Tab / Ctrl+\ / Ctrl+K 系の実装済み
   ショートカットを Help ダイアログに追補 (従来は約半分が未掲載で発見不能)
 
+### Changed
+
+- **出力エリア (scopes-stack pane) を常設化** — × (分割解除) で閉じる仕様と、
+  閉じた後に diagram 側へ出る「出力エリアを表示」復帰ボタン (v0.30.3) を廃止。
+  出力エリアの表示はモデルが Scope / XYGraph ブロックを持つかどうかに自動追従
+  する (最初の Scope 追加で自動表示、全削除で自動撤去、旧仕様で「閉じた状態」が
+  保存されていた layout も自動復元)
+
 ### Removed
 
 - 未配線のまま残っていた `handleRemoveRecent` (recent 個別削除のデッドコード)、

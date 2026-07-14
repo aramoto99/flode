@@ -304,6 +304,12 @@ interface AppState {
     legacyRaw: string | null,
     hasVisibleScopes: boolean,
   ) => void;
+  /** v0.42.x: 出力エリア (scopes-stack) の presence を hasScopeBlocks に
+   * 揃える正規化。**意図的に永続化しない**: boot 時は子 (WorkspaceSplit) の
+   * effect が親 (App) の layout 復元 effect より先に走るため、ここで persist
+   * すると復元前の DEFAULT_TREE ベースの木が保存値を clobber する。正規化は
+   * 復元後にも再適用されるので、保存はユーザー操作由来の mutator に任せる。 */
+  normalizeScopesStackPresence: (hasScopeBlocks: boolean) => void;
   /** 既存 pane を split。v0.30.0 (ADR-0052): position で新葉の挿入位置を制御
    * (= "after" = 右/下、"before" = 左/上)、既定 "after" で従来挙動。 */
   splitPane: (
@@ -559,6 +565,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         legacyRaw,
         hasVisibleScopes,
       ),
+    }),
+  normalizeScopesStackPresence: (hasScopeBlocks) =>
+    set((state) => {
+      const has = findLeaf(state.workspaceLayout, "scopes-stack");
+      if (hasScopeBlocks && !has) {
+        const next = insertSplit(
+          state.workspaceLayout,
+          "diagram",
+          "vertical",
+          "scopes-stack",
+          "after",
+        );
+        if (next === state.workspaceLayout) return state;
+        return { workspaceLayout: next };
+      }
+      if (!hasScopeBlocks && has) {
+        const removed = removeLeaf(state.workspaceLayout, "scopes-stack");
+        if (removed === null || removed === state.workspaceLayout) return state;
+        return { workspaceLayout: removed };
+      }
+      return state;
     }),
   splitPane: (paneId, orientation, newPaneId, position = "after") =>
     set((state) => {
