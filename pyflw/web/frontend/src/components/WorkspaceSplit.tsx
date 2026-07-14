@@ -547,6 +547,9 @@ function PaneLeafShell({
   return (
     <div
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white"
+      // E2E 用の安定セレクタ (= pane タイトル文言は「出力」復帰ボタン等と
+      // 衝突しうるため、text ベースの assertion を避ける)
+      data-testid={`workspace-pane-leaf-${paneId}`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}

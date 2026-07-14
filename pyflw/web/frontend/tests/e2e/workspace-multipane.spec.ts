@@ -8,8 +8,8 @@ import { expect, type Page, test } from "@playwright/test";
 //   1. レイアウト初期化: Scope ブロックを持つモデルなら diagram + scopes-stack
 //      の縦 split が表示される (= DEFAULT_TREE_WITH_SCOPES)
 //   2. 分割解除: scopes-stack pane の unsplit ボタンで diagram のみに縮約
-//   3. 再分割: 縮約後の diagram pane に split-right or split-down で scopes-stack
-//      pane を再追加
+//   3. 再分割: 縮約後は diagram title bar の「出力エリアを表示」復帰ボタン
+//      (v0.30.3、diagram からの split は v0.30.2 で禁止) で scopes-stack を再追加
 //   4. 永続化: 操作後にリロードしても同じレイアウトが復元される
 //   5. floating panel 並存: Scope ブロックの dblclick で react-rnd panel が出る
 //
@@ -46,9 +46,10 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     await expect(
       page.getByText(/^(Diagram|ダイアグラム)$/).first(),
     ).toBeVisible();
-    // scopes-stack pane の title bar (= "Output" en / "出力" ja)
+    // scopes-stack pane (= pane 葉の data-testid で判定。タイトル文言
+    // "Output/出力" は v0.30.3 の復帰ボタンと衝突するため text では見ない)
     await expect(
-      page.getByText(/^(Output|出力)$/).first(),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toBeVisible();
   });
 
@@ -61,9 +62,11 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       .first();
     await expect(unsplitBtn).toBeVisible();
     await unsplitBtn.click();
-    // unsplit 後は scopes-stack pane 表示が消える
+    // unsplit 後は scopes-stack pane が消える。v0.30.3 以降、diagram 側に
+    // 「出力を表示」復帰ボタン (= text "Output/出力") が出るため、pane の
+    // 有無は text ではなく pane 葉の data-testid で判定する。
     await expect(
-      page.getByText(/^(Output|出力)$/),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toHaveCount(0);
     // diagram pane は残る
     await expect(
@@ -71,7 +74,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     ).toBeVisible();
   });
 
-  test("after unsplit, split-down re-adds scopes-stack pane", async ({
+  test("after unsplit, show-output-area button re-adds scopes-stack pane", async ({
     page,
   }) => {
     await openFixture(page);
@@ -81,17 +84,21 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       .first()
       .click();
     await expect(
-      page.getByText(/^(Output|出力)$/),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toHaveCount(0);
-    // diagram pane の split-down ボタンで scopes-stack pane を再追加
-    const splitDownBtn = page
-      .getByRole("button", { name: /^(Split down|上下に分割)$/ })
+    // v0.30.2 で diagram pane からの split は禁止され、代わりに v0.30.3 の
+    // 「出力を表示」復帰ボタン (aria-label = "Show output area...") が
+    // scopes-stack pane を再追加する正規経路になった
+    const showScopesBtn = page
+      .getByRole("button", {
+        name: /^(Show output area|出力エリアを表示)/,
+      })
       .first();
-    await expect(splitDownBtn).toBeVisible();
-    await splitDownBtn.click();
+    await expect(showScopesBtn).toBeVisible();
+    await showScopesBtn.click();
     // scopes-stack pane が再出現
     await expect(
-      page.getByText(/^(Output|出力)$/).first(),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toBeVisible();
   });
 
@@ -103,7 +110,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       .first()
       .click();
     await expect(
-      page.getByText(/^(Output|出力)$/),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toHaveCount(0);
 
     // リロード後、last_active 経由で fixture が自動復元される (ADR-0043 §論点 8-A)
@@ -113,7 +120,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     });
     // 永続化された SplitTree (= diagram のみ) が復元 → scopes-stack pane 不在
     await expect(
-      page.getByText(/^(Output|出力)$/),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toHaveCount(0);
     // diagram pane は復元される
     await expect(
@@ -139,7 +146,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
       page.locator("[data-testid='workspace-pane-diagram-slot']"),
     ).toBeVisible();
     await expect(
-      page.getByText(/^(Output|出力)$/).first(),
+      page.locator("[data-testid='workspace-pane-leaf-scopes-stack']"),
     ).toBeVisible();
   });
 });

@@ -6,6 +6,7 @@
 import { useEffect } from "react";
 import { Rnd } from "react-rnd";
 
+import { createBuffer } from "../lib/scopeBuffer";
 import { useAppStore } from "../store/appStore";
 import { ScopeView } from "./ScopeView";
 import { XYGraphView } from "./XYGraphView";
@@ -18,6 +19,12 @@ interface PanelGeometry {
 }
 
 const DEFAULT_GEOMETRY: PanelGeometry = { x: 200, y: 200, w: 560, h: 360 };
+
+/** sim 未実行 (buffer 未生成) の panel に渡す共有の空バッファ。
+ * render ごとに ``createBuffer()`` すると参照が毎回変わり、ScopeView の
+ * ``data`` memo → uPlot ``setData`` が editingModel 更新のたびに無駄発火する
+ * ため、module-level で 1 個だけ生成して使い回す (= length 0 の不変値)。 */
+const EMPTY_SCOPE_BUFFER = createBuffer();
 
 function makeKey(workspaceHash: string, modelPath: string, scopeId: string): string {
   // ADR-0044 §論点 6-A: pyflw.scope_panel.<hash>.<base64url(model_path)>.<scope_id>
@@ -75,8 +82,10 @@ export function ScopePanelContainer(): JSX.Element {
   return (
     <>
       {scopePanels.map((scopeId, idx) => {
-        const buffer = scopes[scopeId];
-        if (!buffer) return null;
+        // buffer 未生成 (= sim 未実行) でも panel は開く。旧実装は `return null`
+        // で dblclick が無反応になっていた (見た目上「何も起きない」UI)。
+        // 空バッファなら ScopeView / XYGraphView が「データ未受信」を表示する。
+        const buffer = scopes[scopeId] ?? EMPTY_SCOPE_BUFFER;
         const blockType = (() => {
           if (!editingModel) return "";
           for (const b of editingModel.blocks) {

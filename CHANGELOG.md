@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **無通知エラーの解消** — FileBrowser / 検索結果からのファイルオープン失敗を
   ダイアログ通知、シミュレーション停止要求の失敗を toast 通知に (従来は
   console のみでユーザーに無反応だった)
+- **Scope ブロックのダブルクリックがシミュレーション未実行時に無反応だった
+  問題を修正** — buffer 未生成でも floating panel を開き「データ未受信」を
+  表示する (従来は何も起きなかった)
+- **E2E テストの修正 (v0.30.3 以降ずっと赤だった)** — workspace-multipane
+  spec が「出力」復帰ボタン (v0.30.3) 追加後のタイトル文言衝突と、廃止済みの
+  diagram pane split ボタン (v0.30.2) を前提にしたまま放置されていた。pane 葉
+  に `data-testid` を付与し、text 依存の脆い assertion を安定セレクタに置換
 
 ### Added
 
