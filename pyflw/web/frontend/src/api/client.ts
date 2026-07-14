@@ -12,6 +12,7 @@ import type {
   LibraryEntryDetail,
   LibraryRegistryResponse,
   ResolvedPortShapes,
+  SimulationResults,
   SimulationState,
 } from "../types/api";
 
@@ -122,6 +123,19 @@ export async function getSimulationState(
 ): Promise<SimulationState> {
   return _fetch<SimulationState>(
     `/simulations/${encodeURIComponent(simId)}`,
+  );
+}
+
+/**
+ * 終端後に完全な Scope データを一括取得する (ADR-0011 §(1))。
+ * WS ストリームの queue 満杯 drop で欠損しうる波形を、この結果で置き換える。
+ * 実行中は 409 (SimulationStillRunningError) が返る。
+ */
+export async function getSimulationResults(
+  simId: string,
+): Promise<SimulationResults> {
+  return _fetch<SimulationResults>(
+    `/simulations/${encodeURIComponent(simId)}/results`,
   );
 }
 

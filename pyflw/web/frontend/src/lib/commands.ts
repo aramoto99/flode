@@ -261,7 +261,7 @@ export function buildCommandRegistry(): Command[] {
  * - workspace root の **直下のみ** 対象 (= サブフォルダの untitled は対象外、
  *   サブフォルダ内の作業データを誤削除しないため)
  */
-async function cleanupUntitled(): Promise<void> {
+export async function cleanupUntitled(): Promise<void> {
   const state = useAppStore.getState();
   const openPaths = new Set(state.tabs.map((tab) => tab.filePath));
   if (state.activeTabFilePath) openPaths.add(state.activeTabFilePath);

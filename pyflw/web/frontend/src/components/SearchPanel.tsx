@@ -16,6 +16,7 @@ import {
   getFileContent,
   searchFiles,
 } from "../api/filesApi";
+import { dialog } from "../lib/dialogService";
 import { addRecentFile } from "../lib/recentFiles";
 import { useAppStore } from "../store/appStore";
 
@@ -99,6 +100,12 @@ export function SearchPanel(): JSX.Element {
       // 明示的に file mode に戻すまで Search のまま)
     } catch (e) {
       console.error("Failed to open file from search:", path, e);
+      await dialog.alert(
+        t("filebrowser.open_failed", "Failed to open {{path}}: {{message}}", {
+          path,
+          message: (e as Error).message,
+        }),
+      );
     }
   };
 

@@ -173,9 +173,15 @@ export function FileBrowser(): JSX.Element {
         }
       } catch (e) {
         console.error("Failed to open file:", path, e);
+        await dialog.alert(
+          t("filebrowser.open_failed", "Failed to open {{path}}: {{message}}", {
+            path,
+            message: (e as Error).message,
+          }),
+        );
       }
     },
-    [openFileInTab],
+    [openFileInTab, t],
   );
 
   const handleOpen = useCallback(

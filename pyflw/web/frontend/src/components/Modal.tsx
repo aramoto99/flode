@@ -304,6 +304,73 @@ export function KeyboardShortcutsDialog({
         { keys: "Enter", description: t("modal.shortcuts.desc.drill_in") },
         { keys: "Esc", description: t("modal.shortcuts.desc.drill_up") },
         { keys: "F2", description: t("modal.shortcuts.desc.rename_file") },
+        {
+          keys: "Ctrl+Tab / Ctrl+Shift+Tab",
+          description: t("modal.shortcuts.desc.switch_tab", {
+            defaultValue: "Switch tabs",
+          }),
+        },
+      ],
+    },
+    // v0.42.0: View / Workspace 系を追補 (= 実装済みショートカットを漏れなく
+    // 掲載する。ここに無いショートカットはユーザーが発見できない)。
+    {
+      title: t("modal.shortcuts.section.view", { defaultValue: "View" }),
+      rows: [
+        {
+          keys: "Ctrl+B",
+          description: t("modal.shortcuts.desc.toggle_sidebar", {
+            defaultValue: "Toggle sidebar",
+          }),
+        },
+        {
+          keys: "Ctrl+Shift+E",
+          description: t("modal.shortcuts.desc.sidebar_file", {
+            defaultValue: "Open Explorer sidebar",
+          }),
+        },
+        {
+          keys: "Ctrl+P",
+          description: t("modal.shortcuts.desc.search_path", {
+            defaultValue: "Search files by name",
+          }),
+        },
+        {
+          keys: "Ctrl+Shift+F",
+          description: t("modal.shortcuts.desc.search_content", {
+            defaultValue: "Search in files",
+          }),
+        },
+        {
+          keys: "Ctrl+Shift+P",
+          description: t("modal.shortcuts.desc.command_palette", {
+            defaultValue: "Open command palette",
+          }),
+        },
+        {
+          keys: "Ctrl+\\",
+          description: t("modal.shortcuts.desc.split_right", {
+            defaultValue: "Split active tab to the right",
+          }),
+        },
+        {
+          keys: "Ctrl+K Ctrl+\\",
+          description: t("modal.shortcuts.desc.split_down", {
+            defaultValue: "Split active tab downward",
+          }),
+        },
+        {
+          keys: "Ctrl+K I",
+          description: t("modal.shortcuts.desc.inspector_dock", {
+            defaultValue: "Cycle Inspector dock (sidebar → pane → float)",
+          }),
+        },
+        {
+          keys: "Ctrl+K Z",
+          description: t("modal.shortcuts.desc.zen", {
+            defaultValue: "Toggle Zen mode (collapse side panels)",
+          }),
+        },
       ],
     },
     {

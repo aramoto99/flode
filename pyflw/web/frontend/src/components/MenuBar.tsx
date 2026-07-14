@@ -1,10 +1,15 @@
-// デスクトップ風 MenuBar (File / View / Simulation / Help)。
+// デスクトップ風 MenuBar (File / Edit / View / Simulation / Settings / Help)。
 // 業界標準ブロック線図ツール + 数値計算 IDE の上部メニュー帯に倣う。
 //
 // v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` / ``selectedModelId``
 // 経路を撤去、File API (= ``selectedFilePath``) 一本化。File メニューは New /
 // Open / Save / Save As / Close / Delete を全て File API 経由で操作する。
+//
+// v0.42.0: Edit / View メニューを新設、Simulation に Run / Stop を追加。
+// ショートカット・コマンドパレット限定だった実装済み機能をメニューバーから
+// 発見できるようにする (= メニューバーは機能の全カタログ、という desktop 文法)。
 
+import { useReactFlow } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,13 +24,22 @@ import {
   setLanguage,
   type SupportedLanguage,
 } from "../i18n";
+import { cleanupUntitled } from "../lib/commands";
 import {
   clearRecentFiles,
   readRecentFiles,
   removeRecentFile,
 } from "../lib/recentFiles";
 import { dialog } from "../lib/dialogService";
-import { useAppStore } from "../store/appStore";
+import { useSimulation } from "../lib/useSimulation";
+import {
+  copySelectionToClipboard,
+  pasteClipboard,
+  removeBlockFromEditing,
+  selectAllInScope,
+  toggleBlockFlipped,
+  useAppStore,
+} from "../store/appStore";
 import type { FlwModel } from "../types/api";
 import { KeyboardShortcutsDialog, SaveAsPathDialog } from "./Modal";
 import { ModelSettingsModal } from "./ModelSettingsModal";
@@ -87,6 +101,17 @@ export function MenuBar(): JSX.Element {
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
   const workspaceHash = useAppStore((s) => s.workspaceHash);
+  // v0.42.0: Edit / View / Simulation メニュー用の購読。
+  // 選択配列は boolean に落として購読する (= 選択変更のたびに MenuBar 全体が
+  // 再レンダーされるのを防ぐ。zustand は Object.is 比較)。
+  const hasSelection = useAppStore((s) => s.selectedNodeIds.length > 0);
+  const hasEdgeSelection = useAppStore((s) => s.selectedEdgeIds.length > 0);
+  const canUndo = useAppStore((s) => s.canUndo());
+  const canRedo = useAppStore((s) => s.canRedo());
+  const hasClipboard = useAppStore((s) => s.clipboard !== null);
+  const simStatus = useAppStore((s) => s.status);
+  const reactFlow = useReactFlow();
+  const { run: runSimulation, stop: stopSimulation } = useSimulation();
   // ADR-0043 §論点 4: Recent Files の再読込トリガー (= recent 変更時に再描画)
   const [recentRev, setRecentRev] = useState(0);
   const recentFiles =
@@ -132,22 +157,28 @@ export function MenuBar(): JSX.Element {
     }
   };
 
-  // Open は FileBrowser の tree クリックで担当 (= legacy OpenModelDialog 撤去)
+  // 開く操作の実体は FileBrowser (= legacy OpenModelDialog は v0.21.0 撤去)。
+  // メニューからはサイドバーの FileBrowser を開いてフォーカスを渡す。
   const handleOpen = (): void => {
     setOpenMenu(null);
-    // TODO(v3.x): File API 版 OpenModelDialog (= mini FileBrowser tree) を
-    // 実装する案 (ADR-0041 §論点 10-A 完全版)。現状は左サイドバーの
-    // FileBrowser から直接 tree を辿って開く UX に集約。
+    const state = useAppStore.getState();
+    state.setSidebarMode("file");
+    if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
   };
 
   const handleSave = (): void => {
     setOpenMenu(null);
-    // useAutoSave の Ctrl+S handler が File API 経由で flush する。本ハンドラは
-    // メニュークリックで明示的に flush する場合のみ動かす — ただし dirty なら
-    // すでに 500ms debounce で auto-save される、メニューからの即時保存も
-    // useAutoSave を経由させる方が二重保存を避けられる。
-    // 簡略化: 何もせず、ユーザーが Ctrl+S を使う方向に誘導する。実装は
-    // useAutoSave 側の keydown handler を維持。
+    // 保存の実体は useAutoSave の Ctrl+S handler (= 楽観ロック + 二重 PUT 防止
+    // を一元管理)。CommandPalette の file.save と同じく synthetic keydown で
+    // 同じ経路に乗せる (= メニューからも実際に即時 flush される)。
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "s",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
   };
 
   const handleSaveAs = (): void => {
@@ -274,12 +305,6 @@ export function MenuBar(): JSX.Element {
     }
   };
 
-  const handleRemoveRecent = (path: string): void => {
-    if (!workspaceHash) return;
-    removeRecentFile(workspaceHash, path);
-    setRecentRev((r) => r + 1);
-  };
-
   const handleClearRecent = (): void => {
     if (!workspaceHash) return;
     clearRecentFiles(workspaceHash);
@@ -311,7 +336,7 @@ export function MenuBar(): JSX.Element {
 
   const fileItems: MenuItemSpec[] = [
     { label: t("menu.file.new"), shortcut: "Ctrl+N", onClick: () => void handleNew() },
-    { label: t("menu.file.open"), onClick: handleOpen, disabled: true },
+    { label: t("menu.file.open"), onClick: handleOpen },
     { label: "", divider: true },
     // ADR-0043 §論点 4: Recent Files セクション
     { label: t("menu.file.recent", "Recent Files"), disabled: true },
@@ -337,8 +362,239 @@ export function MenuBar(): JSX.Element {
       disabled: !hasModel,
       destructive: true,
     },
+    { label: "", divider: true },
+    {
+      label: t("menu.file.cleanup_untitled", "Clean Up Untitled Files…"),
+      onClick: () => {
+        setOpenMenu(null);
+        void cleanupUntitled();
+      },
+    },
   ];
-  void handleRemoveRecent; // 個別削除は v3.x 以降の UI 拡張で再導入
+
+  // v0.42.0: Edit メニュー。実体は useShortcuts / store action と同一経路。
+  const hasAnySelection = hasSelection || hasEdgeSelection;
+  const editItems: MenuItemSpec[] = [
+    {
+      label: t("menu.edit.undo", "Undo"),
+      shortcut: "Ctrl+Z",
+      disabled: !canUndo,
+      onClick: () => {
+        setOpenMenu(null);
+        useAppStore.getState().undo();
+      },
+    },
+    {
+      label: t("menu.edit.redo", "Redo"),
+      shortcut: "Ctrl+Shift+Z / Ctrl+Y",
+      disabled: !canRedo,
+      onClick: () => {
+        setOpenMenu(null);
+        useAppStore.getState().redo();
+      },
+    },
+    { label: "", divider: true },
+    {
+      label: t("menu.edit.cut", "Cut"),
+      shortcut: "Ctrl+X",
+      disabled: !hasSelection,
+      onClick: () => {
+        setOpenMenu(null);
+        // useShortcuts の Ctrl+X と同一手順 (copy → block 削除 → 選択解除)
+        copySelectionToClipboard();
+        const state = useAppStore.getState();
+        for (const id of state.selectedNodeIds) removeBlockFromEditing(id);
+        state.selectNode(null);
+      },
+    },
+    {
+      label: t("menu.edit.copy", "Copy"),
+      shortcut: "Ctrl+C",
+      disabled: !hasSelection,
+      onClick: () => {
+        setOpenMenu(null);
+        copySelectionToClipboard();
+      },
+    },
+    {
+      label: t("menu.edit.paste", "Paste"),
+      shortcut: "Ctrl+V",
+      disabled: !hasClipboard,
+      onClick: () => {
+        setOpenMenu(null);
+        pasteClipboard();
+      },
+    },
+    {
+      label: t("menu.edit.delete", "Delete"),
+      shortcut: "Del",
+      disabled: !hasAnySelection,
+      onClick: () => {
+        setOpenMenu(null);
+        // Delete キーと同一経路 (= ReactFlow の change pipeline 経由で
+        // onNodesChange / onEdgesChange の remove 処理に乗せる)。
+        void reactFlow.deleteElements({
+          nodes: reactFlow.getNodes().filter((n) => n.selected),
+          edges: reactFlow.getEdges().filter((e) => e.selected),
+        });
+      },
+    },
+    { label: "", divider: true },
+    {
+      label: t("menu.edit.select_all", "Select All"),
+      shortcut: "Ctrl+A",
+      disabled: !hasModel,
+      onClick: () => {
+        setOpenMenu(null);
+        selectAllInScope();
+      },
+    },
+    {
+      label: t("menu.edit.flip", "Flip Block"),
+      shortcut: "Ctrl+I",
+      disabled: !hasSelection,
+      onClick: () => {
+        setOpenMenu(null);
+        for (const id of useAppStore.getState().selectedNodeIds) {
+          toggleBlockFlipped(id);
+        }
+      },
+    },
+  ];
+
+  // v0.42.0: View メニュー。ズーム / サイドバー / 検索 / パレット / ペイン操作。
+  const viewItems: MenuItemSpec[] = [
+    {
+      label: t("menu.view.zoom_in", "Zoom In"),
+      onClick: () => {
+        setOpenMenu(null);
+        void reactFlow.zoomIn();
+      },
+    },
+    {
+      label: t("menu.view.zoom_out", "Zoom Out"),
+      onClick: () => {
+        setOpenMenu(null);
+        void reactFlow.zoomOut();
+      },
+    },
+    {
+      label: t("menu.view.fit", "Fit View"),
+      onClick: () => {
+        setOpenMenu(null);
+        void reactFlow.fitView();
+      },
+    },
+    { label: "", divider: true },
+    {
+      label: t("menu.view.toggle_sidebar", "Toggle Sidebar"),
+      shortcut: "Ctrl+B",
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setWorkspaceCollapsed(!s.workspaceCollapsed);
+      },
+    },
+    {
+      label: t("menu.view.sidebar_file", "Explorer"),
+      shortcut: "Ctrl+Shift+E",
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setSidebarMode("file");
+        if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
+      },
+    },
+    {
+      label: t("menu.view.sidebar_library", "Block Library"),
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setSidebarMode("library");
+        if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
+      },
+    },
+    {
+      label: t("menu.view.search_path", "Search Files"),
+      shortcut: "Ctrl+P",
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setSidebarMode("search");
+        if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
+        window.dispatchEvent(
+          new CustomEvent("pyflw:open-search", { detail: { kind: "path" } }),
+        );
+      },
+    },
+    {
+      label: t("menu.view.search_content", "Search in Files"),
+      shortcut: "Ctrl+Shift+F",
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setSidebarMode("search");
+        if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
+        window.dispatchEvent(
+          new CustomEvent("pyflw:open-search", { detail: { kind: "content" } }),
+        );
+      },
+    },
+    { label: "", divider: true },
+    {
+      label: t("menu.view.command_palette", "Command Palette"),
+      shortcut: "Ctrl+Shift+P",
+      onClick: () => {
+        setOpenMenu(null);
+        useAppStore.getState().setCommandPaletteOpen(true);
+      },
+    },
+    {
+      label: t("menu.view.toggle_inspector", "Toggle Inspector"),
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        s.setInspectorCollapsed(!s.inspectorCollapsed);
+      },
+    },
+    {
+      label: t("menu.view.zen", "Zen Mode"),
+      shortcut: "Ctrl+K Z",
+      onClick: () => {
+        setOpenMenu(null);
+        // useShortcuts の Ctrl+K Z と同一 (sidebar + inspector を一括開閉)
+        const s = useAppStore.getState();
+        const isZen = s.workspaceCollapsed && s.inspectorCollapsed;
+        s.setWorkspaceCollapsed(!isZen);
+        s.setInspectorCollapsed(!isZen);
+      },
+    },
+    { label: "", divider: true },
+    {
+      label: t("menu.view.split_right", "Split Right"),
+      shortcut: "Ctrl+\\",
+      disabled: !hasModel,
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        const path = s.activeTabFilePath;
+        if (!path) return;
+        s.splitPane("diagram", "horizontal", `tab:${path}`, "after");
+      },
+    },
+    {
+      label: t("menu.view.split_down", "Split Down"),
+      shortcut: "Ctrl+K Ctrl+\\",
+      disabled: !hasModel,
+      onClick: () => {
+        setOpenMenu(null);
+        const s = useAppStore.getState();
+        const path = s.activeTabFilePath;
+        if (!path) return;
+        s.splitPane("diagram", "vertical", `tab:${path}`, "after");
+      },
+    },
+  ];
 
   // v0.20.0: Help メニュー
   const helpItems: MenuItemSpec[] = [
@@ -351,8 +607,27 @@ export function MenuBar(): JSX.Element {
     },
   ];
 
-  // Simulation メニュー
+  // Simulation メニュー (v0.42.0: Run / Stop を追加 — Toolbar / Ctrl+T と同一経路)
   const simulationItems: MenuItemSpec[] = [
+    {
+      label: t("menu.simulation.run", "Run"),
+      shortcut: "Ctrl+T / F9",
+      disabled: !hasModel || simStatus === "running",
+      onClick: () => {
+        setOpenMenu(null);
+        void runSimulation();
+      },
+    },
+    {
+      label: t("menu.simulation.stop", "Stop"),
+      shortcut: "Ctrl+Shift+T",
+      disabled: simStatus !== "running",
+      onClick: () => {
+        setOpenMenu(null);
+        void stopSimulation();
+      },
+    },
+    { label: "", divider: true },
     {
       label: t("menu.simulation.model_settings"),
       onClick: () => {
@@ -395,6 +670,22 @@ export function MenuBar(): JSX.Element {
         onToggle={() => setOpenMenu((m) => (m === "File" ? null : "File"))}
         onHover={() => openMenu && setOpenMenu("File")}
         items={fileItems}
+        currentLang={lang}
+      />
+      <Menu
+        label={t("menu.edit", "Edit")}
+        open={openMenu === "Edit"}
+        onToggle={() => setOpenMenu((m) => (m === "Edit" ? null : "Edit"))}
+        onHover={() => openMenu && setOpenMenu("Edit")}
+        items={editItems}
+        currentLang={lang}
+      />
+      <Menu
+        label={t("menu.view", "View")}
+        open={openMenu === "View"}
+        onToggle={() => setOpenMenu((m) => (m === "View" ? null : "View"))}
+        onHover={() => openMenu && setOpenMenu("View")}
+        items={viewItems}
         currentLang={lang}
       />
       <Menu

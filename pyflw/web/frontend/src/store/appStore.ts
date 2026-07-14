@@ -491,6 +491,11 @@ interface AppState {
   // Scope データ (scope_id -> 時系列)
   scopes: Record<string, ScopeBuffer>;
   resetScopes: () => void;
+  // 終端後の一括結果 (`GET /results`) で scope バッファを丸ごと置き換える。
+  // WS の queue 満杯 drop による波形のサイレント欠損を補完する (ADR-0011 §(2))。
+  replaceScopes: (
+    scopes: Record<string, { times: number[]; values: number[][] }>,
+  ) => void;
 
   // 受信ハンドラ (WebSocket メッセージから状態に反映)
   handleStreamMessage: (msg: StreamMessage) => void;
@@ -1257,6 +1262,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetScopes: () => {
     cancelPendingStream();
     set({ scopes: {} });
+  },
+
+  replaceScopes: (results) => {
+    // 終端後の呼び出し前提だが、念のため未 flush の pending を先に破棄する
+    // (= 置き換え後に古い batch が追記されて再び欠損状態に戻るのを防ぐ)。
+    cancelPendingStream();
+    const rebuilt: Record<string, ScopeBuffer> = {};
+    for (const [scopeId, data] of Object.entries(results)) {
+      // appendBatch は空バッファへの一括追記で全件を SoA 転置し、
+      // MAX_SAMPLES 超過時は WS 経路と同じ ring drop 規則を適用する。
+      rebuilt[scopeId] = appendScopeBatchSoA(
+        createScopeBuffer(),
+        data.times,
+        data.values,
+      );
+    }
+    set({ scopes: rebuilt });
   },
 
   handleStreamMessage: (msg) => {

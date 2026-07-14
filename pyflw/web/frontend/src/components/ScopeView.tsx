@@ -23,7 +23,7 @@ import {
 } from "../lib/scopeSettings";
 import { type ScopeBuffer, useAppStore } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
-import type { ScopeSettings } from "../types/api";
+import type { ScopeSettings, SignalMarker } from "../types/api";
 import { UPlotChart } from "./UPlotChart";
 
 interface ScopeViewProps {
@@ -47,13 +47,132 @@ export function buildAlignedData(buffer: ScopeBuffer): uPlot.AlignedData {
   return [xs, ...ys] as uPlot.AlignedData;
 }
 
+/** marker の直径 (CSS px)。 */
+const MARKER_SIZE_CSS = 5;
+
+/**
+ * uPlot の points 用カスタム PathBuilder (circle / square / cross)。
+ *
+ * uPlot 組込の点描画は circle 固定のため、marker 形状は自前の Path2D で描く。
+ * サンプルが密集して marker 同士が潰れる場合は、uPlot 標準の点表示と同じ発想で
+ * 「平均間隔が直径 2 個分を下回らない」stride に間引く。間引くのは marker の
+ * 描画だけで、波形 (線) は全サンプルを通る。
+ *
+ * @internal テスト用 export。
+ */
+export function buildMarkerPaths(
+  shape: Exclude<SignalMarker, "none">,
+): uPlot.Series.Points.PathBuilder {
+  return (u, seriesIdx, idx0, idx1) => {
+    const pxRatio =
+      typeof devicePixelRatio === "number" && devicePixelRatio > 0
+        ? devicePixelRatio
+        : 1;
+    const size = MARKER_SIZE_CSS * pxRatio;
+    const r = size / 2;
+    const xData = u.data[0]!;
+    const yData = u.data[seriesIdx]!;
+    const scaleKey = u.series[seriesIdx]!.scale ?? "y";
+    const count = idx1 - idx0 + 1;
+    const stride = Math.max(
+      1,
+      Math.ceil((count * size * 2) / Math.max(u.bbox.width, 1)),
+    );
+    const stroke = new Path2D();
+    for (let i = idx0; i <= idx1; i += stride) {
+      const yv = yData[i];
+      if (yv == null) continue;
+      const cx = u.valToPos(xData[i]!, "x", true);
+      const cy = u.valToPos(yv, scaleKey, true);
+      switch (shape) {
+        case "circle":
+          stroke.moveTo(cx + r, cy);
+          stroke.arc(cx, cy, r, 0, 2 * Math.PI);
+          break;
+        case "square":
+          stroke.rect(cx - r, cy - r, size, size);
+          break;
+        case "cross":
+          stroke.moveTo(cx - r, cy - r);
+          stroke.lineTo(cx + r, cy + r);
+          stroke.moveTo(cx + r, cy - r);
+          stroke.lineTo(cx - r, cy + r);
+          break;
+      }
+    }
+    // cross は塗り無し (線のみ)。circle / square は白抜き (uPlot 既定の
+    // points.fill = #fff) で線を隠さない。
+    return { stroke, fill: shape === "cross" ? null : stroke };
+  };
+}
+
+/** minor grid の線色 (major の #e2e8f0 = slate-200 より薄い slate-100)。 */
+const GRID_MINOR_STROKE = "#f1f5f9";
+
+/**
+ * minor grid 用の隠し axis を作る。
+ *
+ * uPlot に minor grid のネイティブ機能が無いため、major axis と同じ増分探索で
+ * 得た ``foundIncr`` を 1/5 に細分した splits を持つ「ラベル・tick 無しの第 2
+ * axis」を重ねて描く。major と一致する位置は ``grid.filter`` (= uPlot が grid
+ * 線の描画対象を決める hook。axis 直下の ``filter`` はラベル用で grid 線には
+ * 効かない) で null にし、major 線 (濃色) を二重描画しない。
+ *
+ * 注意: 本実装は major axis と minor axis の ``foundIncr`` が一致すること、
+ * すなわち両者が uPlot デフォルトの ``space`` / ``incrs`` を使うことを前提に
+ * している。major axis 側に ``space`` / ``incrs`` のカスタマイズを入れる場合は
+ * 本関数にも同じ値を渡さないと minor の 1/5 刻みが major とずれる。
+ *
+ * @internal テスト用 export。
+ */
+export function buildMinorGridAxis(scaleKey: "x" | "y"): uPlot.Axis {
+  // major (= foundIncr の整数倍) と一致する split を null にする。
+  const dedupeMajor: uPlot.Axis.Filter = (
+    _u,
+    splits,
+    _axisIdx,
+    _foundSpace,
+    foundIncr,
+  ) =>
+    splits.map((v) => {
+      const ratio = v / foundIncr;
+      return Math.abs(ratio - Math.round(ratio)) < 1e-6 ? null : v;
+    });
+  return {
+    scale: scaleKey,
+    side: scaleKey === "x" ? 2 : 3,
+    size: 0,
+    gap: 0,
+    labelSize: 0,
+    ticks: { show: false, size: 0 },
+    grid: {
+      show: true,
+      stroke: GRID_MINOR_STROKE,
+      width: 1,
+      filter: dedupeMajor,
+    },
+    splits: (_u, _axisIdx, min, max, foundIncr) => {
+      const minor = foundIncr / 5;
+      if (!Number.isFinite(minor) || minor <= 0) return [];
+      // 整数インデックス k から都度掛け算で生成し、加算による float 誤差の
+      // 蓄積を避ける。
+      const start = Math.ceil(min / minor - 1e-9);
+      const end = Math.floor(max / minor + 1e-9);
+      const out: number[] = [];
+      for (let k = start; k <= end; k++) out.push(k * minor);
+      return out;
+    },
+    values: (_u, splits) => splits.map(() => ""),
+  };
+}
+
 /** uPlot.Options を組み立てる。
  *
  * ADR-0044 §論点 4 / §論点 7: per-scope settings から
  * - Y/X 軸スケール (auto / manual / log)
  * - 凡例位置 (= legend.show + 配置は React 側で wrapper、本関数は show のみ)
  * - グリッド (major / minor)
- * - per-signal 線色 / 線幅
+ * - per-signal 線色 / 線幅 / marker
  *
  * @internal テスト用 export。
  */
@@ -72,12 +191,22 @@ export function buildOptions(
 
   const series: uPlot.Series[] = [
     {}, // x 軸 (時間)
-    ...Array.from({ length: n_signals }, (_, i): uPlot.Series => ({
-      label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
-      stroke: resolveSignalColor(resolved.signals, i),
-      width: resolved.signals?.[String(i)]?.width ?? 1.25,
-      points: { show: false },
-    })),
+    ...Array.from({ length: n_signals }, (_, i): uPlot.Series => {
+      const marker = resolved.signals?.[String(i)]?.marker ?? "none";
+      return {
+        label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
+        stroke: resolveSignalColor(resolved.signals, i),
+        width: resolved.signals?.[String(i)]?.width ?? 1.25,
+        points:
+          marker === "none"
+            ? { show: false }
+            : {
+                show: true,
+                size: MARKER_SIZE_CSS,
+                paths: buildMarkerPaths(marker),
+              },
+      };
+    }),
   ];
 
   const xRange =
@@ -104,6 +233,14 @@ export function buildOptions(
   const GRID_STROKE = "#e2e8f0"; // slate-200
   const TICK_STROKE = "#cbd5e1"; // slate-300
 
+  // minor grid: 隠し axis を major axes より先に並べ、major 線が上に描かれる
+  // ようにする。log スケール時は線形細分が誤解を招くため minor は出さない。
+  const minorAxes: uPlot.Axis[] = [];
+  if (resolved.grid_minor === true) {
+    minorAxes.push(buildMinorGridAxis("x"));
+    if (yMode !== "log") minorAxes.push(buildMinorGridAxis("y"));
+  }
+
   return {
     width: 400,
     height: 192,
@@ -119,6 +256,7 @@ export function buildOptions(
       },
     },
     axes: [
+      ...minorAxes,
       {
         stroke: AXIS_STROKE,
         font: AXIS_FONT,

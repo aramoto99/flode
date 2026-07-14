@@ -147,6 +147,21 @@ export interface SimulationState {
   error: string | null;
 }
 
+/**
+ * ADR-0011 §(1): `GET /simulations/{id}/results` のレスポンス。
+ * WS ストリームは queue 満杯時に古い scope_batch を drop しうるため、終端後に
+ * この一括結果で Scope バッファを正とする (= サイレント欠損の補完)。
+ * `values` は WS `scope_batch` と同じ行指向 (サンプル × 信号)。
+ */
+export interface SimulationResults {
+  simulation_id: string;
+  status: SimulationStatus;
+  scopes: Record<
+    string,
+    { labels: string[]; times: number[]; values: number[][] }
+  >;
+}
+
 // ADR-0019 §(1): Block class registry REST schema (palette UI / shape validation)
 export interface BlockParamSpec {
   name: string;

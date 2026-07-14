@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0] - 2026-07-14 — GUI 誠実化: 波形欠損補完 + メニュー再構成
+
+「見た目だけで中身がない UI」の一掃。効かない設定・無反応のメニュー・
+黙って欠損する波形を排除し、実装済み機能をメニューバーから発見可能にした。
+
+### Fixed
+
+- **Scope 波形のサイレント欠損を補完** — WebSocket ストリームは内部 queue
+  (max 1024) 満杯時に古い `scope_batch` を drop するため、ライブ描画の波形が
+  欠損したまま「完全なグラフ」に見えることがあった。終端 (completed / stopped /
+  failed) 後に `GET /simulations/{id}/results` の一括結果で scope バッファを
+  置き換え、表示を常に完全なデータと一致させる
+- **Scope 設定「Minor grid」を実装** — チェックしても何も起きない飾り設定
+  だった。uPlot の隠し axis (`foundIncr`/5 の splits + major 位置の
+  `grid.filter` 除外) でメジャーグリッドの 1/5 刻みの補助線を描画する
+  (対数スケール時の Y 軸は誤解を招くため非表示)
+- **Scope 設定「Marker」を時系列 Scope でも有効化** — XY グラフ専用だった
+  marker (circle / square / cross) を時系列描画にも実装 (カスタム Path2D。
+  高密度時は uPlot 標準と同じ発想で描画のみ間引き、波形は全サンプルを通す)
+- **File > Save が無反応だった問題を修正** — メニューを閉じるだけの no-op
+  だったのを、Ctrl+S と同じ保存経路 (楽観ロック付き即時 flush) に実配線
+- **File > Open が恒久 disabled だった問題を修正** — Explorer サイドバーを
+  開く実処理に配線
+- **無通知エラーの解消** — FileBrowser / 検索結果からのファイルオープン失敗を
+  ダイアログ通知、シミュレーション停止要求の失敗を toast 通知に (従来は
+  console のみでユーザーに無反応だった)
+
+### Added
+
+- **Edit メニュー新設** — Undo / Redo / Cut / Copy / Paste / Delete /
+  Select All / Flip Block。ショートカット限定だった編集操作をメニューから
+  発見可能に (実体は既存ショートカットと同一経路)
+- **View メニュー新設** — Zoom In / Out / Fit、サイドバー切替 / Explorer /
+  ブロックライブラリ / ファイル検索 / 内容検索、コマンドパレット /
+  インスペクタ切替 / Zen モード、右に分割 / 下に分割
+- **Simulation メニューに Run / Stop を追加** — Toolbar / Ctrl+T と同一経路
+- **File > untitled ファイルを整理** — コマンドパレット限定だった
+  `workspace.cleanup_untitled` をメニューに掲載
+- **ショートカット一覧を補完** — Ctrl+P / Ctrl+Shift+F / Ctrl+B /
+  Ctrl+Shift+E / Ctrl+Shift+P / Ctrl+Tab / Ctrl+\ / Ctrl+K 系の実装済み
+  ショートカットを Help ダイアログに追補 (従来は約半分が未掲載で発見不能)
+
+### Removed
+
+- 未配線のまま残っていた `handleRemoveRecent` (recent 個別削除のデッドコード)、
+  参照ゼロの i18n キー `menu.placeholder.empty`、陳腐化した
+  「(Phase 4)」ツールチップ表記を削除
+
 ## [0.41.0] - 2026-07-11 — 起動 UX: ブラウザ自動オープン + ポート自動フォールバック
 
 一発起動の体験 (SPEC-0021 / ADR-0069)。`pyflw` と打つだけで
