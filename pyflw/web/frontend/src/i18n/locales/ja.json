@@ -256,14 +256,6 @@
   "activity.library": "ライブラリ",
   "activity.search": "検索",
 
-  "launcher.section.start": "スタート",
-  "launcher.section.recent": "最近開いたファイル",
-  "launcher.tile.new": "新規",
-  "launcher.tile.open": "開く",
-  "launcher.recent.empty": "最近開いたファイルはありません",
-  "launcher.recent.show_all": "すべて表示...",
-  "launcher.prompt_new": "新規ファイル名 (.flw.json):",
-
   "command.palette.title": "コマンドパレット",
   "command.palette.placeholder": "コマンドを入力 (上下キーで選択、Enter で実行)",
   "command.palette.no_match": "該当するコマンドがありません",

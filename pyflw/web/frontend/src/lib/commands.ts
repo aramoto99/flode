@@ -318,7 +318,7 @@ export async function cleanupUntitled(): Promise<void> {
 
 /** v0.29.1: 現在のワークスペースの Recent Files を動的 command として展開。
  *
- * Launcher の Recent list と同じデータソース (= ``readRecentFiles(workspaceHash)``)
+ * MenuBar の Recent Files と同じデータソース (= ``readRecentFiles(workspaceHash)``)
  * から最大 ``limit`` 件 (= 既定 10) を生成。各 command は **直接 REST 呼出し**
  * (= getFileContent + openFileInTab) で synthetic keyboard event を経由しない。
  *

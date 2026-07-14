@@ -256,14 +256,6 @@
   "activity.library": "Library",
   "activity.search": "Search",
 
-  "launcher.section.start": "Start",
-  "launcher.section.recent": "Recent",
-  "launcher.tile.new": "New",
-  "launcher.tile.open": "Open",
-  "launcher.recent.empty": "No recent files",
-  "launcher.recent.show_all": "Show all...",
-  "launcher.prompt_new": "New file name (.flw.json):",
-
   "command.palette.title": "Command Palette",
   "command.palette.placeholder": "Type a command (↑/↓ to navigate, Enter to run)",
   "command.palette.no_match": "No matching commands",

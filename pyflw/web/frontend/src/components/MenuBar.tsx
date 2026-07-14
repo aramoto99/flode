@@ -113,9 +113,9 @@ export function MenuBar(): JSX.Element {
   const handleNew = async (): Promise<void> => {
     setOpenMenu(null);
     // v0.31.1: 自動連番 (= nextUntitledFilePath) を廃止、prompt でファイル名を
-    // ユーザーに明示要求 (Launcher と同じ挙動)。
+    // ユーザーに明示要求 (FileBrowser の新規作成と同じ挙動)。
     const input = await dialog.prompt(
-      t("launcher.prompt_new", "New file name (.flw.json):"),
+      t("filebrowser.prompt_new_file", "New file name (.flw.json):"),
       { defaultValue: "untitled.flw.json" },
     );
     if (!input) return;

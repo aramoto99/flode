@@ -11,7 +11,6 @@ import { CommandPalette } from "./components/CommandPalette";
 import { DialogHost } from "./components/DialogHost";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { FileBrowser } from "./components/FileBrowser";
-import { Launcher } from "./components/Launcher";
 import { MenuBar } from "./components/MenuBar";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { ScopePanelContainer } from "./components/ScopePanelContainer";
@@ -314,9 +313,13 @@ export default function App(): JSX.Element {
                 <SimulationControls modelId={selectedFilePath ?? ""} />
               </>
             ) : (
-              // ADR-0051 §(3): 旧 EmptyState を Launcher に置換 (= New / Open
-              // tile + Recent 上位 5 件、`EmptyState` 関数は撤去)
-              <Launcher />
+              // v0.42.x (ユーザー要望): Launcher (スタート画面カード) を撤去。
+              // 新規/開くは MenuBar・FileBrowser に集約済みのため、未オープン時は
+              // 控えめな空状態表示のみ (= 旧 EmptyState 相当に回帰)。
+              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400">
+                <div className="text-[13px]">{t("app.empty.title")}</div>
+                <div className="text-[11px]">{t("app.empty.hint_new")}</div>
+              </div>
             )}
           </main>
 
@@ -550,4 +553,3 @@ function PanelHeader({ children }: { children: React.ReactNode }): JSX.Element {
   );
 }
 
-// ADR-0051 §(3): 旧 EmptyState は Launcher に置換、本関数は撤去

@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Launcher (スタート画面カード) を撤去** — 未オープン時に表示していた
+  New / Open タイル + Recent 一覧のカード画面を削除し、控えめな空状態表示
+  (「ファイルが開かれていません」) に回帰。新規/開く/Recent は MenuBar と
+  FileBrowser に集約済みで重複していた
 - 未配線のまま残っていた `handleRemoveRecent` (recent 個別削除のデッドコード)、
   参照ゼロの i18n キー `menu.placeholder.empty`、陳腐化した
   「(Phase 4)」ツールチップ表記を削除
