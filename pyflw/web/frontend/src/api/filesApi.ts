@@ -117,6 +117,30 @@ export async function getFileContent(path: string): Promise<FileContentResponse>
 }
 
 /**
+ * 条件付き GET /api/v1/files/content — ``If-None-Match: etag`` 付きで取得し、
+ * サーバ側 etag が一致 (= 変更なし) なら **304 で null** を返す。
+ *
+ * 外部変更検知の 5 秒ポーリング用: 変更が無い限り本文をダウンロードしない
+ * (= 帯域とサーバのアクセスログを汚さない)。
+ */
+export async function getFileContentIfChanged(
+  path: string,
+  etag: string,
+): Promise<FileContentResponse | null> {
+  const response = await fetch(`${API_BASE}/content?${_query(path)}`, {
+    headers: { "Content-Type": "application/json", "If-None-Match": etag },
+  });
+  if (response.status === 304) return null;
+  if (response.status === 503) {
+    throw new FileApiUnavailableError();
+  }
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<FileContentResponse>;
+}
+
+/**
  * PUT /api/v1/files/content?path=<rel> — ファイル新規 / 上書き保存。
  * ``expectedEtag`` を渡すと楽観ロック有効化、不一致時は 409 → ``EtagMismatchError``。
  */

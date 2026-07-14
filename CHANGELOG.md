@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **外部変更ポーリングを条件付き GET (304) 化** — `GET /files/content` が
+  `If-None-Match` に対応し、変更が無ければ本文なしの 304 を返す (200 応答には
+  `ETag` ヘッダを付与)。5 秒ごとの外部変更検知が etag 確認のためだけに全文を
+  ダウンロードしてアクセスログを埋める無駄を解消。あわせてタブ非表示中は
+  ポーリングを停止し、再表示時に即時チェックする (README の「changes appear
+  on next focus」と実装が一致)
 - **出力エリア (scopes-stack pane) を常設化** — × (分割解除) で閉じる仕様と、
   閉じた後に diagram 側へ出る「出力エリアを表示」復帰ボタン (v0.30.3) を廃止。
   出力エリアの表示はモデルが Scope / XYGraph ブロックを持つかどうかに自動追従

@@ -147,6 +147,55 @@ class TestGetContent:
         assert r.status_code == 403
 
 
+class TestGetContentConditional:
+    """条件付き GET (RFC 7232 If-None-Match)。
+
+    外部変更検知の 5 秒ポーリングが etag 確認のためだけに全文ダウンロード
+    しないための 304 対応 (frontend ``getFileContentIfChanged`` が利用)。
+    """
+
+    def test_200_response_includes_etag_header(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "x.flw.json")
+        r = client.get("/api/v1/files/content", params={"path": "x.flw.json"})
+        assert r.status_code == 200
+        assert r.headers["etag"] == r.json()["etag"]
+
+    def test_304_when_etag_matches(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "x.flw.json")
+        etag = client.get("/api/v1/files/content", params={"path": "x.flw.json"}).json()["etag"]
+        r = client.get(
+            "/api/v1/files/content",
+            params={"path": "x.flw.json"},
+            headers={"If-None-Match": etag},
+        )
+        assert r.status_code == 304
+        assert r.content == b""  # 本文なし
+        assert r.headers["etag"] == etag
+
+    def test_200_when_etag_stale(self, client: TestClient, workspace: Path) -> None:
+        path = _seed_flw_json(workspace, "x.flw.json")
+        etag = client.get("/api/v1/files/content", params={"path": "x.flw.json"}).json()["etag"]
+        # 外部変更を模擬 (サイズ変更で etag が確実に変わる)
+        path.write_text(
+            json.dumps({"schema_version": "0.8", "blocks": [], "x": 1}),
+            encoding="utf-8",
+        )
+        r = client.get(
+            "/api/v1/files/content",
+            params={"path": "x.flw.json"},
+            headers={"If-None-Match": etag},
+        )
+        assert r.status_code == 200
+        assert r.json()["content"]["x"] == 1
+        assert r.json()["etag"] != etag
+
+    def test_no_header_returns_200(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(workspace, "x.flw.json")
+        r = client.get("/api/v1/files/content", params={"path": "x.flw.json"})
+        assert r.status_code == 200
+        assert "content" in r.json()
+
+
 # ---------------------------------------------------------------------------
 # PUT /content
 # ---------------------------------------------------------------------------

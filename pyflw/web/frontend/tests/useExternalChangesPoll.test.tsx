@@ -1,13 +1,17 @@
 // ADR-0041 §論点 11-A: useExternalChangesPoll hook のテスト。
 //
-// 5 秒 polling で `getFileContent` を叩き、etag 不一致を検出する挙動を検証する。
+// 5 秒 polling で **条件付き GET** (`getFileContentIfChanged`) を叩き、
+// 304 (= null) / 200 (= 外部変更) を検出する挙動を検証する。
 // 主要シナリオ:
 //   - selectedFilePath が null → polling しない
-//   - dirty=false で etag 変化 → silent reload (= editingModel を上書き)
-//   - dirty=true で etag 変化 → window.confirm が呼ばれる
+//   - 304 (変更なし) → 何もしない
+//   - dirty=false で変更あり → silent reload (= editingModel を上書き)
+//   - dirty=true で変更あり → dialog.confirm が呼ばれる
 //   - simulation 実行中 → polling しない
+//   - タブ非表示中 → polling しない、再表示で即時 tick
+//   - etag 未確定 (null) → polling しない
 
-import { renderHook } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import {
   afterEach,
   beforeEach,
@@ -25,19 +29,28 @@ vi.mock("../src/api/filesApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/api/filesApi")>();
   return {
     ...actual,
-    getFileContent: vi.fn(),
+    getFileContentIfChanged: vi.fn(),
   };
 });
 
 async function getMocks(): Promise<{
-  getFileContent: ReturnType<typeof vi.fn>;
+  getFileContentIfChanged: ReturnType<typeof vi.fn>;
 }> {
   const mod = await import("../src/api/filesApi");
-  return { getFileContent: vi.mocked(mod.getFileContent) };
+  return { getFileContentIfChanged: vi.mocked(mod.getFileContentIfChanged) };
+}
+
+/** document.hidden を制御する (jsdom 既定は false)。 */
+function setHidden(hidden: boolean): void {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
+  setHidden(false);
   useAppStore.setState({
     selectedFilePath: null,
     editingModel: null,
@@ -49,32 +62,75 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // hook を unmount して interval / visibilitychange リスナーを掃除する
+  // (= 前テストのリスナーが残ると dispatchEvent が多重 tick する)
+  cleanup();
   vi.useRealTimers();
   vi.clearAllMocks();
+  setHidden(false);
 });
 
 describe("useExternalChangesPoll: when no file selected", () => {
   it("does not poll when selectedFilePath is null", async () => {
-    const { getFileContent } = await getMocks();
+    const { getFileContentIfChanged } = await getMocks();
     renderHook(() => useExternalChangesPoll());
     await vi.advanceTimersByTimeAsync(20_000); // 4 ticks 分
-    expect(getFileContent).not.toHaveBeenCalled();
+    expect(getFileContentIfChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("useExternalChangesPoll: 304 (変更なし)", () => {
+  it("304 (= null) のとき state を変更しない", async () => {
+    const { getFileContentIfChanged } = await getMocks();
+    useAppStore.setState({
+      selectedFilePath: "demo.flw.json",
+      editingModel: { schema_version: "0.9", original: true } as never,
+      editingFileEtag: 'W/"100-1"',
+      dirty: false,
+    });
+    getFileContentIfChanged.mockResolvedValue(null); // = 304
+
+    renderHook(() => useExternalChangesPoll());
+    await vi.advanceTimersByTimeAsync(5100);
+
+    // local etag 付きの条件付き GET が呼ばれる
+    expect(getFileContentIfChanged).toHaveBeenCalledWith(
+      "demo.flw.json",
+      'W/"100-1"',
+    );
+    const state = useAppStore.getState();
+    expect((state.editingModel as { original?: boolean }).original).toBe(true);
+    expect(state.editingFileEtag).toBe('W/"100-1"');
+  });
+
+  it("etag 未確定 (null) の間は polling しない", async () => {
+    const { getFileContentIfChanged } = await getMocks();
+    useAppStore.setState({
+      selectedFilePath: "demo.flw.json",
+      editingFileEtag: null,
+    });
+    getFileContentIfChanged.mockResolvedValue(null);
+
+    renderHook(() => useExternalChangesPoll());
+    await vi.advanceTimersByTimeAsync(10_200);
+
+    expect(getFileContentIfChanged).not.toHaveBeenCalled();
   });
 });
 
 describe("useExternalChangesPoll: silent reload (dirty=false)", () => {
-  it("reloads editingModel silently when etag changed and not dirty", async () => {
-    const { getFileContent } = await getMocks();
+  it("reloads editingModel silently when changed and not dirty", async () => {
+    const { getFileContentIfChanged } = await getMocks();
     useAppStore.setState({
       selectedFilePath: "demo.flw.json",
-      editingModel: { schema_version: "0.8" } as never,
+      editingModel: { schema_version: "0.9" } as never,
       editingFileEtag: 'W/"100-1"',
       editingFileMtime: "2026-05-10T00:00:00Z",
       dirty: false,
     });
-    getFileContent.mockResolvedValue({
+    getFileContentIfChanged.mockResolvedValue({
       path: "demo.flw.json",
-      content: { schema_version: "0.8", marker: "external" },
+      content: { schema_version: "0.9", marker: "external" },
       mtime: "2026-05-10T00:01:00Z",
       etag: 'W/"200-2"', // 違う etag
     });
@@ -83,7 +139,10 @@ describe("useExternalChangesPoll: silent reload (dirty=false)", () => {
     // 5 秒 advance → 1 tick
     await vi.advanceTimersByTimeAsync(5100);
 
-    expect(getFileContent).toHaveBeenCalledWith("demo.flw.json");
+    expect(getFileContentIfChanged).toHaveBeenCalledWith(
+      "demo.flw.json",
+      'W/"100-1"',
+    );
     const state = useAppStore.getState();
     // silent reload で editingModel + etag が更新されている
     expect((state.editingModel as { marker?: string } | null)?.marker).toBe(
@@ -92,44 +151,21 @@ describe("useExternalChangesPoll: silent reload (dirty=false)", () => {
     expect(state.editingFileEtag).toBe('W/"200-2"');
     expect(state.dirty).toBe(false);
   });
-
-  it("does NOT reload when etag matches (= no change)", async () => {
-    const { getFileContent } = await getMocks();
-    useAppStore.setState({
-      selectedFilePath: "demo.flw.json",
-      editingModel: { schema_version: "0.8", original: true } as never,
-      editingFileEtag: 'W/"100-1"',
-      dirty: false,
-    });
-    getFileContent.mockResolvedValue({
-      path: "demo.flw.json",
-      content: { schema_version: "0.8", original: false },
-      mtime: "2026-05-10T00:00:00Z",
-      etag: 'W/"100-1"', // 同じ etag
-    });
-
-    renderHook(() => useExternalChangesPoll());
-    await vi.advanceTimersByTimeAsync(5100);
-
-    const state = useAppStore.getState();
-    // etag 一致 → editingModel は変更されていない
-    expect((state.editingModel as { original?: boolean }).original).toBe(true);
-  });
 });
 
 describe("useExternalChangesPoll: dirty + external change → confirm", () => {
   // v0.32.0: window.confirm を dialog.confirm に置換したのに合わせて test も spy 化
-  it("prompts user via dialog.confirm when dirty and etag differs", async () => {
-    const { getFileContent } = await getMocks();
+  it("prompts user via dialog.confirm when dirty and changed", async () => {
+    const { getFileContentIfChanged } = await getMocks();
     useAppStore.setState({
       selectedFilePath: "demo.flw.json",
-      editingModel: { schema_version: "0.8", local: true } as never,
+      editingModel: { schema_version: "0.9", local: true } as never,
       editingFileEtag: 'W/"100-1"',
       dirty: true,
     });
-    getFileContent.mockResolvedValue({
+    getFileContentIfChanged.mockResolvedValue({
       path: "demo.flw.json",
-      content: { schema_version: "0.8", external: true },
+      content: { schema_version: "0.9", external: true },
       mtime: "2026-05-10T00:01:00Z",
       etag: 'W/"200-2"',
     });
@@ -151,16 +187,16 @@ describe("useExternalChangesPoll: dirty + external change → confirm", () => {
   });
 
   it("preserves local changes when user cancels confirm", async () => {
-    const { getFileContent } = await getMocks();
+    const { getFileContentIfChanged } = await getMocks();
     useAppStore.setState({
       selectedFilePath: "demo.flw.json",
-      editingModel: { schema_version: "0.8", local: true } as never,
+      editingModel: { schema_version: "0.9", local: true } as never,
       editingFileEtag: 'W/"100-1"',
       dirty: true,
     });
-    getFileContent.mockResolvedValue({
+    getFileContentIfChanged.mockResolvedValue({
       path: "demo.flw.json",
-      content: { schema_version: "0.8", external: true },
+      content: { schema_version: "0.9", external: true },
       mtime: "2026-05-10T00:01:00Z",
       etag: 'W/"200-2"',
     });
@@ -183,7 +219,7 @@ describe("useExternalChangesPoll: dirty + external change → confirm", () => {
 
 describe("useExternalChangesPoll: simulation running", () => {
   it("does not poll while simulation is running", async () => {
-    const { getFileContent } = await getMocks();
+    const { getFileContentIfChanged } = await getMocks();
     useAppStore.setState({
       selectedFilePath: "demo.flw.json",
       editingFileEtag: 'W/"100-1"',
@@ -193,6 +229,42 @@ describe("useExternalChangesPoll: simulation running", () => {
     renderHook(() => useExternalChangesPoll());
     await vi.advanceTimersByTimeAsync(20_000);
 
-    expect(getFileContent).not.toHaveBeenCalled();
+    expect(getFileContentIfChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("useExternalChangesPoll: visibility gating", () => {
+  it("タブ非表示中は polling しない", async () => {
+    const { getFileContentIfChanged } = await getMocks();
+    useAppStore.setState({
+      selectedFilePath: "demo.flw.json",
+      editingFileEtag: 'W/"100-1"',
+    });
+    getFileContentIfChanged.mockResolvedValue(null);
+    setHidden(true);
+
+    renderHook(() => useExternalChangesPoll());
+    await vi.advanceTimersByTimeAsync(15_300); // 3 ticks 分
+
+    expect(getFileContentIfChanged).not.toHaveBeenCalled();
+  });
+
+  it("再表示 (visibilitychange) で interval を待たず即時 tick する", async () => {
+    const { getFileContentIfChanged } = await getMocks();
+    useAppStore.setState({
+      selectedFilePath: "demo.flw.json",
+      editingFileEtag: 'W/"100-1"',
+    });
+    getFileContentIfChanged.mockResolvedValue(null);
+    setHidden(true);
+
+    renderHook(() => useExternalChangesPoll());
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(getFileContentIfChanged).not.toHaveBeenCalled();
+
+    setHidden(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0); // microtask のみ流す
+    expect(getFileContentIfChanged).toHaveBeenCalledTimes(1);
   });
 });

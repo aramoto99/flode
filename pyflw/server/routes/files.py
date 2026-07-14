@@ -271,16 +271,30 @@ def get_tree(request: Request, path: str = "") -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/content")
-def get_content(request: Request, path: str) -> dict[str, Any]:
+# response_model=None: 戻り値が dict | Response の union のため FastAPI の
+# response model 自動推論を無効化する (= 304 時は生の Response を返す)。
+@router.get("/content", response_model=None)
+def get_content(request: Request, path: str, response: Response) -> dict[str, Any] | Response:
     """ファイル内容を **parsed JSON** として返す。
+
+    条件付き GET (RFC 7232): リクエストの ``If-None-Match`` が現在の etag と
+    一致する場合は本文なしの 304 を返す。外部変更検知の 5 秒ポーリング
+    (frontend ``useExternalChangesPoll``) が「etag 確認のためだけに全文を
+    ダウンロードする」無駄を避けるための対応。
+
+    Note:
+        比較は **単一値の文字列完全一致のみ** の簡略版 (= サーバが返した etag
+        をそのまま echo する自前 frontend 専用)。RFC 7232 §2.3.2 の weak
+        comparator (``W/`` prefix 無視) やカンマ区切り複数値・``*`` は
+        サポートしない。PUT の ``expected_etag`` 楽観ロックと同じ方針。
 
     Returns:
         ``{path, content, mtime, etag}``。``content`` は parsed object (= dict /
         list 等)、frontend で再 parse 不要。
 
     Status:
-        * 200: 正常
+        * 200: 正常 (``ETag`` レスポンスヘッダ付き)
+        * 304: ``If-None-Match`` が現在の etag と一致 (本文なし)
         * 400: path がファイルでなくディレクトリ
         * 403: path traversal
         * 404: ファイル不在
@@ -302,6 +316,11 @@ def get_content(request: Request, path: str) -> dict[str, Any]:
         st = resolved.stat()
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Cannot stat file: {e}") from e
+    etag = _make_etag(st.st_size, st.st_mtime_ns)
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match is not None and if_none_match == etag:
+        # 変更なし。read_text / json.loads を丸ごとスキップして本文なしで返す。
+        return Response(status_code=304, headers={"ETag": etag})
     try:
         text = resolved.read_text(encoding="utf-8")
     except OSError as e:
@@ -310,11 +329,12 @@ def get_content(request: Request, path: str) -> dict[str, Any]:
         content = json.loads(text)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=422, detail=f"File is not valid JSON: {e}") from e
+    response.headers["ETag"] = etag
     return {
         "path": path,
         "content": content,
         "mtime": _format_mtime(st.st_mtime_ns),
-        "etag": _make_etag(st.st_size, st.st_mtime_ns),
+        "etag": etag,
     }
 
 
