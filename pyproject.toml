@@ -121,7 +121,10 @@ ignore = [
 "tests/**" = ["B011"]  # assert False in tests is fine
 
 [tool.mypy]
-python_version = "3.11"
+# python_version は固定しない (= 実行系のバージョンで検査する)。
+# 3.11 固定だと Python 3.12+ 専用の numpy (>=2.5) が PEP 695 `type` 文を
+# stub に使うため 3.12/3.13 環境で syntax error になる。3.11 互換性は
+# CI matrix の 3.11 job (numpy 2.3 系) が担保する。
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true

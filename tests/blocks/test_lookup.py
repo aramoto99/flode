@@ -287,6 +287,29 @@ class TestLookupTable1DEdgeCases:
         # 左側 slope = 10、-inf に向かって -inf
         assert _out(blk, float("-inf")) == float("-inf")
 
+    def test_inf_input_linear_extrap_zero_slope(self) -> None:
+        """端点 slope = 0 のとき ±inf 入力は極限値 (= 端点値) を返す。
+
+        自前外挿の ``slope * (val - edge_x)`` は 0 * inf = nan になるため、
+        ゼロ slope を特別扱いする分岐の回帰テスト (scipy 1.18 互換対応で追加)。
+        """
+        blk = LookupTable1D(breakpoints=[0, 1], table=[5, 5], extrapolation="linear")
+        assert _out(blk, float("inf")) == pytest.approx(5.0)
+        assert _out(blk, float("-inf")) == pytest.approx(5.0)
+
+    @pytest.mark.parametrize("interp", ["nearest", "flat"])
+    def test_inf_input_linear_extrap_nearest_flat(self, interp: str) -> None:
+        """nearest / flat 補間でも ±inf 入力は端点 slope の極限値を返す。"""
+        blk = LookupTable1D(
+            breakpoints=[0, 1, 2],
+            table=[0, 10, 5],
+            interpolation=interp,
+            extrapolation="linear",
+        )
+        # 右側 slope = -5 → +inf で -inf、左側 slope = 10 → -inf で -inf
+        assert _out(blk, float("inf")) == float("-inf")
+        assert _out(blk, float("-inf")) == float("-inf")
+
     def test_int_input_handled(self) -> None:
         """numpy int 配列入力でも float 化されて動作 (混在モデルで重要)。"""
         blk = LookupTable1D(breakpoints=[0, 1, 2], table=[0, 10, 5])

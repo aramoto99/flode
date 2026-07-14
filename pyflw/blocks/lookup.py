@@ -217,8 +217,38 @@ class LookupTable1D(Block):
         right = float((tbl[-1] - tbl[-2]) / (bp[-1] - bp[-2]))
         return left, right
 
+    def _extrapolate_from_edge(self, val: float) -> float:
+        """定義域外の ``val`` を端点 slope で線形外挿する (linear 外挿専用)。
+
+        ``slope == 0`` かつ ``val = ±inf`` は ``0 * inf = nan`` になるため、
+        極限値 (= 端点値) を直接返す。
+        """
+        if val < float(self._breakpoints[0]):
+            edge_x, edge_y, slope = (
+                float(self._breakpoints[0]),
+                float(self._table[0]),
+                self._left_slope,
+            )
+        else:
+            edge_x, edge_y, slope = (
+                float(self._breakpoints[-1]),
+                float(self._table[-1]),
+                self._right_slope,
+            )
+        if slope == 0.0 and np.isinf(val):
+            return edge_y
+        return edge_y + slope * (val - edge_x)
+
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         val = float(np.asarray(u).reshape(-1)[0])
+
+        # ±inf × linear 外挿: scipy 1.18+ の interp1d は外挿を lerp 形式
+        # ``y_lo*(1-t) + y_hi*t`` で計算するため inf - inf = nan (+ RuntimeWarning)
+        # になる (~1.17 は point-slope 形式で ±inf を返していた)。scipy を呼ばず
+        # 全補間方式で端点 slope から極限値を直接計算する。
+        if self.extrapolation == "linear" and np.isinf(val):
+            return np.array([self._extrapolate_from_edge(val)])
+
         try:
             y = float(self._interp(val))
         except ValueError as exc:
@@ -230,18 +260,15 @@ class LookupTable1D(Block):
                 block_id=self.id,
             ) from exc
 
-        # nearest / flat + linear 外挿: 定義域外を独自 slope で上書き
+        # nearest / flat + linear 外挿: scipy が直接サポートしないため、
+        # 定義域外 (有限) を独自 slope で上書き (±inf は上で処理済み)
         if (
             self.extrapolation == "linear"
             and self.interpolation in ("nearest", "flat")
             and not np.isnan(val)
+            and (val < self._breakpoints[0] or val > self._breakpoints[-1])
         ):
-            if val < self._breakpoints[0]:
-                y = float(self._table[0]) + self._left_slope * (val - float(self._breakpoints[0]))
-            elif val > self._breakpoints[-1]:
-                y = float(self._table[-1]) + self._right_slope * (
-                    val - float(self._breakpoints[-1])
-                )
+            y = self._extrapolate_from_edge(val)
 
         return np.array([y])
 
