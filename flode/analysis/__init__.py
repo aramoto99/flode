@@ -9,14 +9,14 @@
   ``bode()`` / ``nyquist()`` / ``eigenvalues()`` / ``is_stable()`` /
   ``root_locus()`` ヘルパ)。
 - :func:`bode` / :func:`nyquist` (added in ``v0.10.1``) — Bode / Nyquist 応答を
-  ``python-control`` 経由で計算 (``pyflw[control]`` extras 必須)。
+  ``python-control`` 経由で計算 (``flode[control]`` extras 必須)。
 - :func:`eigenvalues` / :func:`is_stable` (added in ``v0.10.1``) — A 行列の固有値と
   漸近安定性判定 (numpy のみ、extras 不要)。
 - :func:`root_locus` (added in ``v0.10.1``) — SISO 抽出した根軌跡 (extras 必須)。
 - :class:`BodeResponse` / :class:`NyquistResponse` / :class:`RootLocus` —
   対応する解析結果 dataclass (frozen, ndarray + ``plot()``)。
 
-:meth:`pyflw.Simulator.linearize` メソッド経由でも同等の API を提供する。
+:meth:`flode.Simulator.linearize` メソッド経由でも同等の API を提供する。
 """
 
 from .frequency_response import BodeResponse, NyquistResponse, bode, nyquist

@@ -11,9 +11,9 @@ import json
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Demux, Mux, Scope, Step
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator
+from flode.blocks import Constant, Demux, Mux, Scope, Step
+from flode.exceptions import BlockSpecError
 
 
 def _flat(scope: Scope) -> np.ndarray:
@@ -170,7 +170,7 @@ class TestMuxDemuxPersistence:
         sim.save(path)
         data = json.loads(path.read_text(encoding="utf-8"))
         mux_entry = next(b for b in data["blocks"] if b["id"] == "mux")
-        assert mux_entry["type"] == "pyflw.blocks.routing.Mux"
+        assert mux_entry["type"] == "flode.blocks.routing.Mux"
         assert mux_entry["params"] == {"n": 3}
         # ADR-0018 §(1): Mux は port_shapes を ``n`` から一意に決めるため JSON に
         # 出力しない (= load 時の二重持ちを回避)

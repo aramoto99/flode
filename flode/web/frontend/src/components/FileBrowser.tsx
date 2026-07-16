@@ -52,7 +52,7 @@ interface ContextMenuState {
  * 外部 ファイルの drop は受け付けない (= MIME 一致時のみ移動扱い)。
  * v0.28.2: 値は JSON 配列 ``["path1", "path2", ...]`` (= multi-select 対応、
  * 1 個でも配列で統一)。 */
-const PYFLW_PATH_MIME = "application/x-pyflw-path";
+const FLODE_PATH_MIME = "application/x-flode-path";
 
 /** 親 path を抽出 (= "a/b/c.flw.json" → "a/b"、トップレベル → "")。 */
 function dirnameOf(path: string): string {
@@ -601,7 +601,7 @@ export function FileBrowser(): JSX.Element {
           return;
         case "Delete":
         case "Backspace":
-          // ※ Backspace = 親ディレクトリ移動とする UI もあるが、pyflw では
+          // ※ Backspace = 親ディレクトリ移動とする UI もあるが、flode では
           // breadcrumb の ↑ ボタンを別途用意しているため Backspace も削除に bind。
           // selectedPaths が非空なら一括削除、空なら selectedFilePath を単一削除
           if (selectedPaths.size > 0) {
@@ -836,7 +836,7 @@ function DirectoryNode({
         <div className="px-3 py-2 text-[11px] text-amber-600">
           {t(
             "filebrowser.disabled",
-            "File API not enabled. Restart pyflw-server with --workspace=PATH.",
+            "File API not enabled. Restart flode with --workspace=PATH.",
           )}
         </div>
       );
@@ -889,12 +889,12 @@ function DirectoryNode({
   // drag source: selectedPaths.has(自分) なら集合全体、それ以外は自分単体
   const onDragStart = (e: React.DragEvent<HTMLButtonElement>): void => {
     const sources = selectedPaths.has(path) ? Array.from(selectedPaths) : [path];
-    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
+    e.dataTransfer.setData(FLODE_PATH_MIME, serializePathsMime(sources));
     e.dataTransfer.effectAllowed = "move";
     e.stopPropagation();
   };
   const onDragOver = (e: React.DragEvent<HTMLLIElement>): void => {
-    if (!e.dataTransfer.types.includes(PYFLW_PATH_MIME)) return;
+    if (!e.dataTransfer.types.includes(FLODE_PATH_MIME)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
@@ -903,7 +903,7 @@ function DirectoryNode({
   const onDragLeave = (): void => setIsDragOver(false);
   const onDrop = (e: React.DragEvent<HTMLLIElement>): void => {
     setIsDragOver(false);
-    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    const raw = e.dataTransfer.getData(FLODE_PATH_MIME);
     if (!raw) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1045,7 +1045,7 @@ function TreeEntry({
     const sources = selectedPaths.has(fullPath)
       ? Array.from(selectedPaths)
       : [fullPath];
-    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
+    e.dataTransfer.setData(FLODE_PATH_MIME, serializePathsMime(sources));
     e.dataTransfer.effectAllowed = "move";
   };
 
@@ -1394,13 +1394,13 @@ function CwdView({
   }
 
   const onCwdDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
-    if (e.dataTransfer.types.includes(PYFLW_PATH_MIME)) {
+    if (e.dataTransfer.types.includes(FLODE_PATH_MIME)) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     }
   };
   const onCwdDrop = (e: React.DragEvent<HTMLDivElement>): void => {
-    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    const raw = e.dataTransfer.getData(FLODE_PATH_MIME);
     if (!raw) return;
     e.preventDefault();
     const sources = parsePathsMime(raw);
@@ -1423,7 +1423,7 @@ function CwdView({
   const onListBodyMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return; // 左クリックのみ
     const target = e.target as HTMLElement;
-    if (target.closest('li[data-pyflw-path]')) return; // row の上は drag-drop に譲る
+    if (target.closest('li[data-flode-path]')) return; // row の上は drag-drop に譲る
     setMarqueeStart({ x: e.clientX, y: e.clientY });
     setMarqueeCurrent({ x: e.clientX, y: e.clientY });
   };
@@ -1445,12 +1445,12 @@ function CwdView({
           // 移動距離が極小 = 単なる空白クリックとして扱い、選択をクリア
           onReplaceSelection([]);
         } else {
-          const rows = list.querySelectorAll<HTMLElement>("li[data-pyflw-path]");
+          const rows = list.querySelectorAll<HTMLElement>("li[data-flode-path]");
           const hits: string[] = [];
           rows.forEach((row) => {
             const r = row.getBoundingClientRect();
             if (r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1) {
-              const p = row.dataset.pyflwPath;
+              const p = row.dataset.flodePath;
               if (p) hits.push(p);
             }
           });
@@ -1571,7 +1571,7 @@ function CwdView({
           <div className="px-3 py-2 text-[11px] text-amber-600">
             {t(
               "filebrowser.disabled",
-              "File API not enabled. Restart pyflw-server with --workspace=PATH.",
+              "File API not enabled. Restart flode with --workspace=PATH.",
             )}
           </div>
         )}
@@ -1681,12 +1681,12 @@ function CwdEntryRow({
     const sources = selectedPaths.has(fullPath)
       ? Array.from(selectedPaths)
       : [fullPath];
-    e.dataTransfer.setData(PYFLW_PATH_MIME, serializePathsMime(sources));
+    e.dataTransfer.setData(FLODE_PATH_MIME, serializePathsMime(sources));
     e.dataTransfer.effectAllowed = "move";
   };
   const onDragOver = (e: React.DragEvent<HTMLLIElement>): void => {
     if (!isDir) return;
-    if (!e.dataTransfer.types.includes(PYFLW_PATH_MIME)) return;
+    if (!e.dataTransfer.types.includes(FLODE_PATH_MIME)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
@@ -1699,7 +1699,7 @@ function CwdEntryRow({
   const onDrop = (e: React.DragEvent<HTMLLIElement>): void => {
     if (!isDir) return;
     setIsDragOver(false);
-    const raw = e.dataTransfer.getData(PYFLW_PATH_MIME);
+    const raw = e.dataTransfer.getData(FLODE_PATH_MIME);
     if (!raw) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1726,7 +1726,7 @@ function CwdEntryRow({
     <li
       role="listitem"
       // v0.31.8: data attribute で marquee 衝突判定の対象を識別
-      data-pyflw-path={fullPath}
+      data-flode-path={fullPath}
       draggable={!isRenaming}
       onDragStart={onDragStart}
       onDragOver={onDragOver}

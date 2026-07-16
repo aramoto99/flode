@@ -13,7 +13,7 @@ import type { BlockMetadata } from "../src/types/api";
 
 // Gain ブロックの BlockMetadata stub (n_inputs=1, n_outputs=1 を default に)
 const GAIN_META: BlockMetadata = {
-  type_path: "pyflw.blocks.mathops.Gain",
+  type_path: "flode.blocks.mathops.Gain",
   display_name: "Gain",
   category: "Math Operations",
   icon: "",
@@ -30,21 +30,21 @@ const GAIN_META: BlockMetadata = {
 
 const CONSTANT_META: BlockMetadata = {
   ...GAIN_META,
-  type_path: "pyflw.blocks.sources.Constant",
+  type_path: "flode.blocks.sources.Constant",
   default_n_inputs: 0,
   default_n_outputs: 1,
 };
 
 const SCOPE_META: BlockMetadata = {
   ...GAIN_META,
-  type_path: "pyflw.blocks.sinks.Scope",
+  type_path: "flode.blocks.sinks.Scope",
   default_n_inputs: 1,
   default_n_outputs: 0,
 };
 
 const SUM_META: BlockMetadata = {
   ...GAIN_META,
-  type_path: "pyflw.blocks.mathops.Sum",
+  type_path: "flode.blocks.mathops.Sum",
   default_n_inputs: 2,
   default_n_outputs: 1,
 };
@@ -66,7 +66,7 @@ describe("blockSISOPorts", () => {
   it("returns port positions for SISO block", () => {
     const block: BlockGeom = {
       id: "gain",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: {},
       x: 100,
       y: 200,
@@ -82,7 +82,7 @@ describe("blockSISOPorts", () => {
   it("returns null for non-SISO blocks", () => {
     const sum: BlockGeom = {
       id: "sum",
-      type: "pyflw.blocks.mathops.Sum",
+      type: "flode.blocks.mathops.Sum",
       params: {},
       x: 100,
       y: 200,
@@ -230,14 +230,14 @@ describe("findSpliceCandidate", () => {
   // 既存ダイアグラム: const_0 → scope_0 (horizontal wire)
   const constBlock: BlockGeom = {
     id: "const_0",
-    type: "pyflw.blocks.sources.Constant",
+    type: "flode.blocks.sources.Constant",
     params: {},
     x: 50,
     y: 100,
   };
   const scopeBlock: BlockGeom = {
     id: "scope_0",
-    type: "pyflw.blocks.sinks.Scope",
+    type: "flode.blocks.sinks.Scope",
     params: { n_inputs: 1 },
     x: 400,
     y: 100,
@@ -256,7 +256,7 @@ describe("findSpliceCandidate", () => {
     // Gain (triangle-r 60x50) を (200, 95) に置く → input (200, 120), output (260, 120)
     const gain: BlockGeom = {
       id: "gain_0",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: {},
       x: 200,
       y: 95,
@@ -274,7 +274,7 @@ describe("findSpliceCandidate", () => {
   it("returns null when block is far from any edge", () => {
     const gain: BlockGeom = {
       id: "gain_0",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: {},
       x: 200,
       y: 500, // y が edge から大きく離れる
@@ -291,7 +291,7 @@ describe("findSpliceCandidate", () => {
   it("returns null for non-SISO blocks (Sum 2-in)", () => {
     const sum: BlockGeom = {
       id: "sum_0",
-      type: "pyflw.blocks.mathops.Sum",
+      type: "flode.blocks.mathops.Sum",
       params: { signs: "++" },
       x: 200,
       y: 95,
@@ -311,7 +311,7 @@ describe("findSpliceCandidate", () => {
     // 本テストは self-edge の除外だけ確認する。
     const gain: BlockGeom = {
       id: "gain_0",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: {},
       x: 200,
       y: 95,
@@ -336,14 +336,14 @@ describe("findSpliceCandidate", () => {
     // 2 本の並行 edge を別の block 経由で作り、Gain が両方に乗るケース
     const const2: BlockGeom = {
       id: "const_1",
-      type: "pyflw.blocks.sources.Constant",
+      type: "flode.blocks.sources.Constant",
       params: {},
       x: 50,
       y: 100, // 同じ y で並行
     };
     const scope2: BlockGeom = {
       id: "scope_1",
-      type: "pyflw.blocks.sinks.Scope",
+      type: "flode.blocks.sinks.Scope",
       params: { n_inputs: 1 },
       x: 400,
       y: 100,
@@ -357,7 +357,7 @@ describe("findSpliceCandidate", () => {
     // edge と edge2 が同位置 (= 重なる) → Gain がどちらにも乗る
     const gain: BlockGeom = {
       id: "gain_0",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: {},
       x: 200,
       y: 95,

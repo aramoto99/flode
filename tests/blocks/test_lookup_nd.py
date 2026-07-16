@@ -19,10 +19,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import LookupTable2D, LookupTableND, Scope, Sine
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
+from flode import Simulator
+from flode.blocks import LookupTable2D, LookupTableND, Scope, Sine
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([])
 
@@ -100,7 +100,7 @@ class TestLookupTableNDConstruction:
         """7 軸以上で warning が出る (hard limit ではない、ADR-0068 §D-1)。"""
         bp = [0.0, 1.0]
         table_7d = np.zeros((2,) * 7).tolist()
-        with caplog.at_level(logging.WARNING, logger="pyflw.blocks.lookup"):
+        with caplog.at_level(logging.WARNING, logger="flode.blocks.lookup"):
             blk = LookupTableND(breakpoints_axes=[bp] * 7, table=table_7d)
         assert "exceeds the recommended threshold" in caplog.text
         assert blk.n_inputs == 7  # 構築自体は成功
@@ -340,27 +340,27 @@ class TestLookupTableNDPersistence:
 
 class TestLookupTableNDRegistry:
     def test_in_builtin_metadata(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        assert "pyflw.blocks.lookup.LookupTableND" in _BUILTIN_METADATA
-        category, display, icon = _BUILTIN_METADATA["pyflw.blocks.lookup.LookupTableND"]
+        assert "flode.blocks.lookup.LookupTableND" in _BUILTIN_METADATA
+        category, display, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTableND"]
         assert category == "lookup"
         assert display == "Lookup Table (N-D)"
 
     def test_in_translations(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.lookup.LookupTableND"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTableND"]
         assert "ja" in entry and "en" in entry
         assert "ルックアップテーブル (N-D)" in entry["ja"]["display_name"]
 
     def test_dynamic_n_inputs_resolver_in_payload(self) -> None:
         """SPEC-0018 / ADR-0068 §A-1: registry payload に resolver 式が含まれる。"""
-        from pyflw.server.registry import build_block_registry, metadata_to_dict
+        from flode.server.registry import build_block_registry, metadata_to_dict
 
         registry = build_block_registry()
         for meta in registry:
-            if meta.type_path == "pyflw.blocks.lookup.LookupTableND":
+            if meta.type_path == "flode.blocks.lookup.LookupTableND":
                 d = metadata_to_dict(meta)
                 assert d.get("n_inputs_resolver") == "len(params.breakpoints_axes)"
                 return
@@ -368,11 +368,11 @@ class TestLookupTableNDRegistry:
 
     def test_existing_blocks_have_no_resolver(self) -> None:
         """既存 builtin (固定 n_inputs) は resolver なし (= 後方互換)。"""
-        from pyflw.server.registry import build_block_registry, metadata_to_dict
+        from flode.server.registry import build_block_registry, metadata_to_dict
 
         registry = build_block_registry()
         for meta in registry:
-            if meta.type_path in ("pyflw.blocks.sources.Constant", "pyflw.blocks.mathops.Gain"):
+            if meta.type_path in ("flode.blocks.sources.Constant", "flode.blocks.mathops.Gain"):
                 d = metadata_to_dict(meta)
                 assert "n_inputs_resolver" not in d
 

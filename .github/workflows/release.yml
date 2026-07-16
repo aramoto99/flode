@@ -27,18 +27,18 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: pyflw/web/frontend/package-lock.json
+          cache-dependency-path: flode/web/frontend/package-lock.json
 
       - name: Build frontend
-        working-directory: pyflw/web/frontend
+        working-directory: flode/web/frontend
         run: |
           npm ci
           npm run build
 
-      - name: Stage frontend into pyflw/server/static
+      - name: Stage frontend into flode/server/static
         run: |
-          mkdir -p pyflw/server/static
-          cp -r pyflw/web/frontend/dist/* pyflw/server/static/
+          mkdir -p flode/server/static
+          cp -r flode/web/frontend/dist/* flode/server/static/
 
       - name: Verify version sync (3 files, ADR-0032 §6-A)
         run: python tools/check_version_sync.py

@@ -4,7 +4,7 @@
 
   1. ``CURRENT_LIBRARY_SCHEMA_VERSION`` / ``SUPPORTED_LIBRARY_SCHEMA_VERSIONS`` の宣言
   2. dict (= JSON ロード結果) の schema 検証 → ``validate_library_dict`` で
-     :class:`pyflw.Library` を組み立てる
+     :class:`flode.Library` を組み立てる
   3. ``_LIBRARY_MIGRATIONS`` registry (Phase 4 v0.11.1 では空、Phase 5+ 用枠)
 
 を提供する。``Subsystem.to_dict()`` の "params" 形式 (ADR-0009 §(7) +
@@ -12,8 +12,8 @@ ADR-0021 §(8)) と byte-identical な辞書を ``entries[*].subsystem`` に格�
 
 .. note::
 
-   本 module はパッケージ内部実装 (= ``pyflw.libraries`` の ``__init__.py`` から
-   呼ばれる)。外部公開 API は ``pyflw.libraries`` 経由で使うこと。
+   本 module はパッケージ内部実装 (= ``flode.libraries`` の ``__init__.py`` から
+   呼ばれる)。外部公開 API は ``flode.libraries`` 経由で使うこと。
 """
 
 from __future__ import annotations
@@ -173,7 +173,7 @@ def _ensure_schema_version(data: dict[str, Any]) -> dict[str, Any]:
 
 def _validate_entry(raw: Any, *, library_name: str, index: int) -> LibraryEntry:
     """``entries[i]`` の dict を ``LibraryEntry`` に検証 + 変換する (内部)。"""
-    # Library / LibraryEntry は ``pyflw.libraries.__init__`` 側に存在 (= public API)。
+    # Library / LibraryEntry は ``flode.libraries.__init__`` 側に存在 (= public API)。
     # 循環 import を避けるため遅延 import する。
     from . import LibraryEntry
 
@@ -195,7 +195,7 @@ def _validate_entry(raw: Any, *, library_name: str, index: int) -> LibraryEntry:
     if not sub_type.endswith(".Subsystem"):
         raise LibraryFileError(
             f"{where}: subsystem.type must be a Subsystem class path "
-            f"(e.g. 'pyflw.subsystems.subsystem.Subsystem'), got {sub_type!r}"
+            f"(e.g. 'flode.subsystems.subsystem.Subsystem'), got {sub_type!r}"
         )
     if not isinstance(subsystem.get("params"), dict):
         raise LibraryFileError(
@@ -217,9 +217,9 @@ def _validate_entry(raw: Any, *, library_name: str, index: int) -> LibraryEntry:
 
 
 def validate_library_dict(data: dict[str, Any], *, source_path: Path | None = None) -> Library:
-    """既に load 済みの dict を schema 検証して :class:`pyflw.Library` を返す。
+    """既に load 済みの dict を schema 検証して :class:`flode.Library` を返す。
 
-    本関数が ``pyflw.libraries.__init__`` から呼ばれる唯一の public entry point。
+    本関数が ``flode.libraries.__init__`` から呼ばれる唯一の public entry point。
     ``__init__`` は ``Library`` / ``LibraryEntry`` の dataclass 定義のみを保持し、
     検証ロジックは全て本 module に閉じる (= モジュール境界の整理)。
 

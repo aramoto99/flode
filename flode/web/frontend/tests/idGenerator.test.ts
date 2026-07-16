@@ -10,7 +10,7 @@ import {
 
 describe("typeNameFromPath", () => {
   it("returns last dot segment", () => {
-    expect(typeNameFromPath("pyflw.blocks.mathops.Gain")).toBe("Gain");
+    expect(typeNameFromPath("flode.blocks.mathops.Gain")).toBe("Gain");
   });
   it("returns whole string for single segment", () => {
     expect(typeNameFromPath("Gain")).toBe("Gain");
@@ -19,18 +19,18 @@ describe("typeNameFromPath", () => {
 
 describe("generateUniqueId", () => {
   it("produces Gain_0 when no existing", () => {
-    expect(generateUniqueId("pyflw.blocks.mathops.Gain", new Set())).toBe("Gain_0");
+    expect(generateUniqueId("flode.blocks.mathops.Gain", new Set())).toBe("Gain_0");
   });
   it("skips taken counters", () => {
     expect(
       generateUniqueId(
-        "pyflw.blocks.mathops.Gain",
+        "flode.blocks.mathops.Gain",
         new Set(["Gain_0", "Gain_1"]),
       ),
     ).toBe("Gain_2");
   });
   it("preserves type name from full path", () => {
-    expect(generateUniqueId("pyflw.subsystems.ports.Inport", new Set())).toBe(
+    expect(generateUniqueId("flode.subsystems.ports.Inport", new Set())).toBe(
       "Inport_0",
     );
   });

@@ -11,7 +11,7 @@ const _PAYLOAD: FailurePayload = {
   template_args: { block_label: "Divide1", t: 1.234 },
   block_id: "div_1",
   block_ids: ["div_1"],
-  block_type: "pyflw.blocks.mathops.Divide",
+  block_type: "flode.blocks.mathops.Divide",
   block_label: "Divide1",
   t: 1.234,
   raw_message: "ZeroDivisionError: float division by zero",
@@ -114,7 +114,7 @@ describe("appStore focusBlock", () => {
   }
 
   it("focuses a top-level block: sets editingPath [], selection, request", () => {
-    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    _setModel([{ id: "g", type: "flode.blocks.mathops.Gain", params: {} }]);
     useAppStore.getState().focusBlock("g");
     const s = useAppStore.getState();
     expect(s.editingPath).toEqual([]);
@@ -126,9 +126,9 @@ describe("appStore focusBlock", () => {
     _setModel([
       {
         id: "sub",
-        type: "pyflw.subsystems.Subsystem",
+        type: "flode.subsystems.Subsystem",
         params: {
-          blocks: [{ id: "inner", type: "pyflw.blocks.sinks.Scope", params: {} }],
+          blocks: [{ id: "inner", type: "flode.blocks.sinks.Scope", params: {} }],
         },
       },
     ]);
@@ -139,7 +139,7 @@ describe("appStore focusBlock", () => {
   });
 
   it("is a no-op for a block not in the model", () => {
-    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    _setModel([{ id: "g", type: "flode.blocks.mathops.Gain", params: {} }]);
     useAppStore.setState({ selectedNodeIds: [], focusBlockRequest: null });
     useAppStore.getState().focusBlock("missing");
     const s = useAppStore.getState();
@@ -148,7 +148,7 @@ describe("appStore focusBlock", () => {
   });
 
   it("increments nonce on repeated focus of the same block", () => {
-    _setModel([{ id: "g", type: "pyflw.blocks.mathops.Gain", params: {} }]);
+    _setModel([{ id: "g", type: "flode.blocks.mathops.Gain", params: {} }]);
     useAppStore.getState().focusBlock("g");
     const n1 = useAppStore.getState().focusBlockRequest!.nonce;
     useAppStore.getState().focusBlock("g");

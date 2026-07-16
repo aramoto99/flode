@@ -1,8 +1,8 @@
 // ADR-0039 v0.14.1 §再発防止: ``vite build`` の outDir (= ``dist/``) から
-// ``pyflw/server/static/`` に成果物をコピーする postbuild フック。
+// ``flode/server/static/`` に成果物をコピーする postbuild フック。
 //
 // 経緯: v1.0/v0.13.1/v2.0 のローカル release で連続して deploy をスキップし、
-// ``pyflw-server`` が古い bundle を配信し続けた事故 (= 画面に v0.17.0 が表示
+// ``flode`` が古い bundle を配信し続けた事故 (= 画面に v0.17.0 が表示
 // されていた) を再発させないため、`npm run build` 一発で deploy まで完結
 // させる。release CI も同じ entry point を使えるよう、複雑な依存を避けて
 // node 標準モジュールのみで実装する。

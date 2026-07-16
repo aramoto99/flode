@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Rounding, Scope, Sine
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator
+from flode.blocks import Rounding, Scope, Sine
+from flode.exceptions import BlockSpecError
 
 _EMPTY_X = np.array([])
 
@@ -89,16 +89,16 @@ class TestRoundingStateless:
 
 class TestRoundingRegistry:
     def test_translation_entry(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        e = _BLOCK_TRANSLATIONS["pyflw.blocks.rounding.Rounding"]
+        e = _BLOCK_TRANSLATIONS["flode.blocks.rounding.Rounding"]
         assert e["en"]["display_name"] == "Rounding"
         assert e["ja"]["display_name"] == "丸め"
 
     def test_metadata_entry(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.rounding.Rounding"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.rounding.Rounding"]
         assert cat == "mathops"
         assert name == "Rounding"
         assert icon == "math.rounding"

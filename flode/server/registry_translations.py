@@ -9,7 +9,7 @@
 継続的に検証する (新規ブロック追加時の翻訳漏れを CI で検出)。
 
 3rd-party 拡張ブロック (= ``_BUILTIN_METADATA`` 未登録) の翻訳サポートは Phase 5+
-で別 ADR (``pyflw.register_block_translations()`` API 等) として扱う。本テーブル
+で別 ADR (``flode.register_block_translations()`` API 等) として扱う。本テーブル
 未登録の type_path は ``inspect.getdoc()`` の 1 行目を ``docstring_summary`` に、
 class attribute (`_block_display_name`) を ``display_name`` に使う既存挙動に
 フォールバックする (= 後方互換)。
@@ -33,7 +33,7 @@ _LocaleMap = dict[Locale, _BlockEntry]
 
 _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     # ----- sources (6) ----------------------------------------------------
-    "pyflw.blocks.sources.Constant": {
+    "flode.blocks.sources.Constant": {
         "en": {
             "display_name": "Constant",
             "docstring_summary": "Constant value source y(t) = value.",
@@ -43,7 +43,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "定数値ソース y(t) = value。",
         },
     },
-    "pyflw.blocks.sources.Step": {
+    "flode.blocks.sources.Step": {
         "en": {
             "display_name": "Step",
             "docstring_summary": "Step source: 0 before t = step_time, then final_value.",
@@ -53,7 +53,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "ステップ信号: t < step_time でゼロ、以降 final_value。",
         },
     },
-    "pyflw.blocks.sources.Sine": {
+    "flode.blocks.sources.Sine": {
         "en": {
             "display_name": "Sine",
             "docstring_summary": "Sine wave y(t) = amplitude * sin(2*pi*frequency*t + phase) + bias.",
@@ -63,7 +63,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "正弦波 y(t) = amplitude * sin(2*pi*frequency*t + phase) + bias。",
         },
     },
-    "pyflw.blocks.sources.Ramp": {
+    "flode.blocks.sources.Ramp": {
         "en": {
             "display_name": "Ramp",
             "docstring_summary": "Ramp source y(t) = slope * (t - start_time) for t >= start_time.",
@@ -73,7 +73,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "ランプ信号 y(t) = slope * (t - start_time) (t >= start_time)。",
         },
     },
-    "pyflw.blocks.sources.Clock": {
+    "flode.blocks.sources.Clock": {
         "en": {
             "display_name": "Clock",
             "docstring_summary": "Clock source y(t) = t (current simulation time).",
@@ -83,7 +83,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "シミュレーション時刻ソース y(t) = t。",
         },
     },
-    "pyflw.blocks.sources.PulseGenerator": {
+    "flode.blocks.sources.PulseGenerator": {
         "en": {
             "display_name": "Pulse Generator",
             "docstring_summary": "Periodic rectangular pulse with configurable period and duty cycle.",
@@ -94,7 +94,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0010 / ADR-0059 (v5.3.0): Random / Noise source (Wave 1 第 3 弾、最終)
-    "pyflw.blocks.random_source.RandomSource": {
+    "flode.blocks.random_source.RandomSource": {
         "en": {
             "display_name": "Random Source",
             "docstring_summary": (
@@ -111,7 +111,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- mathops (8) ---------------------------------------------------
-    "pyflw.blocks.mathops.Gain": {
+    "flode.blocks.mathops.Gain": {
         "en": {
             "display_name": "Gain",
             "docstring_summary": "Scalar gain y(t) = k * u(t).",
@@ -121,7 +121,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "スカラーゲイン y(t) = k * u(t)。",
         },
     },
-    "pyflw.blocks.mathops.Sum": {
+    "flode.blocks.mathops.Sum": {
         "en": {
             "display_name": "Sum",
             "docstring_summary": "Weighted sum of inputs with per-port +/- signs.",
@@ -132,7 +132,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # v0.35.0: Add ブロック (Sum の矩形版、機能同等)
-    "pyflw.blocks.mathops.Add": {
+    "flode.blocks.mathops.Add": {
         "en": {
             "display_name": "Add",
             "docstring_summary": "Sum block in rectangular shape (signed sum with per-port +/-).",
@@ -142,7 +142,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "符号付き加算 (矩形版、機能は Sum と同じ)。",
         },
     },
-    "pyflw.blocks.mathops.Product": {
+    "flode.blocks.mathops.Product": {
         "en": {
             "display_name": "Product",
             "docstring_summary": "Element-wise product of all input ports.",
@@ -152,7 +152,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "全入力ポートの要素ごとの積。",
         },
     },
-    "pyflw.blocks.mathops.Saturation": {
+    "flode.blocks.mathops.Saturation": {
         "en": {
             "display_name": "Saturation",
             "docstring_summary": "Clamp input to the range [lower, upper].",
@@ -162,7 +162,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力を [lower, upper] の範囲にクランプ。",
         },
     },
-    "pyflw.blocks.mathops.Abs": {
+    "flode.blocks.mathops.Abs": {
         "en": {
             "display_name": "Abs",
             "docstring_summary": "Absolute value y(t) = |u(t)|.",
@@ -172,7 +172,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "絶対値 y(t) = |u(t)|。",
         },
     },
-    "pyflw.blocks.mathops.Sign": {
+    "flode.blocks.mathops.Sign": {
         "en": {
             "display_name": "Sign",
             "docstring_summary": "Signum y(t) = sign(u(t)) in {-1, 0, +1}.",
@@ -182,7 +182,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "符号関数 y(t) = sign(u(t)) で {-1, 0, +1}。",
         },
     },
-    "pyflw.blocks.mathops.MinMax": {
+    "flode.blocks.mathops.MinMax": {
         "en": {
             "display_name": "MinMax",
             "docstring_summary": "Element-wise min or max of n inputs (mode selectable).",
@@ -192,7 +192,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "n 入力の要素ごとの最小値または最大値 (モード切替)。",
         },
     },
-    "pyflw.blocks.mathops.Divide": {
+    "flode.blocks.mathops.Divide": {
         "en": {
             "display_name": "Divide",
             "docstring_summary": "Multiply / divide inputs based on per-port * or / signs.",
@@ -203,7 +203,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0002 / ADR-0053 (v0.36.0): Phase 2 送り Math 系 5 ブロック第 1 弾
-    "pyflw.blocks.mathops.MathFunction": {
+    "flode.blocks.mathops.MathFunction": {
         "en": {
             "display_name": "Math Function",
             "docstring_summary": "Compute exp / log / sqrt / pow etc. Choose with `function`.",
@@ -213,7 +213,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "exp / log / sqrt / pow 等を計算 (function で関数を選択)。",
         },
     },
-    "pyflw.blocks.mathops.TrigFunction": {
+    "flode.blocks.mathops.TrigFunction": {
         "en": {
             "display_name": "Trig Function",
             "docstring_summary": "Compute sin / cos / atan2 etc. in radians (choose with `function`).",
@@ -223,7 +223,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "sin / cos / atan2 等を radian で計算 (function で関数を選択)。",
         },
     },
-    "pyflw.blocks.mathops.DeadZone": {
+    "flode.blocks.mathops.DeadZone": {
         "en": {
             "display_name": "Dead Zone",
             "docstring_summary": "Zero output within [lower, upper], pass through with offset outside.",
@@ -233,7 +233,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "[lower, upper] 内ではゼロ、範囲外はオフセットを引いた値を出力。",
         },
     },
-    "pyflw.blocks.mathops.CompareToConstant": {
+    "flode.blocks.mathops.CompareToConstant": {
         "en": {
             "display_name": "Compare To Constant",
             "docstring_summary": "Compare input to a constant: y = (u op const) ? 1.0 : 0.0.",
@@ -243,7 +243,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力を定数と比較 y = (u op const) ? 1.0 : 0.0。",
         },
     },
-    "pyflw.blocks.mathops.CompareToZero": {
+    "flode.blocks.mathops.CompareToZero": {
         "en": {
             "display_name": "Compare To Zero",
             "docstring_summary": "Compare input to zero: y = (u op 0) ? 1.0 : 0.0.",
@@ -254,7 +254,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0013 / ADR-0059 (v5.6.0): Rounding (Wave 2 第 2 弾)
-    "pyflw.blocks.rounding.Rounding": {
+    "flode.blocks.rounding.Rounding": {
         "en": {
             "display_name": "Rounding",
             "docstring_summary": "Round to integer: floor / ceil / round / trunc (choose with `mode`).",
@@ -266,7 +266,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     },
     # ----- lookup (2) -----------------------------------------------------
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
-    "pyflw.blocks.lookup.LookupTable1D": {
+    "flode.blocks.lookup.LookupTable1D": {
         "en": {
             "display_name": "Lookup Table (1-D)",
             "docstring_summary": (
@@ -283,7 +283,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0017 / ADR-0064 (v5.6.0): Wave 3 第 1 弾 = 2-D Lookup Table
-    "pyflw.blocks.lookup.LookupTable2D": {
+    "flode.blocks.lookup.LookupTable2D": {
         "en": {
             "display_name": "Lookup Table (2-D)",
             "docstring_summary": (
@@ -301,7 +301,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0019 / ADR-0067 (v5.7.0): Wave 3 第 2 弾 = Prelookup + Interpolation 分離
-    "pyflw.blocks.lookup.Prelookup": {
+    "flode.blocks.lookup.Prelookup": {
         "en": {
             "display_name": "Prelookup",
             "docstring_summary": (
@@ -319,7 +319,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.blocks.lookup.InterpolationUsingPrelookup": {
+    "flode.blocks.lookup.InterpolationUsingPrelookup": {
         "en": {
             "display_name": "Interpolation Using Prelookup",
             "docstring_summary": (
@@ -337,7 +337,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
-    "pyflw.blocks.lookup.LookupTableND": {
+    "flode.blocks.lookup.LookupTableND": {
         "en": {
             "display_name": "Lookup Table (N-D)",
             "docstring_summary": (
@@ -357,7 +357,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     },
     # ----- userfunc (1) ---------------------------------------------------
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
-    "pyflw.blocks.userfunc.Fcn": {
+    "flode.blocks.userfunc.Fcn": {
         "en": {
             "display_name": "Fcn",
             "docstring_summary": (
@@ -373,7 +373,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- continuous (5) -------------------------------------------------
-    "pyflw.blocks.continuous.Integrator": {
+    "flode.blocks.continuous.Integrator": {
         "en": {
             "display_name": "Integrator",
             "docstring_summary": "Continuous integrator x_dot = u, y = x.",
@@ -383,7 +383,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "連続時間積分器 x_dot = u、y = x。",
         },
     },
-    "pyflw.blocks.continuous.Derivative": {
+    "flode.blocks.continuous.Derivative": {
         "en": {
             "display_name": "Derivative",
             "docstring_summary": "First-order high-pass approximation of d/dt.",
@@ -393,7 +393,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "1 次ハイパスフィルタによる微分の近似。",
         },
     },
-    "pyflw.blocks.continuous.TransferFunction": {
+    "flode.blocks.continuous.TransferFunction": {
         "en": {
             "display_name": "Transfer Fcn",
             "docstring_summary": "SISO continuous transfer function H(s) = num(s) / den(s).",
@@ -403,7 +403,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "SISO 連続伝達関数 H(s) = num(s) / den(s)。",
         },
     },
-    "pyflw.blocks.continuous.StateSpace": {
+    "flode.blocks.continuous.StateSpace": {
         "en": {
             "display_name": "State Space",
             "docstring_summary": "Continuous LTI state-space x_dot = A x + B u, y = C x + D u.",
@@ -414,7 +414,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0015 / ADR-0065 (v5.8.0): Transport Delay (Wave 2 第 4 弾)
-    "pyflw.blocks.transport_delay.TransportDelay": {
+    "flode.blocks.transport_delay.TransportDelay": {
         "en": {
             "display_name": "Transport Delay",
             "docstring_summary": (
@@ -428,7 +428,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.blocks.continuous.MimoTransferFunction": {
+    "flode.blocks.continuous.MimoTransferFunction": {
         "en": {
             "display_name": "MIMO TF",
             "docstring_summary": "MIMO continuous transfer function H(s) = N(s) / d(s) (common denominator).",
@@ -439,7 +439,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- discrete (6) ---------------------------------------------------
-    "pyflw.blocks.discrete.UnitDelay": {
+    "flode.blocks.discrete.UnitDelay": {
         "en": {
             "display_name": "Unit Delay",
             "docstring_summary": "One-sample delay y(t_k) = u(t_{k-1}).",
@@ -449,7 +449,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "1 サンプル遅延 y(t_k) = u(t_{k-1})。",
         },
     },
-    "pyflw.blocks.discrete.DiscreteIntegrator": {
+    "flode.blocks.discrete.DiscreteIntegrator": {
         "en": {
             "display_name": "Discrete Integrator",
             "docstring_summary": "Discrete-time accumulator with selectable forward / backward / trapezoidal method.",
@@ -459,7 +459,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "離散時間累積器 (前進 / 後退 / 台形法を選択可能)。",
         },
     },
-    "pyflw.blocks.discrete.ZeroOrderHoldDirect": {
+    "flode.blocks.discrete.ZeroOrderHoldDirect": {
         "en": {
             "display_name": "ZOH",
             "docstring_summary": "Zero-order hold with direct feedthrough (y = u at each sample step).",
@@ -469,7 +469,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "直達経路付きゼロ次ホールド (各サンプルステップで y = u)。",
         },
     },
-    "pyflw.blocks.discrete.RateTransition": {
+    "flode.blocks.discrete.RateTransition": {
         "en": {
             "display_name": "Rate Transition",
             "docstring_summary": "Multirate bridge between blocks with different sample times (zoh / delay / auto).",
@@ -479,7 +479,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "異なるサンプル時間のブロック間を橋渡しするマルチレート変換 (zoh / delay / auto)。",
         },
     },
-    "pyflw.blocks.discrete.DiscreteStateSpace": {
+    "flode.blocks.discrete.DiscreteStateSpace": {
         "en": {
             "display_name": "Discrete State Space",
             "docstring_summary": "Discrete LTI state-space x[k+1] = A x[k] + B u[k], y[k] = C x[k] + D u[k].",
@@ -489,7 +489,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "離散 LTI 状態空間 x[k+1] = A x[k] + B u[k]、y[k] = C x[k] + D u[k]。",
         },
     },
-    "pyflw.blocks.discrete.DiscreteTransferFunction": {
+    "flode.blocks.discrete.DiscreteTransferFunction": {
         "en": {
             "display_name": "Discrete Transfer Fcn",
             "docstring_summary": "SISO discrete transfer function H(z) = num(z) / den(z).",
@@ -500,7 +500,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- logic (2) ------------------------------------------------------
-    "pyflw.blocks.logic.RelationalOperator": {
+    "flode.blocks.logic.RelationalOperator": {
         "en": {
             "display_name": "Relational",
             "docstring_summary": "Compare two inputs with ==, !=, <, <=, >, >=.",
@@ -511,7 +511,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0012 / ADR-0059 (v5.5.0): Wave 2 第 1 弾 = stateful discontinuities
-    "pyflw.blocks.discontinuities.RateLimiter": {
+    "flode.blocks.discontinuities.RateLimiter": {
         "en": {
             "display_name": "Rate Limiter",
             "docstring_summary": (
@@ -526,7 +526,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.blocks.discontinuities.Relay": {
+    "flode.blocks.discontinuities.Relay": {
         "en": {
             "display_name": "Relay",
             "docstring_summary": (
@@ -542,7 +542,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.blocks.logic.LogicalOperator": {
+    "flode.blocks.logic.LogicalOperator": {
         "en": {
             "display_name": "Logical",
             "docstring_summary": "Logical AND / OR / XOR / NAND / NOR / XNOR / NOT over n inputs.",
@@ -553,7 +553,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- routing (3) ----------------------------------------------------
-    "pyflw.blocks.routing.Switch": {
+    "flode.blocks.routing.Switch": {
         "en": {
             "display_name": "Switch",
             "docstring_summary": "Select input 0 or 2 based on threshold criterion on input 1.",
@@ -563,7 +563,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力 1 のしきい値判定で入力 0 または 2 を出力。",
         },
     },
-    "pyflw.blocks.routing.Mux": {
+    "flode.blocks.routing.Mux": {
         "en": {
             "display_name": "Mux",
             "docstring_summary": "Concatenate n scalar inputs into a single (n,) vector output.",
@@ -573,7 +573,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "n 個のスカラー入力を 1 本の (n,) ベクトル出力に統合。",
         },
     },
-    "pyflw.blocks.routing.Demux": {
+    "flode.blocks.routing.Demux": {
         "en": {
             "display_name": "Demux",
             "docstring_summary": "Split a single (n,) vector input into n scalar outputs.",
@@ -584,7 +584,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0003 / ADR-0055: tag ベース仮想配線
-    "pyflw.blocks.routing.Goto": {
+    "flode.blocks.routing.Goto": {
         "en": {
             "display_name": "Goto",
             "docstring_summary": "Publish input under a tag for virtual wiring to From blocks.",
@@ -594,7 +594,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力を tag に紐付けて公開し、対応する From ブロックへ仮想配線する。",
         },
     },
-    "pyflw.blocks.routing.From": {
+    "flode.blocks.routing.From": {
         "en": {
             "display_name": "From",
             "docstring_summary": "Receive signal from a Goto block with matching tag (Local / Global).",
@@ -605,7 +605,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # SPEC-0014 / ADR-0059 (v5.7.0): Wave 2 第 3 弾 = routing 拡張
-    "pyflw.blocks.routing.MultiportSwitch": {
+    "flode.blocks.routing.MultiportSwitch": {
         "en": {
             "display_name": "Multiport Switch",
             "docstring_summary": ("Select one of n_choices data inputs by selector index (u[0])."),
@@ -617,7 +617,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.blocks.routing.Merge": {
+    "flode.blocks.routing.Merge": {
         "en": {
             "display_name": "Merge",
             "docstring_summary": (
@@ -630,7 +630,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- sinks (4) ------------------------------------------------------
-    "pyflw.blocks.sinks.Scope": {
+    "flode.blocks.sinks.Scope": {
         "en": {
             "display_name": "Scope",
             "docstring_summary": "Record signal time series and visualise via plot().",
@@ -640,7 +640,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "信号の時系列を記録し plot() で可視化。",
         },
     },
-    "pyflw.blocks.sinks.Display": {
+    "flode.blocks.sinks.Display": {
         "en": {
             "display_name": "Display",
             "docstring_summary": "Show the latest sample as a numeric readout on the block face.",
@@ -650,7 +650,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "最新サンプルをブロック上に数値表示。",
         },
     },
-    "pyflw.blocks.sinks.XYGraph": {
+    "flode.blocks.sinks.XYGraph": {
         "en": {
             "display_name": "XY Graph",
             "docstring_summary": "Parametric x-y plot of inputs 0 (x) and 1 (y).",
@@ -660,7 +660,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力 0 (x) と 1 (y) のパラメトリックプロット。",
         },
     },
-    "pyflw.blocks.sinks.Terminator": {
+    "flode.blocks.sinks.Terminator": {
         "en": {
             "display_name": "Terminator",
             "docstring_summary": "Discard the input signal (suppresses unconnected output warnings).",
@@ -671,7 +671,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         },
     },
     # ----- subsystems (3) -------------------------------------------------
-    "pyflw.subsystems.subsystem.Subsystem": {
+    "flode.subsystems.subsystem.Subsystem": {
         "en": {
             "display_name": "Subsystem",
             "docstring_summary": "Atomic subsystem grouping inner blocks with Inport / Outport boundaries.",
@@ -681,7 +681,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "Inport / Outport で境界を区切った内部ブロック群を 1 つのブロックにまとめる Atomic Subsystem。",
         },
     },
-    "pyflw.subsystems.ports.Inport": {
+    "flode.subsystems.ports.Inport": {
         "en": {
             "display_name": "Inport",
             "docstring_summary": "Subsystem boundary input port (only valid inside a Subsystem).",
@@ -691,7 +691,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "Subsystem 境界の入力ポート (Subsystem 内部でのみ使用)。",
         },
     },
-    "pyflw.subsystems.ports.Outport": {
+    "flode.subsystems.ports.Outport": {
         "en": {
             "display_name": "Outport",
             "docstring_summary": "Subsystem boundary output port (only valid inside a Subsystem).",
@@ -703,7 +703,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     },
     # ADR-0058: Subsystem behavior modifier control blocks。Subsystem 内部に置く
     # ことで親の発火 / 有効化セマンティクスを修飾する境界ブロック。
-    "pyflw.subsystems.control_blocks.Trigger": {
+    "flode.subsystems.control_blocks.Trigger": {
         "en": {
             "display_name": "Trigger",
             "docstring_summary": (
@@ -718,7 +718,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
-    "pyflw.subsystems.control_blocks.Enable": {
+    "flode.subsystems.control_blocks.Enable": {
         "en": {
             "display_name": "Enable",
             "docstring_summary": (
@@ -741,7 +741,7 @@ def get_translations(type_path: str) -> _LocaleMap:
     """``type_path`` に対応する翻訳辞書を返す。
 
     Args:
-        type_path: ``"pyflw.blocks.sources.Constant"`` のような完全 type path。
+        type_path: ``"flode.blocks.sources.Constant"`` のような完全 type path。
 
     Returns:
         ``{"en": {"display_name": ..., "docstring_summary": ...}, "ja": {...}}``。

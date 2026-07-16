@@ -4,7 +4,7 @@ PID コントローラ・1 次遅れプラント・2 次プラントの 3 entry 
 Subsystem ``params`` dict から :meth:`Subsystem._from_dict` で組み立て直し、
 :meth:`Subsystem.to_dict` で再シリアライズしてから ``.flwlib.json`` ファイルに書き出す。
 
-これにより ``pyflw/libraries/std.flwlib.json`` の subsystem body は
+これにより ``flode/libraries/std.flwlib.json`` の subsystem body は
 ``Subsystem.to_dict()`` の出力と byte-identical となり、frontend 側で Inline 配置
 した後に ``Simulator.load`` で再構築する経路が丸ごと round-trip 安全になる。
 
@@ -28,8 +28,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pyflw import Subsystem
-from pyflw.libraries import CURRENT_LIBRARY_SCHEMA_VERSION
+from flode import Subsystem
+from flode.libraries import CURRENT_LIBRARY_SCHEMA_VERSION
 
 
 def _build_subsystem(params: dict[str, Any]) -> dict[str, Any]:
@@ -83,42 +83,42 @@ def build_pid_params() -> dict[str, Any]:
         "blocks": [
             {
                 "id": "Inport_0",
-                "type": "pyflw.subsystems.ports.Inport",
+                "type": "flode.subsystems.ports.Inport",
                 "params": {"port_idx": 0},
             },
             {
                 "id": "Gain_P",
-                "type": "pyflw.blocks.mathops.Gain",
+                "type": "flode.blocks.mathops.Gain",
                 "params": {"k": "$Kp"},
             },
             {
                 "id": "Integrator_0",
-                "type": "pyflw.blocks.continuous.Integrator",
+                "type": "flode.blocks.continuous.Integrator",
                 "params": {},
             },
             {
                 "id": "Gain_I",
-                "type": "pyflw.blocks.mathops.Gain",
+                "type": "flode.blocks.mathops.Gain",
                 "params": {"k": "$Ki"},
             },
             {
                 "id": "Derivative_0",
-                "type": "pyflw.blocks.continuous.Derivative",
+                "type": "flode.blocks.continuous.Derivative",
                 "params": {},
             },
             {
                 "id": "Gain_D",
-                "type": "pyflw.blocks.mathops.Gain",
+                "type": "flode.blocks.mathops.Gain",
                 "params": {"k": "$Kd"},
             },
             {
                 "id": "Sum_0",
-                "type": "pyflw.blocks.mathops.Sum",
+                "type": "flode.blocks.mathops.Sum",
                 "params": {"signs": "+++"},
             },
             {
                 "id": "Outport_0",
-                "type": "pyflw.subsystems.ports.Outport",
+                "type": "flode.subsystems.ports.Outport",
                 "params": {"port_idx": 0},
             },
         ],
@@ -159,12 +159,12 @@ def build_first_order_plant_params() -> dict[str, Any]:
         "blocks": [
             {
                 "id": "Inport_0",
-                "type": "pyflw.subsystems.ports.Inport",
+                "type": "flode.subsystems.ports.Inport",
                 "params": {"port_idx": 0},
             },
             {
                 "id": "TransferFunction_0",
-                "type": "pyflw.blocks.continuous.TransferFunction",
+                "type": "flode.blocks.continuous.TransferFunction",
                 "params": {
                     "numerator": ["$K"],
                     "denominator": ["$tau", 1.0],
@@ -172,7 +172,7 @@ def build_first_order_plant_params() -> dict[str, Any]:
             },
             {
                 "id": "Outport_0",
-                "type": "pyflw.subsystems.ports.Outport",
+                "type": "flode.subsystems.ports.Outport",
                 "params": {"port_idx": 0},
             },
         ],
@@ -222,12 +222,12 @@ def build_second_order_plant_params() -> dict[str, Any]:
         "blocks": [
             {
                 "id": "Inport_0",
-                "type": "pyflw.subsystems.ports.Inport",
+                "type": "flode.subsystems.ports.Inport",
                 "params": {"port_idx": 0},
             },
             {
                 "id": "TransferFunction_0",
-                "type": "pyflw.blocks.continuous.TransferFunction",
+                "type": "flode.blocks.continuous.TransferFunction",
                 "params": {
                     "numerator": ["$K"],
                     "denominator": ["$a", "$b", 1.0],
@@ -235,7 +235,7 @@ def build_second_order_plant_params() -> dict[str, Any]:
             },
             {
                 "id": "Outport_0",
-                "type": "pyflw.subsystems.ports.Outport",
+                "type": "flode.subsystems.ports.Outport",
                 "params": {"port_idx": 0},
             },
         ],
@@ -258,7 +258,7 @@ def build_second_order_plant_params() -> dict[str, Any]:
 
 def main() -> None:
     repo_root = Path(__file__).parent.parent
-    out_path = repo_root / "pyflw" / "libraries" / "std.flwlib.json"
+    out_path = repo_root / "flode" / "libraries" / "std.flwlib.json"
 
     pid_dict = _build_subsystem(build_pid_params())
     fop_dict = _build_subsystem(build_first_order_plant_params())
@@ -268,15 +268,15 @@ def main() -> None:
         "schema_version": CURRENT_LIBRARY_SCHEMA_VERSION,
         "name": "std",
         "display_name": "Standard Library",
-        "description": "Built-in mask Subsystem templates shipped with pyflw.",
+        "description": "Built-in mask Subsystem templates shipped with flode.",
         "version": "0.13.0",
         "display_name_i18n": {
             "en": "Standard Library",
             "ja": "標準ライブラリ",
         },
         "description_i18n": {
-            "en": "Built-in mask Subsystem templates shipped with pyflw.",
-            "ja": "pyflw 同梱のマスク Subsystem テンプレート集。",
+            "en": "Built-in mask Subsystem templates shipped with flode.",
+            "ja": "flode 同梱のマスク Subsystem テンプレート集。",
         },
         "entries": [
             {

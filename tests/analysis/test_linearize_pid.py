@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from pyflw import Simulator, linearize
-from pyflw.blocks import (
+from flode import Simulator, linearize
+from flode.blocks import (
     Derivative,
     Gain,
     Integrator,

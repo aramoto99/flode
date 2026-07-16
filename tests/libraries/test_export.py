@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from pyflw import Inport, LibraryFileError, Outport, Subsystem, load_library
-from pyflw.blocks.mathops import Gain
-from pyflw.libraries import export_subsystem_to_library
+from flode import Inport, LibraryFileError, Outport, Subsystem, load_library
+from flode.blocks.mathops import Gain
+from flode.libraries import export_subsystem_to_library
 
 
 def _build_simple_subsystem() -> Subsystem:

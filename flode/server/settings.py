@@ -23,7 +23,7 @@ class Settings:
             ファイル / ディレクトリのいずれも可 (ディレクトリの場合は ``*.flwlib.json``
             を再帰的に検索する) 。空リスト + ``bundle_builtin_libraries=True`` だけでも
             組み込み ``std`` が利用可能になる。
-        bundle_builtin_libraries: 組み込み ``pyflw/libraries/std.flwlib.json`` を
+        bundle_builtin_libraries: 組み込み ``flode/libraries/std.flwlib.json`` を
             自動的に library registry に追加するか (default ``True``、ADR-0029 §LOC-A)。
     """
 

@@ -23,7 +23,7 @@ Step 1: Create a Simulator
 
 .. code-block:: python
 
-   from pyflw import Simulator
+   from flode import Simulator
 
    sim = Simulator(t_end=20.0, dt=0.01)
 
@@ -40,7 +40,7 @@ if none is provided.
 
 .. code-block:: python
 
-   from pyflw.blocks import Gain, Integrator, Scope, Step, Sum
+   from flode.blocks import Gain, Integrator, Scope, Step, Sum
 
    m, c, k = 1.0, 0.5, 4.0
 

@@ -9,10 +9,10 @@ import type { FlwModel } from "../types/api";
 
 /**
  * 新規モデル作成時の schema_version。
- * エンジン側 `pyflw/core/persistence.py` の `CURRENT_SCHEMA_VERSION` と
+ * エンジン側 `flode/core/persistence.py` の `CURRENT_SCHEMA_VERSION` と
  * 同期させること (ADR-0036 / ADR-0039 / ADR-0058)。
  */
-export const CURRENT_SCHEMA_VERSION = "0.9";
+export const CURRENT_SCHEMA_VERSION = "0.10";
 
 /**
  * 空の新規モデルを作る。solver 設定はエンジン `Simulator.__init__` の既定値
@@ -26,7 +26,7 @@ export function emptyModel(name: string): FlwModel {
     metadata: {
       name,
       created_at: new Date().toISOString(),
-      tool: "pyflw GUI",
+      tool: "flode GUI",
     },
     simulator: {
       t_end: 10.0,

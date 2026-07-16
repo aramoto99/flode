@@ -48,9 +48,9 @@ if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
 
-_logger = logging.getLogger("pyflw.scheduler")
+_logger = logging.getLogger("flode.scheduler")
 # ADR-0055 §論点 3 / SPEC-0003 §3-5: 仮想エッジ展開時の WARNING / INFO 専用
-_logger_routing = logging.getLogger("pyflw.routing.goto")
+_logger_routing = logging.getLogger("flode.routing.goto")
 
 _SAMPLE_TIME_RATIO_TOL = 1e-9
 
@@ -574,7 +574,7 @@ class Simulator:
         拒否し、Demux 経由 (port-by-port に分解) を誘導する。Scope クラス名で
         判定 (= ADR-0018 §(8) U2 で Option a "abstraction leak" を許容)。
         """
-        # 遅延 import で循環回避 (Scope は ``pyflw.blocks.sinks``、Block は ``core``)
+        # 遅延 import で循環回避 (Scope は ``flode.blocks.sinks``、Block は ``core``)
         from ..blocks.sinks import Scope
 
         for b in self.blocks:
@@ -915,19 +915,19 @@ class Simulator:
                 参照実装、テスト / debug 用)。
 
         Returns:
-            :class:`pyflw.compile.CompiledSimulator`。``linearize()`` で
+            :class:`flode.compile.CompiledSimulator`。``linearize()`` で
             ``jax.jacfwd`` 経由の機械精度線形化、``step()`` / ``run()`` は v0.17.1+
             で本格実装される。
 
         Raises:
-            ImportError: ``backend="jax"`` で ``pyflw[codegen]`` 未インストール。
+            ImportError: ``backend="jax"`` で ``flode[codegen]`` 未インストール。
             BlockSpecError: モデル内に Codegen 不可能なブロック (= 内部に
                 ``Trigger`` / ``Enable`` control block を持つ ``Subsystem``、MVP では
                 Python fallback 必須、ADR-0058 §論点 5) がある。
             ValueError: ``backend`` が ``"jax"`` / ``"numpy"`` 以外。
 
         Examples:
-            >>> from pyflw import Simulator
+            >>> from flode import Simulator
             >>> sim = Simulator()
             >>> # ... add blocks ...
             >>> compiled = sim.compile(backend="jax")  # doctest: +SKIP
@@ -1260,8 +1260,8 @@ class Simulator:
     ) -> LinearSystem:
         """動作点 ``(t, x, u)`` 周りでモデルを線形化する (ADR-0026)。
 
-        ``pyflw.linearize(self, ...)`` の薄いラッパ。詳細は
-        :func:`pyflw.analysis.linearize` を参照。
+        ``flode.linearize(self, ...)`` の薄いラッパ。詳細は
+        :func:`flode.analysis.linearize` を参照。
 
         Args:
             t: 動作点時刻 [s]。default ``0.0``。
@@ -1272,7 +1272,7 @@ class Simulator:
             epsilon: 摂動相対 step。``None`` で次元ごと自動 (``sqrt(eps_machine)``)。
 
         Returns:
-            :class:`pyflw.analysis.LinearSystem`。
+            :class:`flode.analysis.LinearSystem`。
 
         Example:
             >>> ls = sim.linearize()  # doctest: +SKIP
@@ -1320,7 +1320,7 @@ class Simulator:
                 または ``__main__`` モジュールで定義された class を含む場合。
             ModelLoadError: ``layout`` が ``LayoutDict`` 形式に正規化できない場合。
         """
-        from .. import __version__ as _pyflw_version
+        from .. import __version__ as _flode_version
 
         normalized_layout = normalize_layout(layout)
 
@@ -1331,7 +1331,7 @@ class Simulator:
                 .replace(microsecond=0)
                 .isoformat()
                 .replace("+00:00", "Z"),
-                "tool": f"pyflw {_pyflw_version}",
+                "tool": f"flode {_flode_version}",
             },
             "simulator": {
                 # ADR-0042 §論点 4-A: ``math.inf`` のときは ``"inf"`` 文字列で

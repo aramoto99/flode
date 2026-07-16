@@ -24,8 +24,8 @@ import logging
 
 import matplotlib.pyplot as plt
 
-from pyflw import Simulator
-from pyflw.blocks import Gain, Integrator, Scope, Step, Sum
+from flode import Simulator
+from flode.blocks import Gain, Integrator, Scope, Step, Sum
 
 _logger = logging.getLogger(__name__)
 

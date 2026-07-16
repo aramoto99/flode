@@ -5,7 +5,7 @@
 // `BlockPalette` / v0.28.1 `FileBrowser` で確立した path を踏襲)。
 //
 // **MIME**:
-// - `application/x-pyflw-tab-ref`: タブ (= 1 ファイル) の drag を表す、
+// - `application/x-flode-tab-ref`: タブ (= 1 ファイル) の drag を表す、
 //   値は `filePath` 文字列
 //
 // **drop 位置判定**: pane の矩形を 5 領域 (center 50% + 4 端 25%) に分割。
@@ -15,7 +15,7 @@
 // - top / right / bottom / left → split で新 pane 化
 
 /** タブ drag 用 MIME type。値は filePath 文字列。 */
-export const PYFLW_TAB_REF_MIME = "application/x-pyflw-tab-ref";
+export const FLODE_TAB_REF_MIME = "application/x-flode-tab-ref";
 
 /** drop 位置を表す enum (= pane 矩形内の領域)。 */
 export type DropZone = "center" | "top" | "right" | "bottom" | "left";

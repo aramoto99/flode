@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from pyflw import Simulator
-from pyflw.blocks import Gain, Integrator, Scope, Step, Sum
+from flode import Simulator
+from flode.blocks import Gain, Integrator, Scope, Step, Sum
 
 
 def test_spring_mass_damper_matches_analytical():

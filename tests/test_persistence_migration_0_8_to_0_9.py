@@ -3,12 +3,15 @@
 旧 ``pyflw.subsystems.triggered.TriggeredSubsystem`` を新
 ``pyflw.subsystems.subsystem.Subsystem`` + 内部 ``Trigger`` block に自動変換する。
 ``_migrated_from`` メタが付与され、frontend / API はこれを見て dirty flag を立てる。
+
+NOTE: fixture と ``_builtin_migrate_0_8_to_0_9`` 単体の期待値は意図的に旧プロジェクト
+名の ``pyflw.*`` FQN のまま — schema <=0.9 のファイルはこの FQN を含み、0.8 → 0.9 は
+pyflw FQN の世界で完結する (flode への変換は続く 0.9 → 0.10 migration の責務)。
 """
 
 from __future__ import annotations
 
-from pyflw.core.persistence import (
-    CURRENT_SCHEMA_VERSION,
+from flode.core.persistence import (
     _builtin_migrate_0_8_to_0_9,
     migrate_to_current,
 )
@@ -16,10 +19,6 @@ from pyflw.core.persistence import (
 # ---------------------------------------------------------------------------
 # _builtin_migrate_0_8_to_0_9 単体
 # ---------------------------------------------------------------------------
-
-
-def test_current_schema_version_is_0_9() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.9"
 
 
 def test_migrate_simple_triggered_subsystem() -> None:
@@ -188,26 +187,26 @@ def test_migrate_to_current_sets_migrated_from() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.9"
+    assert out["schema_version"] == "0.10"
     assert out["_migrated_from"] == "0.8"
 
 
 def test_migrate_to_current_no_meta_when_already_current() -> None:
     """現バージョンでロードした場合は ``_migrated_from`` メタを付けない。"""
     data = {
-        "schema_version": "0.9",
+        "schema_version": "0.10",
         "simulator": {},
         "blocks": [],
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.9"
+    assert out["schema_version"] == "0.10"
     assert "_migrated_from" not in out
 
 
 def test_migrate_to_current_records_oldest_version() -> None:
     """連鎖 migration の場合、``_migrated_from`` には元の最古バージョンが入る。"""
-    # 0.7 → 0.8 → 0.9 と 2 段経由する
+    # 0.7 → 0.8 → 0.9 → 0.10 と 3 段経由する
     data = {
         "schema_version": "0.7",
         "simulator": {},
@@ -215,5 +214,5 @@ def test_migrate_to_current_records_oldest_version() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.9"
+    assert out["schema_version"] == "0.10"
     assert out["_migrated_from"] == "0.7"

@@ -9,7 +9,7 @@ Phase 4 v0.11.1 でサポートする操作:
 
 * :func:`load_library` — `.flwlib.json` を読み込んで :class:`Library` を返す
 * :func:`validate_library` — 既に load 済みの dict を検証して :class:`Library` を返す
-* :func:`export_subsystem_to_library` — 既存 :class:`pyflw.Subsystem` を library entry
+* :func:`export_subsystem_to_library` — 既存 :class:`flode.Subsystem` を library entry
   として `.flwlib.json` に書き出す (Python API; GUI からの編集は Phase 5+)
 
 .. note::
@@ -39,7 +39,7 @@ from ._loader import (
 if TYPE_CHECKING:
     from ..subsystems import Subsystem
 
-_logger = logging.getLogger("pyflw.libraries")
+_logger = logging.getLogger("flode.libraries")
 
 __all__ = [
     "CURRENT_LIBRARY_SCHEMA_VERSION",
@@ -72,7 +72,7 @@ class LibraryEntry:
         category_suffix: ``library.<lib_name>.<suffix>`` の suffix 部分。
             空文字なら ``library.<lib_name>`` 直下に出る (= ADR-0029 §CAT-A)。
         subsystem: ``Subsystem.to_dict()`` の戻り値と同じ形式
-            (``{"id": ..., "type": "pyflw.subsystems.subsystem.Subsystem",
+            (``{"id": ..., "type": "flode.subsystems.subsystem.Subsystem",
             "params": {...}}``)。``Subsystem._from_dict(**subsystem["params"])`` で
             再構築可能 (= byte-identical round-trip)。
     """
@@ -129,7 +129,7 @@ class Library:
 def validate_library(data: dict[str, Any], *, source_path: Path | None = None) -> Library:
     """既に load 済みの dict を検証して :class:`Library` を返す。
 
-    実装は :mod:`pyflw.libraries._loader` に閉じ、本関数は public API surface
+    実装は :mod:`flode.libraries._loader` に閉じ、本関数は public API surface
     として薄い wrapper を提供する。
 
     Args:
@@ -177,7 +177,7 @@ def export_subsystem_to_library(
     entry_metadata: dict[str, Any] | None = None,
     append: bool = True,
 ) -> Library:
-    """既存の :class:`pyflw.Subsystem` を library entry として `.flwlib.json` に書き出す。
+    """既存の :class:`flode.Subsystem` を library entry として `.flwlib.json` に書き出す。
 
     Phase 4 v0.11.1: GUI 編集は未実装 (Phase 5+)、Python API 経由のみで提供する。
 

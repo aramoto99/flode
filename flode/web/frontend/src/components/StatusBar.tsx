@@ -147,7 +147,7 @@ export function StatusBar(): JSX.Element {
       )}
 
       <div className="ml-auto flex items-center gap-3">
-        <span className="text-slate-500">pyflw v{__APP_VERSION__}</span>
+        <span className="text-slate-500">flode v{__APP_VERSION__}</span>
       </div>
     </footer>
   );

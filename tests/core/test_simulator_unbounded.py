@@ -19,8 +19,8 @@ import time
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Integrator, Scope
+from flode import Simulator
+from flode.blocks import Constant, Integrator, Scope
 
 
 def _build_integrator_model(t_end: float | str, dt: float = 0.01) -> Simulator:

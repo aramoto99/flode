@@ -1,4 +1,4 @@
-# pyflw frontend
+# flode frontend
 
 Web GUI フロントエンド (ADR-0012)。Vite + React 18 + TypeScript strict、状態管理は
 Zustand、サーバ状態は TanStack Query、線図は React Flow (`@xyflow/react`)、
@@ -7,7 +7,7 @@ Scope 表示は canvas (Phase 2 はミニマル、Phase 3 で uPlot に置換予
 ## 開発
 
 ```bash
-cd pyflw/web/frontend
+cd flode/web/frontend
 npm install
 npm run dev    # http://localhost:5173
 ```
@@ -15,13 +15,8 @@ npm run dev    # http://localhost:5173
 別ターミナルで backend を起動:
 
 ```bash
-# プロジェクトルートで
-PYFLW_MODEL_DIR=./models python -c "
-from pyflw.server import create_app, Settings
-import uvicorn
-app = create_app('./models', settings=Settings(model_dir=__import__('pathlib').Path('./models'), allow_origins=['http://localhost:5173']))
-uvicorn.run(app, host='127.0.0.1', port=8770)
-"
+# プロジェクトルートで (port 8770 で API を配信)
+flode --workspace ./models --no-browser
 ```
 
 Vite dev server が `/api/*` を `localhost:8770` に proxy するため、frontend からは
@@ -31,9 +26,8 @@ Vite dev server が `/api/*` を `localhost:8770` に proxy するため、front
 
 ```bash
 npm run build
-# → dist/
-# `pyflw/server/static/` にコピーすれば `pip install pyflw[gui]` で配信される
-cp -r dist/* ../../server/static/
+# → dist/ に出力後、scripts/deploy-to-server-static.mjs が
+#   `flode/server/static/` へ自動コピーする (`.app-version` も更新)
 ```
 
 ## スクリプト

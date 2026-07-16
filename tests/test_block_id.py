@@ -6,12 +6,12 @@ import logging
 
 import pytest
 
-from pyflw import (
+from flode import (
     BlockSpecError,
     Simulator,
     UnknownBlockIdError,
 )
-from pyflw.blocks import Constant, Gain, Step
+from flode.blocks import Constant, Gain, Step
 
 
 def test_auto_id_per_type_counter():
@@ -61,7 +61,7 @@ def test_id_max_length_ok():
 
 
 def test_python_keyword_id_warns(caplog):
-    with caplog.at_level(logging.WARNING, logger="pyflw.identifiers"):
+    with caplog.at_level(logging.WARNING, logger="flode.identifiers"):
         g = Gain(id="for")
     assert g.id == "for"
     assert any("Python keyword" in r.message for r in caplog.records)

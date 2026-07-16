@@ -11,8 +11,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import Fcn, Scope, Sine
+from flode import Simulator
+from flode.blocks import Fcn, Scope, Sine
 
 _logger = logging.getLogger(__name__)
 

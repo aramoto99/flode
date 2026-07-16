@@ -2,7 +2,7 @@
 //
 // React Flow v12 の UserSelection は「選択ノードに接続している edge」だけ
 // 選択する (= ノードに片端も触らずに edge 中央を矩形で囲っても無視される)。
-// pyflw 側で onSelectionEnd の最終 userSelectionRect を取り、edge の step
+// flode 側で onSelectionEnd の最終 userSelectionRect を取り、edge の step
 // polyline と矩形の交差判定を自前で行うために本モジュールを使う。
 
 export interface Point {
@@ -116,7 +116,7 @@ function dedupeConsecutive(points: readonly Point[]): Point[] {
  * 既知の制限 (``via`` 無し時のみ): ``tx < sx`` (= 逆向き接続 / 帰還ループ) は
  * React Flow が ``offset=20px`` を加えた 5-point U-turn path で描画するため、本
  * 近似だと ``sx ± 20px`` / ``tx ± 20px`` 付近の折り返し領域だけを横切る選択矩形
- * では **偽陰性** (= 本来選択されるべき edge が選ばれない) が生じうる。pyflw の
+ * では **偽陰性** (= 本来選択されるべき edge が選ばれない) が生じうる。flode の
  * 典型モデルは左→右の信号フローのため実害は限定的。U-turn 多発モデルで顕在化
  * したら ``getSmoothStepPath`` の path 文字列を parse する実装に差し替える。
  * ``via`` 経由時は折れ線が ``via`` で確定するため U-turn でも破綻しにくい。

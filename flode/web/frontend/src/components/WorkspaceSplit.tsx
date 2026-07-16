@@ -27,7 +27,7 @@ import {
   computeDropZone,
   type DropZone,
   dropZoneToSplit,
-  PYFLW_TAB_REF_MIME,
+  FLODE_TAB_REF_MIME,
 } from "../lib/dnd";
 import {
   findLeaf,
@@ -211,7 +211,7 @@ function renderSplit(
       // などの異常。本来発火しないルートだが、発火したら追跡できるよう warn。
       if (typeof console !== "undefined" && console.warn) {
         console.warn(
-          "[pyflw] onLayoutChanged: Panel ids not in Layout map",
+          "[flode] onLayoutChanged: Panel ids not in Layout map",
           { aPanelId, bPanelId, layoutKeys: Object.keys(layout) },
         );
       }
@@ -525,7 +525,7 @@ function PaneLeafShell({
   // ADR-0052 §(1) §(3): drop event handlers。Scope pane / Diagram pane / Inspector
   // pane / scopes-stack に drop 可能、tab:<filePath> 葉自身への drop も可。
   const onDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!e.dataTransfer.types.includes(PYFLW_TAB_REF_MIME)) return;
+    if (!e.dataTransfer.types.includes(FLODE_TAB_REF_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const rect = e.currentTarget.getBoundingClientRect();
@@ -539,7 +539,7 @@ function PaneLeafShell({
     setHoverZone(null);
   };
   const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
-    const filePath = e.dataTransfer.getData(PYFLW_TAB_REF_MIME);
+    const filePath = e.dataTransfer.getData(FLODE_TAB_REF_MIME);
     setHoverZone(null);
     if (!filePath) return;
     e.preventDefault();

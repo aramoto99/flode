@@ -10,10 +10,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Inport, Outport
-from pyflw.blocks import Gain, UnitDelay
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Subsystem, Trigger
+from flode import Inport, Outport
+from flode.blocks import Gain, UnitDelay
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Subsystem, Trigger
 
 
 def _build_triggered(trigger_type: str = "rising") -> Subsystem:

@@ -1,4 +1,4 @@
-"""``pyflw-server`` CLI + 設定ファイル (SPEC-0004) の統合テスト。
+"""``flode`` CLI + 設定ファイル (SPEC-0004) の統合テスト。
 
 ``main()`` の uvicorn 起動経路を mock し、Settings / bind が CLI > file > default の
 優先順位通りに解決されることを確認する。
@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from pytest_mock import MockerFixture
 
-from pyflw.exceptions import PyflwError
-from pyflw.server.cli import main
+from flode.exceptions import FlodeError
+from flode.server.cli import main
 
 # ``isolated_home`` fixture は tests/server/conftest.py で共有。
 
@@ -35,7 +35,7 @@ def suppress_startup_side_effects(mocker: MockerFixture) -> None:
       (開発機で 8770 等が偶然使用中でも port の assert が壊れないよう決定化)。
     起動 UX 自体のテストは ``test_cli_startup.py`` が担う。
     """
-    from pyflw.server import cli
+    from flode.server import cli
 
     mocker.patch.object(cli, "_launch_browser_thread")
     mocker.patch.object(cli, "find_free_port", side_effect=lambda host, port, retries: port)
@@ -53,12 +53,12 @@ class TestCliWithConfigFile:
         monkeypatch.chdir(tmp_path)
         # SPEC-0004 §7: 設定ファイル不在時は WARNING ログを出さず default で起動する
         # (リファレンス Web IDE 準拠の lenient な不在処理)。
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
             main([])
         warning_records = [
             r
             for r in caplog.records
-            if r.levelno >= logging.WARNING and r.name.startswith("pyflw.server.config")
+            if r.levelno >= logging.WARNING and r.name.startswith("flode.server.config")
         ]
         assert not warning_records, f"Unexpected warnings: {warning_records}"
         mock_uvicorn.assert_called_once()
@@ -77,7 +77,7 @@ class TestCliWithConfigFile:
     ) -> None:
         ws = tmp_path / "ws"
         ws.mkdir()
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text(
             "[server]\n"
@@ -113,7 +113,7 @@ class TestCliWithConfigFile:
             encoding="utf-8",
         )
         # 暗黙探索の方には 9100 を書いておく → 明示 --config が優先されることを確認
-        default_cfg = isolated_home / ".pyflw" / "config.toml"
+        default_cfg = isolated_home / ".flode" / "config.toml"
         default_cfg.parent.mkdir(parents=True)
         default_cfg.write_text(
             f'[server]\nport = 9100\n[settings]\nworkspace = "{ws.as_posix()}"\n',
@@ -133,7 +133,7 @@ class TestCliWithConfigFile:
     ) -> None:
         ws = tmp_path / "ws"
         ws.mkdir()
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text(
             f'[server]\nport = 9100\n[settings]\nworkspace = "{ws.as_posix()}"\n',
@@ -149,7 +149,7 @@ class TestCliWithConfigFile:
         tmp_path: Path,
         isolated_home: Path,
     ) -> None:
-        with pytest.raises(PyflwError, match="does not exist"):
+        with pytest.raises(FlodeError, match="does not exist"):
             main(["--config", str(tmp_path / "nope.toml")])
 
 
@@ -162,7 +162,7 @@ class TestGenerateConfigCli:
         with pytest.raises(SystemExit) as exc_info:
             main(["--generate-config"])
         assert exc_info.value.code == 0
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         assert cfg.is_file()
         content = cfg.read_text(encoding="utf-8")
         assert "[server]" in content
@@ -172,17 +172,17 @@ class TestGenerateConfigCli:
         self,
         isolated_home: Path,
     ) -> None:
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text("existing", encoding="utf-8")
-        with pytest.raises(PyflwError, match="already exists"):
+        with pytest.raises(FlodeError, match="already exists"):
             main(["--generate-config"])
 
     def test_generate_config_force_overwrites(
         self,
         isolated_home: Path,
     ) -> None:
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text("existing", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:

@@ -7,7 +7,7 @@ omitted.
 Block base class
 ----------------
 
-.. autoclass:: pyflw.Block
+.. autoclass:: flode.Block
    :members: output, derivative, update
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ Block base class
 Simulator
 ---------
 
-.. autoclass:: pyflw.Simulator
+.. autoclass:: flode.Simulator
    :members: add, connect, run, get_block, rename
    :undoc-members:
    :show-inheritance:
@@ -23,12 +23,12 @@ Simulator
 ``@block`` decorator
 --------------------
 
-.. autofunction:: pyflw.block
+.. autofunction:: flode.block
 
 Exceptions
 ----------
 
-.. automodule:: pyflw.exceptions
+.. automodule:: flode.exceptions
    :members:
    :undoc-members:
    :show-inheritance:

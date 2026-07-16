@@ -50,7 +50,7 @@ export interface ResolvedJunctionDot {
 /**
  * source の出力ポート向きから幹線軸を導出する。
  *
- * 現状 pyflw の出力ハンドルは必ず水平 (Right、flipped で Left) のため常に "x" を
+ * 現状 flode の出力ハンドルは必ず水平 (Right、flipped で Left) のため常に "x" を
  * 返す (ADR-0057 §改訂 前提検証 改訂-1)。Top/Bottom 出力ポートが導入されたら "y"
  * を返す分岐を足す (= 縦幹線対応、将来送り)。
  */

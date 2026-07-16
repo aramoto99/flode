@@ -3,7 +3,7 @@
 //
 // 設計:
 //   - 辞書は static import (= ja/en の 2 言語、数十 key で <2KB gzip)
-//   - 既定言語: localStorage["pyflw.lang"] → navigator.language(ja*) → "en"
+//   - 既定言語: localStorage["flode.lang"] → navigator.language(ja*) → "en"
 //   - 永続化: setLanguage(lng) で localStorage に書く
 //   - missing key は dev のみ console.warn
 
@@ -17,7 +17,7 @@ import ja from "./locales/ja.json";
 export type SupportedLanguage = "en" | "ja";
 
 const SUPPORTED: readonly SupportedLanguage[] = ["en", "ja"] as const;
-const STORAGE_KEY = "pyflw.lang";
+const STORAGE_KEY = "flode.lang";
 
 /** ``localStorage`` / ``navigator.language`` から起動時の言語を解決する。 */
 export function detectInitialLanguage(): SupportedLanguage {

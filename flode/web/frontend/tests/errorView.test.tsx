@@ -29,7 +29,7 @@ const _BASE: FailurePayload = {
   template_args: { block_label: "Divide1", t: 1.234 },
   block_id: "blk_div",
   block_ids: ["blk_div"],
-  block_type: "pyflw.blocks.mathops.Divide",
+  block_type: "flode.blocks.mathops.Divide",
   block_label: "Divide1",
   t: 1.234,
   raw_message: "ZeroDivisionError: float division by zero",

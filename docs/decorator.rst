@@ -44,7 +44,7 @@ Example 1: Minimal (combinational, no state)
 
 .. code-block:: python
 
-   from pyflw import block
+   from flode import block
 
    @block
    def double(t: float, u: float) -> float:
@@ -61,7 +61,7 @@ Example 2: Stateful block (continuous integrator)
 .. code-block:: python
 
    import numpy as np
-   from pyflw import block
+   from flode import block
 
    @block(states=1)
    def my_integrator(
@@ -91,7 +91,7 @@ When port counts cannot be inferred from type annotations, use explicit
 .. code-block:: python
 
    import numpy as np
-   from pyflw import block
+   from flode import block
 
    @block(inputs=2, outputs=2)
    def swap(t: float, u: np.ndarray) -> np.ndarray:
@@ -102,7 +102,7 @@ When port counts cannot be inferred from type annotations, use explicit
 API reference
 -------------
 
-.. automodule:: pyflw.core.decorator
+.. automodule:: flode.core.decorator
    :members: block
    :undoc-members:
    :show-inheritance:

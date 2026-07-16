@@ -11,7 +11,7 @@ import {
 import type { BlockEntry, BlockMetadata } from "../src/types/api";
 
 const META_GAIN: BlockMetadata = {
-  type_path: "pyflw.blocks.mathops.Gain",
+  type_path: "flode.blocks.mathops.Gain",
   display_name: "Gain",
   category: "mathops",
   icon: "math.gain",
@@ -27,7 +27,7 @@ const META_GAIN: BlockMetadata = {
 };
 
 const META_MUX: BlockMetadata = {
-  type_path: "pyflw.blocks.routing.Mux",
+  type_path: "flode.blocks.routing.Mux",
   display_name: "Mux",
   category: "routing",
   icon: "routing.mux",
@@ -43,7 +43,7 @@ const META_MUX: BlockMetadata = {
 };
 
 const META_DEMUX: BlockMetadata = {
-  type_path: "pyflw.blocks.routing.Demux",
+  type_path: "flode.blocks.routing.Demux",
   display_name: "Demux",
   category: "routing",
   icon: "routing.demux",
@@ -90,22 +90,22 @@ describe("validatePortShapeConnection", () => {
 
   const gain1: BlockEntry = {
     id: "g1",
-    type: "pyflw.blocks.mathops.Gain",
+    type: "flode.blocks.mathops.Gain",
     params: { k: 2.0 },
   };
   const gain2: BlockEntry = {
     id: "g2",
-    type: "pyflw.blocks.mathops.Gain",
+    type: "flode.blocks.mathops.Gain",
     params: { k: 3.0 },
   };
   const mux: BlockEntry = {
     id: "m1",
-    type: "pyflw.blocks.routing.Mux",
+    type: "flode.blocks.routing.Mux",
     params: { n: 2 },
   };
   const demux: BlockEntry = {
     id: "d1",
-    type: "pyflw.blocks.routing.Demux",
+    type: "flode.blocks.routing.Demux",
     params: { n: 2 },
   };
 
@@ -137,16 +137,16 @@ describe("validatePortShapeConnection", () => {
     // (= getDefaultPortShapes の Subsystem branch) で通るはず
     const sub: BlockEntry = {
       id: "sub",
-      type: "pyflw.subsystems.subsystem.Subsystem",
+      type: "flode.subsystems.subsystem.Subsystem",
       params: {
         blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "in0", type: "flode.subsystems.ports.Inport", params: { port_idx: 0 } },
         ],
         connections: [],
       },
     };
     const META_SUB: BlockMetadata = {
-      type_path: "pyflw.subsystems.subsystem.Subsystem",
+      type_path: "flode.subsystems.subsystem.Subsystem",
       display_name: "Subsystem",
       category: "subsystems",
       icon: "container.subsystem",
@@ -193,7 +193,7 @@ describe("validatePortShapeConnection", () => {
   // で拒否されていた。Scope / Sum / Product / Mux 等で同じ問題。
   describe("param-aware port count resolution (regression: dynamic-port blocks)", () => {
     const META_SCOPE: BlockMetadata = {
-      type_path: "pyflw.blocks.sinks.Scope",
+      type_path: "flode.blocks.sinks.Scope",
       display_name: "Scope",
       category: "sinks",
       icon: "sinks.scope",
@@ -208,7 +208,7 @@ describe("validatePortShapeConnection", () => {
       mask_capable: false,
     };
     const META_SUM: BlockMetadata = {
-      type_path: "pyflw.blocks.mathops.Sum",
+      type_path: "flode.blocks.mathops.Sum",
       display_name: "Sum",
       category: "mathops",
       icon: "math.sum",
@@ -226,7 +226,7 @@ describe("validatePortShapeConnection", () => {
     it("Scope with n_inputs=2 accepts connection to in[1] (= the reported bug)", () => {
       const scope: BlockEntry = {
         id: "Scope_0",
-        type: "pyflw.blocks.sinks.Scope",
+        type: "flode.blocks.sinks.Scope",
         params: { n_inputs: 2, buffer_mode: "ring", buffer_capacity: 100000 },
       };
       const reg = indexRegistry([META_GAIN, META_SCOPE]);
@@ -237,7 +237,7 @@ describe("validatePortShapeConnection", () => {
     it("Scope with n_inputs=2 still rejects connection to non-existent in[2]", () => {
       const scope: BlockEntry = {
         id: "Scope_0",
-        type: "pyflw.blocks.sinks.Scope",
+        type: "flode.blocks.sinks.Scope",
         params: { n_inputs: 2 },
       };
       const reg = indexRegistry([META_GAIN, META_SCOPE]);
@@ -250,7 +250,7 @@ describe("validatePortShapeConnection", () => {
     it("Sum with signs='+++' accepts connection to in[2]", () => {
       const sum: BlockEntry = {
         id: "Sum_0",
-        type: "pyflw.blocks.mathops.Sum",
+        type: "flode.blocks.mathops.Sum",
         params: { signs: "+++" },
       };
       const reg = indexRegistry([META_GAIN, META_SUM]);
@@ -264,7 +264,7 @@ describe("validatePortShapeConnection", () => {
       // 期待される [[3]] には更新されない (= 別バグとして scope 外)。
       const mux3: BlockEntry = {
         id: "Mux_0",
-        type: "pyflw.blocks.routing.Mux",
+        type: "flode.blocks.routing.Mux",
         params: { n: 3 },
       };
       const reg = indexRegistry([META_GAIN, META_MUX]);
@@ -277,7 +277,7 @@ describe("validatePortShapeConnection", () => {
       // n_inputs=2 だが signs="+" で 1 に縮む → in[1] は does not exist
       const sum: BlockEntry = {
         id: "Sum_0",
-        type: "pyflw.blocks.mathops.Sum",
+        type: "flode.blocks.mathops.Sum",
         params: { signs: "+" },
       };
       const reg = indexRegistry([META_GAIN, META_SUM]);
@@ -290,7 +290,7 @@ describe("validatePortShapeConnection", () => {
     it("default-param Scope (n_inputs=1) still rejects in[1] (= existing behavior preserved)", () => {
       const scope: BlockEntry = {
         id: "Scope_0",
-        type: "pyflw.blocks.sinks.Scope",
+        type: "flode.blocks.sinks.Scope",
         params: {},
       };
       const reg = indexRegistry([META_GAIN, META_SCOPE]);
@@ -306,24 +306,24 @@ describe("validatePortShapeConnection", () => {
   describe("Subsystem + control block (ADR-0058)", () => {
     const gain1: BlockEntry = {
       id: "gain1",
-      type: "pyflw.blocks.mathops.Gain",
+      type: "flode.blocks.mathops.Gain",
       params: { k: 1.0 },
     };
 
     it("Subsystem + Trigger: trigger slot is scalar [] appended at end", () => {
       const sub: BlockEntry = {
         id: "sub",
-        type: "pyflw.subsystems.subsystem.Subsystem",
+        type: "flode.subsystems.subsystem.Subsystem",
         params: {
           blocks: [
             {
               id: "in0",
-              type: "pyflw.subsystems.ports.Inport",
+              type: "flode.subsystems.ports.Inport",
               params: { port_idx: 0 },
             },
             {
               id: "trig",
-              type: "pyflw.subsystems.control_blocks.Trigger",
+              type: "flode.subsystems.control_blocks.Trigger",
               params: { trigger_type: "rising" },
             },
           ],
@@ -338,17 +338,17 @@ describe("validatePortShapeConnection", () => {
     it("Subsystem + Enable + Trigger: slot order [data..., enable, trigger]", () => {
       const sub: BlockEntry = {
         id: "sub",
-        type: "pyflw.subsystems.subsystem.Subsystem",
+        type: "flode.subsystems.subsystem.Subsystem",
         params: {
           blocks: [
             {
               id: "in0",
-              type: "pyflw.subsystems.ports.Inport",
+              type: "flode.subsystems.ports.Inport",
               params: { port_idx: 0 },
             },
             {
               id: "en",
-              type: "pyflw.subsystems.control_blocks.Enable",
+              type: "flode.subsystems.control_blocks.Enable",
               params: {
                 states_when_enabling: "held",
                 outputs_when_disabled: "held",
@@ -356,7 +356,7 @@ describe("validatePortShapeConnection", () => {
             },
             {
               id: "trig",
-              type: "pyflw.subsystems.control_blocks.Trigger",
+              type: "flode.subsystems.control_blocks.Trigger",
               params: { trigger_type: "rising" },
             },
           ],

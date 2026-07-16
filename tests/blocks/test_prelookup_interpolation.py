@@ -17,16 +17,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     InterpolationUsingPrelookup,
     LookupTable1D,
     Prelookup,
     Scope,
     Sine,
 )
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockEvalError, BlockSpecError
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockEvalError, BlockSpecError
 
 _EMPTY_X = np.array([])
 
@@ -410,23 +410,23 @@ class TestPrelookupInterpolationCombined:
 
 class TestPrelookupRegistry:
     def test_in_builtin_metadata(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        assert "pyflw.blocks.lookup.Prelookup" in _BUILTIN_METADATA
-        assert "pyflw.blocks.lookup.InterpolationUsingPrelookup" in _BUILTIN_METADATA
-        cat_p, disp_p, _ = _BUILTIN_METADATA["pyflw.blocks.lookup.Prelookup"]
-        cat_i, disp_i, _ = _BUILTIN_METADATA["pyflw.blocks.lookup.InterpolationUsingPrelookup"]
+        assert "flode.blocks.lookup.Prelookup" in _BUILTIN_METADATA
+        assert "flode.blocks.lookup.InterpolationUsingPrelookup" in _BUILTIN_METADATA
+        cat_p, disp_p, _ = _BUILTIN_METADATA["flode.blocks.lookup.Prelookup"]
+        cat_i, disp_i, _ = _BUILTIN_METADATA["flode.blocks.lookup.InterpolationUsingPrelookup"]
         assert cat_p == "lookup"
         assert cat_i == "lookup"
         assert disp_p == "Prelookup"
         assert disp_i == "Interpolation Using Prelookup"
 
     def test_in_translations(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
         for type_path in (
-            "pyflw.blocks.lookup.Prelookup",
-            "pyflw.blocks.lookup.InterpolationUsingPrelookup",
+            "flode.blocks.lookup.Prelookup",
+            "flode.blocks.lookup.InterpolationUsingPrelookup",
         ):
             assert type_path in _BLOCK_TRANSLATIONS
             entry = _BLOCK_TRANSLATIONS[type_path]

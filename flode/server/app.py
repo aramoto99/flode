@@ -26,7 +26,7 @@ from .settings import Settings
 
 
 def create_app(*, settings: Settings) -> FastAPI:
-    """``pyflw`` の Web GUI バックエンド ``FastAPI`` アプリを生成する。
+    """``flode`` の Web GUI バックエンド ``FastAPI`` アプリを生成する。
 
     Args:
         settings: 詳細設定 (``Settings`` インスタンス、``workspace_root`` 必須)。
@@ -66,12 +66,12 @@ def create_app(*, settings: Settings) -> FastAPI:
         finally:
             manager.shutdown()
 
-    # ``pyflw.__version__`` を SoT として使う (ADR-0013 §V-A、code-reviewer SHOULD)
-    from .. import __version__ as _pyflw_version
+    # ``flode.__version__`` を SoT として使う (ADR-0013 §V-A、code-reviewer SHOULD)
+    from .. import __version__ as _flode_version
 
     app = FastAPI(
-        title="pyflw server",
-        version=_pyflw_version,
+        title="flode server",
+        version=_flode_version,
         lifespan=lifespan,
     )
     app.state.settings = settings
@@ -91,17 +91,17 @@ def create_app(*, settings: Settings) -> FastAPI:
     app.include_router(files_router, prefix="/api/v1")
     register_error_handlers(app)
 
-    # ADR-0012 §(6): frontend ビルド成果物を ``pyflw/server/static/`` から配信。
+    # ADR-0012 §(6): frontend ビルド成果物を ``flode/server/static/`` から配信。
     # ディレクトリが存在しない (= ``npm run build`` 未実行 / dev mode) 場合は
     # マウントしない。``html=True`` で SPA ルーティングを ``index.html`` に
     # フォールバックする。API ルートは先に登録済みなので static は最後にする。
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir() and any(static_dir.iterdir()):
         # ADR-0039 v0.14.1 §再発防止: 配信される frontend bundle の version と
-        # backend の ``pyflw.__version__`` を起動時に突き合わせ、ズレていれば
+        # backend の ``flode.__version__`` を起動時に突き合わせ、ズレていれば
         # warning を出す。これで「コードは新しいが bundle が古い」事故を早期検知。
         # mount より先に呼ぶ — WARNING が mount エラーログに埋もれないため。
-        _check_frontend_bundle_version(static_dir, _pyflw_version)
+        _check_frontend_bundle_version(static_dir, _flode_version)
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
 
     return app
@@ -110,9 +110,9 @@ def create_app(*, settings: Settings) -> FastAPI:
 def _check_frontend_bundle_version(static_dir: Path, backend_version: str) -> None:
     """配信される frontend bundle の version を backend と比較する。
 
-    deploy script (= ``pyflw/web/frontend/scripts/deploy-to-server-static.mjs``)
-    が ``pyflw/server/static/.app-version`` に build 時の ``package.json#version``
-    を書き残す。本関数はそれを読んで backend ``pyflw.__version__`` と比較する。
+    deploy script (= ``flode/web/frontend/scripts/deploy-to-server-static.mjs``)
+    が ``flode/server/static/.app-version`` に build 時の ``package.json#version``
+    を書き残す。本関数はそれを読んで backend ``flode.__version__`` と比較する。
 
     bundle 内の ``__APP_VERSION__`` は vite の ``define`` で静的置換され、minify で
     変数名が消えるため文字列の grep では拾えない。そのため別ファイルで明示する。
@@ -121,10 +121,10 @@ def _check_frontend_bundle_version(static_dir: Path, backend_version: str) -> No
     時は silent skip (= 過剰な warning は出さない)。
 
     Args:
-        static_dir: ``pyflw/server/static`` ディレクトリ。
-        backend_version: ``pyflw.__version__`` (= source of truth)。
+        static_dir: ``flode/server/static`` ディレクトリ。
+        backend_version: ``flode.__version__`` (= source of truth)。
     """
-    logger = logging.getLogger("pyflw.server.app")
+    logger = logging.getLogger("flode.server.app")
     marker = static_dir / ".app-version"
     if not marker.is_file():
         return
@@ -137,7 +137,7 @@ def _check_frontend_bundle_version(static_dir: Path, backend_version: str) -> No
     if bundle_version != backend_version:
         logger.warning(
             "frontend bundle version mismatch: backend=%s but bundle reports %s. "
-            "Run 'npm run build' inside pyflw/web/frontend to refresh the bundle "
+            "Run 'npm run build' inside flode/web/frontend to refresh the bundle "
             "(ADR-0039 v0.14.1 §再発防止).",
             backend_version,
             bundle_version,

@@ -1,13 +1,13 @@
 # v0.27.0 (minor、後方互換): ADR-0045 採択。Workspace convergence Stage 1 =
 # multi-pane split。`<main>` 内 Diagram + Scope を ``react-resizable-panels``
 # のネスト split で任意配置可能に、SplitTree state は localStorage に
-# ``pyflw.workspace_layout.<hash>.<b64url(path)>`` キーで永続化。DiagramCanvas
+# ``flode.workspace_layout.<hash>.<b64url(path)>`` キーで永続化。DiagramCanvas
 # は React Portal で投影することで SplitTree 再構造でも viewport を保持
 # (= v0.26.12 規律継承)。既存 ``ScopePanelContainer`` (react-rnd float、
 # ADR-0044) は docked split と並存。Phase 6c (Workspace
 # convergence) Stage 1 として ADR-0040 §Amendments §(1) で位置付け、Stage 2 /
 # 3 (= activity bar + Launcher、drag-to-split-tab) は後続 ADR で順次着手。
-__version__ = "0.42.0"
+__version__ = "0.43.0"
 
 from .analysis import (
     BodeResponse,
@@ -27,11 +27,11 @@ from .core.simulator import Simulator
 from .exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
+    FlodeError,
     LibraryEntryNotFoundError,
     LibraryFileError,
     ModelLoadError,
     ModelSerializationError,
-    PyflwError,
     SchedulingError,
     SchemaVersionError,
     SimulationStillRunningError,
@@ -64,7 +64,7 @@ __all__ = [
     "ModelSerializationError",
     "NyquistResponse",
     "Outport",
-    "PyflwError",
+    "FlodeError",
     "RootLocus",
     "SchedulingError",
     "SchemaVersionError",

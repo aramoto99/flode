@@ -52,7 +52,7 @@ desktop.ini
 spring_mass_damper.png
 pid_bode.png
 
-# Local model storage for `pyflw-server --model-dir ./models` (= ユーザーデータ、
+# Local model storage for `flode --model-dir ./models` (= ユーザーデータ、
 # repo に含めない)
 models/
 
@@ -62,11 +62,11 @@ docs/_autosummary/
 
 # Frontend (ADR-0012)
 node_modules/
-pyflw/web/frontend/dist/
-pyflw/web/frontend/.vite/
-pyflw/web/frontend/tsconfig.tsbuildinfo
+flode/web/frontend/dist/
+flode/web/frontend/.vite/
+flode/web/frontend/tsconfig.tsbuildinfo
 # StaticFiles 配信先: ローカル build 時のみ生成、release 時は別管理 (ADR-0012 §(8))
-pyflw/server/static/
+flode/server/static/
 
 # Frontend logs
 npm-debug.log*
@@ -78,9 +78,9 @@ pnpm-debug.log*
 # repo root にも書き込まれるので両方無視する。
 test-results/
 playwright-report/
-pyflw/web/frontend/test-results/
-pyflw/web/frontend/playwright-report/
-pyflw/web/frontend/playwright/.cache/
+flode/web/frontend/test-results/
+flode/web/frontend/playwright-report/
+flode/web/frontend/playwright/.cache/
 
 # Claude Code config / docs — local-only, not tracked (public 化しても非公開)
 .claude/

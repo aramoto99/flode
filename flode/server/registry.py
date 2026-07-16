@@ -1,6 +1,6 @@
 """Block class registry (ADR-0019 §(1)).
 
-サーバ起動時に ``pyflw.blocks`` / ``pyflw.subsystems`` 以下の ``Block`` サブクラスを
+サーバ起動時に ``flode.blocks`` / ``flode.subsystems`` 以下の ``Block`` サブクラスを
 ``pkgutil.walk_packages`` で列挙し、各クラスのメタデータ + default port shape を
 組み立てた registry を構築する。
 
@@ -38,7 +38,7 @@ from ..core.persistence import (
 )
 from ..exceptions import BlockSpecError
 
-_logger = logging.getLogger("pyflw.registry")
+_logger = logging.getLogger("flode.registry")
 
 
 @dataclass
@@ -116,151 +116,151 @@ class BlockMetadata:
 # 削除したため、frontend 側の glyph は slate-600 一色で描画される。
 _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # sources
-    "pyflw.blocks.sources.Constant": ("sources", "Constant", "sources.constant"),
-    "pyflw.blocks.sources.Step": ("sources", "Step", "sources.step"),
-    "pyflw.blocks.sources.Sine": ("sources", "Sine", "sources.sine"),
-    "pyflw.blocks.sources.Ramp": ("sources", "Ramp", "sources.ramp"),
-    "pyflw.blocks.sources.Clock": ("sources", "Clock", "sources.clock"),
-    "pyflw.blocks.sources.PulseGenerator": ("sources", "Pulse Generator", "sources.pulse"),
+    "flode.blocks.sources.Constant": ("sources", "Constant", "sources.constant"),
+    "flode.blocks.sources.Step": ("sources", "Step", "sources.step"),
+    "flode.blocks.sources.Sine": ("sources", "Sine", "sources.sine"),
+    "flode.blocks.sources.Ramp": ("sources", "Ramp", "sources.ramp"),
+    "flode.blocks.sources.Clock": ("sources", "Clock", "sources.clock"),
+    "flode.blocks.sources.PulseGenerator": ("sources", "Pulse Generator", "sources.pulse"),
     # SPEC-0010 / ADR-0059 (v5.3.0): Random / Noise source (Wave 1 第 3 弾、最終)
-    "pyflw.blocks.random_source.RandomSource": (
+    "flode.blocks.random_source.RandomSource": (
         "sources",
         "Random Source",
         "sources.random",
     ),
     # math
-    "pyflw.blocks.mathops.Gain": ("mathops", "Gain", "math.gain"),
-    "pyflw.blocks.mathops.Sum": ("mathops", "Sum", "math.sum"),
+    "flode.blocks.mathops.Gain": ("mathops", "Gain", "math.gain"),
+    "flode.blocks.mathops.Sum": ("mathops", "Sum", "math.sum"),
     # v0.35.0: Add (= Sum の矩形版、signs 文字列で符号指定)
-    "pyflw.blocks.mathops.Add": ("mathops", "Add", "math.add"),
-    "pyflw.blocks.mathops.Product": ("mathops", "Product", "math.product"),
-    "pyflw.blocks.mathops.Saturation": ("mathops", "Saturation", "math.saturation"),
-    "pyflw.blocks.mathops.Abs": ("mathops", "Abs", "math.abs"),
-    "pyflw.blocks.mathops.Sign": ("mathops", "Sign", "math.sign"),
-    "pyflw.blocks.mathops.MinMax": ("mathops", "MinMax", "math.minmax"),
-    "pyflw.blocks.mathops.Divide": ("mathops", "Divide", "math.divide"),
+    "flode.blocks.mathops.Add": ("mathops", "Add", "math.add"),
+    "flode.blocks.mathops.Product": ("mathops", "Product", "math.product"),
+    "flode.blocks.mathops.Saturation": ("mathops", "Saturation", "math.saturation"),
+    "flode.blocks.mathops.Abs": ("mathops", "Abs", "math.abs"),
+    "flode.blocks.mathops.Sign": ("mathops", "Sign", "math.sign"),
+    "flode.blocks.mathops.MinMax": ("mathops", "MinMax", "math.minmax"),
+    "flode.blocks.mathops.Divide": ("mathops", "Divide", "math.divide"),
     # SPEC-0002 / ADR-0053 (v0.36.0): Phase 2 送り Math 系 5 ブロック第 1 弾
-    "pyflw.blocks.mathops.MathFunction": ("mathops", "Math Function", "math.mathfunction"),
-    "pyflw.blocks.mathops.TrigFunction": ("mathops", "Trig Function", "math.trigfunction"),
-    "pyflw.blocks.mathops.DeadZone": ("mathops", "Dead Zone", "math.deadzone"),
-    "pyflw.blocks.mathops.CompareToConstant": (
+    "flode.blocks.mathops.MathFunction": ("mathops", "Math Function", "math.mathfunction"),
+    "flode.blocks.mathops.TrigFunction": ("mathops", "Trig Function", "math.trigfunction"),
+    "flode.blocks.mathops.DeadZone": ("mathops", "Dead Zone", "math.deadzone"),
+    "flode.blocks.mathops.CompareToConstant": (
         "mathops",
         "Compare To Constant",
         "math.comparetoconstant",
     ),
-    "pyflw.blocks.mathops.CompareToZero": (
+    "flode.blocks.mathops.CompareToZero": (
         "mathops",
         "Compare To Zero",
         "math.comparetozero",
     ),
     # SPEC-0013 / ADR-0059 (v5.6.0): Rounding (Wave 2 第 2 弾)
-    "pyflw.blocks.rounding.Rounding": ("mathops", "Rounding", "math.rounding"),
+    "flode.blocks.rounding.Rounding": ("mathops", "Rounding", "math.rounding"),
     # continuous
-    "pyflw.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
-    "pyflw.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),
-    "pyflw.blocks.continuous.TransferFunction": ("continuous", "Transfer Fcn", "cont.tf"),
-    "pyflw.blocks.continuous.StateSpace": ("continuous", "State Space", "cont.ss"),
-    "pyflw.blocks.continuous.MimoTransferFunction": (
+    "flode.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
+    "flode.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),
+    "flode.blocks.continuous.TransferFunction": ("continuous", "Transfer Fcn", "cont.tf"),
+    "flode.blocks.continuous.StateSpace": ("continuous", "State Space", "cont.ss"),
+    "flode.blocks.continuous.MimoTransferFunction": (
         "continuous",
         "MIMO TF",
         "cont.mimo_tf",
     ),
     # SPEC-0015 / ADR-0065 (v5.8.0): Transport Delay (Wave 2 第 4 弾)
-    "pyflw.blocks.transport_delay.TransportDelay": (
+    "flode.blocks.transport_delay.TransportDelay": (
         "continuous",
         "Transport Delay",
         "cont.transport_delay",
     ),
     # discrete
-    "pyflw.blocks.discrete.UnitDelay": ("discrete", "Unit Delay", "disc.unit_delay"),
-    "pyflw.blocks.discrete.DiscreteIntegrator": (
+    "flode.blocks.discrete.UnitDelay": ("discrete", "Unit Delay", "disc.unit_delay"),
+    "flode.blocks.discrete.DiscreteIntegrator": (
         "discrete",
         "Discrete Integrator",
         "disc.integrator",
     ),
-    "pyflw.blocks.discrete.ZeroOrderHoldDirect": ("discrete", "ZOH", "disc.zoh_direct"),
-    "pyflw.blocks.discrete.RateTransition": (
+    "flode.blocks.discrete.ZeroOrderHoldDirect": ("discrete", "ZOH", "disc.zoh_direct"),
+    "flode.blocks.discrete.RateTransition": (
         "discrete",
         "Rate Transition",
         "disc.rate_transition",
     ),
-    "pyflw.blocks.discrete.DiscreteStateSpace": (
+    "flode.blocks.discrete.DiscreteStateSpace": (
         "discrete",
         "Discrete State Space",
         "disc.ss",
     ),
-    "pyflw.blocks.discrete.DiscreteTransferFunction": (
+    "flode.blocks.discrete.DiscreteTransferFunction": (
         "discrete",
         "Discrete Transfer Fcn",
         "disc.tf",
     ),
     # logic
-    "pyflw.blocks.logic.RelationalOperator": ("logic", "Relational", "logic.relational"),
-    "pyflw.blocks.logic.LogicalOperator": ("logic", "Logical", "logic.logical"),
+    "flode.blocks.logic.RelationalOperator": ("logic", "Relational", "logic.relational"),
+    "flode.blocks.logic.LogicalOperator": ("logic", "Logical", "logic.logical"),
     # SPEC-0012 / ADR-0059 (v5.5.0): Wave 2 第 1 弾 = stateful discontinuities
-    "pyflw.blocks.discontinuities.RateLimiter": (
+    "flode.blocks.discontinuities.RateLimiter": (
         "discontinuities",
         "Rate Limiter",
         "discontinuities.ratelimiter",
     ),
-    "pyflw.blocks.discontinuities.Relay": (
+    "flode.blocks.discontinuities.Relay": (
         "discontinuities",
         "Relay",
         "discontinuities.relay",
     ),
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
-    "pyflw.blocks.lookup.LookupTable1D": (
+    "flode.blocks.lookup.LookupTable1D": (
         "lookup",
         "Lookup Table (1-D)",
         "lookup.lookuptable1d",
     ),
     # SPEC-0017 / ADR-0064 (v5.6.0): Wave 3 第 1 弾 = 2-D Lookup Table
-    "pyflw.blocks.lookup.LookupTable2D": (
+    "flode.blocks.lookup.LookupTable2D": (
         "lookup",
         "Lookup Table (2-D)",
         "lookup.lookuptable2d",
     ),
     # SPEC-0019 / ADR-0067 (v5.7.0): Wave 3 第 2 弾 = Prelookup + Interpolation 分離
-    "pyflw.blocks.lookup.Prelookup": (
+    "flode.blocks.lookup.Prelookup": (
         "lookup",
         "Prelookup",
         "lookup.prelookup",
     ),
-    "pyflw.blocks.lookup.InterpolationUsingPrelookup": (
+    "flode.blocks.lookup.InterpolationUsingPrelookup": (
         "lookup",
         "Interpolation Using Prelookup",
         "lookup.interpolationusingprelookup",
     ),
     # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
-    "pyflw.blocks.lookup.LookupTableND": (
+    "flode.blocks.lookup.LookupTableND": (
         "lookup",
         "Lookup Table (N-D)",
         "lookup.lookuptablend",
     ),
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
-    "pyflw.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
+    "flode.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
     # routing
-    "pyflw.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
-    "pyflw.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),
-    "pyflw.blocks.routing.Demux": ("routing", "Demux", "routing.demux"),
+    "flode.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
+    "flode.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),
+    "flode.blocks.routing.Demux": ("routing", "Demux", "routing.demux"),
     # SPEC-0003 / ADR-0055: tag ベース仮想配線 (Local + Global)。
     # GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
-    "pyflw.blocks.routing.Goto": ("routing", "Goto", "routing.goto"),
-    "pyflw.blocks.routing.From": ("routing", "From", "routing.from"),
+    "flode.blocks.routing.Goto": ("routing", "Goto", "routing.goto"),
+    "flode.blocks.routing.From": ("routing", "From", "routing.from"),
     # SPEC-0014 / ADR-0059 (v5.7.0): Wave 2 第 3 弾 = routing 拡張
-    "pyflw.blocks.routing.MultiportSwitch": (
+    "flode.blocks.routing.MultiportSwitch": (
         "routing",
         "Multiport Switch",
         "routing.multiportswitch",
     ),
-    "pyflw.blocks.routing.Merge": ("routing", "Merge", "routing.merge"),
+    "flode.blocks.routing.Merge": ("routing", "Merge", "routing.merge"),
     # sinks
-    "pyflw.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
-    "pyflw.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
-    "pyflw.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
-    "pyflw.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
+    "flode.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
+    "flode.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
+    "flode.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
+    "flode.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
     # subsystems
-    "pyflw.subsystems.subsystem.Subsystem": (
+    "flode.subsystems.subsystem.Subsystem": (
         "subsystems",
         "Subsystem",
         "subsys.subsystem",
@@ -268,10 +268,10 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # ADR-0058: Subsystem behavior modifier control blocks (= Inport / Outport /
     # Trigger / Enable) は "control" カテゴリに集約。SPEC-0007 §機能要件 8 で
     # 「Inport / Outport / Trigger / Enable を同居」と確定。
-    "pyflw.subsystems.ports.Inport": ("control", "Inport", "control.inport"),
-    "pyflw.subsystems.ports.Outport": ("control", "Outport", "control.outport"),
-    "pyflw.subsystems.control_blocks.Trigger": ("control", "Trigger", "control.trigger"),
-    "pyflw.subsystems.control_blocks.Enable": ("control", "Enable", "control.enable"),
+    "flode.subsystems.ports.Inport": ("control", "Inport", "control.inport"),
+    "flode.subsystems.ports.Outport": ("control", "Outport", "control.outport"),
+    "flode.subsystems.control_blocks.Trigger": ("control", "Trigger", "control.trigger"),
+    "flode.subsystems.control_blocks.Enable": ("control", "Enable", "control.enable"),
 }
 
 
@@ -282,26 +282,26 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
 # (= 3rd-party 拡張ブロックが自前で宣言できる)。
 _BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
     # 「関係演算」を "comp" / "compare" / "比較" で見つけられるようにする (主因)。
-    "pyflw.blocks.logic.RelationalOperator": ("compare", "comparison", "比較"),
-    "pyflw.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
-    "pyflw.blocks.mathops.Divide": ("division", "除算", "割り算"),
-    "pyflw.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),
+    "flode.blocks.logic.RelationalOperator": ("compare", "comparison", "比較"),
+    "flode.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
+    "flode.blocks.mathops.Divide": ("division", "除算", "割り算"),
+    "flode.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),
     # ADR-0058: control category の境界ブロックは「subsystem」検索で発見できる
     # ようにする (= category code は "control" で表面に出ないため、search_keywords
     # で "subsystem" 等を補強する)。ユーザー指摘 2026-05-27「subsystem 検索で
     # Subsystem 1 件しか出ない」。
-    "pyflw.subsystems.ports.Inport": ("subsystem", "サブシステム", "boundary", "境界"),
-    "pyflw.subsystems.ports.Outport": ("subsystem", "サブシステム", "boundary", "境界"),
+    "flode.subsystems.ports.Inport": ("subsystem", "サブシステム", "boundary", "境界"),
+    "flode.subsystems.ports.Outport": ("subsystem", "サブシステム", "boundary", "境界"),
     # NITS 反映: ``"trigger"`` / ``"enable"`` は type_path tail として
     # searchableDisplayNames が自動で拾う (= 部分一致でヒット) ので、ここでは
     # display_name に出ないシノニムのみ列挙する。
-    "pyflw.subsystems.control_blocks.Trigger": (
+    "flode.subsystems.control_blocks.Trigger": (
         "subsystem",
         "サブシステム",
         "edge",
         "エッジ",
     ),
-    "pyflw.subsystems.control_blocks.Enable": (
+    "flode.subsystems.control_blocks.Enable": (
         "subsystem",
         "サブシステム",
         "gate",
@@ -313,67 +313,67 @@ _BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
 # ``cls()`` を引数なしで呼ぶと失敗するクラスの default factory 引数 (ADR-0019 §Risks #2)。
 # class attribute ``_default_factory_args`` でも上書き可能。
 _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
-    "pyflw.blocks.continuous.TransferFunction": {
+    "flode.blocks.continuous.TransferFunction": {
         "numerator": [1.0],
         "denominator": [1.0, 1.0],
     },
-    "pyflw.blocks.continuous.StateSpace": {
+    "flode.blocks.continuous.StateSpace": {
         "A": [[0.0]],
         "B": [[1.0]],
         "C": [[1.0]],
         "D": [[0.0]],
     },
-    "pyflw.blocks.continuous.MimoTransferFunction": {
+    "flode.blocks.continuous.MimoTransferFunction": {
         "numerators": [[[1.0]]],
         "denominator": [1.0, 1.0],
     },
-    "pyflw.blocks.discrete.DiscreteStateSpace": {
+    "flode.blocks.discrete.DiscreteStateSpace": {
         "A": [[0.0]],
         "B": [[1.0]],
         "C": [[1.0]],
         "D": [[0.0]],
         "sample_time": 0.1,
     },
-    "pyflw.blocks.discrete.DiscreteTransferFunction": {
+    "flode.blocks.discrete.DiscreteTransferFunction": {
         "numerator": [1.0],
         "denominator": [1.0, 1.0],
         "sample_time": 0.1,
     },
-    "pyflw.blocks.discrete.UnitDelay": {"sample_time": 0.1},
+    "flode.blocks.discrete.UnitDelay": {"sample_time": 0.1},
     # SPEC-0015: delay_time / sample_time 共に required。palette drop 用 default
-    "pyflw.blocks.transport_delay.TransportDelay": {
+    "flode.blocks.transport_delay.TransportDelay": {
         "delay_time": 1.0,
         "sample_time": 0.1,
     },
     # SPEC-0010: sample_time は required (default なし)。palette drop 時の補完
     # 値として 0.1 を供給する (UnitDelay 等と同パターン)。
-    "pyflw.blocks.random_source.RandomSource": {"sample_time": 0.1},
+    "flode.blocks.random_source.RandomSource": {"sample_time": 0.1},
     # SPEC-0012: 両ブロックとも sample_time required。同パターンで補完。
-    "pyflw.blocks.discontinuities.RateLimiter": {"sample_time": 0.1},
-    "pyflw.blocks.discontinuities.Relay": {"sample_time": 0.1},
-    "pyflw.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
-    "pyflw.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
+    "flode.blocks.discontinuities.RateLimiter": {"sample_time": 0.1},
+    "flode.blocks.discontinuities.Relay": {"sample_time": 0.1},
+    "flode.blocks.discrete.DiscreteIntegrator": {"sample_time": 0.1},
+    "flode.blocks.discrete.ZeroOrderHoldDirect": {"sample_time": 0.1},
     # ADR-0036: RateTransition は input_sample_time / output_sample_time が
     # 必須引数で同値禁止のため、明示の異なるレート組み合わせを default に
-    "pyflw.blocks.discrete.RateTransition": {
+    "flode.blocks.discrete.RateTransition": {
         "input_sample_time": 0.1,
         "output_sample_time": 0.2,
     },
-    "pyflw.blocks.routing.Mux": {"n": 2},
-    "pyflw.blocks.routing.Demux": {"n": 2},
+    "flode.blocks.routing.Mux": {"n": 2},
+    "flode.blocks.routing.Demux": {"n": 2},
     # SPEC-0014: n_choices / n_inputs は required 風 (default 2 だが palette
     # drop 時の補完値として明示)
-    "pyflw.blocks.routing.MultiportSwitch": {"n_choices": 2},
-    "pyflw.blocks.routing.Merge": {"n_inputs": 2},
+    "flode.blocks.routing.MultiportSwitch": {"n_choices": 2},
+    "flode.blocks.routing.Merge": {"n_inputs": 2},
     # ADR-0055: tag は必須引数。ドロップ時の default は ``"Tag1"`` (= 後で
     # Inspector で編集する想定)。実モデルでは同 tag の衝突回避が必要。
-    "pyflw.blocks.routing.Goto": {"tag": "Tag1"},
-    "pyflw.blocks.routing.From": {"tag": "Tag1"},
-    "pyflw.subsystems.ports.Inport": {"port_idx": 0},
-    "pyflw.subsystems.ports.Outport": {"port_idx": 0},
+    "flode.blocks.routing.Goto": {"tag": "Tag1"},
+    "flode.blocks.routing.From": {"tag": "Tag1"},
+    "flode.subsystems.ports.Inport": {"port_idx": 0},
+    "flode.subsystems.ports.Outport": {"port_idx": 0},
     # ADR-0058: Trigger / Enable control blocks。default で枯渇しない最低 1 組。
-    "pyflw.subsystems.control_blocks.Trigger": {"trigger_type": "rising"},
-    "pyflw.subsystems.control_blocks.Enable": {
+    "flode.subsystems.control_blocks.Trigger": {"trigger_type": "rising"},
+    "flode.subsystems.control_blocks.Enable": {
         "states_when_enabling": "held",
         "outputs_when_disabled": "held",
     },
@@ -396,7 +396,7 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
 # DSL 仕様: ``len(params.<attr_name>)`` のみ受理 (= 単純属性参照、安全)。
 # eval / Function / 任意式は禁止。
 _BUILTIN_DYNAMIC_PORTS: dict[str, str] = {
-    "pyflw.blocks.lookup.LookupTableND": "len(params.breakpoints_axes)",
+    "flode.blocks.lookup.LookupTableND": "len(params.breakpoints_axes)",
 }
 
 
@@ -628,7 +628,7 @@ def build_metadata(cls: type) -> BlockMetadata:
 
 
 def _walk_block_classes() -> list[type]:
-    """allowlist (`pyflw.*` + 拡張 prefix) 配下の ``Block`` サブクラスを収集する。"""
+    """allowlist (`flode.*` + 拡張 prefix) 配下の ``Block`` サブクラスを収集する。"""
     found: list[type] = []
     seen: set[type] = set()
     prefixes = list(_DEFAULT_ALLOWED_PREFIXES) + sorted(_extra_allowed_prefixes)
@@ -745,7 +745,7 @@ def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortS
     """与えた params で ``cls(**params)`` した結果の port shapes を返す。
 
     Args:
-        type_path: ``"pyflw.blocks.Gain"`` 等の dotted path。
+        type_path: ``"flode.blocks.Gain"`` 等の dotted path。
         params: ``__init__`` に渡す kwargs。
 
     Returns:

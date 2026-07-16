@@ -1,8 +1,8 @@
 {
-  "schema_version": "0.8",
+  "schema_version": "0.10",
   "metadata": {
     "created_at": "2026-05-19T17:47:46Z",
-    "tool": "pyflw 3.16.0"
+    "tool": "flode 3.16.0"
   },
   "simulator": {
     "t_end": 1.0,
@@ -15,14 +15,14 @@
   "blocks": [
     {
       "id": "a",
-      "type": "pyflw.blocks.mathops.Gain",
+      "type": "flode.blocks.mathops.Gain",
       "params": {
         "k": 1.0
       }
     },
     {
       "id": "b",
-      "type": "pyflw.blocks.mathops.Gain",
+      "type": "flode.blocks.mathops.Gain",
       "params": {
         "k": 1.0
       }

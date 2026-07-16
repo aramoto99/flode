@@ -1,7 +1,7 @@
 // Drag 範囲選択でエッジが選択されないバグの回帰テスト。
 //
 // React Flow v12 の rubber-band 選択は「選択ノードに接続している edge」しか
-// 拾わず、edge geometry と選択矩形の交差判定をしない。pyflw 側で
+// 拾わず、edge geometry と選択矩形の交差判定をしない。flode 側で
 // onSelectionEnd 経由で交差判定して補完するため、ここではその geometry
 // 判定ロジックの単体テストを書く。
 
@@ -86,7 +86,7 @@ describe("polylineIntersectsRect", () => {
   it("returns true when rect covers the vertical leg of a step path (the reported bug case)", () => {
     // 報告されたスクリーンショットの状況: 選択矩形が垂直 leg だけを覆い、
     // 端点ノードはどちらも矩形外。React Flow v12 default では選択されないが
-    // pyflw の補完ロジックでは選択されるべき。
+    // flode の補完ロジックでは選択されるべき。
     const rect: Rect = { x: 40, y: 30, w: 20, h: 40 }; // 矩形は x=40..60, y=30..70
     expect(polylineIntersectsRect(stepPolyline, rect)).toBe(true);
   });

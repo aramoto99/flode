@@ -1,11 +1,11 @@
 """ADR-0037 デモ: ``linearize(method='jax')`` で PID 制御モデルを機械精度線形化。
 
-``pyflw[codegen]`` (= ``jax[cpu]``) が必要。中心差分 (`method="central"`、
+``flode[codegen]`` (= ``jax[cpu]``) が必要。中心差分 (`method="central"`、
 ADR-0026) と機械精度自動微分 (`method="jax"`、ADR-0037) を比較する。
 
 実行方法:
 
-    pip install pyflw[codegen]
+    pip install flode[codegen]
     python examples/jax_jacfwd_pid.py
 
 期待出力:
@@ -23,10 +23,10 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator, linearize
-from pyflw.blocks import Gain, Integrator, Scope, Step, Sum
+from flode import Simulator, linearize
+from flode.blocks import Gain, Integrator, Scope, Step, Sum
 
-_logger = logging.getLogger("pyflw.examples.jax_jacfwd_pid")
+_logger = logging.getLogger("flode.examples.jax_jacfwd_pid")
 
 
 def _build_pid_with_first_order_plant() -> Simulator:

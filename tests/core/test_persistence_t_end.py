@@ -9,8 +9,8 @@ import math
 
 import pytest
 
-from pyflw.core.persistence import parse_t_end, serialize_t_end
-from pyflw.exceptions import ModelLoadError
+from flode.core.persistence import parse_t_end, serialize_t_end
+from flode.exceptions import ModelLoadError
 
 
 class TestParseTEndAcceptsFiniteValues:

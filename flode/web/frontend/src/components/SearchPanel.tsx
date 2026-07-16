@@ -57,8 +57,8 @@ export function SearchPanel(): JSX.Element {
       // input が描画された後 focus (= microtask + RAF で確実に)
       requestAnimationFrame(() => inputRef.current?.focus());
     };
-    window.addEventListener("pyflw:open-search", handler);
-    return () => window.removeEventListener("pyflw:open-search", handler);
+    window.addEventListener("flode:open-search", handler);
+    return () => window.removeEventListener("flode:open-search", handler);
   }, []);
 
   // q / kind 変更 → debounced search (= 200ms)

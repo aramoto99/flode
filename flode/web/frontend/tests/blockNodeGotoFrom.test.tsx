@@ -51,7 +51,7 @@ function renderBlockNode(
 describe("BlockNodeView: Goto / From labels (SPEC-0003)", () => {
   it("renders Goto as [tag]", () => {
     renderBlockNode(
-      "pyflw.blocks.routing.Goto",
+      "flode.blocks.routing.Goto",
       { tag: "velocity", tag_visibility: "local" },
       1,
       0,
@@ -62,7 +62,7 @@ describe("BlockNodeView: Goto / From labels (SPEC-0003)", () => {
 
   it("renders From as >tag>", () => {
     renderBlockNode(
-      "pyflw.blocks.routing.From",
+      "flode.blocks.routing.From",
       { tag: "velocity" },
       0,
       1,
@@ -72,7 +72,7 @@ describe("BlockNodeView: Goto / From labels (SPEC-0003)", () => {
 
   it("renders '?' as fallback when tag is missing or non-string", () => {
     // Goto without tag → fallback to "?"
-    renderBlockNode("pyflw.blocks.routing.Goto", {}, 1, 0);
+    renderBlockNode("flode.blocks.routing.Goto", {}, 1, 0);
     expect(screen.getByText("[?]")).toBeTruthy();
   });
 });

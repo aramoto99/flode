@@ -29,8 +29,8 @@ import json
 import logging
 from pathlib import Path
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Divide, From, Gain, Integrator, Scope
+from flode import Simulator
+from flode.blocks import Constant, Divide, From, Gain, Integrator, Scope
 
 _logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def _start_validation(out_dir: Path) -> None:
     """
     bad = {
         "schema_version": "1.0",
-        "blocks": [{"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}],
+        "blocks": [{"id": "x", "type": "flode.blocks.nonexistent.Foo", "params": {}}],
         "connections": [],
         "config": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
     }

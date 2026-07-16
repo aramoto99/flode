@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0] - 2026-07-17 — プロジェクト名変更: pyflw → flode
+
+仮名だった pyflw を正式名 **flode** (= **FLO**w + o**DE**) に変更した。
+過去エントリ内の pyflw 表記は歴史的記録としてそのまま残す。
+
+### Changed
+
+- **BREAKING: プロジェクト名を pyflw から flode に変更**
+  - Python パッケージ名 `flode` (`from flode import Simulator`)、
+    例外基底クラス `FlodeError`
+  - CLI は `flode` のみ (`pyflw` / `pyflw-server` エントリポイントは削除)
+  - GitHub リポジトリは `aramoto99/flode` に変更 (旧 URL は自動リダイレクト)
+- **モデル schema 0.10** — ブロック型 FQN `pyflw.*` → `flode.*` と
+  `metadata.tool` をロード時に自動変換する migration を追加。schema 0.1〜0.9 の
+  既存 `.flw.json` は従来どおりロード時に自動 migration される (保存すると 0.10 化)
+- **モデル拡張子 `.flw.json` / `.flwlib.json` は据え置き** (flw = flow の略として継続)
+
+### Removed (クリーンブレーク — 自動移行なし)
+
+- 設定ファイルパス `~/.pyflw/config.toml` → `~/.flode/config.toml`
+  (`flode --generate-config` で再生成)
+- frontend localStorage キー prefix `pyflw.*` → `flode.*`
+  (レイアウト・言語・最近使ったファイル等の UI 状態はリセット)
+- 旧 `scope_split` レイアウトキーからの片方向 migration コード (ADR-0045 §3-D) を撤去
+- ユーザー自作 `.flwlib.json` 内の旧 `pyflw.*` FQN は自動変換されない
+  (library schema はモデル migration を通らないため。手動で `flode.*` に置換が必要)
+
 ## [0.42.0] - 2026-07-14 — GUI 誠実化: 波形欠損補完 + メニュー再構成
 
 「見た目だけで中身がない UI」の一掃。効かない設定・無反応のメニュー・

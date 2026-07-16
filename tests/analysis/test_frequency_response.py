@@ -3,7 +3,7 @@
 LTI ブロック (Integrator / 1 次系 / 2 次系) を線形化に流して bode 結果を解析解
 と比較する。``rtol=1e-4`` (= SPEC §非機能要件「正確性」)。
 
-``python-control`` extras (= ``pyflw[control]``) が CI で常時利用可能 (``dev``
+``python-control`` extras (= ``flode[control]``) が CI で常時利用可能 (``dev``
 extras 経由)。
 """
 
@@ -12,9 +12,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator, linearize
-from pyflw.analysis import bode, nyquist
-from pyflw.blocks import Integrator, Scope, StateSpace, TransferFunction
+from flode import Simulator, linearize
+from flode.analysis import bode, nyquist
+from flode.blocks import Integrator, Scope, StateSpace, TransferFunction
 
 pytest.importorskip("control")  # 全テストが python-control 必須
 
@@ -158,7 +158,7 @@ class TestBodeErrors:
         sim.add(Integrator())
         sim.connect(sim.blocks[0], sim.add(Scope()))
         ls = linearize(sim)
-        from pyflw.exceptions import BlockSpecError
+        from flode.exceptions import BlockSpecError
 
         with pytest.raises(BlockSpecError, match="omega or omega_limits"):
             bode(ls, omega=np.array([1.0]), omega_limits=(0.1, 10.0))
@@ -241,7 +241,7 @@ class TestPlotSmoke:
         sim.connect(sim.blocks[0], sim.add(Scope()))
         ls = linearize(sim)
         br = bode(ls, omega=np.array([1.0]))
-        from pyflw.exceptions import BlockSpecError
+        from flode.exceptions import BlockSpecError
 
         with pytest.raises(BlockSpecError, match="input_idx"):
             br.plot(input_idx=99)

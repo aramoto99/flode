@@ -8,10 +8,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import RateLimiter, Relay, Scope, Sine, Step
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockSpecError, ModelLoadError
+from flode import Simulator
+from flode.blocks import RateLimiter, Relay, Scope, Sine, Step
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([0.0])
 
@@ -442,7 +442,7 @@ class TestPersistence:
             "blocks": [
                 {
                     "id": "bad",
-                    "type": "pyflw.blocks.discontinuities.RateLimiter",
+                    "type": "flode.blocks.discontinuities.RateLimiter",
                     "params": {
                         "sample_time": 0.1,
                         "rising_slew_rate": -1.0,  # invalid
@@ -473,7 +473,7 @@ class TestPersistence:
             "blocks": [
                 {
                     "id": "bad",
-                    "type": "pyflw.blocks.discontinuities.Relay",
+                    "type": "flode.blocks.discontinuities.Relay",
                     "params": {
                         "sample_time": 0.1,
                         "switch_on_point": 0.5,
@@ -499,41 +499,41 @@ class TestPersistence:
 
 class TestRegistry:
     def test_rate_limiter_translation_entry(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.discontinuities.RateLimiter"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.discontinuities.RateLimiter"]
         assert entry["en"]["display_name"] == "Rate Limiter"
         assert entry["ja"]["display_name"] == "変化率リミッタ"
 
     def test_relay_translation_entry(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.discontinuities.Relay"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.discontinuities.Relay"]
         assert entry["en"]["display_name"] == "Relay"
         assert entry["ja"]["display_name"] == "リレー"
 
     def test_rate_limiter_registry_metadata(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.discontinuities.RateLimiter"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.discontinuities.RateLimiter"]
         assert cat == "discontinuities"
         assert name == "Rate Limiter"
         assert icon == "discontinuities.ratelimiter"
 
     def test_relay_registry_metadata(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.discontinuities.Relay"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.discontinuities.Relay"]
         assert cat == "discontinuities"
         assert name == "Relay"
         assert icon == "discontinuities.relay"
 
     def test_default_factory_args_provide_sample_time(self) -> None:
-        from pyflw.server.registry import _BUILTIN_DEFAULT_ARGS
+        from flode.server.registry import _BUILTIN_DEFAULT_ARGS
 
         for type_path in (
-            "pyflw.blocks.discontinuities.RateLimiter",
-            "pyflw.blocks.discontinuities.Relay",
+            "flode.blocks.discontinuities.RateLimiter",
+            "flode.blocks.discontinuities.Relay",
         ):
             args = _BUILTIN_DEFAULT_ARGS[type_path]
             assert args["sample_time"] > 0

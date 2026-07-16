@@ -569,7 +569,7 @@ function ShapeContent({
     );
   }
   // MinMax: param.operator ("min" / "max") をそのままテキスト表示
-  // (= pyflw 側の MinMax の param 名は ``operator`` であって ``function`` ではない)
+  // (= flode 側の MinMax の param 名は ``operator`` であって ``function`` ではない)
   if (typePath.endsWith(".MinMax")) {
     const op = (paramsRaw as Record<string, unknown>).operator;
     const label = op === "max" ? "max" : "min";

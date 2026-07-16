@@ -27,12 +27,12 @@ const DEFAULT_GEOMETRY: PanelGeometry = { x: 200, y: 200, w: 560, h: 360 };
 const EMPTY_SCOPE_BUFFER = createBuffer();
 
 function makeKey(workspaceHash: string, modelPath: string, scopeId: string): string {
-  // ADR-0044 §論点 6-A: pyflw.scope_panel.<hash>.<base64url(model_path)>.<scope_id>
+  // ADR-0044 §論点 6-A: flode.scope_panel.<hash>.<base64url(model_path)>.<scope_id>
   const b64 = btoa(modelPath)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-  return `pyflw.scope_panel.${workspaceHash}.${b64}.${scopeId}`;
+  return `flode.scope_panel.${workspaceHash}.${b64}.${scopeId}`;
 }
 
 function loadGeometry(key: string): PanelGeometry {

@@ -10,8 +10,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import LookupTable1D, Scope, Sine
+from flode import Simulator
+from flode.blocks import LookupTable1D, Scope, Sine
 
 _logger = logging.getLogger(__name__)
 

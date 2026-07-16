@@ -2,7 +2,7 @@
 
 Subsystem 内部に配置することで親 Subsystem の発火/有効化セマンティクスを
 修飾する境界ブロック群。``Inport`` / ``Outport`` と並ぶ「Subsystem 制御」
-境界ブロック (= :mod:`pyflw.subsystems.ports` の延長で、データを持たず
+境界ブロック (= :mod:`flode.subsystems.ports` の延長で、データを持たず
 親の挙動を宣言する用途)。
 
 設計:
@@ -63,7 +63,7 @@ ENABLE_OUTPUT_POLICIES: tuple[str, ...] = get_args(EnableOutputPolicy)
 def is_trigger_edge(prev: float, curr: float, mode: str) -> bool:
     """trigger 信号の edge を検出する (ADR-0036 §(4) / ADR-0058 §論点 10)。
 
-    旧 ``pyflw.subsystems.triggered._is_trigger_edge`` (private) を本モジュールに
+    旧 ``flode.subsystems.triggered._is_trigger_edge`` (private) を本モジュールに
     公開関数として移し、新 ``Trigger`` block と旧 ``TriggeredSubsystem`` 両者から
     呼べるようにしたもの。semantics は ADR-0036 のまま不変 (= 数値完全不変ガード
     の根拠、Chunk B で ``triggered.py`` から呼び替える前提)。

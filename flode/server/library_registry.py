@@ -16,7 +16,7 @@ from pathlib import Path
 from ..exceptions import LibraryFileError
 from ..libraries import Library, load_library
 
-_logger = logging.getLogger("pyflw.library_registry")
+_logger = logging.getLogger("flode.library_registry")
 
 
 @dataclass
@@ -56,18 +56,18 @@ def _expand_paths(paths: Iterable[Path]) -> list[Path]:
 
 
 def _builtin_std_path() -> Path | None:
-    """組み込み ``pyflw/libraries/std.flwlib.json`` の絶対 path を返す (なければ ``None``)。
+    """組み込み ``flode/libraries/std.flwlib.json`` の絶対 path を返す (なければ ``None``)。
 
     ``importlib.resources`` で取得する (= editable install / wheel install の両対応)。
     """
     try:
-        ref = importlib.resources.files("pyflw.libraries").joinpath("std.flwlib.json")
+        ref = importlib.resources.files("flode.libraries").joinpath("std.flwlib.json")
     except (ModuleNotFoundError, FileNotFoundError):
         return None
     if not ref.is_file():
         return None
     # PackagePath を Path に変換 (zip wheel の場合は as_file context が必要だが、
-    # pyflw は pure python のため editable / regular install のいずれでも file system 上に存在)
+    # flode は pure python のため editable / regular install のいずれでも file system 上に存在)
     try:
         return Path(str(ref))
     except (TypeError, ValueError):

@@ -22,7 +22,7 @@ function makeModel(): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "g", type: "pyflw.blocks.mathops.Gain", params: { k: 2.0 } },
+      { id: "g", type: "flode.blocks.mathops.Gain", params: { k: 2.0 } },
     ],
     connections: [],
     layout: { g: { x: 0, y: 0 } },
@@ -82,7 +82,7 @@ describe("toggleBlockFlipped (v0.15.0 Flip Block)", () => {
             blocks: [
               {
                 id: "inner_g",
-                type: "pyflw.blocks.mathops.Gain",
+                type: "flode.blocks.mathops.Gain",
                 params: { k: 1 },
               },
             ],

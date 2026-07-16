@@ -79,7 +79,7 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
     """指定 ``type_path`` + ``params`` で構築したインスタンスの port shapes を返す。
 
     Body schema (ADR-0019 §1.4):
-        ``{"type_path": "pyflw.blocks.Sum", "params": {"signs": "+++"}}``
+        ``{"type_path": "flode.blocks.Sum", "params": {"signs": "+++"}}``
 
     Returns:
         ``{"n_inputs", "n_outputs", "port_shapes_in", "port_shapes_out"}``。

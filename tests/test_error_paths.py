@@ -15,14 +15,14 @@ import logging
 import numpy as np
 import pytest
 
-from pyflw import (
+from flode import (
     BlockSpecError,
     Simulator,
     UnknownBlockIdError,
 )
-from pyflw.blocks import Constant, Gain, Scope, Sine, UnitDelay
-from pyflw.core.block import Block
-from pyflw.exceptions import AlgebraicLoopError, SchedulingError
+from flode.blocks import Constant, Gain, Scope, Sine, UnitDelay
+from flode.core.block import Block
+from flode.exceptions import AlgebraicLoopError, SchedulingError
 
 # ---------------------------------------------------------------------------
 # 1. エラーパス
@@ -111,7 +111,7 @@ class TestAlgebraicLoopDetection:
     """代数ループ検出: ValueError から AlgebraicLoopError に昇格した確認。"""
 
     def test_direct_feedthrough_loop_raises_algebraic_loop_error(self):
-        """直達フィードスルーだけのループは AlgebraicLoopError (PyflwError)。"""
+        """直達フィードスルーだけのループは AlgebraicLoopError (FlodeError)。"""
         sim = Simulator()
         g1 = sim.add(Gain(k=1.0, id="g1"))
         g2 = sim.add(Gain(k=1.0, id="g2"))
@@ -120,11 +120,11 @@ class TestAlgebraicLoopDetection:
         with pytest.raises(AlgebraicLoopError, match="Algebraic loop"):
             sim.run()
 
-    def test_algebraic_loop_error_is_pyflw_error(self):
-        """AlgebraicLoopError は PyflwError を継承する。"""
-        from pyflw.exceptions import PyflwError
+    def test_algebraic_loop_error_is_flode_error(self):
+        """AlgebraicLoopError は FlodeError を継承する。"""
+        from flode.exceptions import FlodeError
 
-        assert issubclass(AlgebraicLoopError, PyflwError)
+        assert issubclass(AlgebraicLoopError, FlodeError)
 
     def test_algebraic_loop_error_message_contains_block_ids(self):
         """AlgebraicLoopError のメッセージに関与ブロック ID が含まれる。"""
@@ -536,7 +536,7 @@ class TestInheritedSampleTimeWarnings:
 
         # Gain を 2 入力に改造して両方から入力を受ける
         # Sum で 2 入力を受けて継承
-        from pyflw.blocks.mathops import Sum
+        from flode.blocks.mathops import Sum
 
         summer = sim.add(Sum(signs="++", id="summer"))
         summer.sample_time = -1.0
@@ -552,7 +552,7 @@ class TestInheritedSampleTimeWarnings:
         scope = sim.add(Scope(n_inputs=1, id="scope"))
         sim.connect(summer, scope)
 
-        with caplog.at_level(logging.WARNING, logger="pyflw.scheduler"):
+        with caplog.at_level(logging.WARNING, logger="flode.scheduler"):
             sim.run()
 
         # 連続 + 離散の混在 warning が出ていること
@@ -566,7 +566,7 @@ class TestInheritedSampleTimeWarnings:
         slow = sim.add(UnitDelay(sample_time=0.05, x0=0.0, id="slow"))
         fast = sim.add(UnitDelay(sample_time=0.02, x0=0.0, id="fast"))
 
-        from pyflw.blocks.mathops import Sum
+        from flode.blocks.mathops import Sum
 
         summer = sim.add(Sum(signs="++", id="summer"))
         summer.sample_time = -1.0
@@ -581,7 +581,7 @@ class TestInheritedSampleTimeWarnings:
         scope = sim.add(Scope(n_inputs=1, id="scope"))
         sim.connect(summer, scope)
 
-        with caplog.at_level(logging.WARNING, logger="pyflw.scheduler"):
+        with caplog.at_level(logging.WARNING, logger="flode.scheduler"):
             sim.run()
 
         # min を採用 (0.02)
@@ -603,14 +603,14 @@ class TestInheritedSampleTimeWarnings:
         scope = sim.add(Scope(n_inputs=1, id="scope"))
         sim.connect(g, scope)
 
-        with caplog.at_level(logging.WARNING, logger="pyflw.scheduler"):
+        with caplog.at_level(logging.WARNING, logger="flode.scheduler"):
             sim.run()
 
         # 単一離散上流の場合は warning なし
         scheduler_warns = [
             r
             for r in caplog.records
-            if r.name == "pyflw.scheduler" and "multiple" in r.message.lower()
+            if r.name == "flode.scheduler" and "multiple" in r.message.lower()
         ]
         assert len(scheduler_warns) == 0
         assert g._resolved_sample_time == pytest.approx(0.05)
@@ -664,7 +664,7 @@ class TestBlockIdEdgeCases:
     @pytest.mark.parametrize("keyword_id", ["for", "if", "class", "return", "while"])
     def test_python_keyword_ids_warn(self, keyword_id, caplog):
         """Python キーワードと一致する ID は warning が出るが受け入れられる。"""
-        with caplog.at_level(logging.WARNING, logger="pyflw.identifiers"):
+        with caplog.at_level(logging.WARNING, logger="flode.identifiers"):
             g = Gain(id=keyword_id)
         assert g.id == keyword_id
         assert any("Python keyword" in r.message for r in caplog.records)
@@ -731,26 +731,26 @@ class TestUnitDelayInitialConditions:
 class TestExceptionHierarchy:
     """例外クラスの継承関係テスト。"""
 
-    def test_block_spec_error_is_pyflw_error(self):
-        from pyflw.exceptions import PyflwError
+    def test_block_spec_error_is_flode_error(self):
+        from flode.exceptions import FlodeError
 
-        assert issubclass(BlockSpecError, PyflwError)
+        assert issubclass(BlockSpecError, FlodeError)
 
-    def test_unknown_block_id_error_is_pyflw_error(self):
-        from pyflw.exceptions import PyflwError
+    def test_unknown_block_id_error_is_flode_error(self):
+        from flode.exceptions import FlodeError
 
-        assert issubclass(UnknownBlockIdError, PyflwError)
+        assert issubclass(UnknownBlockIdError, FlodeError)
 
     def test_unknown_block_id_error_is_key_error(self):
         """UnknownBlockIdError は KeyError を継承する (dict 互換)。"""
         assert issubclass(UnknownBlockIdError, KeyError)
 
-    def test_scheduling_error_is_pyflw_error(self):
-        from pyflw.exceptions import PyflwError
+    def test_scheduling_error_is_flode_error(self):
+        from flode.exceptions import FlodeError
 
-        assert issubclass(SchedulingError, PyflwError)
+        assert issubclass(SchedulingError, FlodeError)
 
-    def test_algebraic_loop_error_is_pyflw_error(self):
-        from pyflw.exceptions import PyflwError
+    def test_algebraic_loop_error_is_flode_error(self):
+        from flode.exceptions import FlodeError
 
-        assert issubclass(AlgebraicLoopError, PyflwError)
+        assert issubclass(AlgebraicLoopError, FlodeError)

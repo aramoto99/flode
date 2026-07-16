@@ -9,9 +9,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Display, Gain, Sine, XYGraph
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator
+from flode.blocks import Constant, Display, Gain, Sine, XYGraph
+from flode.exceptions import BlockSpecError
 
 # ---------------------------------------------------------------------------
 # Display
@@ -147,28 +147,28 @@ class TestXYGraph:
 
 class TestRegistryIncludesNewSinks:
     def test_display_in_registry(self) -> None:
-        from pyflw.server.registry import build_block_registry
+        from flode.server.registry import build_block_registry
 
         reg = build_block_registry()
         type_paths = {m.type_path for m in reg}
-        assert "pyflw.blocks.sinks.Display" in type_paths
-        assert "pyflw.blocks.sinks.XYGraph" in type_paths
+        assert "flode.blocks.sinks.Display" in type_paths
+        assert "flode.blocks.sinks.XYGraph" in type_paths
 
     def test_display_is_in_sinks_category(self) -> None:
-        from pyflw.server.registry import build_block_registry
+        from flode.server.registry import build_block_registry
 
         reg = build_block_registry()
-        d = next(m for m in reg if m.type_path == "pyflw.blocks.sinks.Display")
+        d = next(m for m in reg if m.type_path == "flode.blocks.sinks.Display")
         assert d.category == "sinks"
         assert d.default_n_inputs == 1
         assert d.default_n_outputs == 0
         assert "sink" in d.tags
 
     def test_xygraph_is_in_sinks_category(self) -> None:
-        from pyflw.server.registry import build_block_registry
+        from flode.server.registry import build_block_registry
 
         reg = build_block_registry()
-        xy = next(m for m in reg if m.type_path == "pyflw.blocks.sinks.XYGraph")
+        xy = next(m for m in reg if m.type_path == "flode.blocks.sinks.XYGraph")
         assert xy.category == "sinks"
         assert xy.default_n_inputs == 2
         assert xy.default_n_outputs == 0

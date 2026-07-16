@@ -142,7 +142,7 @@ export function useShortcuts(): void {
       // Ctrl+Shift+F (内容検索) の semantics 変更。
       // 旧: overlay を開く
       // 新: activity bar sidebar mode を ``search`` に切替 + sidebar 展開 +
-      //     kind を SearchPanel に伝達 (= ``pyflw:open-search`` event は維持、
+      //     kind を SearchPanel に伝達 (= ``flode:open-search`` event は維持、
       //     SearchPanel が kind を受けて state 更新 + input focus)
       if (ctrl && !e.shiftKey && key.toLowerCase() === "p") {
         e.preventDefault();
@@ -150,7 +150,7 @@ export function useShortcuts(): void {
         state.setSidebarMode("search");
         if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
         window.dispatchEvent(
-          new CustomEvent("pyflw:open-search", { detail: { kind: "path" } }),
+          new CustomEvent("flode:open-search", { detail: { kind: "path" } }),
         );
         return;
       }
@@ -160,7 +160,7 @@ export function useShortcuts(): void {
         state.setSidebarMode("search");
         if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
         window.dispatchEvent(
-          new CustomEvent("pyflw:open-search", { detail: { kind: "content" } }),
+          new CustomEvent("flode:open-search", { detail: { kind: "content" } }),
         );
         return;
       }

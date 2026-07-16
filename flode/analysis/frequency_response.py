@@ -7,8 +7,8 @@
 依存:
 
 - :mod:`numpy` (コア)
-- :mod:`control` — ``pyflw[control]`` extras 経由 (未インストール時は ``ImportError``
-  で ``pip install pyflw[control]`` を案内、ADR-0027 §(10) E1)。
+- :mod:`control` — ``flode[control]`` extras 経由 (未インストール時は ``ImportError``
+  で ``pip install flode[control]`` を案内、ADR-0027 §(10) E1)。
 - :mod:`matplotlib.pyplot` — 可視化のみ、import は ``plot()`` 内で遅延。
 """
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover - optional matplotlib type
     from matplotlib.axes import Axes
 
 
-_PYFLW_CONTROL_HINT = "Install via `pip install pyflw[control]` or `pip install python-control`."
+_FLODE_CONTROL_HINT = "Install via `pip install flode[control]` or `pip install python-control`."
 
 
 def _import_control() -> Any:
@@ -36,7 +36,7 @@ def _import_control() -> Any:
         import control as _control
     except ImportError as e:
         raise ImportError(
-            f"This function requires the optional `python-control` package. {_PYFLW_CONTROL_HINT}"
+            f"This function requires the optional `python-control` package. {_FLODE_CONTROL_HINT}"
         ) from e
     return _control
 
@@ -250,7 +250,7 @@ def bode(
 ) -> BodeResponse:
     """``LinearSystem`` の Bode 応答 (magnitude / phase) を計算する。
 
-    内部で ``python-control.frequency_response`` を呼ぶ。``pyflw[control]`` extras が
+    内部で ``python-control.frequency_response`` を呼ぶ。``flode[control]`` extras が
     必要 (ADR-0027 §Decision Option 3 hybrid)。
 
     Args:
@@ -266,7 +266,7 @@ def bode(
         :class:`BodeResponse`。
 
     Raises:
-        ImportError: ``pyflw[control]`` extras 未インストール。
+        ImportError: ``flode[control]`` extras 未インストール。
         BlockSpecError: ``ls`` が空の状態空間 (``A.shape[0] == 0``) または
             ``omega``/``omega_limits`` の同時指定。
     """
@@ -320,7 +320,7 @@ def nyquist(
         :class:`NyquistResponse`。
 
     Raises:
-        ImportError: ``pyflw[control]`` extras 未インストール。
+        ImportError: ``flode[control]`` extras 未インストール。
         BlockSpecError: 空の状態空間 / ``omega`` ``omega_limits`` 同時指定。
     """
     _validate_linear_system(ls)

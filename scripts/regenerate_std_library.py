@@ -1,4 +1,4 @@
-"""ADR-0039: ``pyflw/libraries/std.flwlib.json`` を ``libraries.v2`` 形式で再生成する一度きりのスクリプト。
+"""ADR-0039: ``flode/libraries/std.flwlib.json`` を ``libraries.v2`` 形式で再生成する一度きりのスクリプト。
 
 v1 (= schema 0.7 形式の subsystem.params) から v2 (= schema 0.8 形式、
 ``n_inputs`` / ``n_outputs`` / ``port_shapes_*`` フィールド削除) への変換を行う。
@@ -7,7 +7,7 @@ v1 (= schema 0.7 形式の subsystem.params) から v2 (= schema 0.8 形式、
 
     python scripts/regenerate_std_library.py
 
-副作用: ``pyflw/libraries/std.flwlib.json`` を上書きする。
+副作用: ``flode/libraries/std.flwlib.json`` を上書きする。
 
 実装方針: 既存 v1 JSON を読み、libraries.v2 migration (``_migrate_libraries_v1_to_v2``)
 で派生フィールド除去 → そのまま書き戻す。これにより entry id / display_name /
@@ -19,11 +19,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pyflw.libraries._loader import _migrate_libraries_v1_to_v2
+from flode.libraries._loader import _migrate_libraries_v1_to_v2
 
 
 def main() -> None:
-    target = Path(__file__).resolve().parent.parent / "pyflw" / "libraries" / "std.flwlib.json"
+    target = Path(__file__).resolve().parent.parent / "flode" / "libraries" / "std.flwlib.json"
     if not target.exists():
         raise SystemExit(f"target file not found: {target}")
     with target.open("r", encoding="utf-8") as f:

@@ -1,6 +1,6 @@
-"""pyflw Web GUI バックエンド (ADR-0011)。
+"""flode Web GUI バックエンド (ADR-0011)。
 
-``pip install pyflw[gui]`` でオプトイン。``fastapi`` が無い場合は ``PyflwError``
+``pip install flode[gui]`` でオプトイン。``fastapi`` が無い場合は ``FlodeError``
 で誘導する。
 
 主公開 API:
@@ -13,9 +13,9 @@ from __future__ import annotations
 try:
     import fastapi  # noqa: F401
 except ImportError as e:
-    from ..exceptions import PyflwError
+    from ..exceptions import FlodeError
 
-    raise PyflwError("pyflw.server requires FastAPI. Install with: pip install pyflw[gui]") from e
+    raise FlodeError("flode.server requires FastAPI. Install with: pip install flode[gui]") from e
 
 from .app import create_app
 from .settings import Settings

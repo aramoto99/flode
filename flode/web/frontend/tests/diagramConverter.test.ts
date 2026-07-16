@@ -16,8 +16,8 @@ describe("modelToDiagram", () => {
       dt_base: null,
     },
     blocks: [
-      { id: "src", type: "pyflw.blocks.Constant", params: { value: 1.0 } },
-      { id: "g", type: "pyflw.blocks.Gain", params: { k: 2.0 } },
+      { id: "src", type: "flode.blocks.Constant", params: { value: 1.0 } },
+      { id: "g", type: "flode.blocks.Gain", params: { k: 2.0 } },
     ],
     connections: [{ src: "src", src_idx: 0, dst: "g", dst_idx: 0 }],
   };
@@ -42,7 +42,7 @@ describe("modelToDiagram", () => {
   it("preserves block params in node data", () => {
     const { nodes } = modelToDiagram(baseModel);
     expect(nodes[0]?.data.params).toEqual({ value: 1.0 });
-    expect(nodes[1]?.data.blockType).toBe("pyflw.blocks.Gain");
+    expect(nodes[1]?.data.blockType).toBe("flode.blocks.Gain");
   });
 
   // ADR-0020: layout が JSON にある場合はそれを使う。

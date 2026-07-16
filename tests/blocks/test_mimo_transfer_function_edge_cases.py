@@ -20,8 +20,8 @@ import numpy as np
 import pytest
 import scipy.signal
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Constant,
     Integrator,
     MimoTransferFunction,
@@ -29,8 +29,8 @@ from pyflw.blocks import (
     Step,
     TransferFunction,
 )
-from pyflw.blocks._lti_utils import _DF_TOLERANCE
-from pyflw.exceptions import BlockSpecError
+from flode.blocks._lti_utils import _DF_TOLERANCE
+from flode.exceptions import BlockSpecError
 
 
 def _flat(scope: Scope) -> np.ndarray:
@@ -709,8 +709,8 @@ class TestMimoInSubsystem:
         外部: Step → Subsystem → Scope。
         期待: 1 - exp(-t)。
         """
-        from pyflw import Subsystem
-        from pyflw.subsystems.ports import Inport, Outport
+        from flode import Subsystem
+        from flode.subsystems.ports import Inport, Outport
 
         sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0, id="sub_in"))
@@ -741,8 +741,8 @@ class TestMimoInSubsystem:
 
     def test_mimo_subsystem_direct_feedthrough_propagation(self) -> None:
         """biproper MimoTF を持つ Subsystem は direct_feedthrough=True を継承する。"""
-        from pyflw import Subsystem
-        from pyflw.subsystems.ports import Inport, Outport
+        from flode import Subsystem
+        from flode.subsystems.ports import Inport, Outport
 
         sub = Subsystem(id="sub_bp")
         sub.add(Inport(port_idx=0, id="in0"))

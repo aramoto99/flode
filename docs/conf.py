@@ -1,4 +1,4 @@
-"""Sphinx configuration for pyflw."""
+"""Sphinx configuration for flode."""
 
 import os
 import sys
@@ -7,11 +7,11 @@ sys.path.insert(0, os.path.abspath(".."))
 
 # -- Project information -------------------------------------------------------
 
-project = "pyflw"
+project = "flode"
 author = "aramoto99"
 
 try:
-    from pyflw import __version__  # type: ignore[attr-defined]
+    from flode import __version__  # type: ignore[attr-defined]
 
     release = __version__
 except (ImportError, AttributeError):

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.9"
+CURRENT_SCHEMA_VERSION = "0.10"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -45,7 +45,7 @@ LayoutDict = dict[str, dict[str, float | bool]]
 # allowlist: ロード時にここで列挙した module prefix のいずれかに属する class のみ
 # 解決を許可する (任意の `os.system` 等を import するセキュリティリスクを避ける)。
 # サードパーティ拡張は ``register_block_module(prefix)`` で追加する。
-_DEFAULT_ALLOWED_PREFIXES: tuple[str, ...] = ("pyflw.",)
+_DEFAULT_ALLOWED_PREFIXES: tuple[str, ...] = ("flode.",)
 _extra_allowed_prefixes: set[str] = set()
 
 
@@ -190,9 +190,9 @@ def block_type_path(cls: type) -> str:
 
 
 def resolve_block_class(type_path: str) -> type:
-    """完全修飾名 ``"pyflw.blocks.Gain"`` から ``Block`` サブクラスを解決する。
+    """完全修飾名 ``"flode.blocks.Gain"`` から ``Block`` サブクラスを解決する。
 
-    セキュリティのため、``pyflw.*`` および ``register_block_module`` で登録済みの
+    セキュリティのため、``flode.*`` および ``register_block_module`` で登録済みの
     prefix に属する class のみ許可する。この allowlist 外の type_path は
     ``importlib.import_module`` を呼ばずに即拒否する。
     """
@@ -201,18 +201,18 @@ def resolve_block_class(type_path: str) -> type:
     if not isinstance(type_path, str) or "." not in type_path:
         raise UnknownBlockTypeError(
             f"Block type must be a fully-qualified class path "
-            f"(e.g. 'pyflw.blocks.Gain'), got {type_path!r}"
+            f"(e.g. 'flode.blocks.Gain'), got {type_path!r}"
         )
     module_name, class_name = type_path.rsplit(".", 1)
     if not _is_allowed_module(module_name + "."):
-        # prefix 一致は trailing "." を含めて評価する (e.g. "pyflw" は許容しないが
-        # "pyflw.blocks" は "pyflw." prefix にマッチ)
+        # prefix 一致は trailing "." を含めて評価する (e.g. "flode" は許容しないが
+        # "flode.blocks" は "flode." prefix にマッチ)
         if not _is_allowed_module(module_name):
             raise UnknownBlockTypeError(
                 f"Block type {type_path!r} is not in an allowed module prefix. "
                 f"Default allowlist: {_DEFAULT_ALLOWED_PREFIXES}, "
                 f"extra: {sorted(_extra_allowed_prefixes)}. "
-                f"Use `pyflw.core.persistence.register_block_module(prefix)` to "
+                f"Use `flode.core.persistence.register_block_module(prefix)` to "
                 f"add a third-party prefix."
             )
     try:
@@ -399,6 +399,8 @@ def _builtin_migrate_0_6_to_0_7(data: dict[str, Any]) -> dict[str, Any]:
 # 本 tuple は 0.7 → 0.8 migration が旧 JSON 内の **文字列マッチ** で旧型 entry
 # を検出するためのリテラルとして残置 (= class import ではなく文字列のみ参照、
 # 古い flw.json をロードしても migration が機能する保証)。
+# NOTE: schema <=0.9 のファイルは旧プロジェクト名の ``pyflw.*`` FQN を含むため、
+# これらのリテラルは意図的に ``pyflw`` のまま (0.9 → 0.10 migration が flode に変換)。
 _SUBSYSTEM_TYPES_FOR_MIGRATION: tuple[str, ...] = (
     "pyflw.subsystems.subsystem.Subsystem",
     "pyflw.subsystems.triggered.TriggeredSubsystem",
@@ -419,7 +421,7 @@ def _strip_subsystem_port_fields_recursive(
     内部 Inport 数が真実なので migration 後の値はそちらに従う (= フィールド
     消失で自動同期)。
     """
-    logger = logging.getLogger("pyflw.persistence.migrate_0_7_to_0_8")
+    logger = logging.getLogger("flode.persistence.migrate_0_7_to_0_8")
     if not blocks:
         return
     for entry in blocks:
@@ -479,6 +481,8 @@ def _strip_subsystem_port_fields_recursive(
 
 # ADR-0058: TriggeredSubsystem の旧 type_path / migration 後の Subsystem type_path /
 # 新規 Trigger control block の type_path。文字列として 3 箇所で参照されるので定数化。
+# NOTE: _NEW_* も意図的に旧プロジェクト名 ``pyflw.*`` のまま — 0.8 → 0.9 は pyflw FQN
+# の世界で完結し、続く 0.9 → 0.10 がチェーン内で flode FQN に書き換える。
 _OLD_TRIGGERED_SUBSYSTEM_TYPE = "pyflw.subsystems.triggered.TriggeredSubsystem"
 _NEW_SUBSYSTEM_TYPE = "pyflw.subsystems.subsystem.Subsystem"
 _NEW_TRIGGER_BLOCK_TYPE = "pyflw.subsystems.control_blocks.Trigger"
@@ -503,7 +507,7 @@ def _convert_triggered_subsystem_recursive(
     数値挙動: 変換後の Subsystem + Trigger は旧 TriggeredSubsystem と同じ semantics
     で動作する (ADR-0058 §論点 6 確定、`is_trigger_edge` は移植・公開化済)。
     """
-    logger = logging.getLogger("pyflw.persistence.migrate_0_8_to_0_9")
+    logger = logging.getLogger("flode.persistence.migrate_0_8_to_0_9")
     if not blocks:
         return
     for entry in blocks:
@@ -594,6 +598,68 @@ def _builtin_migrate_0_7_to_0_8(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# schema <=0.9 のブロック型 FQN prefix。プロジェクト名変更 (pyflw → flode) 前の
+# ファイルを検出する **文字列マッチ専用** リテラルで、意図的に旧名のまま。
+_OLD_FQN_PREFIX = "pyflw."
+_NEW_FQN_PREFIX = "flode."
+
+
+def _rename_block_type_prefix_recursive(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    parent_path: str = "<root>",
+) -> None:
+    """0.9 → 0.10 用のヘルパ。``blocks`` を再帰的にたどり、``type`` の
+    ``pyflw.`` prefix を ``flode.`` に **in-place で書き換える**。
+
+    サードパーティ prefix (例 ``myapp.blocks.X``) や非 str の ``type`` は
+    変更しない。ネスト Subsystem は ``params.blocks`` を再帰処理する。
+    """
+    logger = logging.getLogger("flode.persistence.migrate_0_9_to_0_10")
+    if not blocks:
+        return
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        block_type = entry.get("type")
+        if isinstance(block_type, str) and block_type.startswith(_OLD_FQN_PREFIX):
+            new_type = _NEW_FQN_PREFIX + block_type[len(_OLD_FQN_PREFIX) :]
+            entry["type"] = new_type
+            logger.debug(
+                "Block %s/%s: renamed type %r -> %r (schema 0.10 migration)",
+                parent_path,
+                entry.get("id", "<no-id>"),
+                block_type,
+                new_type,
+            )
+        params = entry.get("params")
+        if isinstance(params, dict):
+            inner_blocks = params.get("blocks")
+            if isinstance(inner_blocks, list):
+                _rename_block_type_prefix_recursive(
+                    inner_blocks,
+                    parent_path=f"{parent_path}/{entry.get('id', '<no-id>')}",
+                )
+
+
+def _builtin_migrate_0_9_to_0_10(data: dict[str, Any]) -> dict[str, Any]:
+    """プロジェクト名変更 (pyflw → flode): 0.9 → 0.10。
+
+    ブロック型 FQN の ``pyflw.`` prefix を ``flode.`` に書き換える
+    (ネスト Subsystem 含む)。あわせて ``metadata.tool`` の ``pyflw`` も
+    ``flode`` に更新する。フィールド構成・数値挙動への影響: なし。
+    """
+    out = dict(data)
+    _rename_block_type_prefix_recursive(out.get("blocks"))
+    meta = out.get("metadata")
+    if isinstance(meta, dict):
+        tool = meta.get("tool")
+        if isinstance(tool, str) and tool.startswith("pyflw"):
+            out["metadata"] = {**meta, "tool": "flode" + tool[len("pyflw") :]}
+    out["schema_version"] = "0.10"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
@@ -604,6 +670,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.6", "0.7")] = _builtin_migrate_0_6_to_0_7
     _MIGRATIONS[("0.7", "0.8")] = _builtin_migrate_0_7_to_0_8
     _MIGRATIONS[("0.8", "0.9")] = _builtin_migrate_0_8_to_0_9
+    _MIGRATIONS[("0.9", "0.10")] = _builtin_migrate_0_9_to_0_10
 
 
 _register_builtin_migrations()

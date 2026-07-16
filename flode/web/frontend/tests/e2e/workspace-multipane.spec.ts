@@ -29,7 +29,7 @@ async function openFixture(page: Page): Promise<void> {
 test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
   test.beforeEach(async ({ page }) => {
     // 既存 localStorage を一度クリア (= テスト間の干渉を防ぐ、ADR-0045 §(3) キーは
-    // pyflw.workspace_layout.* / pyflw.last_active.* など)
+    // flode.workspace_layout.* / flode.last_active.* など)
     await page.goto("/");
     await page.evaluate(() => window.localStorage.clear());
   });
@@ -82,7 +82,7 @@ test.describe("ADR-0045 Workspace multi-pane Stage 1", () => {
     // diagram 単独 tree で上書きしてからリロードする
     await page.evaluate(() => {
       for (const key of Object.keys(window.localStorage)) {
-        if (key.startsWith("pyflw.workspace_layout.")) {
+        if (key.startsWith("flode.workspace_layout.")) {
           window.localStorage.setItem(
             key,
             JSON.stringify({ kind: "leaf", paneId: "diagram" }),

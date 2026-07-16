@@ -13,11 +13,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Gain, Scope
-from pyflw.server import create_app
-from pyflw.server.routes.simulations import _INLINE_DISPLAY_ID
-from pyflw.server.settings import Settings
+from flode import Simulator
+from flode.blocks import Constant, Gain, Scope
+from flode.server import create_app
+from flode.server.routes.simulations import _INLINE_DISPLAY_ID
+from flode.server.settings import Settings
 
 
 @pytest.fixture

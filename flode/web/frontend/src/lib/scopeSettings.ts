@@ -4,7 +4,7 @@ import type { ScopeBuffer } from "../store/appStore";
 import type { ScopeSettings, SignalSettings } from "../types/api";
 
 /**
- * pyflw hard-coded default。モデル保存値が無いときに使用する。
+ * flode hard-coded default。モデル保存値が無いときに使用する。
  * background は常に white (= ダークモード out-of-scope)。
  */
 export const DEFAULT_SCOPE_SETTINGS: Required<

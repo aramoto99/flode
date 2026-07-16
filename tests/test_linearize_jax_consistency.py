@@ -19,9 +19,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator, linearize
-from pyflw.blocks import Constant, Gain, Integrator, Scope, Step, Sum
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator, linearize
+from flode.blocks import Constant, Gain, Integrator, Scope, Step, Sum
+from flode.exceptions import BlockSpecError
 
 # ---------------------------------------------------------------------------
 # 動作点での central vs jax 一致
@@ -117,7 +117,7 @@ class TestIntegratorLTI:
 class TestUnsupportedBlocks:
     def test_state_space_raises_blockspecerror(self) -> None:
         """``StateSpace`` は v0.17.0 jax 対象外、明示エラー。"""
-        from pyflw.blocks import StateSpace
+        from flode.blocks import StateSpace
 
         sim = Simulator(t_end=1.0, dt=0.01)
         ss = sim.add(
@@ -134,7 +134,7 @@ class TestUnsupportedBlocks:
             linearize(sim, method="jax")
 
     def test_unsupported_block_message_suggests_central(self) -> None:
-        from pyflw.blocks import TransferFunction
+        from flode.blocks import TransferFunction
 
         sim = Simulator(t_end=1.0, dt=0.01)
         tf = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="tf"))

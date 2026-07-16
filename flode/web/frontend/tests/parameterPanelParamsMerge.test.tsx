@@ -30,7 +30,7 @@ vi.mock("react-i18next", () => ({
 // listBlockMetadata を mock し、FileWriter の params_spec に path / format を
 // 含めた payload を返す (= 新 backend を simulate)。
 const FILEWRITER_META: BlockMetadata = {
-  type_path: "pyflw.blocks.file_writer.FileWriter",
+  type_path: "flode.blocks.file_writer.FileWriter",
   display_name: "File Writer",
   category: "sinks",
   icon: "sinks.file_writer",
@@ -99,7 +99,7 @@ function makeLegacyFileWriterModel(): FlwModel {
     blocks: [
       {
         id: "FW_legacy",
-        type: "pyflw.blocks.file_writer.FileWriter",
+        type: "flode.blocks.file_writer.FileWriter",
         params: {
           n_inputs: 1,
           labels: null,

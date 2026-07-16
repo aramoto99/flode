@@ -14,9 +14,9 @@
 
    | フィールド | 値 |
    |---|---|
-   | PyPI Project Name | `pyflw` |
+   | PyPI Project Name | `flode` |
    | Owner | `aramoto99` |
-   | Repository name | `pyflw` |
+   | Repository name | `flode` |
    | Workflow name | `pypi-publish.yml` |
    | Environment name | `testpypi` |
 
@@ -27,9 +27,9 @@
 
    | フィールド | 値 |
    |---|---|
-   | PyPI Project Name | `pyflw` |
+   | PyPI Project Name | `flode` |
    | Owner | `aramoto99` |
-   | Repository name | `pyflw` |
+   | Repository name | `flode` |
    | Workflow name | `pypi-publish.yml` |
    | Environment name | `pypi` |
 
@@ -59,9 +59,9 @@
 
 以下 3 ファイルを **同じコミット** で更新:
 
-- `pyflw/__init__.py` の `__version__ = "0.X.Y"`
+- `flode/__init__.py` の `__version__ = "0.X.Y"`
 - `pyproject.toml` の `[project] version = "0.X.Y"`
-- `pyflw/web/frontend/package.json` の `"version": "0.X.Y"`
+- `flode/web/frontend/package.json` の `"version": "0.X.Y"`
 
 ### 2-2. CHANGELOG 更新
 
@@ -83,9 +83,9 @@
 ```bash
 .venv/Scripts/python.exe tools/check_version_sync.py
 .venv/Scripts/python.exe -m pytest -q
-.venv/Scripts/python.exe -m mypy pyflw
-.venv/Scripts/python.exe -m ruff check pyflw tests examples
-.venv/Scripts/python.exe -m ruff format --check pyflw tests examples
+.venv/Scripts/python.exe -m mypy flode
+.venv/Scripts/python.exe -m ruff check flode tests examples
+.venv/Scripts/python.exe -m ruff format --check flode tests examples
 ```
 
 ### 2-4. (推奨) pre-release で TestPyPI のみ動作確認
@@ -105,9 +105,9 @@ CI 上で:
   ```bash
   pip install -i https://test.pypi.org/simple/ \
               --extra-index-url https://pypi.org/simple/ \
-              "pyflw==0.X.YrcN"
-  pyflw --help
-  pyflw-server --help   # 互換 alias も確認 (SPEC-0021)
+              "flode==0.X.YrcN"
+  flode --help
+  flode --help   # 互換 alias も確認 (SPEC-0021)
   ```
 
 ### 2-5. final tag を切って本 PyPI publish
@@ -127,10 +127,10 @@ CI 上で:
 ### 2-6. 動作確認
 
 ```bash
-pip install pyflw==0.X.Y
-python -c "import pyflw; print(pyflw.__version__)"
-pyflw --help
-pyflw-server --help   # 互換 alias も確認 (SPEC-0021)
+pip install flode==0.X.Y
+python -c "import flode; print(flode.__version__)"
+flode --help
+flode --help   # 互換 alias も確認 (SPEC-0021)
 ```
 
 ---
@@ -142,7 +142,7 @@ pyflw-server --help   # 互換 alias も確認 (SPEC-0021)
 **重要**: PyPI は **同一 version の再 upload を許さない**。yank のみ可能。
 
 1. **当該 version を yank**:
-   `https://pypi.org/manage/project/pyflw/release/0.X.Y/` → "Yank release"
+   `https://pypi.org/manage/project/flode/release/0.X.Y/` → "Yank release"
    (= インストール可能だが新規インストール時の解決対象から外れる)
 
 2. **patch bump で再 release**:

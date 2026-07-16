@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Merge, MultiportSwitch, Scope
-from pyflw.exceptions import BlockEvalError, BlockSpecError
+from flode import Simulator
+from flode.blocks import Constant, Merge, MultiportSwitch, Scope
+from flode.exceptions import BlockEvalError, BlockSpecError
 
 _EMPTY_X = np.array([])
 
@@ -176,15 +176,15 @@ class TestMergeInModel:
 
 class TestRegistry:
     def test_multiport_switch_registered(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry import _BUILTIN_METADATA
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        assert "pyflw.blocks.routing.MultiportSwitch" in _BUILTIN_METADATA
-        assert "pyflw.blocks.routing.MultiportSwitch" in _BLOCK_TRANSLATIONS
+        assert "flode.blocks.routing.MultiportSwitch" in _BUILTIN_METADATA
+        assert "flode.blocks.routing.MultiportSwitch" in _BLOCK_TRANSLATIONS
 
     def test_merge_registered(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry import _BUILTIN_METADATA
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        assert "pyflw.blocks.routing.Merge" in _BUILTIN_METADATA
-        assert "pyflw.blocks.routing.Merge" in _BLOCK_TRANSLATIONS
+        assert "flode.blocks.routing.Merge" in _BUILTIN_METADATA
+        assert "flode.blocks.routing.Merge" in _BLOCK_TRANSLATIONS

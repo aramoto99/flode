@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover - import 循環回避
     from .frequency_response import BodeResponse, NyquistResponse
     from .stability import RootLocus
 
-_logger = logging.getLogger("pyflw.analysis.linearize")
+_logger = logging.getLogger("flode.analysis.linearize")
 
 #: 中心差分 / 前進差分の摂動係数 default。
 #: ``sqrt(machine_eps)`` は中心差分の最適 step として古典的に採用される値
@@ -88,7 +88,7 @@ class LinearSystem:
 
         Raises:
             ImportError: ``python-control`` がインストールされていない。
-                ``pip install pyflw[control]`` を案内する。
+                ``pip install flode[control]`` を案内する。
 
         Example:
             >>> ls = sim.linearize()  # doctest: +SKIP
@@ -99,7 +99,7 @@ class LinearSystem:
         except ImportError as e:
             raise ImportError(
                 "LinearSystem.to_control_ss() requires the optional `python-control` "
-                "package. Install via `pip install pyflw[control]` or "
+                "package. Install via `pip install flode[control]` or "
                 "`pip install python-control`."
             ) from e
         return _control.ss(self.A, self.B, self.C, self.D)
@@ -114,7 +114,7 @@ class LinearSystem:
         omega_num: int | None = None,
         Hz: bool = False,
     ) -> BodeResponse:
-        """Bode 応答を計算する (:func:`pyflw.bode` への薄ラッパ、ADR-0027)。"""
+        """Bode 応答を計算する (:func:`flode.bode` への薄ラッパ、ADR-0027)。"""
         from .frequency_response import bode as _bode
 
         return _bode(
@@ -132,19 +132,19 @@ class LinearSystem:
         omega_limits: tuple[float, float] | None = None,
         omega_num: int | None = None,
     ) -> NyquistResponse:
-        """Nyquist 軌跡を計算する (:func:`pyflw.nyquist` への薄ラッパ、ADR-0027)。"""
+        """Nyquist 軌跡を計算する (:func:`flode.nyquist` への薄ラッパ、ADR-0027)。"""
         from .frequency_response import nyquist as _nyquist
 
         return _nyquist(self, omega=omega, omega_limits=omega_limits, omega_num=omega_num)
 
     def eigenvalues(self) -> npt.NDArray[Any]:
-        """A 行列の固有値 (:func:`pyflw.eigenvalues` への薄ラッパ、ADR-0027)。"""
+        """A 行列の固有値 (:func:`flode.eigenvalues` への薄ラッパ、ADR-0027)。"""
         from .stability import eigenvalues as _eigenvalues
 
         return _eigenvalues(self)
 
     def is_stable(self, *, tol: float = 1e-9) -> bool:
-        """漸近安定性判定 (:func:`pyflw.is_stable` への薄ラッパ、ADR-0027)。"""
+        """漸近安定性判定 (:func:`flode.is_stable` への薄ラッパ、ADR-0027)。"""
         from .stability import is_stable as _is_stable
 
         return _is_stable(self, tol=tol)
@@ -156,7 +156,7 @@ class LinearSystem:
         input_idx: int = 0,
         output_idx: int = 0,
     ) -> RootLocus:
-        """根軌跡を計算する (:func:`pyflw.root_locus` への薄ラッパ、ADR-0027)。"""
+        """根軌跡を計算する (:func:`flode.root_locus` への薄ラッパ、ADR-0027)。"""
         from .stability import root_locus as _root_locus
 
         return _root_locus(self, k_range=k_range, input_idx=input_idx, output_idx=output_idx)
@@ -511,7 +511,7 @@ def linearize(
             - ``"central"`` (default): 中心差分、誤差 O(h²)、評価 2n+1 回
             - ``"forward"``: 前進差分、誤差 O(h)、評価 n+1 回
             - ``"jax"``: ``jax.jacfwd`` 自動微分、機械精度 (= ADR-0037)。
-              ``pyflw[codegen]`` extras (= ``jax[cpu]``) が必要
+              ``flode[codegen]`` extras (= ``jax[cpu]``) が必要
         epsilon: 摂動相対サイズ。``None`` のとき次元ごとに
             ``h_i = sqrt(eps_machine) * max(|x_i|, 1.0)`` を自動採用。
             ``method="jax"`` の場合は ``epsilon`` は無視され UserWarning。
@@ -527,14 +527,14 @@ def linearize(
             出力 ndim 不整合などの構造エラー。
         SolverError: 動作点で ``derivative`` または ``output`` が NaN / Inf を返す。
         ValueError: ``method`` / ``epsilon`` の値が不正。
-        ImportError: ``method="jax"`` で ``pyflw[codegen]`` 未インストール
+        ImportError: ``method="jax"`` で ``flode[codegen]`` 未インストール
             (= ADR-0037 §Decision §6)。
 
     Example:
         Integrator with one external input:
 
-        >>> from pyflw import Simulator, linearize
-        >>> from pyflw.blocks import Integrator, Scope
+        >>> from flode import Simulator, linearize
+        >>> from flode.blocks import Integrator, Scope
         >>> sim = Simulator(t_end=10.0, dt=0.01)
         >>> i_block = sim.add(Integrator())
         >>> sim.connect(i_block, sim.add(Scope()))
@@ -547,7 +547,7 @@ def linearize(
         (1, 1)
     """
     if method == "jax":
-        # ADR-0037: pyflw[codegen] (= jax[cpu]) で自動微分による機械精度線形化。
+        # ADR-0037: flode[codegen] (= jax[cpu]) で自動微分による機械精度線形化。
         # central / forward と異なり摂動 epsilon が無関係 (= 微分が解析的)。
         if epsilon is not None:
             warnings.warn(
@@ -710,7 +710,7 @@ def _linearize_jax(
 ) -> LinearSystem:
     """``jax.jacfwd`` 経由の機械精度線形化 (ADR-0037 §(3))。
 
-    ``method="jax"`` 経路の本体。``pyflw.compile.jax_backend`` に jax-native 評価器
+    ``method="jax"`` 経路の本体。``flode.compile.jax_backend`` に jax-native 評価器
     + ``jax.jacfwd`` 計算を委譲する。central / forward と同じ前処理 (= simulator
     setup、input/output specs 構築、動作点解決) を行ってから、最終 (A, B, C, D)
     計算だけ jax に切替える。
@@ -722,7 +722,7 @@ def _linearize_jax(
             (= ``"jax"``、ADR-0037 §(4))。
 
     Raises:
-        ImportError: ``pyflw[codegen]`` 未インストール (= ``_ensure_jax_available``)。
+        ImportError: ``flode[codegen]`` 未インストール (= ``_ensure_jax_available``)。
         BlockSpecError: jax-native 未サポートのブロックを含む (= ``_validate_supported_blocks``)、
             または連続状態がゼロ。
     """

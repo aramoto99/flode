@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Inport, Outport, Subsystem
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Inport, Outport, Subsystem
 
 
 class TestSubsystemDerivedNInputs:

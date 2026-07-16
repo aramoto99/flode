@@ -16,7 +16,7 @@ import math
 import numpy as np
 import pytest
 
-from pyflw.blocks.mathops import (
+from flode.blocks.mathops import (
     CompareToConstant,
     CompareToZero,
     DeadZone,
@@ -24,7 +24,7 @@ from pyflw.blocks.mathops import (
     TrigFunction,
     _build_compare_fn,
 )
-from pyflw.exceptions import BlockSpecError
+from flode.exceptions import BlockSpecError
 
 _EMPTY_X = np.array([])
 
@@ -709,7 +709,7 @@ class TestRegistryIntegration:
     """5 ブロックが registry / i18n / persistence で正しく扱われる smoke。"""
 
     def test_blocks_module_exports(self) -> None:
-        from pyflw import blocks
+        from flode import blocks
 
         assert blocks.MathFunction is MathFunction
         assert blocks.TrigFunction is TrigFunction
@@ -718,7 +718,7 @@ class TestRegistryIntegration:
         assert blocks.CompareToZero is CompareToZero
 
     def test_registry_contains_five_blocks(self) -> None:
-        from pyflw.server.registry import build_block_registry
+        from flode.server.registry import build_block_registry
 
         registry = build_block_registry()
         type_paths = {m.type_path for m in registry}
@@ -729,14 +729,14 @@ class TestRegistryIntegration:
             "CompareToConstant",
             "CompareToZero",
         ):
-            assert f"pyflw.blocks.mathops.{cls_name}" in type_paths
+            assert f"flode.blocks.mathops.{cls_name}" in type_paths
 
     def test_to_dict_round_trip_mathfunction(self) -> None:
-        from pyflw.core.persistence import resolve_block_class
+        from flode.core.persistence import resolve_block_class
 
         blk = MathFunction(function="pow")
         d = blk.to_dict()
-        assert d["type"] == "pyflw.blocks.mathops.MathFunction"
+        assert d["type"] == "flode.blocks.mathops.MathFunction"
         assert d["params"] == {"function": "pow"}
         cls = resolve_block_class(d["type"])
         restored = cls(**d["params"])

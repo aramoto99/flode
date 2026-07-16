@@ -12,9 +12,9 @@ import warnings
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Scope
-from pyflw.exceptions import BlockSpecError, BufferOverflowWarning
+from flode import Simulator
+from flode.blocks import Constant, Scope
+from flode.exceptions import BlockSpecError, BufferOverflowWarning
 
 
 class TestBufferModeAcceptance:

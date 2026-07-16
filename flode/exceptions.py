@@ -1,4 +1,4 @@
-"""pyflw 共通例外。
+"""flode 共通例外。
 
 外部に投げる例外は全てここで定義し、各モジュールから import する。
 標準例外 (`ValueError`, `RuntimeError` 等) を直接 raise しない方針 (CLAUDE.md)。
@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 
-class PyflwError(Exception):
-    """pyflw が投げる全例外の基底。
+class FlodeError(Exception):
+    """flode が投げる全例外の基底。
 
     Args:
         block_id: 失敗の関与ブロック ID (ADR-0056)。ブロックが特定できる raise 箇所
@@ -23,11 +23,11 @@ class PyflwError(Exception):
         self.block_id: str | None = block_id
 
 
-class BlockSpecError(PyflwError):
+class BlockSpecError(FlodeError):
     """ブロック仕様の不正 (ID 衝突、不正文字、`id` と `name` 両方指定など)。"""
 
 
-class BlockEvalError(PyflwError):
+class BlockEvalError(FlodeError):
     """ブロック ``output(t, x, u)`` 内のドメインエラー。
 
     ``__init__`` 構築時の仕様違反は ``BlockSpecError``、ソルバ起因の数値破綻は
@@ -39,18 +39,18 @@ class BlockEvalError(PyflwError):
     """
 
 
-class UnknownBlockIdError(PyflwError, KeyError):
+class UnknownBlockIdError(FlodeError, KeyError):
     """`Simulator.connect` / `get_block` 等で未登録の ID 文字列が渡された。
 
     `KeyError` を継承するため `dict[block_id]` 風の使い方とも互換。
     """
 
 
-class SchedulingError(PyflwError):
+class SchedulingError(FlodeError):
     """マルチレートスケジューラの構築不能 (継承解決失敗、`sample_time` 不正値など)。"""
 
 
-class AlgebraicLoopError(PyflwError):
+class AlgebraicLoopError(FlodeError):
     """代数ループ検出時に投げる。Phase 0 の `ValueError` を昇格。
 
     Args:
@@ -66,11 +66,11 @@ class AlgebraicLoopError(PyflwError):
         self.block_ids: list[str] = list(block_ids) if block_ids else []
 
 
-class SolverError(PyflwError):
+class SolverError(FlodeError):
     """``scipy.solve_ivp`` の積分失敗 (発散、最大ステップ数超過など)。"""
 
 
-class ModelLoadError(PyflwError):
+class ModelLoadError(FlodeError):
     """``Simulator.load`` 失敗の基底 (ADR-0008)。
 
     JSON パースエラー、schema 違反、ブロック type 解決失敗などを表す。
@@ -85,32 +85,32 @@ class UnknownBlockTypeError(ModelLoadError):
     """``type`` 文字列に対応する ``Block`` サブクラスが解決できない。"""
 
 
-class ModelSerializationError(PyflwError):
+class ModelSerializationError(FlodeError):
     """``Simulator.save`` 失敗の基底 (ADR-0008)。
 
     ブロックパラメータが JSON-serializable でない場合などに発生する。
     """
 
 
-class SimulationStillRunningError(PyflwError):
+class SimulationStillRunningError(FlodeError):
     """シミュレーションがまだ実行中で、結果が取得できない (ADR-0011)。"""
 
 
-class LibraryFileError(PyflwError):
+class LibraryFileError(FlodeError):
     """``.flwlib.json`` の load / 検証失敗 (ADR-0029)。
 
     schema_version 未対応、必須キー欠落、subsystem body 解釈失敗などを表す。
     """
 
 
-class LibraryEntryNotFoundError(PyflwError, KeyError):
+class LibraryEntryNotFoundError(FlodeError, KeyError):
     """REST `GET /api/v1/libraries/{lib}/{entry}` で未登録の id が指定された (ADR-0029)。
 
     ``KeyError`` を継承するため、library / entry を dict 風に扱う code でも互換。
     """
 
 
-class PathTraversalError(PyflwError):
+class PathTraversalError(FlodeError):
     """workspace root 外への path 解決を試みたか、不正文字を含む path (ADR-0041)。
 
     REST `/api/v1/files/*` で利用者が渡す path を ``resolve_workspace_path`` で

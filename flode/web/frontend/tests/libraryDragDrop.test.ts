@@ -1,7 +1,7 @@
 // ADR-0029: ライブラリ entry の drag/drop ペイロード形式を検証するユニットテスト。
 //
 // BlockPalette (drag-start) と DiagramCanvas (drop) で共有される
-// `application/pyflw-library-entry-ref` MIME 型に対する JSON ペイロードの
+// `application/flode-library-entry-ref` MIME 型に対する JSON ペイロードの
 // シリアライズ / デシリアライズ整合性を確認する。
 //
 // React コンポーネントを丸ごとマウントしてテストするのは React Flow の依存が重く
@@ -22,7 +22,7 @@ const PID_DETAIL: LibraryEntryDetail = {
   category_suffix: "controllers",
   subsystem: {
     id: null,
-    type: "pyflw.subsystems.subsystem.Subsystem",
+    type: "flode.subsystems.subsystem.Subsystem",
     params: {
       n_inputs: 1,
       n_outputs: 1,
@@ -36,7 +36,7 @@ const PID_DETAIL: LibraryEntryDetail = {
   },
 };
 
-describe("application/pyflw-library-entry-ref MIME contract", () => {
+describe("application/flode-library-entry-ref MIME contract", () => {
   it("serializes {library, entry} payload symmetrically", () => {
     const payload = { library: "std", entry: "pid_controller" };
     const ser = JSON.stringify(payload);
@@ -75,7 +75,7 @@ describe("getLibraryEntry mock contract", () => {
     const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
     const url = fetchMock.mock.calls[0]?.[0];
     expect(String(url)).toBe("/api/v1/libraries/std/pid_controller");
-    expect(detail.subsystem.type).toBe("pyflw.subsystems.subsystem.Subsystem");
+    expect(detail.subsystem.type).toBe("flode.subsystems.subsystem.Subsystem");
     expect(detail.subsystem.params.n_inputs).toBe(1);
     expect(detail.subsystem.params.n_outputs).toBe(1);
   });

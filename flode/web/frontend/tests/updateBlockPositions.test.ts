@@ -21,9 +21,9 @@ function makeModel(): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "a", type: "pyflw.blocks.sources.Constant", params: { value: 1 } },
-      { id: "b", type: "pyflw.blocks.mathops.Gain", params: { k: 2 } },
-      { id: "c", type: "pyflw.blocks.sinks.Display", params: {} },
+      { id: "a", type: "flode.blocks.sources.Constant", params: { value: 1 } },
+      { id: "b", type: "flode.blocks.mathops.Gain", params: { k: 2 } },
+      { id: "c", type: "flode.blocks.sinks.Display", params: {} },
     ],
     connections: [],
     layout: {

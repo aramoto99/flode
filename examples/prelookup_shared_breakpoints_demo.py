@@ -16,8 +16,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     InterpolationUsingPrelookup,
     Prelookup,
     Scope,

@@ -18,10 +18,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Gain, RandomSource, Scope
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockSpecError, ModelLoadError
+from flode import Simulator
+from flode.blocks import Gain, RandomSource, Scope
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([0.0])
 _EMPTY_U = np.array([])
@@ -308,7 +308,7 @@ class TestRandomSourcePersistence:
             "blocks": [
                 {
                     "id": "bad",
-                    "type": "pyflw.blocks.random_source.RandomSource",
+                    "type": "flode.blocks.random_source.RandomSource",
                     "params": {
                         "sample_time": -0.1,  # 不正
                         "distribution": "uniform",
@@ -335,25 +335,25 @@ class TestRandomSourcePersistence:
 
 class TestRandomSourceRegistry:
     def test_translation_entry_exists(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.random_source.RandomSource"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.random_source.RandomSource"]
         assert entry["ja"]["display_name"] == "乱数源"
         assert entry["en"]["display_name"] == "Random Source"
 
     def test_registry_metadata_entry(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.random_source.RandomSource"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.random_source.RandomSource"]
         assert cat == "sources"
         assert name == "Random Source"
         assert icon == "sources.random"
 
     def test_default_factory_args_provides_sample_time(self) -> None:
         """palette drop 時に required ``sample_time`` を補う default args の存在確認。"""
-        from pyflw.server.registry import _BUILTIN_DEFAULT_ARGS
+        from flode.server.registry import _BUILTIN_DEFAULT_ARGS
 
-        args = _BUILTIN_DEFAULT_ARGS["pyflw.blocks.random_source.RandomSource"]
+        args = _BUILTIN_DEFAULT_ARGS["flode.blocks.random_source.RandomSource"]
         assert args["sample_time"] > 0
 
 

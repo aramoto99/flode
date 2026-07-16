@@ -1,14 +1,14 @@
-"""``pyflw.compile`` — Codegen + Autodiff (jax-first 統合、ADR-0037)。
+"""``flode.compile`` — Codegen + Autodiff (jax-first 統合、ADR-0037)。
 
 ``Simulator.compile()`` 経由で Block ベースの動的システムを **pure functional
-表現** に変換し、jax の XLA で JIT コンパイルする。:func:`pyflw.linearize` の
+表現** に変換し、jax の XLA で JIT コンパイルする。:func:`flode.linearize` の
 ``method="jax"`` (ADR-0026 §「Phase 5+ で再評価」再考トリガー回収) もここに
 統合される。
 
 主要 API:
 
 * :class:`CompiledSimulator` — ``Simulator.compile()`` の戻り値 (frozen dataclass)
-* :func:`Simulator.compile()` (= :mod:`pyflw.core.simulator` 側のメソッド)
+* :func:`Simulator.compile()` (= :mod:`flode.core.simulator` 側のメソッド)
 
 設計方針 (ADR-0037 §Decision):
 
@@ -24,8 +24,8 @@
 
 依存関係:
 
-* ``pyflw[codegen]`` (= ``jax[cpu]>=0.4``) で本モジュールが利用可能
-* 未インストール環境では ``ImportError("pyflw[codegen] required")`` を ``compile``
+* ``flode[codegen]`` (= ``jax[cpu]>=0.4``) で本モジュールが利用可能
+* 未インストール環境では ``ImportError("flode[codegen] required")`` を ``compile``
   / ``method="jax"`` 呼び出しで明示発出 (silent fallback しない)
 """
 

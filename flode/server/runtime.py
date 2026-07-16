@@ -20,10 +20,10 @@ import numpy as np
 
 from ..core.persistence import serialize_t_end
 from ..core.simulator import Simulator
-from ..exceptions import PyflwError, SimulationStillRunningError
+from ..exceptions import FlodeError, SimulationStillRunningError
 from .errors import build_failure_payload
 
-_logger = logging.getLogger("pyflw.server.runtime")
+_logger = logging.getLogger("flode.server.runtime")
 
 
 @dataclasses.dataclass
@@ -103,13 +103,13 @@ class SimulationManager:
     def get_state(self, sim_id: str) -> SimulationState:
         with self._lock:
             if sim_id not in self._records:
-                raise PyflwError(f"Unknown simulation_id: {sim_id!r}")
+                raise FlodeError(f"Unknown simulation_id: {sim_id!r}")
             return dataclasses.replace(self._records[sim_id].state)
 
     def stop(self, sim_id: str) -> None:
         with self._lock:
             if sim_id not in self._records:
-                raise PyflwError(f"Unknown simulation_id: {sim_id!r}")
+                raise FlodeError(f"Unknown simulation_id: {sim_id!r}")
             rec = self._records[sim_id]
         rec.simulator.request_stop()
 
@@ -292,7 +292,7 @@ class SimulationManager:
     async def stream(self, sim_id: str) -> AsyncIterator[dict[str, Any]]:
         with self._lock:
             if sim_id not in self._records:
-                raise PyflwError(f"Unknown simulation_id: {sim_id!r}")
+                raise FlodeError(f"Unknown simulation_id: {sim_id!r}")
             rec = self._records[sim_id]
         # ADR-0056 §B-4: 終端済みシミュレーションへの **再接続** (= queue 既消費)
         # 時、保存済みの terminal を 1 回 yield して即クローズ。失敗詳細を
@@ -313,7 +313,7 @@ class SimulationManager:
         """完了後に Scope データを一括取得 (ADR-0011 §(1) GET /results)。"""
         with self._lock:
             if sim_id not in self._records:
-                raise PyflwError(f"Unknown simulation_id: {sim_id!r}")
+                raise FlodeError(f"Unknown simulation_id: {sim_id!r}")
             rec = self._records[sim_id]
         if rec.state.status == "running":
             raise SimulationStillRunningError(

@@ -1,8 +1,8 @@
 {
-  "schema_version": "0.8",
+  "schema_version": "0.10",
   "metadata": {
     "created_at": "2026-05-20T10:14:05Z",
-    "tool": "pyflw 3.16.0"
+    "tool": "flode 3.16.0"
   },
   "simulator": {
     "t_end": 1.0,
@@ -15,14 +15,14 @@
   "blocks": [
     {
       "id": "From_0",
-      "type": "pyflw.blocks.routing.From",
+      "type": "flode.blocks.routing.From",
       "params": {
         "tag": "aa"
       }
     },
     {
       "id": "scope",
-      "type": "pyflw.blocks.sinks.Scope",
+      "type": "flode.blocks.sinks.Scope",
       "params": {
         "n_inputs": 1,
         "labels": [

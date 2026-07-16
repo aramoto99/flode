@@ -20,7 +20,7 @@ _MAX_LEN = 64
 # ADR-0011 §(1): モデル ID 用、ハイフン許容、最大 128 chars。``..`` や ``/`` を
 # 禁止して Path traversal を防ぐ目的。
 _MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-_logger = logging.getLogger("pyflw.identifiers")
+_logger = logging.getLogger("flode.identifiers")
 
 
 def validate_block_id(block_id: str) -> None:

@@ -32,7 +32,7 @@ import numpy.typing as npt
 from ..exceptions import BlockSpecError
 from .block import Block
 
-_logger = logging.getLogger("pyflw.decorator")
+_logger = logging.getLogger("flode.decorator")
 
 _RESERVED_X0 = "x0"
 _T_PARAM_RECOMMENDED = "t"
@@ -470,14 +470,14 @@ def _make_block_class(
 
     namespace: dict[str, Any] = {
         "__init__": __init__,
-        "__module__": getattr(func, "__module__", None) or "pyflw.decorator",
+        "__module__": getattr(func, "__module__", None) or "flode.decorator",
         "__qualname__": cls_name,
         "__doc__": func.__doc__,
         "output": output,
         "derivative": derivative,
         "update": update,
-        "_pyflw_func": staticmethod(func),
-        "_pyflw_params_spec": tuple(params_spec),
+        "_flode_func": staticmethod(func),
+        "_flode_params_spec": tuple(params_spec),
     }
     return type(cls_name, (Block,), namespace)
 
@@ -912,14 +912,14 @@ def _make_block_class_from_class(
 
     namespace: dict[str, Any] = {
         "__init__": __init__,
-        "__module__": getattr(user_cls, "__module__", None) or "pyflw.decorator",
+        "__module__": getattr(user_cls, "__module__", None) or "flode.decorator",
         "__qualname__": cls_name,
         "__doc__": user_cls.__doc__,
         "output": output,
         "derivative": derivative,
         "update": update,
-        "_pyflw_user_cls": user_cls,
-        "_pyflw_params_spec": tuple(params_spec),
+        "_flode_user_cls": user_cls,
+        "_flode_params_spec": tuple(params_spec),
     }
     # user class が `record` / `reset` 等の追加メソッドを持っていれば素直に継承する
     # (Sink 系で record を持つケースを想定)。

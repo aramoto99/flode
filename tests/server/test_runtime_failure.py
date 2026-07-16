@@ -15,12 +15,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from pyflw.blocks.mathops import Divide, Gain
-from pyflw.blocks.sinks import Scope
-from pyflw.blocks.sources import Constant
-from pyflw.core.simulator import Simulator
-from pyflw.server import create_app
-from pyflw.server.settings import Settings
+from flode.blocks.mathops import Divide, Gain
+from flode.blocks.sinks import Scope
+from flode.blocks.sources import Constant
+from flode.core.simulator import Simulator
+from flode.server import create_app
+from flode.server.settings import Settings
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ class TestStructuredFailedMessage:
             json={
                 "model": {
                     "schema_version": "1.0",
-                    "blocks": [{"id": "x", "type": "pyflw.blocks.nonexistent.Foo", "params": {}}],
+                    "blocks": [{"id": "x", "type": "flode.blocks.nonexistent.Foo", "params": {}}],
                     "connections": [],
                     "config": {"t_end": 1.0, "dt": 0.01, "solver": "RK45"},
                 }

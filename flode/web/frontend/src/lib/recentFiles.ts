@@ -1,11 +1,11 @@
 // ADR-0043 §論点 4: Recent Files の localStorage 永続化。
 //
-// localStorage キー: ``pyflw.recent.<workspace_root_hash>`` (= workspace ごとに別 entry)。
+// localStorage キー: ``flode.recent.<workspace_root_hash>`` (= workspace ごとに別 entry)。
 // hash は backend ``GET /api/v1/files/workspace_info`` の ``hash`` をそのまま使う
 // (= sha256 16 文字)。値は file path の文字列配列、最新 (= 最後にアクセス) が
 // 配列 index 0、古い順に index N-1。上限 10 件で打ち切り。
 
-const KEY_PREFIX = "pyflw.recent.";
+const KEY_PREFIX = "flode.recent.";
 const MAX_RECENT = 10;
 
 /**

@@ -4,8 +4,8 @@
 // workspace layout) が **同じ key prefix 規約** で動くよう、b64url エンコード +
 // key 生成関数をここに集約する。
 //
-// 慣例 (= `pyflw.<feature>.<workspace_hash>.<base64url(model_path)>[.<...>]`):
-// - prefix `pyflw.` は ADR-0024 (i18n localStorage) と同じ dot 区切り
+// 慣例 (= `flode.<feature>.<workspace_hash>.<base64url(model_path)>[.<...>]`):
+// - prefix `flode.` は ADR-0024 (i18n localStorage) と同じ dot 区切り
 // - `<workspace_hash>` は ADR-0043 `getWorkspaceInfo()` から得るワークスペース
 //   絶対パスの SHA hash (= 別ワークスペースで key 衝突を防ぐ)
 // - `<base64url(model_path)>` はワークスペース root からの相対パスを base64url
@@ -29,7 +29,7 @@ export function b64urlEncode(input: string): string {
 
 /** ADR-0045 §(3-B): Workspace layout (= SplitTree) 永続化キー。
  *
- * フォーマット: ``pyflw.workspace_layout.<workspaceHash>.<b64url(modelPath)>``
+ * フォーマット: ``flode.workspace_layout.<workspaceHash>.<b64url(modelPath)>``
  *
  * @param workspaceHash 現在のワークスペース hash (= ``store.workspaceHash``、
  *                      ADR-0043 §論点 1-A で workspace 絶対パス由来の SHA hash)
@@ -40,13 +40,13 @@ export function makeWorkspaceLayoutKey(
   workspaceHash: string,
   modelPath: string,
 ): string {
-  return `pyflw.workspace_layout.${workspaceHash}.${b64urlEncode(modelPath)}`;
+  return `flode.workspace_layout.${workspaceHash}.${b64urlEncode(modelPath)}`;
 }
 
 /** ADR-0044 §論点 6-A: 旧 ``ScopePanelContainer.tsx`` から共通化した floating
  * Scope panel の geometry 永続化キー。
  *
- * フォーマット: ``pyflw.scope_panel.<workspaceHash>.<b64url(modelPath)>.<scopeId>``
+ * フォーマット: ``flode.scope_panel.<workspaceHash>.<b64url(modelPath)>.<scopeId>``
  *
  * @param workspaceHash 現在のワークスペース hash (= ``store.workspaceHash``)
  * @param modelPath     現在開いているモデルのワークスペース root からの相対パス
@@ -58,13 +58,5 @@ export function makeScopePanelKey(
   modelPath: string,
   scopeId: string,
 ): string {
-  return `pyflw.scope_panel.${workspaceHash}.${b64urlEncode(modelPath)}.${scopeId}`;
+  return `flode.scope_panel.${workspaceHash}.${b64urlEncode(modelPath)}.${scopeId}`;
 }
-
-/** ADR-0045 §(3-D): 旧 ``react-resizable-panels`` autosave のキー (= migration 用)。
- *
- * v3.5.x まで ``App.tsx`` で ``<PanelGroup id="pyflw.scope_split">`` を使用
- * していたが、``autoSaveId`` を指定していなかったため実体としてはこの key で
- * 保存されていなかった可能性が高い。安全のため migration helper は本キーを
- * 読み取り対象とする。 */
-export const LEGACY_SCOPE_SPLIT_KEY = "pyflw.scope_split";

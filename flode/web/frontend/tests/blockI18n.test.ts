@@ -16,7 +16,7 @@ import {
 import type { BlockMetadata } from "../src/types/api";
 
 const FULL: BlockMetadata = {
-  type_path: "pyflw.blocks.sources.Constant",
+  type_path: "flode.blocks.sources.Constant",
   display_name: "Constant",
   display_name_i18n: { en: "Constant", ja: "定数" },
   category: "sources",
@@ -69,7 +69,7 @@ describe("localizedDisplayName", () => {
       display_name: "",
     };
     expect(localizedDisplayName(stripped, "ja")).toBe(
-      "pyflw.blocks.sources.Constant",
+      "flode.blocks.sources.Constant",
     );
   });
 });
@@ -119,7 +119,7 @@ describe("searchableDisplayNames", () => {
   it("deduplicates when ja and en are identical (e.g. Mux)", () => {
     const mux: BlockMetadata = {
       ...FULL,
-      type_path: "pyflw.blocks.routing.Mux",
+      type_path: "flode.blocks.routing.Mux",
       display_name: "Mux",
       display_name_i18n: { en: "Mux", ja: "Mux" },
     };
@@ -139,7 +139,7 @@ describe("searchableDisplayNames", () => {
     // 表示名に現れない別名 (例: "Relational" を compare/比較) でヒットさせる
     const rel: BlockMetadata = {
       ...FULL,
-      type_path: "pyflw.blocks.logic.RelationalOperator",
+      type_path: "flode.blocks.logic.RelationalOperator",
       display_name: "Relational",
       display_name_i18n: { en: "Relational", ja: "関係演算" },
       search_keywords: ["compare", "comparison", "比較"],

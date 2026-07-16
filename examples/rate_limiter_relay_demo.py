@@ -10,8 +10,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import RateLimiter, Relay, Scope, Sine
+from flode import Simulator
+from flode.blocks import RateLimiter, Relay, Scope, Sine
 
 _logger = logging.getLogger(__name__)
 

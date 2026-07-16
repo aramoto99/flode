@@ -2,15 +2,15 @@
   "schema_version": "libraries.v2",
   "name": "std",
   "display_name": "Standard Library",
-  "description": "Built-in mask Subsystem templates shipped with pyflw.",
+  "description": "Built-in mask Subsystem templates shipped with flode.",
   "version": "0.13.0",
   "display_name_i18n": {
     "en": "Standard Library",
     "ja": "標準ライブラリ"
   },
   "description_i18n": {
-    "en": "Built-in mask Subsystem templates shipped with pyflw.",
-    "ja": "pyflw 同梱のマスク Subsystem テンプレート集。"
+    "en": "Built-in mask Subsystem templates shipped with flode.",
+    "ja": "flode 同梱のマスク Subsystem テンプレート集。"
   },
   "entries": [
     {
@@ -28,7 +28,7 @@
       },
       "subsystem": {
         "id": null,
-        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
           "mask_params": [
             {
@@ -58,35 +58,35 @@
           "blocks": [
             {
               "id": "Inport_0",
-              "type": "pyflw.subsystems.ports.Inport",
+              "type": "flode.subsystems.ports.Inport",
               "params": {
                 "port_idx": 0
               }
             },
             {
               "id": "Gain_P",
-              "type": "pyflw.blocks.mathops.Gain",
+              "type": "flode.blocks.mathops.Gain",
               "params": {
                 "k": "$Kp"
               }
             },
             {
               "id": "Integrator_0",
-              "type": "pyflw.blocks.continuous.Integrator",
+              "type": "flode.blocks.continuous.Integrator",
               "params": {
                 "x0": 0.0
               }
             },
             {
               "id": "Gain_I",
-              "type": "pyflw.blocks.mathops.Gain",
+              "type": "flode.blocks.mathops.Gain",
               "params": {
                 "k": "$Ki"
               }
             },
             {
               "id": "Derivative_0",
-              "type": "pyflw.blocks.continuous.Derivative",
+              "type": "flode.blocks.continuous.Derivative",
               "params": {
                 "N": 1000.0,
                 "x0": 0.0
@@ -94,21 +94,21 @@
             },
             {
               "id": "Gain_D",
-              "type": "pyflw.blocks.mathops.Gain",
+              "type": "flode.blocks.mathops.Gain",
               "params": {
                 "k": "$Kd"
               }
             },
             {
               "id": "Sum_0",
-              "type": "pyflw.blocks.mathops.Sum",
+              "type": "flode.blocks.mathops.Sum",
               "params": {
                 "signs": "+++"
               }
             },
             {
               "id": "Outport_0",
-              "type": "pyflw.subsystems.ports.Outport",
+              "type": "flode.subsystems.ports.Outport",
               "params": {
                 "port_idx": 0
               }
@@ -188,7 +188,7 @@
       },
       "subsystem": {
         "id": null,
-        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
           "mask_params": [
             {
@@ -211,14 +211,14 @@
           "blocks": [
             {
               "id": "Inport_0",
-              "type": "pyflw.subsystems.ports.Inport",
+              "type": "flode.subsystems.ports.Inport",
               "params": {
                 "port_idx": 0
               }
             },
             {
               "id": "TransferFunction_0",
-              "type": "pyflw.blocks.continuous.TransferFunction",
+              "type": "flode.blocks.continuous.TransferFunction",
               "params": {
                 "numerator": [
                   "$K"
@@ -231,7 +231,7 @@
             },
             {
               "id": "Outport_0",
-              "type": "pyflw.subsystems.ports.Outport",
+              "type": "flode.subsystems.ports.Outport",
               "params": {
                 "port_idx": 0
               }
@@ -269,7 +269,7 @@
       },
       "subsystem": {
         "id": null,
-        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
           "mask_params": [
             {
@@ -299,14 +299,14 @@
           "blocks": [
             {
               "id": "Inport_0",
-              "type": "pyflw.subsystems.ports.Inport",
+              "type": "flode.subsystems.ports.Inport",
               "params": {
                 "port_idx": 0
               }
             },
             {
               "id": "TransferFunction_0",
-              "type": "pyflw.blocks.continuous.TransferFunction",
+              "type": "flode.blocks.continuous.TransferFunction",
               "params": {
                 "numerator": [
                   "$K"
@@ -320,7 +320,7 @@
             },
             {
               "id": "Outport_0",
-              "type": "pyflw.subsystems.ports.Outport",
+              "type": "flode.subsystems.ports.Outport",
               "params": {
                 "port_idx": 0
               }

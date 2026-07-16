@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from pyflw.exceptions import PathTraversalError
-from pyflw.server.security import resolve_workspace_path
+from flode.exceptions import PathTraversalError
+from flode.server.security import resolve_workspace_path
 
 # ---------------------------------------------------------------------------
 # 拒否系

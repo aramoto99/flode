@@ -24,10 +24,7 @@ import { Toolbar } from "./components/Toolbar";
 import { WorkspaceSplit } from "./components/WorkspaceSplit";
 import { findBlockTypeById } from "./lib/findBlockPath";
 import { resolveBlocksAtPath } from "./lib/pathResolver";
-import {
-  LEGACY_SCOPE_SPLIT_KEY,
-  makeWorkspaceLayoutKey,
-} from "./lib/storageKeys";
+import { makeWorkspaceLayoutKey } from "./lib/storageKeys";
 import { useAutoSave } from "./lib/useAutoSave";
 import { useExternalChangesPoll } from "./lib/useExternalChangesPoll";
 import { useShortcuts } from "./lib/useShortcuts";
@@ -60,7 +57,7 @@ export default function App(): JSX.Element {
   // タイトルを動的更新する標準 idiom に統一する。version は StatusBar 右端で
   // 既に表示済み (= 重複) のため title bar からの削除で情報損失なし。
   useEffect(() => {
-    const base = "pyflw";
+    const base = "flode";
     if (!hasOpenedModel) {
       document.title = base;
       return;
@@ -80,7 +77,7 @@ export default function App(): JSX.Element {
   // ADR-0043 §論点 1-A / §論点 8-A: startup で workspace_info を fetch、
   // localStorage キーの suffix に使う hash を store に保存。Recent Files /
   // タブ復元 / Search panel が参照する。完了後、最後に開いていた active file
-  // path (= localStorage `pyflw.last_active.<hash>`) を復元する。
+  // path (= localStorage `flode.last_active.<hash>`) を復元する。
   const setWorkspaceInfo = useAppStore((s) => s.setWorkspaceInfo);
   const openFileInTab = useAppStore((s) => s.openFileInTab);
   useEffect(() => {
@@ -92,7 +89,7 @@ export default function App(): JSX.Element {
         setWorkspaceInfo(info.hash, info.absolute_path);
 
         // 最後に開いていた active file を復元 (ADR-0043 §論点 8-A)
-        const lastKey = `pyflw.last_active.${info.hash}`;
+        const lastKey = `flode.last_active.${info.hash}`;
         const lastPath = window.localStorage.getItem(lastKey);
         if (!lastPath) return;
         // 既に store に何か開いていたら復元しない (= ユーザーが手動で何か
@@ -122,7 +119,7 @@ export default function App(): JSX.Element {
   const workspaceHash = useAppStore((s) => s.workspaceHash);
   useEffect(() => {
     if (!workspaceHash) return;
-    const key = `pyflw.last_active.${workspaceHash}`;
+    const key = `flode.last_active.${workspaceHash}`;
     if (activeTabFilePath) {
       try {
         window.localStorage.setItem(key, activeTabFilePath);
@@ -187,14 +184,14 @@ export default function App(): JSX.Element {
     useState<HTMLDivElement | null>(null);
 
   // ADR-0045 §(3-C) §(3-D): モデル切替 / 起動時に SplitTree を localStorage から
-  // 復元 (+ 旧 ``pyflw.scope_split`` 片方向 migration)。``hasScopeBlocks`` は
+  // 復元 (+ 旧 ``flode.scope_split`` 片方向 migration)。``hasScopeBlocks`` は
   // モデルが Scope/XYGraph を持つかの構造的判定で、stored / legacy 両方なし時の
   // default tree 選定根拠。
   const loadWorkspaceLayout = useAppStore((s) => s.loadWorkspaceLayout);
   useEffect(() => {
     if (workspaceHash === null || activeTabFilePath === null) {
       // workspace 未確定 or タブ未選択時: default
-      loadWorkspaceLayout(null, null, hasScopeBlocks);
+      loadWorkspaceLayout(null, hasScopeBlocks);
       return;
     }
     const newKey = makeWorkspaceLayoutKey(workspaceHash, activeTabFilePath);
@@ -205,14 +202,7 @@ export default function App(): JSX.Element {
         return null;
       }
     })();
-    const legacy = (() => {
-      try {
-        return window.localStorage.getItem(LEGACY_SCOPE_SPLIT_KEY);
-      } catch {
-        return null;
-      }
-    })();
-    loadWorkspaceLayout(stored, legacy, hasScopeBlocks);
+    loadWorkspaceLayout(stored, hasScopeBlocks);
     // hasScopeBlocks は依存配列から **意図的に除外**: モデル内でブロック追加 /
     // 削除が起きても layout を勝手にリセットしない (= ユーザーが手で組んだ
     // SplitTree を維持)。モデル切替時のみ初期化したい。

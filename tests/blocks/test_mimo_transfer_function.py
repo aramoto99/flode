@@ -9,16 +9,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Constant,
     MimoTransferFunction,
     Scope,
     Step,
     TransferFunction,
 )
-from pyflw.blocks._lti_utils import build_companion_form_siso
-from pyflw.exceptions import BlockSpecError
+from flode.blocks._lti_utils import build_companion_form_siso
+from flode.exceptions import BlockSpecError
 
 
 def _flat(scope: Scope) -> np.ndarray:
@@ -338,4 +338,4 @@ class TestMimoPersistence:
 
         data = json.loads(path.read_text(encoding="utf-8"))
         m_entry = next(b for b in data["blocks"] if b["id"] == "m")
-        assert m_entry["type"] == "pyflw.blocks.continuous.MimoTransferFunction"
+        assert m_entry["type"] == "flode.blocks.continuous.MimoTransferFunction"

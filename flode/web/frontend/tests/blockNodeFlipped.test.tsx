@@ -27,7 +27,7 @@ afterEach(() => {
 const baseProps = (flipped: boolean) => ({
   id: "g1",
   data: {
-    blockType: "pyflw.blocks.mathops.Gain",
+    blockType: "flode.blocks.mathops.Gain",
     params: { k: 2.0 },
     color: "#475569",
     nInputs: 1,

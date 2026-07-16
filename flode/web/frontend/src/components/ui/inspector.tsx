@@ -1,4 +1,4 @@
-// pyflw UI design system — "Property Inspector" 風 primitives。
+// flode UI design system — "Property Inspector" 風 primitives。
 //
 // v0.25.0: ScopeSettingsDialog (v0.24.4) で確立した設計を再利用可能 primitives
 // として切り出し、ParameterPanel / ModelSettingsModal / 今後の dialogs を統一する。

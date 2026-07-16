@@ -10,10 +10,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Inport, Outport
-from pyflw.blocks import Gain, UnitDelay
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Enable, Subsystem
+from flode import Inport, Outport
+from flode.blocks import Gain, UnitDelay
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Enable, Subsystem
 
 
 def _build_enabled(states_policy: str = "held", outputs_policy: str = "held") -> Subsystem:

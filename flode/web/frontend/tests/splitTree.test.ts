@@ -1,5 +1,5 @@
 // ADR-0045 §(10) Vitest: SplitTree 純関数の全パターンテスト
-// (= 葉 0 / 1 / 2 / 3、ネスト深さ 0 / 1 / 2、JSON 往復、不正データ fallback、migration)
+// (= 葉 0 / 1 / 2 / 3、ネスト深さ 0 / 1 / 2、JSON 往復、不正データ fallback)
 
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +12,6 @@ import {
   getLeafPaneIds,
   insertSplit,
   makeSplitId,
-  migrateFromScopeSplit,
   normalizeTree,
   removeLeaf,
   serializeTree,
@@ -308,46 +307,29 @@ describe("normalizeTree", () => {
   });
 });
 
-describe("migrateFromScopeSplit", () => {
-  it("legacy が null なら null", () => {
-    expect(migrateFromScopeSplit(null)).toBeNull();
-    expect(migrateFromScopeSplit(undefined)).toBeNull();
-    expect(migrateFromScopeSplit("")).toBeNull();
-  });
-
-  it("legacy 存在時は DEFAULT_TREE_WITH_SCOPES (= 縦 60/40 fallback)", () => {
-    expect(migrateFromScopeSplit('{"some":"value"}')).toEqual(
-      DEFAULT_TREE_WITH_SCOPES,
-    );
-    expect(migrateFromScopeSplit("anything")).toEqual(DEFAULT_TREE_WITH_SCOPES);
-  });
-});
-
 describe("chooseInitialTree", () => {
   it("stored が valid SplitTree なら復元優先", () => {
     const stored = serializeTree({
       kind: "leaf",
       paneId: "diagram",
     });
-    expect(chooseInitialTree(stored, "legacy-value", true)).toEqual({
+    expect(chooseInitialTree(stored, true)).toEqual({
       kind: "leaf",
       paneId: "diagram",
     });
   });
 
-  it("stored 無し、legacy 有りなら DEFAULT_TREE_WITH_SCOPES", () => {
-    expect(chooseInitialTree(null, "legacy-value", true)).toEqual(
+  it("stored が不正 JSON なら Scope 有無の default にフォールバック", () => {
+    expect(chooseInitialTree("not-json", true)).toEqual(
       DEFAULT_TREE_WITH_SCOPES,
     );
   });
 
-  it("stored / legacy 両方無し、Scope 有りなら DEFAULT_TREE_WITH_SCOPES", () => {
-    expect(chooseInitialTree(null, null, true)).toEqual(
-      DEFAULT_TREE_WITH_SCOPES,
-    );
+  it("stored 無し、Scope 有りなら DEFAULT_TREE_WITH_SCOPES", () => {
+    expect(chooseInitialTree(null, true)).toEqual(DEFAULT_TREE_WITH_SCOPES);
   });
 
-  it("stored / legacy 両方無し、Scope 無しなら DEFAULT_TREE (diagram 単独)", () => {
-    expect(chooseInitialTree(null, null, false)).toEqual(DEFAULT_TREE);
+  it("stored 無し、Scope 無しなら DEFAULT_TREE (diagram 単独)", () => {
+    expect(chooseInitialTree(null, false)).toEqual(DEFAULT_TREE);
   });
 });

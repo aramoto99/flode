@@ -1,21 +1,21 @@
-"""``pyflw`` コマンドのエントリポイント (ADR-0013 §(2) / ADR-0041 §3 / SPEC-0004)。
+"""``flode`` コマンドのエントリポイント (ADR-0013 §(2) / ADR-0041 §3 / SPEC-0004)。
 
-``pip install pyflw[gui]`` 後、コマンドラインから::
+``pip install flode[gui]`` 後、コマンドラインから::
 
-    pyflw
+    flode
 
 だけで FastAPI サーバが起動しブラウザで UI が開く (``--workspace`` / ``--port``
-等で上書き可)。``pyflw-server`` は互換 alias として同じエントリポイントを指す
-(SPEC-0021)。``pyflw[gui]`` extras が無い場合は
-``pyflw.server`` の import 時点で ``PyflwError`` が出るので、ユーザーが extras を
+等で上書き可)。``flode`` は互換 alias として同じエントリポイントを指す
+(SPEC-0021)。``flode[gui]`` extras が無い場合は
+``flode.server`` の import 時点で ``FlodeError`` が出るので、ユーザーが extras を
 インストールするよう誘導される。
 
-SPEC-0004 (v3.17.0~): ``~/.pyflw/config.toml`` をサポート。優先順位は
+SPEC-0004 (v3.17.0~): ``~/.flode/config.toml`` をサポート。優先順位は
 ``CLI 引数 > 設定ファイル > default``。設定ファイル不在時は warning なしで default
 起動 (リファレンス Web IDE 準拠)。
 
 v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` を削除。旧 ``models/``
-ディレクトリから workspace への移行は ``pyflw --migrate-models-to=DIR``
+ディレクトリから workspace への移行は ``flode --migrate-models-to=DIR``
 で実行する (= サーバ起動せず migrate のみ)。
 
 SPEC-0021 (v0.41.0~): 一発起動の UX。起動後にデフォルトブラウザで
@@ -37,7 +37,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from ..exceptions import PyflwError
+from ..exceptions import FlodeError
 from .app import create_app
 from .config import (
     SettingsResolver,
@@ -49,7 +49,7 @@ from .config import (
 from .migrations import migrate_models_to
 from .settings import Settings
 
-_logger = logging.getLogger("pyflw.server.cli")
+_logger = logging.getLogger("flode.server.cli")
 
 # SPEC-0021 / ADR-0069 論点 2-b: ブラウザ自動オープンは listen 確立を TCP 接続で
 # 確認してから行う (固定 sleep より堅牢)。0.1s x 100 回 = 最大約 10 秒待って
@@ -92,12 +92,12 @@ def _probe_bind(host: str, port: int) -> bool:
         bind 成功 (= 空きポート) で ``True``、使用中で ``False``。
 
     Raises:
-        PyflwError: host の解決失敗、または使用中以外の理由での bind 失敗。
+        FlodeError: host の解決失敗、または使用中以外の理由での bind 失敗。
     """
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as e:
-        raise PyflwError(f"Cannot resolve bind host {host!r}: {e}") from e
+        raise FlodeError(f"Cannot resolve bind host {host!r}: {e}") from e
     family, socktype, proto, _, sockaddr = infos[0]
     sock = socket.socket(family, socktype, proto)
     try:
@@ -105,7 +105,7 @@ def _probe_bind(host: str, port: int) -> bool:
     except OSError as e:
         if e.errno == errno.EADDRINUSE or getattr(e, "winerror", None) == _WINERROR_WSAEACCES:
             return False
-        raise PyflwError(f"Failed to bind {_display_host(host)}:{port}: {e}") from e
+        raise FlodeError(f"Failed to bind {_display_host(host)}:{port}: {e}") from e
     finally:
         sock.close()
     return True
@@ -127,20 +127,20 @@ def find_free_port(host: str, port0: int, retries: int) -> int:
         bind 可能だった最初のポート。
 
     Raises:
-        PyflwError: ``port0`` がポート番号上限 (65535) を超えている、範囲内に
+        FlodeError: ``port0`` がポート番号上限 (65535) を超えている、範囲内に
             空きポートがない、または bind 失敗が使用中以外の理由。
     """
     if port0 > _MAX_TCP_PORT:
-        raise PyflwError(f"Invalid port {port0}: TCP port numbers must be <= {_MAX_TCP_PORT}.")
+        raise FlodeError(f"Invalid port {port0}: TCP port numbers must be <= {_MAX_TCP_PORT}.")
     # port_retries の誤設定 (例: 100000) で 65535 超を探索しないよう上限で打ち切る
     port_end = min(port0 + retries, _MAX_TCP_PORT)
     for port in range(port0, port_end + 1):
         if _probe_bind(host, port):
             return port
-    raise PyflwError(
+    raise FlodeError(
         f"No free port found in range {port0}-{port_end} "
         f"(tried {port_end - port0 + 1} port(s)). Stop other servers, or adjust "
-        f"[server].port / [server].port_retries in ~/.pyflw/config.toml."
+        f"[server].port / [server].port_retries in ~/.flode/config.toml."
     )
 
 
@@ -231,15 +231,15 @@ def _launch_browser_thread(bind_host: str, port: int) -> None:
         target=_open_browser_when_ready,
         args=(connect_host, port, url),
         daemon=True,
-        name="pyflw-browser-open",
+        name="flode-browser-open",
     ).start()
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    # prog は主コマンド名に固定 (alias の pyflw-server で呼ばれても help は pyflw を案内)
+    # prog は主コマンド名に固定 (alias の flode で呼ばれても help は flode を案内)
     parser = argparse.ArgumentParser(
-        prog="pyflw",
-        description="Run the pyflw server and open the UI in your browser.",
+        prog="flode",
+        description="Run the flode server and open the UI in your browser.",
     )
     # SPEC-0004: 「CLI 明示指定」と「未指定 (= file or default にフォールバック)」を
     # 区別するため、設定ファイルから上書きされうるフラグは default=None にする。
@@ -257,13 +257,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--host",
         default=None,
-        help="Bind host (default: 127.0.0.1; can be set in ~/.pyflw/config.toml).",
+        help="Bind host (default: 127.0.0.1; can be set in ~/.flode/config.toml).",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=None,
-        help="Bind port (default: 8770; can be set in ~/.pyflw/config.toml).",
+        help="Bind port (default: 8770; can be set in ~/.flode/config.toml).",
     )
     parser.add_argument(
         "--allow-origin",
@@ -278,7 +278,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scope batch size sent over WebSocket (default: 100).",
     )
     # SPEC-0021: ブラウザ自動オープンは既定 ON。恒久無効化は
-    # ~/.pyflw/config.toml の [server] open_browser = false。
+    # ~/.flode/config.toml の [server] open_browser = false。
     parser.add_argument(
         "--no-browser",
         action="store_true",
@@ -293,13 +293,13 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         metavar="PATH",
-        help=("Path to TOML config file. If omitted, ~/.pyflw/config.toml is searched. SPEC-0004."),
+        help=("Path to TOML config file. If omitted, ~/.flode/config.toml is searched. SPEC-0004."),
     )
     parser.add_argument(
         "--generate-config",
         action="store_true",
         help=(
-            "Write a commented config template to ~/.pyflw/config.toml and exit. "
+            "Write a commented config template to ~/.flode/config.toml and exit. "
             "Use --force to overwrite an existing file. SPEC-0004."
         ),
     )
@@ -353,7 +353,7 @@ def _build_settings_from_args(
         ``open_browser``/``port_retries`` は起動シーケンス (SPEC-0021) に渡す。
 
     Raises:
-        PyflwError: 設定ファイルのパースエラー、型違反、workspace path 不在など。
+        FlodeError: 設定ファイルのパースエラー、型違反、workspace path 不在など。
     """
     config_path = resolve_config_path(explicit=args.config)
     if config_path is not None:
@@ -416,14 +416,14 @@ def _run_migration(src: Path | None, dst: Path, *, force: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """``pyflw`` (alias: ``pyflw-server``) のエントリポイント。
+    """``flode`` (alias: ``flode``) のエントリポイント。
 
     Args:
         argv: テスト用に明示的な argv を渡せる。``None`` で ``sys.argv[1:]`` を使う。
 
     Raises:
-        PyflwError: 設定ファイル不正、``--workspace`` 指定 path が不在、または
-            ``uvicorn`` (= ``pyflw[gui]`` extras) がインストールされていない場合。
+        FlodeError: 設定ファイル不正、``--workspace`` 指定 path が不在、または
+            ``uvicorn`` (= ``flode[gui]`` extras) がインストールされていない場合。
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -452,15 +452,15 @@ def main(argv: list[str] | None = None) -> None:
     try:
         import uvicorn
     except ImportError as e:
-        raise PyflwError(
-            "pyflw requires uvicorn to run the server. Install with: pip install pyflw[gui]"
+        raise FlodeError(
+            "flode requires uvicorn to run the server. Install with: pip install flode[gui]"
         ) from e
     # SPEC-0021 §4: ポート自動フォールバック。実際に bind するポートを確定する。
     port = find_free_port(host, port0, port_retries)
     if port != port0:
         _logger.warning("Port %d is in use, using %d instead.", port0, port)
     _logger.info(
-        "Starting pyflw on http://%s:%d (workspace=%s)",
+        "Starting flode on http://%s:%d (workspace=%s)",
         _display_host(host),
         port,
         settings.workspace_root,

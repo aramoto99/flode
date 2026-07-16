@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw.blocks.mathops import Add
-from pyflw.exceptions import BlockSpecError
+from flode.blocks.mathops import Add
+from flode.exceptions import BlockSpecError
 
 
 class TestAddConstruction:
@@ -71,7 +71,7 @@ class TestAddVsSum:
     """Add と Sum が同じ機能であることを確認 (= 形状だけ違う)。"""
 
     def test_same_output_as_sum(self) -> None:
-        from pyflw.blocks.mathops import Sum
+        from flode.blocks.mathops import Sum
 
         signs = "++--+"
         u = np.array([1.0, 2.0, 3.0, 4.0, 5.0])

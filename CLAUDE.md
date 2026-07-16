@@ -6,28 +6,28 @@
 
 ## プロジェクト概要
 
-**pyflw**: ブロック線図ベースの動的システムシミュレータ (商標回避のため独自命名)。
+**flode**: ブロック線図ベースの動的システムシミュレータ。名前は **FLO**w + o**DE** の融合造語 (英語 "flowed" と同音、旧仮名 pyflw から v0.43.0 でリネーム)。
 
 - **言語**: Python 3.11+ (pyproject.toml `requires-python = ">=3.11"`、CI matrix は 3.11 / 3.12 / 3.13)
 - **対象 OS**: OS 非依存の pure Python パッケージ (PyPI 配布)。CI は ubuntu-latest のみ
 - **開発機 (Claude が動く環境)**: Windows 11 + PowerShell 主体、Git Bash (MSYS2/MinGW64) も併用可
 - **主要依存**: numpy>=2.3, scipy (`solve_ivp` で連続系ODE積分、既定 RK45), matplotlib (Scope のプロット)
 - **パッケージ構成**:
-  - `pyflw/core/` — `Block` 基底クラス、`Simulator` (トポロジカルソートで実行順を決定 + 代数ループ検出)、`decorator` / `identifiers` / `persistence`
-  - `pyflw/blocks/` — `sources` / `mathops` / `continuous` / `discrete` / `logic` / `routing` / `sinks`
-  - `pyflw/subsystems/` — `Subsystem` / `Triggered` / ports / mask (ADR-0009 / 0021 / 0036 / 0039)
-  - `pyflw/analysis/` — `linearize` / `frequency_response` / `stability` (ADR-0026 / 0027)
-  - `pyflw/compile/` — `compiled_simulator` / `jax_backend` (ADR-0037: JAX による codegen + GPU、`pyflw[codegen]` extras)
-  - `pyflw/libraries/` — block library loader、`std.flwlib.json` (ADR-0029)
-  - `pyflw/server/` — FastAPI backend (app / routes / runtime / registry / security)、`pyflw-server` CLI (ADR-0011 / 0043)
-  - `pyflw/web/frontend/` — React + Vite frontend (ADR-0012)、build 成果物は `pyflw/server/static/` に配置
+  - `flode/core/` — `Block` 基底クラス、`Simulator` (トポロジカルソートで実行順を決定 + 代数ループ検出)、`decorator` / `identifiers` / `persistence`
+  - `flode/blocks/` — `sources` / `mathops` / `continuous` / `discrete` / `logic` / `routing` / `sinks`
+  - `flode/subsystems/` — `Subsystem` / `Triggered` / ports / mask (ADR-0009 / 0021 / 0036 / 0039)
+  - `flode/analysis/` — `linearize` / `frequency_response` / `stability` (ADR-0026 / 0027)
+  - `flode/compile/` — `compiled_simulator` / `jax_backend` (ADR-0037: JAX による codegen + GPU、`flode[codegen]` extras)
+  - `flode/libraries/` — block library loader、`std.flwlib.json` (ADR-0029)
+  - `flode/server/` — FastAPI backend (app / routes / runtime / registry / security)、`flode` CLI (ADR-0011 / 0043)
+  - `flode/web/frontend/` — React + Vite frontend (ADR-0012)、build 成果物は `flode/server/static/` に配置
   - `examples/` — 動作確認用スクリプト (`spring_mass_damper.py` など)
 - **設計の要点**:
   - 各ブロックは `output(t, x, u)` と (連続系のみ) `derivative(t, x, u)` を実装
   - `direct_feedthrough=False` のブロック (Integrator 等) が代数ループを切る
   - Simulator は全ブロックの状態を1本のベクトルに連結して `solve_ivp` に渡す
   - 出力計算は2パス: ① 直達ブロックをトポ順に計算 → ② 非直達ブロックの入力を組み立て (微分計算用)
-- **GUI**: Web GUI を実装済 (FastAPI backend + React frontend、`pyflw-server` で起動)。デスクトップ版 (PySide6 等) は採用していない
+- **GUI**: Web GUI を実装済 (FastAPI backend + React frontend、`flode` で起動)。デスクトップ版 (PySide6 等) は採用していない
 
 ### 命名上の制約
 

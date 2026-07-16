@@ -19,11 +19,11 @@ import json
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Demux, Mux, Scope
-from pyflw.core.block import Block
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems.ports import Outport
+from flode import Simulator
+from flode.blocks import Constant, Demux, Mux, Scope
+from flode.core.block import Block
+from flode.exceptions import BlockSpecError
+from flode.subsystems.ports import Outport
 
 # ---------------------------------------------------------------------------
 # ヘルパー

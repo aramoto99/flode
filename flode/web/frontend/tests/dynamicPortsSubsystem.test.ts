@@ -17,7 +17,7 @@ describe("resolvePortCounts: Subsystem port derivation (ADR-0039)", () => {
         { id: "in0", type: INPORT_TYPE, params: { port_idx: 0 } },
         { id: "in1", type: INPORT_TYPE, params: { port_idx: 1 } },
         { id: "out0", type: OUTPORT_TYPE, params: { port_idx: 0 } },
-        { id: "g", type: "pyflw.blocks.mathops.Gain", params: { k: 2.0 } },
+        { id: "g", type: "flode.blocks.mathops.Gain", params: { k: 2.0 } },
       ],
     };
     const counts = resolvePortCounts(SUBSYSTEM_TYPE, params, undefined);

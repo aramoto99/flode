@@ -220,7 +220,7 @@
   "filebrowser.refresh": "Refresh",
   "filebrowser.collapse": "Collapse workspace",
   "filebrowser.expand": "Expand workspace",
-  "filebrowser.disabled": "File API not enabled. Restart pyflw-server with --workspace=PATH.",
+  "filebrowser.disabled": "File API not enabled. Restart flode with --workspace=PATH.",
   "filebrowser.loading": "Loading…",
   "filebrowser.empty": "(empty workspace)",
   "dialog.alert.title": "Notice",

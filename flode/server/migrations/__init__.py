@@ -1,7 +1,7 @@
 """legacy ``--model-dir`` から ``--workspace`` への移行ユーティリティ
 (ADR-0041 §論点 6-A)。
 
-``pyflw-server --migrate-models-to=DIR`` で起動するとサーバを起動せず本関数
+``flode --migrate-models-to=DIR`` で起動するとサーバを起動せず本関数
 を実行して終了する。元 ``models/`` 配下の ``*.flw.json`` を非破壊コピーで
 移動し、利用者が dst を確認してから src を手動削除する 2-phase 安全フロー
 を採用。

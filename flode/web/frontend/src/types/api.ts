@@ -306,7 +306,7 @@ export interface FailurePayload {
   block_id: string | null;
   /** 関与ブロック ID 配列 (代数ループ等の複数関与)。単一なら 1 要素 / 不明なら空。 */
   block_ids: string[];
-  /** ブロックタイプ (例: ``"pyflw.blocks.mathops.Divide"``)。 */
+  /** ブロックタイプ (例: ``"flode.blocks.mathops.Divide"``)。 */
   block_type: string | null;
   /** ユーザー命名ラベル (= ``Block.name`` or ``id`` fallback)。 */
   block_label: string | null;

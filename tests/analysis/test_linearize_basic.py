@@ -10,9 +10,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator, linearize
-from pyflw.blocks import Constant, Integrator, Scope, StateSpace, TransferFunction
-from pyflw.blocks.continuous import MimoTransferFunction
+from flode import Simulator, linearize
+from flode.blocks import Constant, Integrator, Scope, StateSpace, TransferFunction
+from flode.blocks.continuous import MimoTransferFunction
 
 
 class TestIntegrator:
@@ -309,8 +309,8 @@ class TestLabelsConsistency:
 
     def test_subsystem_state_label_format(self) -> None:
         """Subsystem の状態ラベルは ``'{subsystem_id}.x[{i}]'`` 形式 (ADR-0026 §(8))。"""
-        from pyflw import Inport, Outport, Subsystem
-        from pyflw.blocks import Gain
+        from flode import Inport, Outport, Subsystem
+        from flode.blocks import Gain
 
         sub = Subsystem(id="sub")
         sub.add(Inport(port_idx=0))

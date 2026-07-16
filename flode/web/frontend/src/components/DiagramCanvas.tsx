@@ -240,7 +240,7 @@ export function DiagramCanvas({
 
       // ドラッグ中はノードの CSS transition を切って、マウスにピッタリ追従させる
       // (= ヌルッと遅れて見える symptom の抑制)。body 全体に class を付ける。
-      document.body.classList.add("pyflw-copying");
+      document.body.classList.add("flode-copying");
 
       dragState = {
         newId,
@@ -267,7 +267,7 @@ export function DiagramCanvas({
       // 複製を選択状態にして、そのまま左クリックで微調整できるようにする
       const newId = dragState.newId;
       dragState = null;
-      document.body.classList.remove("pyflw-copying");
+      document.body.classList.remove("flode-copying");
       useAppStore.getState().selectNode(newId);
     };
 
@@ -289,7 +289,7 @@ export function DiagramCanvas({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       // unmount 中にドラッグが続いていた場合の保険
-      document.body.classList.remove("pyflw-copying");
+      document.body.classList.remove("flode-copying");
     };
   }, [reactFlow]);
 
@@ -351,7 +351,7 @@ export function DiagramCanvas({
       // hit testing: ドロップ位置の DOM から最も近い `data-id` (= ノード ID)
       // を持つ React Flow node 要素を辿る。input port[0] (= dst_idx=0) に接続
       // するセマンティクスは Ctrl+ 接続と同じ (= ADR-0041 §論点 5-A 範囲外、
-      // pyflw GUI 既定挙動)。
+      // flode GUI 既定挙動)。
       const dropElem = document.elementFromPoint(e.clientX, e.clientY);
       let cursor: HTMLElement | null = dropElem as HTMLElement | null;
       let dropNodeId: string | null = null;
@@ -652,10 +652,10 @@ export function DiagramCanvas({
   const onDrop = (event: React.DragEvent): void => {
     event.preventDefault();
     if (!editingModel) return;
-    // ADR-0029: Library entry の drop は別 MIME (`application/pyflw-library-entry-ref`)
+    // ADR-0029: Library entry の drop は別 MIME (`application/flode-library-entry-ref`)
     // で運ばれる。先にそちらを check してから通常 block drop に fallback する。
     const libraryRefRaw = event.dataTransfer.getData(
-      "application/pyflw-library-entry-ref",
+      "application/flode-library-entry-ref",
     );
     if (libraryRefRaw) {
       let ref: { library: string; entry: string } | null = null;
@@ -714,10 +714,10 @@ export function DiagramCanvas({
         });
       return;
     }
-    const typePath = event.dataTransfer.getData("application/pyflw-block-type");
+    const typePath = event.dataTransfer.getData("application/flode-block-type");
     if (!typePath) return;
     const defaultParamsRaw = event.dataTransfer.getData(
-      "application/pyflw-default-params",
+      "application/flode-default-params",
     );
     let defaultParams: Record<string, unknown> = {};
     try {
@@ -970,10 +970,10 @@ export function DiagramCanvas({
         // リファレンスツール流: Shift を押しながらノードドラッグを始めると、対象 (= 選択中の)
         // ノードに繋がっているエッジをすべて切り離す。これによりブロックを「リンク
         // から外して動かす」操作が 1 ストロークで完結する。
-        // また v0.16.0: ドラッグ中は body に ``pyflw-dragging`` を付け、CSS で全
+        // また v0.16.0: ドラッグ中は body に ``flode-dragging`` を付け、CSS で全
         // ノードの transition を切る (= 複数選択ドラッグでも追従遅延が起きない)。
         onNodeDragStart={(event, node) => {
-          document.body.classList.add("pyflw-dragging");
+          document.body.classList.add("flode-dragging");
           if (!event.shiftKey || !editingModel) return;
           const ids = new Set(
             useAppStore.getState().selectedNodeIds.length > 0
@@ -987,16 +987,16 @@ export function DiagramCanvas({
           }
         }}
         onNodeDragStop={(_event, node) => {
-          document.body.classList.remove("pyflw-dragging");
+          document.body.classList.remove("flode-dragging");
           // v0.26.0: 移動後の位置で auto-connect-on-edge を試行
           // (= 孤立ブロックを wire の上に置いたケース)
           tryAutoSplice(node.id);
         }}
         onSelectionDragStart={() => {
-          document.body.classList.add("pyflw-dragging");
+          document.body.classList.add("flode-dragging");
         }}
         onSelectionDragStop={() => {
-          document.body.classList.remove("pyflw-dragging");
+          document.body.classList.remove("flode-dragging");
         }}
         onPaneClick={() => {
           // pane クリックは選択解除 + auto-connect 中断

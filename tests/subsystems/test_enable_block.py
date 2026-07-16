@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems.control_blocks import (
+from flode.exceptions import BlockSpecError
+from flode.subsystems.control_blocks import (
     ENABLE_OUTPUT_POLICIES,
     ENABLE_STATE_POLICIES,
     Enable,

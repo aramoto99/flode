@@ -27,9 +27,9 @@ function baseModel(): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "src", type: "pyflw.blocks.sources.Step", params: {} },
-      { id: "g1", type: "pyflw.blocks.mathops.Gain", params: { k: 2 } },
-      { id: "g2", type: "pyflw.blocks.mathops.Gain", params: { k: 3 } },
+      { id: "src", type: "flode.blocks.sources.Step", params: {} },
+      { id: "g1", type: "flode.blocks.mathops.Gain", params: { k: 2 } },
+      { id: "g2", type: "flode.blocks.mathops.Gain", params: { k: 3 } },
     ],
     connections: [
       { src: "src", src_idx: 0, dst: "g1", dst_idx: 0 },
@@ -43,14 +43,14 @@ function baseModel(): FlwModel {
 function subsystemModel(): FlwModel {
   const sub: BlockEntry = {
     id: "sub1",
-    type: "pyflw.subsystems.Subsystem",
+    type: "flode.subsystems.Subsystem",
     params: {
       n_inputs: 1,
       n_outputs: 1,
       blocks: [
-        { id: "ip0", type: "pyflw.subsystems.Inport", params: { port_idx: 0 } },
-        { id: "ga", type: "pyflw.blocks.mathops.Gain", params: { k: 1 } },
-        { id: "gb", type: "pyflw.blocks.mathops.Gain", params: { k: 1 } },
+        { id: "ip0", type: "flode.subsystems.Inport", params: { port_idx: 0 } },
+        { id: "ga", type: "flode.blocks.mathops.Gain", params: { k: 1 } },
+        { id: "gb", type: "flode.blocks.mathops.Gain", params: { k: 1 } },
       ],
       connections: [
         { src: "ip0", src_idx: 0, dst: "ga", dst_idx: 0 },
@@ -71,7 +71,7 @@ function subsystemModel(): FlwModel {
       atol: 1e-6,
       dt_base: null,
     },
-    blocks: [{ id: "in", type: "pyflw.blocks.sources.Step", params: {} }, sub],
+    blocks: [{ id: "in", type: "flode.blocks.sources.Step", params: {} }, sub],
     connections: [{ src: "in", src_idx: 0, dst: "sub1", dst_idx: 0 }],
     layout: {},
   };

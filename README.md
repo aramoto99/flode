@@ -1,14 +1,14 @@
-# pyflw
+# flode
 
 A block-diagram dynamic system simulator for Python. Build continuous, discrete,
 and hybrid models by wiring pre-built blocks, then integrate with
 `scipy.solve_ivp` (default: RK45).
 
-**Current: v0.42.0** (2026-07-14). pyflw follows
+**Current: v0.42.0** (2026-07-14). flode follows
 [ZeroVer](https://0ver.org/) (永久 0.x) — within `0.x`, a **minor** bump is a
 feature or breaking change and a **patch** bump is a fix. The public Python API,
 `.flw.json` JSON schema (now **0.9**), REST `/api/v1/*` surface, and extras
-names (`pyflw[gui/control/codegen/gpu]`) are kept stable across patch releases;
+names (`flode[gui/control/codegen/gpu]`) are kept stable across patch releases;
 breaking changes are called out in `CHANGELOG.md` and bump the minor.
 
 Recent highlights:
@@ -18,7 +18,7 @@ Recent highlights:
   settings field now actually affects the plot (minor grid, per-signal
   markers), and new Edit / View menus expose the full command surface that
   was previously shortcut-only.
-- **One-command startup UX** (v0.41.0, SPEC-0021) — `pyflw` opens
+- **One-command startup UX** (v0.41.0, SPEC-0021) — `flode` opens
   your default browser automatically and falls back to the next free port when
   the requested one is busy (`--no-browser` / `[server] port_retries = 0` to
   opt out).
@@ -44,7 +44,7 @@ Recent highlights:
 
 ## Installation
 
-pyflw is distributed via `git clone` from GitHub (no PyPI package).
+flode is distributed via `git clone` from GitHub (no PyPI package).
 
 ### Prerequisites
 
@@ -57,23 +57,23 @@ pyflw is distributed via `git clone` from GitHub (no PyPI package).
 ### Core only (Python API)
 
 ```bash
-git clone https://github.com/aramoto99/pyflw.git
-cd pyflw
+git clone https://github.com/aramoto99/flode.git
+cd flode
 pip install -e .
 ```
 
 ### Web GUI
 
-The Web GUI frontend (`pyflw/server/static/`) is a build artifact and is
+The Web GUI frontend (`flode/server/static/`) is a build artifact and is
 not committed to git. Build it once before installing the `[gui]` extras:
 
 ```bash
-git clone https://github.com/aramoto99/pyflw.git
-cd pyflw
+git clone https://github.com/aramoto99/flode.git
+cd flode
 
-# Build the React frontend → outputs into pyflw/server/static/ via
-# pyflw/web/frontend/scripts/deploy-to-server-static.mjs
-cd pyflw/web/frontend
+# Build the React frontend → outputs into flode/server/static/ via
+# flode/web/frontend/scripts/deploy-to-server-static.mjs
+cd flode/web/frontend
 npm install
 npm run build
 cd ../../..
@@ -83,20 +83,20 @@ pip install -e ".[gui]"
 
 # Start the server — opens your default browser automatically (SPEC-0021).
 # If port 8770 is busy it falls back to 8771, 8772, ... (up to 50 tries).
-# (`pyflw-server` also works as a compatibility alias.)
-pyflw
+# (`flode` also works as a compatibility alias.)
+flode
 
 # Options: custom workspace/port, headless (no browser)
-pyflw --workspace ./workspace --port 8770
-pyflw --no-browser
+flode --workspace ./workspace --port 8770
+flode --no-browser
 # Fixed-port setups (reverse proxy etc.): set `[server] port_retries = 0`
-# in ~/.pyflw/config.toml to fail immediately instead of falling back.
-# `pyflw --generate-config` writes a commented template with all
+# in ~/.flode/config.toml to fail immediately instead of falling back.
+# `flode --generate-config` writes a commented template with all
 # keys ([server] open_browser / port_retries etc.).
 ```
 
 Re-run `npm run build` after any `git pull` that touches
-`pyflw/web/frontend/`. If you skip the build step, `pip install -e ".[gui]"`
+`flode/web/frontend/`. If you skip the build step, `pip install -e ".[gui]"`
 still succeeds but the browser will show 404 at `/` (the REST/WebSocket
 API at `/api/v1/*` keeps working).
 
@@ -123,8 +123,8 @@ Multiple extras can be combined: `pip install -e ".[gui,control,dev]"`.
 ## Quick Example
 
 ```python
-from pyflw import Simulator
-from pyflw.blocks import Constant, Gain, Integrator, Scope
+from flode import Simulator
+from flode.blocks import Constant, Gain, Integrator, Scope
 
 sim = Simulator(t_end=10.0, dt=0.01)
 
@@ -168,7 +168,7 @@ Turn a plain function into a `Block` subclass without subclassing `Block` direct
 
 ```python
 import numpy as np
-from pyflw import block
+from flode import block
 
 @block(states=1)
 def my_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]:
@@ -189,8 +189,8 @@ unless `compile()` is called (= `examples/spring_mass_damper.py` numerics
 remain bit-identical to v0.1.0).
 
 ```python
-from pyflw import Simulator, linearize
-from pyflw.blocks import Constant, Sum, Gain, Integrator
+from flode import Simulator, linearize
+from flode.blocks import Constant, Sum, Gain, Integrator
 
 sim = Simulator(t_end=10.0, dt=0.01)
 src   = sim.add(Constant(value=1.0))
@@ -211,8 +211,8 @@ compiled = sim.compile(backend="jax")
 print(compiled.n_states, compiled.backend)
 ```
 
-Requires the `pyflw[codegen]` extras (`jax[cpu]`). The GPU backend uses the
-`pyflw[gpu]` extras (`jax[cuda12]`, Linux x86_64 / NVIDIA CUDA 12 only);
+Requires the `flode[codegen]` extras (`jax[cpu]`). The GPU backend uses the
+`flode[gpu]` extras (`jax[cuda12]`, Linux x86_64 / NVIDIA CUDA 12 only);
 real-machine benchmarks are planned for Phase 6+. Models containing blocks
 not yet supported by `Simulator.compile()` (`StateSpace` /
 `TransferFunction` / `Subsystem`, ...) are rejected with `BlockSpecError`.
@@ -224,24 +224,24 @@ After installing the `gui` extras, launch the FastAPI server with a workspace
 root (= directory containing your `.flw.json` files, ADR-0041):
 
 ```bash
-pyflw --workspace ./workspace --port 8770
+flode --workspace ./workspace --port 8770
 ```
 
 Your default browser opens the UI automatically (SPEC-0021; `--no-browser`
-to disable). `pyflw-server` still works as a compatibility alias.
+to disable). `flode` still works as a compatibility alias.
 
-### Persisting server defaults (`~/.pyflw/config.toml`)
+### Persisting server defaults (`~/.flode/config.toml`)
 
 If you find yourself typing the same `--workspace` / `--port` / `--allow-origin`
-every time, persist them in `~/.pyflw/config.toml` (SPEC-0004). Generate a
+every time, persist them in `~/.flode/config.toml` (SPEC-0004). Generate a
 commented template with:
 
 ```bash
-pyflw --generate-config
+flode --generate-config
 ```
 
-The template lives at `~/.pyflw/config.toml` (or `%USERPROFILE%\.pyflw\config.toml`
-on Windows). Edit it, then just run `pyflw` with no arguments:
+The template lives at `~/.flode/config.toml` (or `%USERPROFILE%\.flode\config.toml`
+on Windows). Edit it, then just run `flode` with no arguments:
 
 ```toml
 [server]
@@ -249,7 +249,7 @@ host = "127.0.0.1"
 port = 8770
 
 [settings]
-workspace = "~/pyflw-workspace"
+workspace = "~/flode-workspace"
 scope_batch_size = 100
 max_concurrent = 4
 allow_origins = []
@@ -299,11 +299,11 @@ editor and the changes appear in the UI on next focus (external-changes poll).
 
 ### Migration from the legacy `--model-dir` layout (pre-v0.21)
 
-If you previously ran pyflw with the legacy `--model-dir DIR` flag (removed
+If you previously ran flode with the legacy `--model-dir DIR` flag (removed
 in v0.21), migrate the flat layout to a workspace once with:
 
 ```bash
-pyflw --migrate-models-to=./workspace --legacy-models-dir=./old_models
+flode --migrate-models-to=./workspace --legacy-models-dir=./old_models
 ```
 
 then start with `--workspace=./workspace`. The migration command is
@@ -312,9 +312,9 @@ deprecated and will be removed in a future release.
 ### Notes
 
 - Frontend development (Vite dev server with hot reload) is documented in
-  `pyflw/web/frontend/README.md`.
-- `pyflw/server/static/` is a build output, not source — it is generated by
-  `npm run build` in `pyflw/web/frontend/` and is excluded from git. See
+  `flode/web/frontend/README.md`.
+- `flode/server/static/` is a build output, not source — it is generated by
+  `npm run build` in `flode/web/frontend/` and is excluded from git. See
   the [Web GUI installation](#web-gui) section for the build step.
 - The `/api/v1/files/search` endpoint hard-excludes well-known credential
   paths (`.env*`, `id_rsa`, `id_ed25519`, `.ssh/`, `.aws/`, `.gnupg/`,
@@ -328,10 +328,10 @@ deprecated and will be removed in a future release.
 pytest -ra
 
 # Lint
-ruff check pyflw tests
+ruff check flode tests
 
 # Type-check
-mypy pyflw
+mypy flode
 
 # Build HTML docs
 sphinx-build -b html docs docs/_build
@@ -340,15 +340,15 @@ sphinx-build -b html docs docs/_build
 ## Directory Layout
 
 ```
-pyflw/
+flode/
   core/       Block base class, Simulator, @block decorator, JSON persistence
   blocks/     Block implementations (sources, mathops, continuous, discrete,
               logic, routing, sinks, lookup, discontinuities, ...)
   subsystems/ Subsystem, Triggered/Enable behavior, ports, mask (ADR-0009 / 0058)
   analysis/   linearize / frequency_response / stability (ADR-0026 / 0027)
-  compile/    compiled_simulator / jax_backend codegen (ADR-0037, pyflw[codegen])
+  compile/    compiled_simulator / jax_backend codegen (ADR-0037, flode[codegen])
   libraries/  Block library loader + std.flwlib.json (ADR-0029)
-  server/     Optional FastAPI Web GUI backend (pyflw[gui])
+  server/     Optional FastAPI Web GUI backend (flode[gui])
   web/
     frontend/ Vite + React + TypeScript GUI source (built into server/static)
 examples/     Runnable scripts (e.g. spring_mass_damper.py)

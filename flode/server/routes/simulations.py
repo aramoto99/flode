@@ -20,16 +20,16 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 
 from ...core.simulator import Simulator
 from ...exceptions import (
+    FlodeError,
     ModelLoadError,
     PathTraversalError,
-    PyflwError,
     SimulationStillRunningError,
 )
 from ..errors import build_failure_payload
 from ..runtime import SimulationManager
 from ..security import resolve_workspace_path
 
-_logger = logging.getLogger("pyflw.server.routes.simulations")
+_logger = logging.getLogger("flode.server.routes.simulations")
 
 router = APIRouter(prefix="/simulations", tags=["simulations"])
 
@@ -197,7 +197,7 @@ def get_simulation(request: Request, sim_id: str) -> dict[str, Any]:
     manager = _manager(request)
     try:
         state = manager.get_state(sim_id)
-    except PyflwError as e:
+    except FlodeError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return dataclasses.asdict(state)
 
@@ -207,7 +207,7 @@ def stop_simulation(request: Request, sim_id: str) -> dict[str, str]:
     manager = _manager(request)
     try:
         manager.stop(sim_id)
-    except PyflwError as e:
+    except FlodeError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return {"simulation_id": sim_id, "status": "stop_requested"}
 
@@ -219,7 +219,7 @@ def get_results(request: Request, sim_id: str) -> dict[str, Any]:
         return manager.get_results(sim_id)
     except SimulationStillRunningError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
-    except PyflwError as e:
+    except FlodeError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
@@ -257,7 +257,7 @@ async def stream(websocket: WebSocket, sim_id: str) -> None:
                     if isinstance(data, dict) and data.get("type") == "stop":
                         try:
                             manager.stop(sim_id)
-                        except PyflwError:
+                        except FlodeError:
                             pass
             except WebSocketDisconnect:
                 return
@@ -268,7 +268,7 @@ async def stream(websocket: WebSocket, sim_id: str) -> None:
                 await websocket.send_json(msg)
         finally:
             recv_task.cancel()
-    except PyflwError as e:
+    except FlodeError as e:
         # ADR-0056: 旧 ``error`` メッセージは廃止。WS 確立中のドメイン例外
         # (例: 未知の simulation_id) は構造化 ``failed`` で 1 件返してから閉じる。
         terminal = {"type": "failed", "duration_sec": 0.0}

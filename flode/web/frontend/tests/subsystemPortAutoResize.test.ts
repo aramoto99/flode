@@ -39,7 +39,7 @@ function makeBaseModel(): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "src", type: "pyflw.blocks.sources.Constant", params: { value: 1.0 } },
+      { id: "src", type: "flode.blocks.sources.Constant", params: { value: 1.0 } },
       {
         id: "sub",
         type: SUBSYSTEM_TYPE,
@@ -53,7 +53,7 @@ function makeBaseModel(): FlwModel {
           layout: { in0: { x: 0, y: 0 }, out0: { x: 200, y: 0 } },
         },
       },
-      { id: "snk", type: "pyflw.blocks.sinks.Terminator", params: {} },
+      { id: "snk", type: "flode.blocks.sinks.Terminator", params: {} },
     ],
     connections: [
       { src: "src", src_idx: 0, dst: "sub", dst_idx: 0 },
@@ -79,8 +79,8 @@ function makeTriggeredModel(): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "data_src", type: "pyflw.blocks.sources.Constant", params: { value: 1.0 } },
-      { id: "trig_src", type: "pyflw.blocks.sources.PulseGenerator", params: {} },
+      { id: "data_src", type: "flode.blocks.sources.Constant", params: { value: 1.0 } },
+      { id: "trig_src", type: "flode.blocks.sources.PulseGenerator", params: {} },
       {
         id: "tsub",
         type: SUBSYSTEM_TYPE,
@@ -198,8 +198,8 @@ describe("ADR-0039: Subsystem port handling (derived property + port_idx renumbe
       ],
     };
     m.blocks.push(
-      { id: "src1", type: "pyflw.blocks.sources.Constant", params: {} },
-      { id: "src2", type: "pyflw.blocks.sources.Constant", params: {} },
+      { id: "src1", type: "flode.blocks.sources.Constant", params: {} },
+      { id: "src2", type: "flode.blocks.sources.Constant", params: {} },
     );
     m.connections = [
       { src: "src", src_idx: 0, dst: "sub", dst_idx: 0 },
@@ -236,7 +236,7 @@ describe("ADR-0039: Subsystem port handling (derived property + port_idx renumbe
         { id: "out1", type: OUTPORT_TYPE, params: { port_idx: 1 } },
       ],
     };
-    m.blocks.push({ id: "snk2", type: "pyflw.blocks.sinks.Terminator", params: {} });
+    m.blocks.push({ id: "snk2", type: "flode.blocks.sinks.Terminator", params: {} });
     m.connections = [
       { src: "src", src_idx: 0, dst: "sub", dst_idx: 0 },
       { src: "sub", src_idx: 0, dst: "snk", dst_idx: 0 },

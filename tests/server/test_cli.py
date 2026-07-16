@@ -1,4 +1,4 @@
-"""``pyflw-server`` CLI の引数解析と Settings 構築テスト (ADR-0041 §3 / SPEC-0004)。
+"""``flode`` CLI の引数解析と Settings 構築テスト (ADR-0041 §3 / SPEC-0004)。
 
 ``main()`` は uvicorn を起動するため直接テストせず、``_build_parser`` /
 ``_build_settings_from_args`` の組み合わせで検証する。
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from pyflw.exceptions import PyflwError
-from pyflw.server.cli import _build_parser, _build_settings_from_args, main
+from flode.exceptions import FlodeError
+from flode.server.cli import _build_parser, _build_settings_from_args, main
 
 
 def _make_args(**overrides: object) -> argparse.Namespace:
@@ -131,7 +131,7 @@ class TestBuildSettingsWorkspaceMode:
 class TestBuildSettingsWorkspaceErrors:
     def test_workspace_nonexistent_raises(self, tmp_path: Path, isolated_home: Path) -> None:
         nonexistent = tmp_path / "does-not-exist"
-        with pytest.raises(PyflwError, match="does not exist"):
+        with pytest.raises(FlodeError, match="does not exist"):
             _build_settings_from_args(_make_args(workspace=nonexistent))
 
     def test_workspace_is_file_not_directory_raises(
@@ -139,7 +139,7 @@ class TestBuildSettingsWorkspaceErrors:
     ) -> None:
         a_file = tmp_path / "regular.txt"
         a_file.write_text("hello")
-        with pytest.raises(PyflwError, match="not a directory"):
+        with pytest.raises(FlodeError, match="not a directory"):
             _build_settings_from_args(_make_args(workspace=a_file))
 
 
@@ -200,7 +200,7 @@ class TestCreateAppIntegration:
     def test_workspace_root_propagates_to_app_state(
         self, tmp_path: Path, isolated_home: Path
     ) -> None:
-        from pyflw.server import create_app
+        from flode.server import create_app
 
         settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         app = create_app(settings=settings)
@@ -220,7 +220,7 @@ class TestMainErrorPaths:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         nonexistent = tmp_path / "does-not-exist"
-        with pytest.raises(PyflwError, match="does not exist"):
+        with pytest.raises(FlodeError, match="does not exist"):
             main(["--workspace", str(nonexistent)])
 
     def test_main_migrate_models_to_without_src_exits_with_code_2(

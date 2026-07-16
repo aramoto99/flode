@@ -29,9 +29,9 @@ function makeModel(waypoints?: BranchWaypointDict): FlwModel {
       dt_base: null,
     },
     blocks: [
-      { id: "src", type: "pyflw.blocks.sources.Step", params: {} },
-      { id: "g1", type: "pyflw.blocks.mathops.Gain", params: { k: 2 } },
-      { id: "g2", type: "pyflw.blocks.mathops.Gain", params: { k: 3 } },
+      { id: "src", type: "flode.blocks.sources.Step", params: {} },
+      { id: "g1", type: "flode.blocks.mathops.Gain", params: { k: 2 } },
+      { id: "g2", type: "flode.blocks.mathops.Gain", params: { k: 3 } },
     ],
     connections: [
       { src: "src", src_idx: 0, dst: "g1", dst_idx: 0 },
@@ -105,14 +105,14 @@ describe("setBranchWaypoint", () => {
       blocks: [
         {
           id: "sub1",
-          type: "pyflw.subsystems.Subsystem",
+          type: "flode.subsystems.Subsystem",
           params: {
             n_inputs: 1,
             n_outputs: 1,
             blocks: [
-              { id: "ip0", type: "pyflw.subsystems.Inport", params: { port_idx: 0 } },
-              { id: "ga", type: "pyflw.blocks.mathops.Gain", params: { k: 1 } },
-              { id: "gb", type: "pyflw.blocks.mathops.Gain", params: { k: 1 } },
+              { id: "ip0", type: "flode.subsystems.Inport", params: { port_idx: 0 } },
+              { id: "ga", type: "flode.blocks.mathops.Gain", params: { k: 1 } },
+              { id: "gb", type: "flode.blocks.mathops.Gain", params: { k: 1 } },
             ],
             connections: [
               { src: "ip0", src_idx: 0, dst: "ga", dst_idx: 0 },
@@ -181,7 +181,7 @@ describe("orphan cleanup on connection / block removal (ADR-0057 §(5))", () => 
 
   it("keeps the waypoint for a 3->2 branch group (still >= 2)", () => {
     const m = makeModel({ "src:0": { axis: "x", pos: 5 } });
-    m.blocks.push({ id: "g3", type: "pyflw.blocks.mathops.Gain", params: { k: 4 } });
+    m.blocks.push({ id: "g3", type: "flode.blocks.mathops.Gain", params: { k: 4 } });
     m.connections.push({ src: "src", src_idx: 0, dst: "g3", dst_idx: 0 });
     useAppStore.setState({
       editingModel: m,

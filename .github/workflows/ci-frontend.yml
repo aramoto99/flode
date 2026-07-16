@@ -10,12 +10,12 @@ on:
     # (frontend は package.json/package-lock.json 管理)。frontend が
     # pyproject.toml に依存するようになった場合はここに追加する。
     paths:
-      - "pyflw/web/frontend/**"
+      - "flode/web/frontend/**"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
     branches: [main]
     paths:
-      - "pyflw/web/frontend/**"
+      - "flode/web/frontend/**"
       - ".github/workflows/ci-frontend.yml"
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pyflw/web/frontend
+        working-directory: flode/web/frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: pyflw/web/frontend/package-lock.json
+          cache-dependency-path: flode/web/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pyflw/web/frontend
+        working-directory: flode/web/frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: pyflw/web/frontend/package-lock.json
+          cache-dependency-path: flode/web/frontend/package-lock.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -71,8 +71,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install pyflw with [gui] extras (FastAPI server)
-        # E2E では `python -m pyflw.server.cli` でバックエンドを起動するため
+      - name: Install flode with [gui] extras (FastAPI server)
+        # E2E では `python -m flode.server.cli` でバックエンドを起動するため
         # repo root から editable install。playwright.config.ts の
         # `cwd: "../../.."` で対応する。
         working-directory: ${{ github.workspace }}
@@ -87,7 +87,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pyflw/web/frontend/package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('flode/web/frontend/package-lock.json') }}
 
       - name: Install Playwright browsers (and OS deps)
         # `--with-deps chromium` は冪等。キャッシュヒット時はバイナリ展開だけスキップ
@@ -104,5 +104,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: pyflw/web/frontend/playwright-report/
+          path: flode/web/frontend/playwright-report/
           retention-days: 7

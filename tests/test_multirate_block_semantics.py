@@ -17,8 +17,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Clock,
     Constant,
     DiscreteIntegrator,

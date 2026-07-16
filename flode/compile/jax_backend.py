@@ -1,17 +1,17 @@
 """Jax-native re-evaluator + ``jax.jacfwd`` 線形化 (ADR-0037 §(3))。
 
-pyflw コア Block の ``output`` / ``derivative`` は numpy ベースなので、jax tracer
+flode コア Block の ``output`` / ``derivative`` は numpy ベースなので、jax tracer
 を渡しても ``np.asarray`` で具象化されてしまい trace が切れる。本モジュールは
 **block 種別ごとの jax-native 評価関数** を dispatch する形で、jax tracer を
 最後まで保つ ``_evaluate_jax`` を構築する。
 
 Phase 5b MVP (= v0.17.0) でサポートする block:
 
-* :class:`pyflw.blocks.Constant` / :class:`pyflw.blocks.Step` /
-  :class:`pyflw.blocks.Sine` / :class:`pyflw.blocks.Ramp` /
-  :class:`pyflw.blocks.Clock` (= time-only sources)
-* :class:`pyflw.blocks.Gain` / :class:`pyflw.blocks.Sum` (= 線形演算)
-* :class:`pyflw.blocks.Integrator` (= 連続状態の積分)
+* :class:`flode.blocks.Constant` / :class:`flode.blocks.Step` /
+  :class:`flode.blocks.Sine` / :class:`flode.blocks.Ramp` /
+  :class:`flode.blocks.Clock` (= time-only sources)
+* :class:`flode.blocks.Gain` / :class:`flode.blocks.Sum` (= 線形演算)
+* :class:`flode.blocks.Integrator` (= 連続状態の積分)
 
 未サポートブロックを含むモデルでは ``BlockSpecError`` を発出して
 ``method="central"`` への移行を案内する (= silent fallback しない、ADR-0037
@@ -75,7 +75,7 @@ def _validate_supported_blocks(simulator: Simulator) -> None:
             f"v0.17.0 jax-native evaluator: {names}. "
             f"Supported types in v0.17.0: {sorted(t.__name__ for t in _SUPPORTED_BLOCK_TYPES)}. "
             f"Use method='central' (numerical) or wait for Phase 6+ extension. "
-            f"See ADR-0037 §Decision §(3) and pyflw/compile/jax_backend.py for the "
+            f"See ADR-0037 §Decision §(3) and flode/compile/jax_backend.py for the "
             f"current support matrix."
         )
 

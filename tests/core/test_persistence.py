@@ -10,7 +10,7 @@ import json
 import numpy as np
 import pytest
 
-from pyflw import (
+from flode import (
     BlockSpecError,
     ModelLoadError,
     ModelSerializationError,
@@ -19,7 +19,7 @@ from pyflw import (
     UnknownBlockTypeError,
     block,
 )
-from pyflw.blocks import (
+from flode.blocks import (
     Constant,
     DiscreteIntegrator,
     Gain,
@@ -38,8 +38,8 @@ from pyflw.blocks import (
     TransferFunction,
     UnitDelay,
 )
-from pyflw.core import persistence as _persistence
-from pyflw.core.persistence import (
+from flode.core import persistence as _persistence
+from flode.core.persistence import (
     CURRENT_SCHEMA_VERSION,
     block_type_path,
     register_block_module,
@@ -144,29 +144,29 @@ class TestToJsonValue:
 
 class TestBlockTypeResolution:
     def test_path_for_standard_block(self):
-        assert block_type_path(Gain) == "pyflw.blocks.mathops.Gain"
+        assert block_type_path(Gain) == "flode.blocks.mathops.Gain"
 
     def test_resolve_standard_block(self):
-        cls = resolve_block_class("pyflw.blocks.mathops.Gain")
+        cls = resolve_block_class("flode.blocks.mathops.Gain")
         assert cls is Gain
 
     def test_resolve_via_blocks_init(self):
-        # `pyflw.blocks` でも import 可能
-        cls = resolve_block_class("pyflw.blocks.Gain")
+        # `flode.blocks` でも import 可能
+        cls = resolve_block_class("flode.blocks.Gain")
         assert cls is Gain
 
     def test_unknown_module_raises(self):
-        # allowlist 経由で `pyflw.does_not_exist` を試す (default で `pyflw.*` 許可)
+        # allowlist 経由で `flode.does_not_exist` を試す (default で `flode.*` 許可)
         with pytest.raises(UnknownBlockTypeError, match="Cannot import module"):
-            resolve_block_class("pyflw.does_not_exist.Foo")
+            resolve_block_class("flode.does_not_exist.Foo")
 
     def test_unknown_attribute_raises(self):
         with pytest.raises(UnknownBlockTypeError, match="has no attribute"):
-            resolve_block_class("pyflw.blocks.NoSuchClass")
+            resolve_block_class("flode.blocks.NoSuchClass")
 
     def test_non_block_class_raises(self):
         with pytest.raises(UnknownBlockTypeError, match="not a Block subclass"):
-            resolve_block_class("pyflw.exceptions.PyflwError")
+            resolve_block_class("flode.exceptions.FlodeError")
 
     def test_unqualified_name_raises(self):
         with pytest.raises(UnknownBlockTypeError, match="fully-qualified"):
@@ -365,7 +365,7 @@ class TestJsonFormat:
         block_entry = data["blocks"][0]
         assert block_entry == {
             "id": "g",
-            "type": "pyflw.blocks.mathops.Gain",
+            "type": "flode.blocks.mathops.Gain",
             "params": {"k": 2.5},
         }
 
@@ -418,7 +418,7 @@ class TestLoadErrors:
                 "atol": 1e-9,
                 "dt_base": None,
             },
-            "blocks": [{"id": "x", "type": "pyflw.blocks.NoSuchBlock", "params": {}}],
+            "blocks": [{"id": "x", "type": "flode.blocks.NoSuchBlock", "params": {}}],
             "connections": [],
         }
         path = tmp_path / "unknown.flw.json"
@@ -441,7 +441,7 @@ class TestLoadErrors:
             "blocks": [
                 {
                     "id": "g",
-                    "type": "pyflw.blocks.mathops.Gain",
+                    "type": "flode.blocks.mathops.Gain",
                     "params": {"unknown_param": 1.0},
                 }
             ],
@@ -557,8 +557,8 @@ def test_duplicate_id_in_json_raises(tmp_path):
             "dt_base": None,
         },
         "blocks": [
-            {"id": "g", "type": "pyflw.blocks.mathops.Gain", "params": {"k": 1.0}},
-            {"id": "g", "type": "pyflw.blocks.mathops.Gain", "params": {"k": 2.0}},
+            {"id": "g", "type": "flode.blocks.mathops.Gain", "params": {"k": 1.0}},
+            {"id": "g", "type": "flode.blocks.mathops.Gain", "params": {"k": 2.0}},
         ],
         "connections": [],
     }

@@ -2,7 +2,7 @@
 // REST `/api/v1/blocks/resolve-port-shapes` を毎回叩くより軽量で、ノード描画 / 接続
 // 検証 / 配線剪定すべて同じ結果になる。
 //
-// ルールが Python 側 (pyflw/blocks/*) の ``__init__`` ロジックと一致している必要が
+// ルールが Python 側 (flode/blocks/*) の ``__init__`` ロジックと一致している必要が
 // あるため、ここでズレが生じたら Python 側の実装に合わせること。
 // (= 各 endsWith の上に Python 実装の根拠コメントを書いておく)
 

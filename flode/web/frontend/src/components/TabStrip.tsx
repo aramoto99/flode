@@ -115,11 +115,11 @@ function TabItem({
 }: TabItemProps): JSX.Element {
   const label = path.split("/").pop() || path;
   // ADR-0052 §(1) Stage 3: タブを drag できるようにする (= drag-to-split-tab)。
-  // dataTransfer に PYFLW_TAB_REF_MIME = filePath を載せ、WorkspaceSplit の
+  // dataTransfer に FLODE_TAB_REF_MIME = filePath を載せ、WorkspaceSplit の
   // drop target がそれを受け取って split / タブ追加を実行する。
   const onDragStart = (e: React.DragEvent<HTMLDivElement>): void => {
     // 動的 import を避けるため import 文を top-level で。runtime constant。
-    e.dataTransfer.setData("application/x-pyflw-tab-ref", path);
+    e.dataTransfer.setData("application/x-flode-tab-ref", path);
     e.dataTransfer.effectAllowed = "move";
   };
   return (

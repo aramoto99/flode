@@ -94,7 +94,7 @@ export function formatMatrixSize(m: unknown): string {
  * Switch ブロックの ``criterion`` パラメータ (= ``>=`` / ``>`` / ``!=``) を
  * リファレンスツール風の比較式 ``u2 ≥ T`` 形に整形する。
  *
- * pyflw `Switch` の criterion 値は backend の比較演算子そのもの (``>=`` / ``>`` /
+ * flode `Switch` の criterion 値は backend の比較演算子そのもの (``>=`` / ``>`` /
  * ``!=``)。Unicode の ≥ / ≠ で表示する方が視認性が良い。
  */
 export function switchOpForCriterion(criterion: unknown): string {

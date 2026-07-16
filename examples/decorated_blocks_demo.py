@@ -4,7 +4,7 @@ Phase 0 既存ブロック (``Constant`` / ``Gain`` / ``Integrator``) のうち�
 3 種を ``@block`` で書き直し、Step 入力に対する 1 次積分系
 (``y_dot = k * u``、解析解 ``y(t) = k * t``) で動作確認する。
 
-Phase 0 既存ブロック (``pyflw/blocks/*``) はそのまま残し、両者は並存する。
+Phase 0 既存ブロック (``flode/blocks/*``) はそのまま残し、両者は並存する。
 本ファイルは API の最小デモであり、既存テスト (``test_phase0_regression``)
 を置き換えるものではない。
 """
@@ -15,8 +15,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator, block
-from pyflw.blocks import Scope
+from flode import Simulator, block
+from flode.blocks import Scope
 
 _logger = logging.getLogger(__name__)
 

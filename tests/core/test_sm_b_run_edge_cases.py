@@ -16,8 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Constant,
     Demux,
     Gain,
@@ -26,7 +26,7 @@ from pyflw.blocks import (
     Scope,
     UnitDelay,
 )
-from pyflw.exceptions import BlockSpecError
+from flode.exceptions import BlockSpecError
 
 
 def _flat(scope: Scope) -> np.ndarray:

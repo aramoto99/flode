@@ -1,7 +1,8 @@
 """``[project.scripts]`` の console script 定義テスト (SPEC-0021)。
 
-``pyflw`` が主コマンド、``pyflw-server`` が互換 alias として、いずれも
-``pyflw.server.cli:main`` を指すことを pyproject.toml から検証する。
+``flode`` が唯一のコマンドとして ``flode.server.cli:main`` を指すことを
+pyproject.toml から検証する。旧コマンド ``pyflw`` / ``pyflw-server`` は
+プロジェクト名変更 (v0.43.0) で削除済み。
 """
 
 from __future__ import annotations
@@ -18,14 +19,11 @@ def _load_scripts() -> dict[str, str]:
 
 
 class TestConsoleScripts:
-    def test_pyflw_is_primary_command(self) -> None:
+    def test_flode_is_the_only_command(self) -> None:
         scripts = _load_scripts()
-        assert scripts["pyflw"] == "pyflw.server.cli:main"
+        assert scripts == {"flode": "flode.server.cli:main"}
 
-    def test_pyflw_server_alias_kept_for_compatibility(self) -> None:
+    def test_legacy_commands_removed(self) -> None:
         scripts = _load_scripts()
-        assert scripts["pyflw-server"] == "pyflw.server.cli:main"
-
-    def test_both_point_to_same_entry_point(self) -> None:
-        scripts = _load_scripts()
-        assert scripts["pyflw"] == scripts["pyflw-server"]
+        assert "pyflw" not in scripts
+        assert "pyflw-server" not in scripts

@@ -34,7 +34,7 @@ from ..core.block import Block
 from ..exceptions import BlockSpecError
 from ._lti_utils import _DF_TOLERANCE
 
-_zohd_logger = logging.getLogger("pyflw.blocks.discrete")
+_zohd_logger = logging.getLogger("flode.blocks.discrete")
 
 
 class UnitDelay(Block):
@@ -171,7 +171,7 @@ class RateTransition(Block):
 
     マルチレートモデルで、上流ブロックのサンプル周期 ``input_sample_time`` と
     下流ブロックのサンプル周期 ``output_sample_time`` が異なる場合に明示的に
-    挿入する。pyflw は ADR-0005 で「自動 RateTransition 挿入はしない」方針を
+    挿入する。flode は ADR-0005 で「自動 RateTransition 挿入はしない」方針を
     採用しているため、ユーザーが本ブロックで明示する必要がある (リファレンスツール経験者
     向けの整合性、ADR-0036 §(2-A))。
 

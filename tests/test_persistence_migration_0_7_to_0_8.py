@@ -3,6 +3,10 @@
 旧 v1 形式 (= ``n_inputs`` / ``n_outputs`` / ``port_shapes_*`` フィールド付き) の
 モデルを load した時、migration が自動で派生フィールドを除去し、内部 Inport /
 Outport から port count が復元されることを検証する。
+
+NOTE: fixture の ``pyflw.*`` FQN は意図的に旧プロジェクト名のまま — schema 0.7 の
+ファイルはこの FQN を含み、0.7 → 0.8 migration は pyflw リテラルとの文字列マッチで
+動く (flode への変換は 0.9 → 0.10 migration の責務)。
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ import logging
 
 import pytest
 
-from pyflw.core.persistence import (
+from flode.core.persistence import (
     CURRENT_SCHEMA_VERSION,
     _builtin_migrate_0_7_to_0_8,
     migrate_to_current,
@@ -59,12 +63,6 @@ def _make_old_model(blocks: list) -> dict:
     }
 
 
-def test_current_schema_version_is_0_9() -> None:
-    # ADR-0058: 0.8 → 0.9 bump (TriggeredSubsystem を Subsystem + 内部 Trigger
-    # block に migration、識別の真実源を class 名から内部 control block に変更)
-    assert CURRENT_SCHEMA_VERSION == "0.9"
-
-
 def test_migrate_0_7_to_0_8_removes_n_inputs_n_outputs() -> None:
     old = _make_old_model([_make_old_subsystem_entry(n_inputs=2, n_outputs=1)])
     new = _builtin_migrate_0_7_to_0_8(old)
@@ -90,7 +88,7 @@ def test_migrate_warns_on_count_mismatch(caplog: pytest.LogCaptureFixture) -> No
     sub = _make_old_subsystem_entry(n_inputs=1, n_outputs=0)
     sub["params"]["n_inputs"] = 5  # 嘘の値で上書き
     old = _make_old_model([sub])
-    with caplog.at_level(logging.WARNING, logger="pyflw.persistence.migrate_0_7_to_0_8"):
+    with caplog.at_level(logging.WARNING, logger="flode.persistence.migrate_0_7_to_0_8"):
         _builtin_migrate_0_7_to_0_8(old)
     assert any("does not match inner Inport" in r.message for r in caplog.records)
 

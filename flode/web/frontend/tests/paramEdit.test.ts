@@ -19,11 +19,11 @@ const baseModel: FlwModel = {
     dt_base: null,
   },
   blocks: [
-    { id: "src", type: "pyflw.blocks.sources.Constant", params: { value: 1.0 } },
-    { id: "g", type: "pyflw.blocks.mathops.Gain", params: { k: 2.0 } },
+    { id: "src", type: "flode.blocks.sources.Constant", params: { value: 1.0 } },
+    { id: "g", type: "flode.blocks.mathops.Gain", params: { k: 2.0 } },
     {
       id: "sc",
-      type: "pyflw.blocks.sinks.Scope",
+      type: "flode.blocks.sinks.Scope",
       params: { n_inputs: 1, labels: ["in0"] },
     },
   ],
@@ -47,7 +47,7 @@ describe("isEditableParam", () => {
     // boolean は typeof === "boolean" で除外。明示的にカバーする。
     expect(isEditableParam(true)).toBe(false);
     // BigInt は typeof === "bigint" で number でないため除外される。
-    // pyflw の JSON モデルで BigInt が来る経路はないが、`unknown` 入力の
+    // flode の JSON モデルで BigInt が来る経路はないが、`unknown` 入力の
     // 安全性のため型ガードを保証する。
     expect(isEditableParam(BigInt(1))).toBe(false);
     expect(isEditableParam(undefined)).toBe(false);

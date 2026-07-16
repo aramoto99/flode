@@ -44,7 +44,7 @@ function makeLookupModel(): FlwModel {
     blocks: [
       {
         id: "Lookup_1",
-        type: "pyflw.blocks.lookup.LookupTable1D",
+        type: "flode.blocks.lookup.LookupTable1D",
         params: {
           breakpoints: [0.0, 1.0],
           table: [0.0, 1.0],
@@ -72,7 +72,7 @@ function makeFcnModel(expression: string): FlwModel {
     blocks: [
       {
         id: "Fcn_1",
-        type: "pyflw.blocks.userfunc.Fcn",
+        type: "flode.blocks.userfunc.Fcn",
         params: {
           expression,
           n_inputs: 1,
@@ -99,7 +99,7 @@ function makeStateSpaceModel(): FlwModel {
     blocks: [
       {
         id: "SS_1",
-        type: "pyflw.blocks.continuous.StateSpace",
+        type: "flode.blocks.continuous.StateSpace",
         params: {
           A: [
             [0, 1],
@@ -130,7 +130,7 @@ function makeLookupTable2DModel(): FlwModel {
     blocks: [
       {
         id: "LT2D_1",
-        type: "pyflw.blocks.lookup.LookupTable2D",
+        type: "flode.blocks.lookup.LookupTable2D",
         params: {
           breakpoints_row: [0.0, 1.0, 2.0],
           breakpoints_col: [0.0, 0.5, 1.0],

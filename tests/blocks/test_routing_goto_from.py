@@ -18,8 +18,8 @@ import logging
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Constant,
     From,
     Gain,
@@ -29,8 +29,8 @@ from pyflw.blocks import (
     Scope,
     Sum,
 )
-from pyflw.exceptions import AlgebraicLoopError, BlockSpecError
-from pyflw.subsystems import Inport, Outport, Subsystem
+from flode.exceptions import AlgebraicLoopError, BlockSpecError
+from flode.subsystems import Inport, Outport, Subsystem
 
 
 def _flat(scope: Scope) -> np.ndarray:
@@ -69,7 +69,7 @@ class TestGotoFromLocal:
         sim.connect(mux, goto)
         from_blk = sim.add(From(tag="bus"))
         # vector port を Subsystem 外で扱うため Demux で分解して Scope へ
-        from pyflw.blocks import Demux
+        from flode.blocks import Demux
 
         demux = sim.add(Demux(n=2))
         scope0 = sim.add(Scope())
@@ -220,7 +220,7 @@ class TestResolutionPriority:
         f = sim.add(From(tag="t"))
         scope = sim.add(Scope())
         sim.connect(f, scope)
-        with caplog.at_level(logging.WARNING, logger="pyflw.routing.goto"):
+        with caplog.at_level(logging.WARNING, logger="flode.routing.goto"):
             sim.run()
         np.testing.assert_allclose(_flat(scope), 100.0 * np.ones(6))
         assert any("Local and Global" in r.message for r in caplog.records)
@@ -239,7 +239,7 @@ class TestGotoFromCommon:
         sim.connect(src, sim.add(Goto(tag="orphan_g")))
         # 何も From を置かない
         sim.connect(src, sim.add(Scope()))
-        with caplog.at_level(logging.INFO, logger="pyflw.routing.goto"):
+        with caplog.at_level(logging.INFO, logger="flode.routing.goto"):
             sim.run()
         assert any("dangling Goto" in r.message for r in caplog.records)
 

@@ -1,7 +1,7 @@
 """ADR-0027 §(10) C/D/F: 固有値 / 漸近安定性 / 根軌跡 の数値検証。
 
 固有値・安定性は ``np.linalg.eig`` ベースで extras 不要。根軌跡は
-``pyflw[control]`` extras 必須なので importorskip。
+``flode[control]`` extras 必須なので importorskip。
 """
 
 from __future__ import annotations
@@ -9,10 +9,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator, linearize
-from pyflw.analysis import eigenvalues, is_stable, root_locus
-from pyflw.blocks import Integrator, Scope, StateSpace, TransferFunction
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator, linearize
+from flode.analysis import eigenvalues, is_stable, root_locus
+from flode.blocks import Integrator, Scope, StateSpace, TransferFunction
+from flode.exceptions import BlockSpecError
 
 # ---------------------------------------------------------------------------
 # eigenvalues / is_stable (numpy のみ、extras 不要)
@@ -127,7 +127,7 @@ class TestEigenvaluesEmptyState:
     def test_no_continuous_states_raises(self) -> None:
         # linearize() 自体が BlockSpecError を出すので、eigenvalues は呼ばれる前に
         # 失敗する。代わりに直接 LinearSystem を組んで test。
-        from pyflw.analysis import LinearSystem
+        from flode.analysis import LinearSystem
 
         ls = LinearSystem(
             A=np.zeros((0, 0)),

@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 def _frontend_root() -> Path:
-    return Path(__file__).parents[2] / "pyflw" / "web" / "frontend" / "src"
+    return Path(__file__).parents[2] / "flode" / "web" / "frontend" / "src"
 
 
 def _parse_category_order(tsx_path: Path) -> list[str]:
@@ -49,7 +49,7 @@ def test_backend_categories_subset_of_palette_category_order() -> None:
     backend 側にカテゴリを追加するときに frontend 側 whitelist への追加を忘れ
     ないようにする CI ガード。
     """
-    from pyflw.server.registry import _BUILTIN_METADATA
+    from flode.server.registry import _BUILTIN_METADATA
 
     backend_categories = {meta[0] for meta in _BUILTIN_METADATA.values()}
 
@@ -61,7 +61,7 @@ def test_backend_categories_subset_of_palette_category_order() -> None:
     assert not missing, (
         f"BlockPalette.tsx CATEGORY_ORDER is missing backend categories: "
         f"{sorted(missing)}. Add them to "
-        f"`pyflw/web/frontend/src/components/BlockPalette.tsx` `CATEGORY_ORDER` "
+        f"`flode/web/frontend/src/components/BlockPalette.tsx` `CATEGORY_ORDER` "
         f"array (and rebuild the frontend bundle)."
     )
 
@@ -85,19 +85,19 @@ def test_palette_category_i18n_keys_exist_for_all_categories() -> None:
             assert key in translations, (
                 f"i18n {locale}.json missing key {key!r} (referenced from "
                 f"BlockPalette.tsx CATEGORY_ORDER). Add it to "
-                f"`pyflw/web/frontend/src/i18n/locales/{locale}.json`."
+                f"`flode/web/frontend/src/i18n/locales/{locale}.json`."
             )
 
 
 def _parse_glyph_entries(tsx_path: Path) -> set[str]:
     """``blockGlyphs.tsx`` の ``GLYPHS`` map から登録済 type_path を抽出する。
 
-    text-parse で ``"pyflw.blocks.foo.Bar": SomeGlyph,`` 形式の行を拾う。
+    text-parse で ``"flode.blocks.foo.Bar": SomeGlyph,`` 形式の行を拾う。
     """
     text = tsx_path.read_text(encoding="utf-8")
-    # `"pyflw.blocks.lookup.LookupTable1D": LookupTable1DGlyph,` 等
-    # `"pyflw.subsystems.ports.Inport": InportGlyph,` も拾うため pyflw\. 始まりにする
-    return set(re.findall(r'"(pyflw\.[^"]+)":\s*\w+Glyph', text))
+    # `"flode.blocks.lookup.LookupTable1D": LookupTable1DGlyph,` 等
+    # `"flode.subsystems.ports.Inport": InportGlyph,` も拾うため flode\. 始まりにする
+    return set(re.findall(r'"(flode\.[^"]+)":\s*\w+Glyph', text))
 
 
 def test_all_builtin_blocks_have_glyph_entries() -> None:
@@ -107,7 +107,7 @@ def test_all_builtin_blocks_have_glyph_entries() -> None:
     失われる。SPEC-0008 / SPEC-0009 で発生した glyph 登録漏れ事故 (新ブロックが
     全て同じ generic icon になる) を CI で検知する。
     """
-    from pyflw.server.registry import _BUILTIN_METADATA
+    from flode.server.registry import _BUILTIN_METADATA
 
     tsx_path = _frontend_root() / "lib" / "blockGlyphs.tsx"
     glyph_entries = _parse_glyph_entries(tsx_path)
@@ -117,7 +117,7 @@ def test_all_builtin_blocks_have_glyph_entries() -> None:
     assert not missing, (
         f"blockGlyphs.tsx GLYPHS is missing entries for: {sorted(missing)}. "
         f"Add a `*Glyph` React component and register it in `GLYPHS` "
-        f"(see `pyflw/web/frontend/src/lib/blockGlyphs.tsx`). Without an "
+        f"(see `flode/web/frontend/src/lib/blockGlyphs.tsx`). Without an "
         f"entry, the block falls back to `GlyphFallback` (a generic faint "
         f"rectangle) and loses visual identity."
     )

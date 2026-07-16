@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Scope, Sine, Step, TransportDelay
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator
+from flode.blocks import Scope, Sine, Step, TransportDelay
+from flode.exceptions import BlockSpecError
 
 
 class TestConstruction:
@@ -126,14 +126,14 @@ class TestPersistence:
 
 class TestRegistry:
     def test_registered(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry import _BUILTIN_METADATA
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        assert "pyflw.blocks.transport_delay.TransportDelay" in _BUILTIN_METADATA
-        cat, _, _ = _BUILTIN_METADATA["pyflw.blocks.transport_delay.TransportDelay"]
+        assert "flode.blocks.transport_delay.TransportDelay" in _BUILTIN_METADATA
+        cat, _, _ = _BUILTIN_METADATA["flode.blocks.transport_delay.TransportDelay"]
         assert cat == "continuous"
         assert (
-            _BLOCK_TRANSLATIONS["pyflw.blocks.transport_delay.TransportDelay"]["ja"]["display_name"]
+            _BLOCK_TRANSLATIONS["flode.blocks.transport_delay.TransportDelay"]["ja"]["display_name"]
             == "むだ時間"
         )
 

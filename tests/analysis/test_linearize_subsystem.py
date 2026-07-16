@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from pyflw import Inport, Outport, Simulator, Subsystem, linearize
-from pyflw.blocks import Gain, Integrator, Scope
+from flode import Inport, Outport, Simulator, Subsystem, linearize
+from flode.blocks import Gain, Integrator, Scope
 
 
 class TestPlainSubsystem:

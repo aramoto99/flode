@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from pyflw import Simulator
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Enable, Trigger
+from flode import Simulator
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Enable, Trigger
 
 
 def test_trigger_at_root_rejected() -> None:

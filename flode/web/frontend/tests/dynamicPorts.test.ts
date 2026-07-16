@@ -1,4 +1,4 @@
-// dynamicPorts.ts の port count 算出ルールが Python 側 (pyflw/blocks/*) の
+// dynamicPorts.ts の port count 算出ルールが Python 側 (flode/blocks/*) の
 // __init__ ロジックと一致することを単体テストで担保する。
 
 import { describe, expect, it } from "vitest";
@@ -28,7 +28,7 @@ const META = (defaultIn: number, defaultOut: number): BlockMetadata => ({
 describe("resolvePortCounts", () => {
   it("Sum: signs length = n_inputs", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.Sum",
+      "flode.blocks.mathops.Sum",
       { signs: "+++--" },
       META(2, 1),
     );
@@ -37,7 +37,7 @@ describe("resolvePortCounts", () => {
 
   it("Sum without signs falls back to default", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.Sum",
+      "flode.blocks.mathops.Sum",
       {},
       META(2, 1),
     );
@@ -46,7 +46,7 @@ describe("resolvePortCounts", () => {
 
   it("Product: n_inputs param (NOT signs)", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.Product",
+      "flode.blocks.mathops.Product",
       { n_inputs: 4 },
       META(2, 1),
     );
@@ -55,7 +55,7 @@ describe("resolvePortCounts", () => {
 
   it("Divide: signs length controls n_inputs", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.Divide",
+      "flode.blocks.mathops.Divide",
       { signs: "*//*/" },
       META(2, 1),
     );
@@ -64,7 +64,7 @@ describe("resolvePortCounts", () => {
 
   it("LogicalOperator: n_inputs param", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.logic.LogicalOperator",
+      "flode.blocks.logic.LogicalOperator",
       { operator: "AND", n_inputs: 4 },
       META(2, 1),
     );
@@ -74,7 +74,7 @@ describe("resolvePortCounts", () => {
   it("StateSpace: n_inputs from B.shape[1], n_outputs from C.shape[0]", () => {
     // 2-state, 3-input, 1-output
     const r = resolvePortCounts(
-      "pyflw.blocks.continuous.StateSpace",
+      "flode.blocks.continuous.StateSpace",
       {
         A: [[0, 1], [-1, 0]],
         B: [[1, 0, 0], [0, 1, 0]], // 2x3 → 3 inputs
@@ -88,7 +88,7 @@ describe("resolvePortCounts", () => {
 
   it("MimoTransferFunction: 2x2 numerators → 2 in / 2 out", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.continuous.MimoTransferFunction",
+      "flode.blocks.continuous.MimoTransferFunction",
       {
         numerators: [
           [[1.0], [0.5]],
@@ -103,7 +103,7 @@ describe("resolvePortCounts", () => {
 
   it("DiscreteStateSpace: same as StateSpace", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.discrete.DiscreteStateSpace",
+      "flode.blocks.discrete.DiscreteStateSpace",
       {
         A: [[0]],
         B: [[1, 1]], // 1x2 → 2 inputs
@@ -118,7 +118,7 @@ describe("resolvePortCounts", () => {
 
   it("Mux: n controls n_inputs and (n,) output shape implicitly", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.routing.Mux",
+      "flode.blocks.routing.Mux",
       { n: 4 },
       META(2, 1),
     );
@@ -127,7 +127,7 @@ describe("resolvePortCounts", () => {
 
   it("Demux: n controls n_outputs", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.routing.Demux",
+      "flode.blocks.routing.Demux",
       { n: 5 },
       META(1, 2),
     );
@@ -137,21 +137,21 @@ describe("resolvePortCounts", () => {
   it("Scope / Display / Terminator: n_inputs", () => {
     expect(
       resolvePortCounts(
-        "pyflw.blocks.sinks.Scope",
+        "flode.blocks.sinks.Scope",
         { n_inputs: 3 },
         META(1, 0),
       ),
     ).toEqual({ nInputs: 3, nOutputs: 0 });
     expect(
       resolvePortCounts(
-        "pyflw.blocks.sinks.Display",
+        "flode.blocks.sinks.Display",
         { n_inputs: 2 },
         META(1, 0),
       ),
     ).toEqual({ nInputs: 2, nOutputs: 0 });
     expect(
       resolvePortCounts(
-        "pyflw.blocks.sinks.Terminator",
+        "flode.blocks.sinks.Terminator",
         { n_inputs: 4 },
         META(1, 0),
       ),
@@ -160,14 +160,14 @@ describe("resolvePortCounts", () => {
 
   it("Subsystem: n_inputs/n_outputs derived from inner Inport/Outport (ADR-0039)", () => {
     const r = resolvePortCounts(
-      "pyflw.subsystems.subsystem.Subsystem",
+      "flode.subsystems.subsystem.Subsystem",
       {
         blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
-          { id: "in1", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 1 } },
-          { id: "in2", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 2 } },
-          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
-          { id: "out1", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 1 } },
+          { id: "in0", type: "flode.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "in1", type: "flode.subsystems.ports.Inport", params: { port_idx: 1 } },
+          { id: "in2", type: "flode.subsystems.ports.Inport", params: { port_idx: 2 } },
+          { id: "out0", type: "flode.subsystems.ports.Outport", params: { port_idx: 0 } },
+          { id: "out1", type: "flode.subsystems.ports.Outport", params: { port_idx: 1 } },
         ],
       },
       META(1, 1),
@@ -177,14 +177,14 @@ describe("resolvePortCounts", () => {
 
   it("Subsystem + internal Trigger: n_inputs += 1 (ADR-0058)", () => {
     const r = resolvePortCounts(
-      "pyflw.subsystems.subsystem.Subsystem",
+      "flode.subsystems.subsystem.Subsystem",
       {
         blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
-          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          { id: "in0", type: "flode.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "out0", type: "flode.subsystems.ports.Outport", params: { port_idx: 0 } },
           {
             id: "trig",
-            type: "pyflw.subsystems.control_blocks.Trigger",
+            type: "flode.subsystems.control_blocks.Trigger",
             params: { trigger_type: "rising" },
           },
         ],
@@ -196,14 +196,14 @@ describe("resolvePortCounts", () => {
 
   it("Subsystem + internal Enable: n_inputs += 1 (ADR-0058)", () => {
     const r = resolvePortCounts(
-      "pyflw.subsystems.subsystem.Subsystem",
+      "flode.subsystems.subsystem.Subsystem",
       {
         blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
-          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          { id: "in0", type: "flode.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "out0", type: "flode.subsystems.ports.Outport", params: { port_idx: 0 } },
           {
             id: "en",
-            type: "pyflw.subsystems.control_blocks.Enable",
+            type: "flode.subsystems.control_blocks.Enable",
             params: {
               states_when_enabling: "held",
               outputs_when_disabled: "held",
@@ -218,15 +218,15 @@ describe("resolvePortCounts", () => {
 
   it("Subsystem + Trigger + Enable: n_inputs += 2 (ADR-0058)", () => {
     const r = resolvePortCounts(
-      "pyflw.subsystems.subsystem.Subsystem",
+      "flode.subsystems.subsystem.Subsystem",
       {
         blocks: [
-          { id: "in0", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 0 } },
-          { id: "in1", type: "pyflw.subsystems.ports.Inport", params: { port_idx: 1 } },
-          { id: "out0", type: "pyflw.subsystems.ports.Outport", params: { port_idx: 0 } },
+          { id: "in0", type: "flode.subsystems.ports.Inport", params: { port_idx: 0 } },
+          { id: "in1", type: "flode.subsystems.ports.Inport", params: { port_idx: 1 } },
+          { id: "out0", type: "flode.subsystems.ports.Outport", params: { port_idx: 0 } },
           {
             id: "en",
-            type: "pyflw.subsystems.control_blocks.Enable",
+            type: "flode.subsystems.control_blocks.Enable",
             params: {
               states_when_enabling: "held",
               outputs_when_disabled: "held",
@@ -234,7 +234,7 @@ describe("resolvePortCounts", () => {
           },
           {
             id: "trig",
-            type: "pyflw.subsystems.control_blocks.Trigger",
+            type: "flode.subsystems.control_blocks.Trigger",
             params: { trigger_type: "rising" },
           },
         ],
@@ -246,7 +246,7 @@ describe("resolvePortCounts", () => {
 
   it("MinMax: n_inputs", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.MinMax",
+      "flode.blocks.mathops.MinMax",
       { n_inputs: 5 },
       META(2, 1),
     );
@@ -255,7 +255,7 @@ describe("resolvePortCounts", () => {
 
   it("Static blocks fall back to registry default (Gain)", () => {
     const r = resolvePortCounts(
-      "pyflw.blocks.mathops.Gain",
+      "flode.blocks.mathops.Gain",
       { k: 2.0 },
       META(1, 1),
     );
@@ -265,14 +265,14 @@ describe("resolvePortCounts", () => {
   it("invalid n (0 or negative) falls back to default", () => {
     expect(
       resolvePortCounts(
-        "pyflw.blocks.routing.Mux",
+        "flode.blocks.routing.Mux",
         { n: 0 },
         META(2, 1),
       ).nInputs,
     ).toBe(2);
     expect(
       resolvePortCounts(
-        "pyflw.blocks.routing.Mux",
+        "flode.blocks.routing.Mux",
         { n: -1 },
         META(2, 1),
       ).nInputs,
@@ -282,7 +282,7 @@ describe("resolvePortCounts", () => {
   it("non-int n is truncated", () => {
     expect(
       resolvePortCounts(
-        "pyflw.blocks.routing.Mux",
+        "flode.blocks.routing.Mux",
         { n: 3.7 },
         META(2, 1),
       ).nInputs,
@@ -298,20 +298,20 @@ describe("resolvePortCounts", () => {
 describe("hasDynamicPorts", () => {
   it("identifies known dynamic-port blocks", () => {
     const dynTypes = [
-      "pyflw.blocks.mathops.Sum",
-      "pyflw.blocks.mathops.Product",
-      "pyflw.blocks.mathops.Divide",
-      "pyflw.blocks.mathops.MinMax",
-      "pyflw.blocks.logic.LogicalOperator",
-      "pyflw.blocks.routing.Mux",
-      "pyflw.blocks.routing.Demux",
-      "pyflw.blocks.sinks.Scope",
-      "pyflw.blocks.sinks.Display",
-      "pyflw.blocks.sinks.Terminator",
-      "pyflw.blocks.continuous.StateSpace",
-      "pyflw.blocks.discrete.DiscreteStateSpace",
-      "pyflw.blocks.continuous.MimoTransferFunction",
-      "pyflw.subsystems.subsystem.Subsystem",
+      "flode.blocks.mathops.Sum",
+      "flode.blocks.mathops.Product",
+      "flode.blocks.mathops.Divide",
+      "flode.blocks.mathops.MinMax",
+      "flode.blocks.logic.LogicalOperator",
+      "flode.blocks.routing.Mux",
+      "flode.blocks.routing.Demux",
+      "flode.blocks.sinks.Scope",
+      "flode.blocks.sinks.Display",
+      "flode.blocks.sinks.Terminator",
+      "flode.blocks.continuous.StateSpace",
+      "flode.blocks.discrete.DiscreteStateSpace",
+      "flode.blocks.continuous.MimoTransferFunction",
+      "flode.subsystems.subsystem.Subsystem",
     ];
     for (const t of dynTypes) {
       expect(hasDynamicPorts(t)).toBe(true);
@@ -319,8 +319,8 @@ describe("hasDynamicPorts", () => {
   });
 
   it("returns false for static blocks", () => {
-    expect(hasDynamicPorts("pyflw.blocks.mathops.Gain")).toBe(false);
-    expect(hasDynamicPorts("pyflw.blocks.sources.Constant")).toBe(false);
-    expect(hasDynamicPorts("pyflw.blocks.continuous.Integrator")).toBe(false);
+    expect(hasDynamicPorts("flode.blocks.mathops.Gain")).toBe(false);
+    expect(hasDynamicPorts("flode.blocks.sources.Constant")).toBe(false);
+    expect(hasDynamicPorts("flode.blocks.continuous.Integrator")).toBe(false);
   });
 });

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from pyflw.blocks.sources import Constant
-from pyflw.server.registry import build_metadata, metadata_to_dict
-from pyflw.server.registry_translations import (
+from flode.blocks.sources import Constant
+from flode.server.registry import build_metadata, metadata_to_dict
+from flode.server.registry_translations import (
     _BLOCK_TRANSLATIONS,
     SUPPORTED_LOCALES,
     all_registered_type_paths,
@@ -20,7 +20,7 @@ from pyflw.server.registry_translations import (
 
 def _builtin_type_paths() -> set[str]:
     """``registry._BUILTIN_METADATA`` のキー集合を取得する。"""
-    from pyflw.server.registry import _BUILTIN_METADATA
+    from flode.server.registry import _BUILTIN_METADATA
 
     return set(_BUILTIN_METADATA.keys())
 
@@ -35,7 +35,7 @@ class TestTranslationCoverage:
         extra = translated - builtin
         assert not missing, (
             f"_BLOCK_TRANSLATIONS is missing entries for: {sorted(missing)}. "
-            "Add them to pyflw/server/registry_translations.py."
+            "Add them to flode/server/registry_translations.py."
         )
         assert not extra, (
             f"_BLOCK_TRANSLATIONS has stale entries that are not in "

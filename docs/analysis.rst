@@ -1,22 +1,22 @@
 Analysis
 ========
 
-The :mod:`pyflw.analysis` package provides numerical analysis tools that
-operate on a built :class:`pyflw.Simulator`. Phase 4 (introduced in
-``v0.10.0``) ships :func:`pyflw.linearize` for linearisation around a
+The :mod:`flode.analysis` package provides numerical analysis tools that
+operate on a built :class:`flode.Simulator`. Phase 4 (introduced in
+``v0.10.0``) ships :func:`flode.linearize` for linearisation around a
 chosen operating point.
 
 Linearisation (ADR-0026)
 ------------------------
 
-Given a non-linear ``pyflw`` model, :func:`pyflw.linearize` computes the
+Given a non-linear ``flode`` model, :func:`flode.linearize` computes the
 state-space matrices :math:`(A, B, C, D)` of the locally linearised
 system around an operating point :math:`(t^*, x^*, u^*)` using a finite
 difference (central or forward) of ``Block.derivative`` and ``Block.output``.
 
 The model must contain at least one continuous-time state (e.g.
-:class:`pyflw.blocks.Integrator`, :class:`pyflw.blocks.StateSpace`,
-:class:`pyflw.blocks.TransferFunction`). Discrete blocks are held at
+:class:`flode.blocks.Integrator`, :class:`flode.blocks.StateSpace`,
+:class:`flode.blocks.TransferFunction`). Discrete blocks are held at
 their initial values during linearisation and a ``UserWarning`` is
 emitted; full hybrid linearisation is on the Phase 5+ roadmap.
 
@@ -25,8 +25,8 @@ Quick example
 
 .. code-block:: python
 
-   from pyflw import Simulator, linearize
-   from pyflw.blocks import Integrator, Scope
+   from flode import Simulator, linearize
+   from flode.blocks import Integrator, Scope
 
    sim = Simulator(t_end=10.0, dt=0.01)
    integrator = sim.add(Integrator())
@@ -44,8 +44,8 @@ Quick example
 Connecting to ``python-control``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you install ``pyflw`` with the ``[control]`` extra
-(``pip install pyflw[control]``), :meth:`LinearSystem.to_control_ss`
+If you install ``flode`` with the ``[control]`` extra
+(``pip install flode[control]``), :meth:`LinearSystem.to_control_ss`
 returns a ``control.StateSpace`` instance suitable for the rest of the
 `python-control <https://python-control.readthedocs.io/>`_ ecosystem:
 
@@ -63,14 +63,14 @@ Frequency response and stability (ADR-0027, v0.10.1)
 Built on top of :class:`LinearSystem`, ``v0.10.1`` ships a thin layer
 of analysis helpers:
 
-* :func:`pyflw.bode` — Bode magnitude/phase via ``python-control``
+* :func:`flode.bode` — Bode magnitude/phase via ``python-control``
   (``[control]`` extra required).
-* :func:`pyflw.nyquist` — Nyquist locus.
-* :func:`pyflw.eigenvalues` — A-matrix eigenvalues, ``np.linalg.eig``
+* :func:`flode.nyquist` — Nyquist locus.
+* :func:`flode.eigenvalues` — A-matrix eigenvalues, ``np.linalg.eig``
   thin wrapper. Works **without** the ``[control]`` extra.
-* :func:`pyflw.is_stable` — strict-negative real-part check, also
+* :func:`flode.is_stable` — strict-negative real-part check, also
   numpy-only.
-* :func:`pyflw.root_locus` — SISO root locus (``[control]`` required;
+* :func:`flode.root_locus` — SISO root locus (``[control]`` required;
   pass ``input_idx`` / ``output_idx`` to slice a SISO sub-system out
   of a MIMO :class:`LinearSystem`).
 
@@ -80,7 +80,7 @@ following the same delegation pattern as ``Simulator.linearize``.
 .. code-block:: python
 
    import matplotlib.pyplot as plt
-   from pyflw import bode, eigenvalues, is_stable, linearize
+   from flode import bode, eigenvalues, is_stable, linearize
 
    ls = linearize(sim)
    print("Eigenvalues:", eigenvalues(ls))
@@ -103,15 +103,15 @@ extract a SISO channel.
 API reference
 -------------
 
-.. automodule:: pyflw.analysis.linearize
+.. automodule:: flode.analysis.linearize
    :members: linearize, LinearSystem
    :show-inheritance:
 
-.. automodule:: pyflw.analysis.frequency_response
+.. automodule:: flode.analysis.frequency_response
    :members: bode, nyquist, BodeResponse, NyquistResponse
    :show-inheritance:
 
-.. automodule:: pyflw.analysis.stability
+.. automodule:: flode.analysis.stability
    :members: eigenvalues, is_stable, root_locus, RootLocus
    :show-inheritance:
 

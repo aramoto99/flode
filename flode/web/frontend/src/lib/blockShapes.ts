@@ -24,72 +24,72 @@ export interface BlockShape {
  */
 const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // -------- 三角形 --------
-  "pyflw.blocks.mathops.Gain": { kind: "triangle-r", width: 60, height: 50 },
+  "flode.blocks.mathops.Gain": { kind: "triangle-r", width: 60, height: 50 },
 
   // -------- 円 --------
-  "pyflw.blocks.mathops.Sum":     { kind: "circle", width: 44, height: 44 },
-  "pyflw.blocks.mathops.Product": { kind: "circle", width: 44, height: 44 },
+  "flode.blocks.mathops.Sum":     { kind: "circle", width: 44, height: 44 },
+  "flode.blocks.mathops.Product": { kind: "circle", width: 44, height: 44 },
   // v0.35.4: Divide を矩形化 (ユーザー要望)。signs ("*/") の per-port 表示が
   // 円形より矩形の方が見やすい (Add / Sum と統一)。
-  "pyflw.blocks.mathops.Divide":  { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.Divide":  { kind: "rect", width: 48, height: 48 },
 
   // -------- 縦長バー (リファレンスツール風: 細い black bar) --------
-  "pyflw.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },
-  "pyflw.blocks.routing.Demux": { kind: "bar", width: 6, height: 56 },
+  "flode.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },
+  "flode.blocks.routing.Demux": { kind: "bar", width: 6, height: 56 },
 
   // -------- Subsystem (リファレンスツール風: 二重枠の少し大きめ rect) --------
-  "pyflw.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
+  "flode.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
 
   // -------- 台形 --------
-  "pyflw.subsystems.ports.Inport":  { kind: "trapezoid-r", width: 64, height: 38 },
-  "pyflw.subsystems.ports.Outport": { kind: "trapezoid-l", width: 64, height: 38 },
+  "flode.subsystems.ports.Inport":  { kind: "trapezoid-r", width: 64, height: 38 },
+  "flode.subsystems.ports.Outport": { kind: "trapezoid-l", width: 64, height: 38 },
 
   // -------- 広めの矩形 (formula 多め / 値表示) --------
-  "pyflw.blocks.continuous.TransferFunction":     { kind: "rect-wide", width: 92, height: 44 },
-  "pyflw.blocks.continuous.StateSpace":           { kind: "rect-wide", width: 100, height: 44 },
-  "pyflw.blocks.continuous.MimoTransferFunction": { kind: "rect-wide", width: 92, height: 44 },
-  "pyflw.blocks.discrete.DiscreteTransferFunction":{ kind: "rect-wide", width: 92, height: 44 },
-  "pyflw.blocks.discrete.DiscreteStateSpace":     { kind: "rect-wide", width: 100, height: 44 },
-  "pyflw.blocks.discrete.DiscreteIntegrator":     { kind: "rect-wide", width: 80, height: 44 },
+  "flode.blocks.continuous.TransferFunction":     { kind: "rect-wide", width: 92, height: 44 },
+  "flode.blocks.continuous.StateSpace":           { kind: "rect-wide", width: 100, height: 44 },
+  "flode.blocks.continuous.MimoTransferFunction": { kind: "rect-wide", width: 92, height: 44 },
+  "flode.blocks.discrete.DiscreteTransferFunction":{ kind: "rect-wide", width: 92, height: 44 },
+  "flode.blocks.discrete.DiscreteStateSpace":     { kind: "rect-wide", width: 100, height: 44 },
+  "flode.blocks.discrete.DiscreteIntegrator":     { kind: "rect-wide", width: 80, height: 44 },
   // -------- Display は live 数値を大きく表示するため広め --------
-  "pyflw.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
+  "flode.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
 
   // -------- v0.35.0: Add (Sum の矩形版) --------
-  "pyflw.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },
 
   // -------- v0.34.0: glyph 中心ブロック = 正方形 48×48 --------
   // ユーザー要望「正四角形のほうが都合のいいブロックもある」。glyph のみで
   // 値表示が不要なシンボリックブロックを正方形化する。横長が必要な
   // Constant / Ramp / RateTransition / TransferFunction etc は除外 (= デフォ
   // ルト rect or rect-wide のまま)。
-  "pyflw.blocks.continuous.Integrator":         { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.continuous.Derivative":         { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.discrete.UnitDelay":            { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.discrete.ZeroOrderHoldDirect":  { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.mathops.Abs":                   { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.mathops.Sign":                  { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.mathops.MinMax":                { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.mathops.Saturation":            { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sources.Sine":                  { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sources.Step":                  { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sources.Clock":                 { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sources.PulseGenerator":        { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sinks.Scope":                   { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sinks.XYGraph":                 { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.sinks.Terminator":              { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.logic.RelationalOperator":      { kind: "rect", width: 48, height: 48 },
-  "pyflw.blocks.logic.LogicalOperator":         { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.continuous.Integrator":         { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.continuous.Derivative":         { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.discrete.UnitDelay":            { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.discrete.ZeroOrderHoldDirect":  { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.Abs":                   { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.Sign":                  { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.MinMax":                { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.Saturation":            { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sources.Sine":                  { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sources.Step":                  { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sources.Clock":                 { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sources.PulseGenerator":        { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sinks.Scope":                   { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sinks.XYGraph":                 { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.sinks.Terminator":              { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.logic.RelationalOperator":      { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.logic.LogicalOperator":         { kind: "rect", width: 48, height: 48 },
   // v0.35.8: Switch は per-port ラベル (T / criterion / F) + 右半分の
   // スイッチアーム SVG を描き込むためやや横長に拡張。
-  "pyflw.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
+  "flode.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
 
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベル
   // (= ``[tag]`` / ``>tag>``) を表示するため横長の rect。
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
   // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
-  "pyflw.blocks.routing.Goto":               { kind: "rect", width: 80, height: 32 },
-  "pyflw.blocks.routing.From":               { kind: "rect", width: 80, height: 32 },
+  "flode.blocks.routing.Goto":               { kind: "rect", width: 80, height: 32 },
+  "flode.blocks.routing.From":               { kind: "rect", width: 80, height: 32 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。

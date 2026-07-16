@@ -43,7 +43,7 @@ function makeModel(): FlwModel {
     blocks: [
       {
         id: "XYGraph_1",
-        type: "pyflw.blocks.sinks.XYGraph",
+        type: "flode.blocks.sinks.XYGraph",
         // x_label / y_label は文字列、decimals は数値 (string / number 両 branch を網羅)。
         params: { x_label: "x", y_label: "y", decimals: 3 },
       },
@@ -69,7 +69,7 @@ function makeMaskModel(): FlwModel {
     blocks: [
       {
         id: "Sub_1",
-        type: "pyflw.subsystems.Subsystem",
+        type: "flode.subsystems.Subsystem",
         params: {
           blocks: [],
           mask_params: [

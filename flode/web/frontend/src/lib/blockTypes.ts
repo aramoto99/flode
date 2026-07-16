@@ -2,15 +2,15 @@
 // テストの両方から import されることで、片方の文字列を変更し忘れて整合が
 // 崩れるリスクを排除する (= code-reviewer NITS-2)。
 
-export const SUBSYSTEM_TYPE = "pyflw.subsystems.subsystem.Subsystem";
-export const INPORT_TYPE = "pyflw.subsystems.ports.Inport";
-export const OUTPORT_TYPE = "pyflw.subsystems.ports.Outport";
+export const SUBSYSTEM_TYPE = "flode.subsystems.subsystem.Subsystem";
+export const INPORT_TYPE = "flode.subsystems.ports.Inport";
+export const OUTPORT_TYPE = "flode.subsystems.ports.Outport";
 
 // ADR-0058: Subsystem behavior modifier control blocks。Subsystem 内部に置く
 // ことで親の発火 / 有効化セマンティクスを修飾する境界ブロック。Inport /
 // Outport と並ぶ「control」カテゴリ。
-export const TRIGGER_TYPE = "pyflw.subsystems.control_blocks.Trigger";
-export const ENABLE_TYPE = "pyflw.subsystems.control_blocks.Enable";
+export const TRIGGER_TYPE = "flode.subsystems.control_blocks.Trigger";
+export const ENABLE_TYPE = "flode.subsystems.control_blocks.Enable";
 
 /**
  * `params[key]` を number として取り出す。値が number でなければ `fallback` を返す。

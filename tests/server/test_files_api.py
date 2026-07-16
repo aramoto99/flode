@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from pyflw.server import create_app
-from pyflw.server.settings import Settings
+from flode.server import create_app
+from flode.server.settings import Settings
 
 # ---------------------------------------------------------------------------
 # fixtures
@@ -118,12 +118,13 @@ class TestGetTree:
 
 class TestGetContent:
     def test_returns_parsed_json(self, client: TestClient, workspace: Path) -> None:
-        _seed_flw_json(workspace, "x.flw.json", {"schema_version": "0.8", "key": 42})
+        # schema_version なしの JSON は migration されず verbatim で返る
+        _seed_flw_json(workspace, "x.flw.json", {"key": 42})
         r = client.get("/api/v1/files/content", params={"path": "x.flw.json"})
         assert r.status_code == 200
         body = r.json()
         assert body["path"] == "x.flw.json"
-        assert body["content"] == {"schema_version": "0.8", "key": 42}
+        assert body["content"] == {"key": 42}
         assert body["mtime"].endswith("Z")
         assert body["etag"].startswith('W/"')
 
@@ -145,6 +146,65 @@ class TestGetContent:
     def test_403_for_path_traversal(self, client: TestClient) -> None:
         r = client.get("/api/v1/files/content", params={"path": "../etc/passwd"})
         assert r.status_code == 403
+
+
+class TestGetContentMigration:
+    """ADR-0058 §論点 10: GET /content は旧 schema のモデルを最新に migration して返す。
+
+    ``_migrated_from`` メタを見て frontend が toast + dirty flag を出す。
+    NOTE: fixture の ``pyflw.*`` FQN は schema <=0.9 ファイルの実内容を再現する
+    意図的な旧プロジェクト名リテラル。
+    """
+
+    def test_old_schema_model_is_migrated(self, client: TestClient, workspace: Path) -> None:
+        _seed_flw_json(
+            workspace,
+            "legacy.flw.json",
+            {
+                "schema_version": "0.9",
+                "metadata": {"tool": "pyflw 0.42.0"},
+                "blocks": [
+                    {"id": "src", "type": "pyflw.blocks.sources.Sine", "params": {}},
+                ],
+                "connections": [],
+            },
+        )
+        r = client.get("/api/v1/files/content", params={"path": "legacy.flw.json"})
+        assert r.status_code == 200
+        content = r.json()["content"]
+        assert content["schema_version"] == "0.10"
+        assert content["_migrated_from"] == "0.9"
+        assert content["blocks"][0]["type"] == "flode.blocks.sources.Sine"
+        assert content["metadata"]["tool"] == "flode 0.42.0"
+
+    def test_current_schema_model_untouched(self, client: TestClient, workspace: Path) -> None:
+        model = {
+            "schema_version": "0.10",
+            "blocks": [{"id": "src", "type": "flode.blocks.sources.Sine", "params": {}}],
+            "connections": [],
+        }
+        _seed_flw_json(workspace, "current.flw.json", model)
+        r = client.get("/api/v1/files/content", params={"path": "current.flw.json"})
+        content = r.json()["content"]
+        assert content == model
+        assert "_migrated_from" not in content
+
+    def test_unknown_schema_returned_raw(self, client: TestClient, workspace: Path) -> None:
+        # migration 不能 (未知 schema) でも GET は 200 で生データを返す (fail-open)。
+        # 正式なエラー報告はシミュレーション開始側の Simulator.load が担う。
+        model = {"schema_version": "9.9", "blocks": [], "connections": []}
+        _seed_flw_json(workspace, "future.flw.json", model)
+        r = client.get("/api/v1/files/content", params={"path": "future.flw.json"})
+        assert r.status_code == 200
+        assert r.json()["content"] == model
+
+    def test_non_model_json_not_migrated(self, client: TestClient, workspace: Path) -> None:
+        # .flw.json 以外は schema_version があっても素通し
+        raw = {"schema_version": "0.9", "anything": True}
+        p = workspace / "settings.json"
+        p.write_text(json.dumps(raw), encoding="utf-8")
+        r = client.get("/api/v1/files/content", params={"path": "settings.json"})
+        assert r.json()["content"] == raw
 
 
 class TestGetContentConditional:

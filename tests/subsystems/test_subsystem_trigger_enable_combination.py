@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from pyflw import Inport, Outport
-from pyflw.blocks import Gain
-from pyflw.subsystems import Enable, Subsystem, Trigger
+from flode import Inport, Outport
+from flode.blocks import Gain
+from flode.subsystems import Enable, Subsystem, Trigger
 
 
 def _build_trigger_enable() -> Subsystem:

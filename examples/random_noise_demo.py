@@ -10,8 +10,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import RandomSource, Scope, Sine, Sum
+from flode import Simulator
+from flode.blocks import RandomSource, Scope, Sine, Sum
 
 _logger = logging.getLogger(__name__)
 

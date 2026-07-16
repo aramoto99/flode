@@ -34,7 +34,7 @@ from ._mask import (
 from .control_blocks import Enable, Trigger, is_trigger_edge
 from .ports import Inport, Outport
 
-_logger = logging.getLogger("pyflw.subsystem")
+_logger = logging.getLogger("flode.subsystem")
 
 
 class Subsystem(Block):

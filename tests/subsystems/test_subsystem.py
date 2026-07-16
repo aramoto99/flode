@@ -17,7 +17,7 @@ import json
 import numpy as np
 import pytest
 
-from pyflw import (
+from flode import (
     AlgebraicLoopError,
     BlockSpecError,
     Inport,
@@ -25,7 +25,7 @@ from pyflw import (
     Simulator,
     Subsystem,
 )
-from pyflw.blocks import (
+from flode.blocks import (
     Constant,
     Gain,
     Integrator,
@@ -34,8 +34,8 @@ from pyflw.blocks import (
     Sum,
     UnitDelay,
 )
-from pyflw.core import persistence as _persistence
-from pyflw.core.persistence import register_block_module, reset_block_module_allowlist
+from flode.core import persistence as _persistence
+from flode.core.persistence import register_block_module, reset_block_module_allowlist
 
 
 @pytest.fixture(autouse=True)
@@ -372,7 +372,7 @@ class TestSubsystemPersistence:
         )
 
     def test_schema_version_is_current_when_subsystem_present(self, tmp_path):
-        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+        from flode.core.persistence import CURRENT_SCHEMA_VERSION
 
         sim = Simulator(t_end=0.01, dt=0.01)
         sim.add(_build_gain_subsystem(k=1.0))
@@ -386,7 +386,7 @@ class TestSubsystemPersistence:
         """``schema_version="0.1"`` の旧ファイルが migration 経由で読める。"""
         payload = {
             "schema_version": "0.1",
-            "metadata": {"created_at": "2026-05-05T00:00:00Z", "tool": "pyflw 0.1.0"},
+            "metadata": {"created_at": "2026-05-05T00:00:00Z", "tool": "flode 0.1.0"},
             "simulator": {
                 "t_end": 0.05,
                 "dt": 0.01,
@@ -398,12 +398,12 @@ class TestSubsystemPersistence:
             "blocks": [
                 {
                     "id": "src",
-                    "type": "pyflw.blocks.sources.Constant",
+                    "type": "flode.blocks.sources.Constant",
                     "params": {"value": 1.0},
                 },
                 {
                     "id": "g",
-                    "type": "pyflw.blocks.mathops.Gain",
+                    "type": "flode.blocks.mathops.Gain",
                     "params": {"k": 2.0},
                 },
             ],

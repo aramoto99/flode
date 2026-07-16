@@ -73,10 +73,10 @@ function deepCloneModel(m: FlwModel): FlwModel {
   return JSON.parse(JSON.stringify(m)) as FlwModel;
 }
 
-const WORKSPACE_COLLAPSE_STORAGE_KEY = "pyflw.workspace_collapsed";
-const INSPECTOR_COLLAPSE_STORAGE_KEY = "pyflw.inspector_collapsed";
-const SIDEBAR_MODE_STORAGE_KEY = "pyflw.sidebar_mode";
-const INSPECTOR_DOCK_MODE_STORAGE_KEY = "pyflw.inspector_dock_mode";
+const WORKSPACE_COLLAPSE_STORAGE_KEY = "flode.workspace_collapsed";
+const INSPECTOR_COLLAPSE_STORAGE_KEY = "flode.inspector_collapsed";
+const SIDEBAR_MODE_STORAGE_KEY = "flode.sidebar_mode";
+const INSPECTOR_DOCK_MODE_STORAGE_KEY = "flode.inspector_dock_mode";
 
 type SidebarMode = "file" | "library" | "search";
 type InspectorDockMode = "sidebar" | "pane" | "float";
@@ -177,13 +177,13 @@ function writeInspectorCollapsed(collapsed: boolean): void {
   }
 }
 
-const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "pyflw.left_sidebar_width";
+const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "flode.left_sidebar_width";
 const LEFT_SIDEBAR_DEFAULT_PX = 240;
 const LEFT_SIDEBAR_MIN_PX = 160;
 const LEFT_SIDEBAR_MAX_PX = 600;
 
 // v0.30.4: Inspector 横幅永続化 + clamp 値。
-const INSPECTOR_WIDTH_STORAGE_KEY = "pyflw.inspector_width";
+const INSPECTOR_WIDTH_STORAGE_KEY = "flode.inspector_width";
 const INSPECTOR_DEFAULT_PX = 280;
 const INSPECTOR_MIN_PX = 200;
 const INSPECTOR_MAX_PX = 600;
@@ -294,14 +294,12 @@ interface AppState {
 
   // ADR-0045 §(1) Workspace convergence Stage 1: Diagram + Scope の multi-pane split。
   // モデル別 (= ``workspaceHash`` + ``activeTabFilePath`` 単位) に
-  // ``pyflw.workspace_layout.<hash>.<b64url(path)>`` で永続化。
+  // ``flode.workspace_layout.<hash>.<b64url(path)>`` で永続化。
   workspaceLayout: SplitTree;
-  /** モデル切替 / 起動時に localStorage から SplitTree を復元 (= 旧 ``pyflw.
-   * scope_split`` 片方向 migration を含む)。``loadWorkspaceLayout`` 内では
-   * 永続化を呼ばない (= 読み込みは write 不要)。 */
+  /** モデル切替 / 起動時に localStorage から SplitTree を復元。
+   * ``loadWorkspaceLayout`` 内では永続化を呼ばない (= 読み込みは write 不要)。 */
   loadWorkspaceLayout: (
     storedRaw: string | null,
-    legacyRaw: string | null,
     hasVisibleScopes: boolean,
   ) => void;
   /** v0.42.x: 出力エリア (scopes-stack) の presence を hasScopeBlocks に
@@ -420,7 +418,7 @@ interface AppState {
   canRedo: () => boolean;
 
   // v0.20.4: 左サイドバー上部 ``FileBrowser`` パネルの折りたたみ状態。
-  // localStorage ("pyflw.workspace_collapsed") に永続化。``true`` で header
+  // localStorage ("flode.workspace_collapsed") に永続化。``true`` で header
   // のみ表示、``false`` で tree 展開。
   workspaceCollapsed: boolean;
   setWorkspaceCollapsed: (collapsed: boolean) => void;
@@ -428,7 +426,7 @@ interface AppState {
   // ADR-0051 §(1) §(2): activity bar (列 0) で切替される sidebar mode。
   // 列 1 (left sidebar) の中身を mode に応じて切替: file = FileBrowser /
   // library = BlockPalette / search = SearchPanel inline 描画。
-  // localStorage "pyflw.sidebar_mode" に永続化。
+  // localStorage "flode.sidebar_mode" に永続化。
   sidebarMode: "file" | "library" | "search";
   setSidebarMode: (mode: "file" | "library" | "search") => void;
 
@@ -438,7 +436,7 @@ interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
 
   // ADR-0052 §(2) Stage 3: Inspector の dock mode (= "sidebar" | "pane" | "float")。
-  // localStorage `pyflw.inspector_dock_mode` に永続化、workspace 横断 (= モデル
+  // localStorage `flode.inspector_dock_mode` に永続化、workspace 横断 (= モデル
   // 切替で変更しない)。
   inspectorDockMode: "sidebar" | "pane" | "float";
   setInspectorDockMode: (mode: "sidebar" | "pane" | "float") => void;
@@ -558,13 +556,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ADR-0045 §(1) Workspace convergence Stage 1: multi-pane split state + actions。
   // 永続化は各 mutator action 内で同期的に行う (= setLeftSidebarWidth と同じ慣例)。
   workspaceLayout: DEFAULT_TREE,
-  loadWorkspaceLayout: (storedRaw, legacyRaw, hasVisibleScopes) =>
+  loadWorkspaceLayout: (storedRaw, hasVisibleScopes) =>
     set({
-      workspaceLayout: chooseInitialTree(
-        storedRaw,
-        legacyRaw,
-        hasVisibleScopes,
-      ),
+      workspaceLayout: chooseInitialTree(storedRaw, hasVisibleScopes),
     }),
   normalizeScopesStackPresence: (hasScopeBlocks) =>
     set((state) => {

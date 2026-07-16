@@ -4,17 +4,17 @@ on:
   push:
     branches: [main]
     # Python パッケージとドキュメント関連変更のみで CI を起動する。
-    # frontend 専用変更 (`pyflw/web/frontend/**`) は ci-frontend.yml に分離している。
+    # frontend 専用変更 (`flode/web/frontend/**`) は ci-frontend.yml に分離している。
     # negative pattern (!) は GitHub Actions の minimatch で評価順序依存があるため、
     # サブパッケージを個別に列挙する方が確実 (frontend 以外を全て include)。
     paths:
-      - "pyflw/__init__.py"
-      - "pyflw/exceptions.py"
-      - "pyflw/blocks/**"
-      - "pyflw/core/**"
-      - "pyflw/server/**"
-      - "pyflw/subsystems/**"
-      - "pyflw/web/__init__.py"
+      - "flode/__init__.py"
+      - "flode/exceptions.py"
+      - "flode/blocks/**"
+      - "flode/core/**"
+      - "flode/server/**"
+      - "flode/subsystems/**"
+      - "flode/web/__init__.py"
       - "tests/**"
       - "examples/**"
       - "docs/**"
@@ -23,13 +23,13 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "pyflw/__init__.py"
-      - "pyflw/exceptions.py"
-      - "pyflw/blocks/**"
-      - "pyflw/core/**"
-      - "pyflw/server/**"
-      - "pyflw/subsystems/**"
-      - "pyflw/web/__init__.py"
+      - "flode/__init__.py"
+      - "flode/exceptions.py"
+      - "flode/blocks/**"
+      - "flode/core/**"
+      - "flode/server/**"
+      - "flode/subsystems/**"
+      - "flode/web/__init__.py"
       - "tests/**"
       - "examples/**"
       - "docs/**"
@@ -61,13 +61,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Ruff (lint)
-        run: ruff check pyflw tests examples
+        run: ruff check flode tests examples
 
       - name: Ruff (format check)
-        run: ruff format --check pyflw tests examples
+        run: ruff format --check flode tests examples
 
       - name: Mypy (--strict on package)
-        run: mypy pyflw
+        run: mypy flode
 
       - name: Verify version sync (3 files, ADR-0032 §6-A)
         run: python tools/check_version_sync.py

@@ -1,4 +1,4 @@
-"""ドメイン例外 (``PyflwError`` 系) を HTTP エラーへ変換するハンドラ (ADR-0011 §(5))。
+"""ドメイン例外 (``FlodeError`` 系) を HTTP エラーへ変換するハンドラ (ADR-0011 §(5))。
 
 ADR-0056 追加: シミュレーション失敗時の構造化エラー payload (``FailurePayload``)
 を組み立てる ``classify_exception`` / ``build_failure_payload`` も本モジュールに集約
@@ -19,9 +19,9 @@ from fastapi.responses import JSONResponse
 from ..exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
+    FlodeError,
     ModelLoadError,
     ModelSerializationError,
-    PyflwError,
     SchedulingError,
     SchemaVersionError,
     SolverError,
@@ -32,7 +32,7 @@ from ..exceptions import (
 if TYPE_CHECKING:
     from ..core.simulator import Simulator
 
-_logger = logging.getLogger("pyflw.server")
+_logger = logging.getLogger("flode.server")
 
 
 _STATUS_MAP: dict[type[Exception], int] = {
@@ -48,7 +48,7 @@ _STATUS_MAP: dict[type[Exception], int] = {
 }
 
 
-def _resolve_status(exc: PyflwError) -> int:
+def _resolve_status(exc: FlodeError) -> int:
     """``exc`` の MRO を走査して最も具体的な ``_STATUS_MAP`` エントリを返す。
 
     継承関係を考慮した完全一致優先のロジックなので、``_STATUS_MAP`` の dict 挿入順
@@ -164,7 +164,7 @@ def _block_label(block: Any) -> str | None:
 
 
 def _block_type_path(block: Any) -> str | None:
-    """``"pyflw.blocks.mathops.Divide"`` 形式の type path。"""
+    """``"flode.blocks.mathops.Divide"`` 形式の type path。"""
     cls = type(block)
     module = cls.__module__
     return f"{module}.{cls.__name__}" if module else cls.__name__
@@ -339,14 +339,14 @@ def build_failure_payload(
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    """``PyflwError`` 系を JSON レスポンスに変換するハンドラを app に登録する。"""
+    """``FlodeError`` 系を JSON レスポンスに変換するハンドラを app に登録する。"""
 
-    @app.exception_handler(PyflwError)
-    async def _pyflw_error_handler(_request: Request, exc: PyflwError) -> JSONResponse:
+    @app.exception_handler(FlodeError)
+    async def _flode_error_handler(_request: Request, exc: FlodeError) -> JSONResponse:
         status_code = _resolve_status(exc)
         trace_id = str(uuid.uuid4())
         _logger.error(
-            "PyflwError [%s] (trace_id=%s): %s",
+            "FlodeError [%s] (trace_id=%s): %s",
             type(exc).__name__,
             trace_id,
             exc,

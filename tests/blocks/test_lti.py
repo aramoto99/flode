@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import AlgebraicLoopError, BlockSpecError, Simulator
-from pyflw.blocks import (
+from flode import AlgebraicLoopError, BlockSpecError, Simulator
+from flode.blocks import (
     Constant,
     Derivative,
     DiscreteStateSpace,

@@ -13,8 +13,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Clock,
     Constant,
     DiscreteIntegrator,
@@ -83,7 +83,7 @@ def test_zero_order_hold_direct_holds_between_samples() -> None:
     Note: 多レート (sample_time > dt_base) の ZOHDirect は本 PR スコープ外
     (1 dt_base 分の off-by-one がある。CHANGELOG / ADR-0014 既知の制限を参照)。
     """
-    from pyflw.blocks import Integrator
+    from flode.blocks import Integrator
 
     dt = 0.01
     n = 100
@@ -241,7 +241,7 @@ def test_unit_delay_in_feedback_loop_breaks_algebraic_loop() -> None:
     pattern は v0.3.0 (1-state) と異なる。重要なのは「代数ループが切れている」
     こと (= 例外が発生せず実行できる) であり、具体値は新 semantics 下で記録する。
     """
-    from pyflw.blocks import Sum
+    from flode.blocks import Sum
 
     sim = Simulator(t_end=0.05, dt=0.01)
     src = sim.add(Constant(value=1.0))

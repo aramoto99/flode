@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import Simulator, linearize
-from pyflw.blocks import (
+from flode import Simulator, linearize
+from flode.blocks import (
     Constant,
     Display,
     Integrator,

@@ -29,7 +29,7 @@ function node(
     height: 40,
     type: "blockNode",
     data: {
-      blockType: "pyflw.blocks.mathops.Gain",
+      blockType: "flode.blocks.mathops.Gain",
       params: {},
       nInputs,
       nOutputs,

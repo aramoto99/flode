@@ -1,11 +1,11 @@
 // ADR-0019 §(3) + UI 刷新: ブロックパレット。
 // 各エントリに block 種別固有の SVG glyph プレビューを表示する Library
 // Browser 風の見た目。検索 + カテゴリ折りたたみ。drag-start で
-// `application/pyflw-block-type` を data transfer に積む。
+// `application/flode-block-type` を data transfer に積む。
 //
 // ADR-0029: マスク Subsystem 集合を配布する `.flwlib.json` (= block library) を
 // Block class registry の **下** に Libraries セクションとして表示する。drag-start
-// では `application/pyflw-library-entry-ref` MIME で `{library, entry}` を運び、
+// では `application/flode-library-entry-ref` MIME で `{library, entry}` を運び、
 // drop 経路 (DiagramCanvas) で個別 fetch + Inline 展開する。
 
 import { useQuery } from "@tanstack/react-query";
@@ -108,9 +108,9 @@ export function BlockPalette(): JSX.Element {
     event: React.DragEvent<HTMLDivElement>,
     block: BlockMetadata,
   ): void => {
-    event.dataTransfer.setData("application/pyflw-block-type", block.type_path);
+    event.dataTransfer.setData("application/flode-block-type", block.type_path);
     event.dataTransfer.setData(
-      "application/pyflw-default-params",
+      "application/flode-default-params",
       JSON.stringify(
         buildDefaultParams(block.params_spec, { isContainer: block.is_container }),
       ),
@@ -118,7 +118,7 @@ export function BlockPalette(): JSX.Element {
     event.dataTransfer.effectAllowed = "copy";
   };
 
-  // ADR-0029: Library entry の drag-start。``application/pyflw-library-entry-ref``
+  // ADR-0029: Library entry の drag-start。``application/flode-library-entry-ref``
   // で参照のみを運ぶ (body は drop 経路で fetch、= ペイロード削減)。
   const handleLibraryDragStart = (
     event: React.DragEvent<HTMLDivElement>,
@@ -126,7 +126,7 @@ export function BlockPalette(): JSX.Element {
     entry: LibraryEntryMetadata,
   ): void => {
     event.dataTransfer.setData(
-      "application/pyflw-library-entry-ref",
+      "application/flode-library-entry-ref",
       JSON.stringify({ library: library.name, entry: entry.id }),
     );
     event.dataTransfer.effectAllowed = "copy";
@@ -249,7 +249,7 @@ export function BlockPalette(): JSX.Element {
           })
         )}
         {/* ADR-0029: Libraries セクション。組み込み + ユーザー定義の `.flwlib.json` を
-            一覧表示する。各 entry は drag で `application/pyflw-library-entry-ref` を運ぶ。 */}
+            一覧表示する。各 entry は drag で `application/flode-library-entry-ref` を運ぶ。 */}
         {(libraryData?.libraries ?? []).map((library) => {
           const libCatKey = `lib::${library.name}`;
           const isCollapsed = collapsed[libCatKey] && !isFiltering;
@@ -303,7 +303,7 @@ export function BlockPalette(): JSX.Element {
                         title={dispName}
                       >
                         <div className="flex h-9 w-9 items-center justify-center border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400">
-                          <BlockGlyph typePath="pyflw.subsystems.subsystem.Subsystem" />
+                          <BlockGlyph typePath="flode.subsystems.subsystem.Subsystem" />
                         </div>
                         <div className="w-full truncate text-[10px] font-medium text-slate-700">
                           {dispName}

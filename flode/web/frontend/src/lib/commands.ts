@@ -1,6 +1,6 @@
 // v0.29.0: コマンドパレット (Ctrl+Shift+P) 用の command registry。
 //
-// pyflw 内の主要操作を 1 ヶ所に集約し、ユーザーが名前検索で発火できるように
+// flode 内の主要操作を 1 ヶ所に集約し、ユーザーが名前検索で発火できるように
 // する (= 一般的な Web IDE 流)。
 //
 // **実装方針**: 各 command の ``action`` は **store action 直接呼出し** か
@@ -92,7 +92,7 @@ function dispatchOpenSearch(kind: "path" | "content"): void {
   state.setSidebarMode("search");
   if (state.workspaceCollapsed) state.setWorkspaceCollapsed(false);
   window.dispatchEvent(
-    new CustomEvent("pyflw:open-search", { detail: { kind } }),
+    new CustomEvent("flode:open-search", { detail: { kind } }),
   );
 }
 

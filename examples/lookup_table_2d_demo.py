@@ -11,8 +11,8 @@ import logging
 
 import numpy as np
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, LookupTable2D, Scope, Sine, Sum
+from flode import Simulator
+from flode.blocks import Constant, LookupTable2D, Scope, Sine, Sum
 
 _logger = logging.getLogger(__name__)
 

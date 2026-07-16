@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from pyflw import LibraryFileError, load_library, validate_library
-from pyflw.libraries._loader import (
+from flode import LibraryFileError, load_library, validate_library
+from flode.libraries._loader import (
     _LIBRARY_MIGRATIONS,
     CURRENT_LIBRARY_SCHEMA_VERSION,
     SUPPORTED_LIBRARY_SCHEMA_VERSIONS,
@@ -28,19 +28,19 @@ def _minimal_library_dict(**overrides: Any) -> dict[str, Any]:
                 "display_name": "Trivial",
                 "subsystem": {
                     "id": None,
-                    "type": "pyflw.subsystems.subsystem.Subsystem",
+                    "type": "flode.subsystems.subsystem.Subsystem",
                     "params": {
                         "n_inputs": 1,
                         "n_outputs": 1,
                         "blocks": [
                             {
                                 "id": "Inport_0",
-                                "type": "pyflw.subsystems.ports.Inport",
+                                "type": "flode.subsystems.ports.Inport",
                                 "params": {"port_idx": 0},
                             },
                             {
                                 "id": "Outport_0",
-                                "type": "pyflw.subsystems.ports.Outport",
+                                "type": "flode.subsystems.ports.Outport",
                                 "params": {"port_idx": 0},
                             },
                         ],
@@ -119,16 +119,16 @@ def test_migration_registry_has_v1_to_v2() -> None:
 
 
 def test_load_std_bundle() -> None:
-    """組み込み ``pyflw/libraries/std.flwlib.json`` の 3 entry が load 可能。"""
-    import pyflw.libraries
+    """組み込み ``flode/libraries/std.flwlib.json`` の 3 entry が load 可能。"""
+    import flode.libraries
 
-    pkg_dir = Path(pyflw.libraries.__file__).parent
+    pkg_dir = Path(flode.libraries.__file__).parent
     lib = load_library(pkg_dir / "std.flwlib.json")
     assert lib.name == "std"
     ids = [e.id for e in lib.entries]
     assert ids == ["pid_controller", "first_order_plant", "second_order_plant"]
     # 組み込み entries は全て Subsystem._from_dict() で再構築可能 (= byte-identical 検証)
-    from pyflw.subsystems import Subsystem
+    from flode.subsystems import Subsystem
 
     for entry in lib.entries:
         sub = Subsystem._from_dict(**entry.subsystem["params"])
@@ -140,16 +140,16 @@ def test_std_bundle_resource_resolves_via_importlib() -> None:
     """``importlib.resources`` 経由で std.flwlib.json が見える (= wheel package_data 設定)。
 
     `pyproject.toml` の ``[tool.setuptools.package-data]`` で
-    ``"pyflw.libraries" = ["*.json"]`` が抜けると wheel に bundle されず
+    ``"flode.libraries" = ["*.json"]`` が抜けると wheel に bundle されず
     `LibraryRegistry` の `bundle_builtin=True` がサイレントに失敗する。本テストは
     `editable install` でも `wheel install` でも同じ resource lookup が成功する
     ことを確認するゲート。
     """
     import importlib.resources
 
-    ref = importlib.resources.files("pyflw.libraries").joinpath("std.flwlib.json")
+    ref = importlib.resources.files("flode.libraries").joinpath("std.flwlib.json")
     assert ref.is_file(), (
-        "pyflw/libraries/std.flwlib.json must be discoverable via "
+        "flode/libraries/std.flwlib.json must be discoverable via "
         "importlib.resources (check pyproject.toml package-data)"
     )
 
@@ -179,7 +179,7 @@ def test_std_bundle_byte_identical_to_generator(tmp_path: Path) -> None:
         ("first_order_plant", build_std_library.build_first_order_plant_params()),
         ("second_order_plant", build_std_library.build_second_order_plant_params()),
     ]
-    bundle_path = repo_root / "pyflw" / "libraries" / "std.flwlib.json"
+    bundle_path = repo_root / "flode" / "libraries" / "std.flwlib.json"
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     bundle_entries = bundle["entries"]
     assert len(bundle_entries) == len(expected_entries)
@@ -195,7 +195,7 @@ def test_std_bundle_byte_identical_to_generator(tmp_path: Path) -> None:
 def test_load_invalid_entry_subsystem_type(tmp_path: Path) -> None:
     """subsystem.type が Subsystem 以外だと ``LibraryFileError``。"""
     data = _minimal_library_dict()
-    data["entries"][0]["subsystem"]["type"] = "pyflw.blocks.mathops.Gain"
+    data["entries"][0]["subsystem"]["type"] = "flode.blocks.mathops.Gain"
     p = tmp_path / "wrong_type.flwlib.json"
     p.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(LibraryFileError, match="must be a Subsystem class path"):

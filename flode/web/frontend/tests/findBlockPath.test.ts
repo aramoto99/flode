@@ -17,8 +17,8 @@ function _model(blocks: FlwModel["blocks"]): FlwModel {
 describe("findBlockPath", () => {
   it("returns [] for a top-level block", () => {
     const m = _model([
-      { id: "a", type: "pyflw.blocks.mathops.Gain", params: {} },
-      { id: "b", type: "pyflw.blocks.sinks.Scope", params: {} },
+      { id: "a", type: "flode.blocks.mathops.Gain", params: {} },
+      { id: "b", type: "flode.blocks.sinks.Scope", params: {} },
     ]);
     expect(findBlockPath(m, "a")).toEqual([]);
     expect(findBlockPath(m, "b")).toEqual([]);
@@ -26,7 +26,7 @@ describe("findBlockPath", () => {
 
   it("returns null for a missing block", () => {
     const m = _model([
-      { id: "a", type: "pyflw.blocks.mathops.Gain", params: {} },
+      { id: "a", type: "flode.blocks.mathops.Gain", params: {} },
     ]);
     expect(findBlockPath(m, "zzz")).toBeNull();
   });
@@ -35,10 +35,10 @@ describe("findBlockPath", () => {
     const m = _model([
       {
         id: "sub1",
-        type: "pyflw.subsystems.Subsystem",
+        type: "flode.subsystems.Subsystem",
         params: {
           blocks: [
-            { id: "inner", type: "pyflw.blocks.mathops.Gain", params: {} },
+            { id: "inner", type: "flode.blocks.mathops.Gain", params: {} },
           ],
         },
       },
@@ -51,15 +51,15 @@ describe("findBlockPath", () => {
     const m = _model([
       {
         id: "sub1",
-        type: "pyflw.subsystems.Subsystem",
+        type: "flode.subsystems.Subsystem",
         params: {
           blocks: [
             {
               id: "sub2",
-              type: "pyflw.subsystems.Subsystem",
+              type: "flode.subsystems.Subsystem",
               params: {
                 blocks: [
-                  { id: "deep", type: "pyflw.blocks.sinks.Scope", params: {} },
+                  { id: "deep", type: "flode.blocks.sinks.Scope", params: {} },
                 ],
               },
             },
@@ -73,7 +73,7 @@ describe("findBlockPath", () => {
 
   it("handles blocks with no params.blocks (= non-subsystem) gracefully", () => {
     const m = _model([
-      { id: "a", type: "pyflw.blocks.mathops.Gain", params: { k: 2.0 } },
+      { id: "a", type: "flode.blocks.mathops.Gain", params: { k: 2.0 } },
     ]);
     expect(findBlockPath(m, "a")).toEqual([]);
     expect(findBlockPath(m, "missing")).toBeNull();
@@ -83,31 +83,31 @@ describe("findBlockPath", () => {
 describe("findBlockTypeById", () => {
   it("returns the type of a top-level block", () => {
     const m = _model([
-      { id: "xy", type: "pyflw.blocks.sinks.XYGraph", params: {} },
-      { id: "s", type: "pyflw.blocks.sinks.Scope", params: {} },
+      { id: "xy", type: "flode.blocks.sinks.XYGraph", params: {} },
+      { id: "s", type: "flode.blocks.sinks.Scope", params: {} },
     ]);
-    expect(findBlockTypeById(m, "xy")).toBe("pyflw.blocks.sinks.XYGraph");
-    expect(findBlockTypeById(m, "s")).toBe("pyflw.blocks.sinks.Scope");
+    expect(findBlockTypeById(m, "xy")).toBe("flode.blocks.sinks.XYGraph");
+    expect(findBlockTypeById(m, "s")).toBe("flode.blocks.sinks.Scope");
   });
 
   it("returns the type of a nested block", () => {
     const m = _model([
       {
         id: "sub",
-        type: "pyflw.subsystems.Subsystem",
+        type: "flode.subsystems.Subsystem",
         params: {
           blocks: [
-            { id: "xy", type: "pyflw.blocks.sinks.XYGraph", params: {} },
+            { id: "xy", type: "flode.blocks.sinks.XYGraph", params: {} },
           ],
         },
       },
     ]);
-    expect(findBlockTypeById(m, "xy")).toBe("pyflw.blocks.sinks.XYGraph");
+    expect(findBlockTypeById(m, "xy")).toBe("flode.blocks.sinks.XYGraph");
   });
 
   it("returns null for a missing block", () => {
     const m = _model([
-      { id: "s", type: "pyflw.blocks.sinks.Scope", params: {} },
+      { id: "s", type: "flode.blocks.sinks.Scope", params: {} },
     ]);
     expect(findBlockTypeById(m, "zzz")).toBeNull();
   });

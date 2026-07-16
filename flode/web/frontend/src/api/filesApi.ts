@@ -1,6 +1,6 @@
 // ADR-0041 §論点 1-A: File API client (= /api/v1/files/*)。
 // 汎用 contents API 形式の 6 endpoint を呼び出すラッパー。Path traversal 防御は backend
-// (= pyflw/server/security/paths.py) に集約、frontend は単純に POSIX path を
+// (= flode/server/security/paths.py) に集約、frontend は単純に POSIX path を
 // encodeURIComponent して送るだけ。
 
 import type { FlwModel } from "../types/api";
@@ -42,7 +42,7 @@ export interface FilePutResponse {
 export class FileApiUnavailableError extends Error {
   constructor() {
     super(
-      "File API not enabled. The pyflw-server is running in legacy --model-dir mode. " +
+      "File API not enabled. The flode is running in legacy --model-dir mode. " +
         "Restart with --workspace=PATH (see ADR-0041) to enable workspace browsing.",
     );
     this.name = "FileApiUnavailableError";

@@ -24,10 +24,10 @@ from typing import cast
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Gain, Scope
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Inport, Outport, Subsystem
+from flode import Simulator
+from flode.blocks import Constant, Gain, Scope
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Inport, Outport, Subsystem
 
 # ---------------------------------------------------------------------------
 # port_shape 整合性 check
@@ -217,7 +217,7 @@ class TestSubsystemSmBRunRejected:
         c0 = sim.add(Constant(value=1.0, id="c0"))
         c1 = sim.add(Constant(value=2.0, id="c1"))
         c2 = sim.add(Constant(value=3.0, id="c2"))
-        from pyflw.blocks import Mux
+        from flode.blocks import Mux
 
         m = sim.add(Mux(n=3, id="m"))
         sub = Subsystem(id="sub")

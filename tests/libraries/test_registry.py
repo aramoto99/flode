@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pyflw.libraries._loader import CURRENT_LIBRARY_SCHEMA_VERSION
-from pyflw.server.library_registry import build_library_registry
+from flode.libraries._loader import CURRENT_LIBRARY_SCHEMA_VERSION
+from flode.server.library_registry import build_library_registry
 
 
 def _write_minimal_library(path: Path, name: str) -> None:
@@ -20,19 +20,19 @@ def _write_minimal_library(path: Path, name: str) -> None:
                 "display_name": "Entry",
                 "subsystem": {
                     "id": None,
-                    "type": "pyflw.subsystems.subsystem.Subsystem",
+                    "type": "flode.subsystems.subsystem.Subsystem",
                     "params": {
                         "n_inputs": 1,
                         "n_outputs": 1,
                         "blocks": [
                             {
                                 "id": "Inport_0",
-                                "type": "pyflw.subsystems.ports.Inport",
+                                "type": "flode.subsystems.ports.Inport",
                                 "params": {"port_idx": 0},
                             },
                             {
                                 "id": "Outport_0",
-                                "type": "pyflw.subsystems.ports.Outport",
+                                "type": "flode.subsystems.ports.Outport",
                                 "params": {"port_idx": 0},
                             },
                         ],

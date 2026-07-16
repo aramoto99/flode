@@ -1,8 +1,8 @@
 {
-  "schema_version": "0.8",
+  "schema_version": "0.10",
   "metadata": {
     "created_at": "2026-05-19T17:47:46Z",
-    "tool": "pyflw 3.16.0"
+    "tool": "flode 3.16.0"
   },
   "simulator": {
     "t_end": 1.0,
@@ -15,28 +15,28 @@
   "blocks": [
     {
       "id": "num",
-      "type": "pyflw.blocks.sources.Constant",
+      "type": "flode.blocks.sources.Constant",
       "params": {
         "value": 1.0
       }
     },
     {
       "id": "den",
-      "type": "pyflw.blocks.sources.Constant",
+      "type": "flode.blocks.sources.Constant",
       "params": {
         "value": 0.0
       }
     },
     {
       "id": "div",
-      "type": "pyflw.blocks.mathops.Divide",
+      "type": "flode.blocks.mathops.Divide",
       "params": {
         "signs": "*/"
       }
     },
     {
       "id": "scope",
-      "type": "pyflw.blocks.sinks.Scope",
+      "type": "flode.blocks.sinks.Scope",
       "params": {
         "n_inputs": 1,
         "labels": [

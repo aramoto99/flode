@@ -12,8 +12,8 @@ import logging
 import numpy as np
 import pytest
 
-from pyflw import BlockSpecError, Simulator, block
-from pyflw.blocks import Scope
+from flode import BlockSpecError, Simulator, block
+from flode.blocks import Scope
 
 # ---------------------------------------------------------------
 # 状態なし combinational
@@ -286,7 +286,7 @@ def test_inputs_override_with_unannotated_u():
 
 
 def test_outputs_inference_warns_when_no_return_annotation(caplog):
-    with caplog.at_level(logging.WARNING, logger="pyflw.decorator"):
+    with caplog.at_level(logging.WARNING, logger="flode.decorator"):
 
         @block
         def gain(t: float, u: float, *, k: float = 1.0):
@@ -508,7 +508,7 @@ class TestClassFormBlockBaseGuards:
         """User class が Block 基底のメソッドと同名のメソッドを定義しても
         基底のメソッドを上書きしない (code-reviewer MUST 修正)。"""
 
-        with caplog.at_level(logging.WARNING, logger="pyflw.decorator"):
+        with caplog.at_level(logging.WARNING, logger="flode.decorator"):
 
             @block
             class CustomBlock:
@@ -618,7 +618,7 @@ def test_inherited_sample_time_resolves_to_continuous():
     ) -> tuple[float, np.ndarray]:
         return x[0], np.array([u])
 
-    from pyflw.blocks import Constant
+    from flode.blocks import Constant
 
     sim = Simulator(t_end=0.1, dt=0.01, rtol=1e-8, atol=1e-10)
     src = sim.add(Constant(value=1.0, id="src"))
@@ -640,7 +640,7 @@ def test_inherited_sample_time_resolves_to_discrete():
     MUST 修正の中核回帰テスト: 継承解決後に離散と判明したブロックの ``update``
     が呼ばれること、``derivative`` が no-op になることを確認する。
     """
-    from pyflw.blocks import Constant, UnitDelay
+    from flode.blocks import Constant, UnitDelay
 
     @block(states=1, sample_time=-1.0, direct_feedthrough=False)
     def inh_passthrough(
@@ -739,7 +739,7 @@ def test_simulator_run_two_independent_decorated_gains():
         return k * u
 
     sim = Simulator(t_end=0.05, dt=0.01)
-    from pyflw.blocks import Constant
+    from flode.blocks import Constant
 
     src = sim.add(Constant(value=1.0, id="src"))
     g1 = sim.add(my_gain(k=2.0, id="g1"))

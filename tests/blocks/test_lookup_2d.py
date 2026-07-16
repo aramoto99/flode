@@ -19,10 +19,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import LookupTable2D, Scope, Sine
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
+from flode import Simulator
+from flode.blocks import LookupTable2D, Scope, Sine
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([])
 
@@ -448,19 +448,19 @@ class TestLookupTable2DPersistence:
 
 class TestLookupTable2DRegistry:
     def test_in_builtin_metadata(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        assert "pyflw.blocks.lookup.LookupTable2D" in _BUILTIN_METADATA
-        category, display, icon = _BUILTIN_METADATA["pyflw.blocks.lookup.LookupTable2D"]
+        assert "flode.blocks.lookup.LookupTable2D" in _BUILTIN_METADATA
+        category, display, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTable2D"]
         assert category == "lookup"
         assert display == "Lookup Table (2-D)"
         assert icon == "lookup.lookuptable2d"
 
     def test_in_translations(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        assert "pyflw.blocks.lookup.LookupTable2D" in _BLOCK_TRANSLATIONS
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.lookup.LookupTable2D"]
+        assert "flode.blocks.lookup.LookupTable2D" in _BLOCK_TRANSLATIONS
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTable2D"]
         assert "ja" in entry and "en" in entry
         assert "ルックアップテーブル (2-D)" in entry["ja"]["display_name"]
         assert "Lookup Table (2-D)" in entry["en"]["display_name"]

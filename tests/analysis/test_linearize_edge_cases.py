@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import LinearSystem, Simulator, linearize
-from pyflw.blocks import Constant, Integrator, Scope, UnitDelay
-from pyflw.exceptions import BlockSpecError, SolverError
+from flode import LinearSystem, Simulator, linearize
+from flode.blocks import Constant, Integrator, Scope, UnitDelay
+from flode.exceptions import BlockSpecError, SolverError
 
 
 class TestPureDiscreteRejected:
@@ -58,7 +58,7 @@ class TestMethodValidation:
     """``method`` 引数の validation。"""
 
     def test_jax_method_works_with_supported_blocks(self) -> None:
-        """ADR-0037 (v0.17.0): ``method="jax"`` は ``pyflw[codegen]`` で動く。
+        """ADR-0037 (v0.17.0): ``method="jax"`` は ``flode[codegen]`` で動く。
 
         Integrator は ``_SUPPORTED_BLOCK_TYPES`` に含まれるため、本テストでは
         ``BlockSpecError`` ではなく機械精度結果が返る (中心差分との一致は
@@ -171,7 +171,7 @@ class TestEpsilonPrecisionGradient:
     """
 
     def _make_sim(self) -> Simulator:
-        from pyflw.blocks import Saturation
+        from flode.blocks import Saturation
 
         sim = Simulator(t_end=1.0, dt=0.01)
         i = sim.add(Integrator(id="i"))
@@ -214,7 +214,7 @@ class TestCentralVsForwardNonlinear:
     def test_central_more_accurate_than_forward_for_cubic_nonlinearity(
         self,
     ) -> None:
-        from pyflw import block
+        from flode import block
 
         @block(states=1)  # type: ignore[untyped-decorator]
         def cubic_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]:
@@ -239,7 +239,7 @@ class TestNonlinearOperatingPointDependence:
     """非線形ブロック (Saturation) は動作点によって線形化結果が変わる。"""
 
     def _make_sat_sim(self) -> Simulator:
-        from pyflw.blocks import Saturation
+        from flode.blocks import Saturation
 
         sim = Simulator(t_end=1.0, dt=0.01)
         i = sim.add(Integrator(id="i"))
@@ -283,7 +283,7 @@ class TestTerminatorIsNotSink:
 
     def test_terminator_does_not_expose_output_dimension(self) -> None:
         """Terminator のみに接続した Integrator は外部出力を持たない。"""
-        from pyflw.blocks import Terminator
+        from flode.blocks import Terminator
 
         sim = Simulator(t_end=1.0, dt=0.01)
         i = sim.add(Integrator(id="i"))
@@ -301,36 +301,36 @@ class TestIsSinkDuckType:
 
     def test_scope_is_sink(self) -> None:
         """Scope: n_outputs=0 かつ record → sink True。"""
-        from pyflw.analysis.linearize import _is_sink
-        from pyflw.blocks import Scope
+        from flode.analysis.linearize import _is_sink
+        from flode.blocks import Scope
 
         assert _is_sink(Scope())
 
     def test_display_is_sink(self) -> None:
         """Display: n_outputs=0 かつ record → sink True。"""
-        from pyflw.analysis.linearize import _is_sink
-        from pyflw.blocks import Display
+        from flode.analysis.linearize import _is_sink
+        from flode.blocks import Display
 
         assert _is_sink(Display())
 
     def test_xygraph_is_sink(self) -> None:
         """XYGraph: n_outputs=0 かつ record → sink True。"""
-        from pyflw.analysis.linearize import _is_sink
-        from pyflw.blocks import XYGraph
+        from flode.analysis.linearize import _is_sink
+        from flode.blocks import XYGraph
 
         assert _is_sink(XYGraph())
 
     def test_terminator_is_not_sink(self) -> None:
         """Terminator: n_outputs=0 だが record なし → sink False。"""
-        from pyflw.analysis.linearize import _is_sink
-        from pyflw.blocks import Terminator
+        from flode.analysis.linearize import _is_sink
+        from flode.blocks import Terminator
 
         assert not _is_sink(Terminator())
 
     def test_custom_sink_with_record_is_sink(self) -> None:
         """n_outputs=0 かつ record を持つカスタムブロック → sink True (duck-type)。"""
-        from pyflw import Block
-        from pyflw.analysis.linearize import _is_sink
+        from flode import Block
+        from flode.analysis.linearize import _is_sink
 
         class CustomSink(Block):
             """テスト用カスタム sink。"""
@@ -348,8 +348,8 @@ class TestIsSinkDuckType:
 
     def test_block_with_record_but_outputs_is_not_sink(self) -> None:
         """n_outputs > 0 で record を持つブロックは sink でない (出力側は sink 扱い不可)。"""
-        from pyflw import Block
-        from pyflw.analysis.linearize import _is_sink
+        from flode import Block
+        from flode.analysis.linearize import _is_sink
 
         class FakeBlock(Block):
             """record を持つが n_outputs=1 → sink でない。"""
@@ -371,7 +371,7 @@ class TestDisplayXYGraphAsSink:
 
     def test_display_sink_gives_correct_abcd(self) -> None:
         """Display を sink として Integrator の出力を観察 → ABCD は Scope と同等。"""
-        from pyflw.blocks import Display
+        from flode.blocks import Display
 
         sim = Simulator(t_end=1.0, dt=0.01)
         i = sim.add(Integrator(id="i"))
@@ -387,7 +387,7 @@ class TestDisplayXYGraphAsSink:
 
     def test_xygraph_sink_gives_two_outputs(self) -> None:
         """XYGraph を sink として 2 つの Integrator を観察 → 2 出力。"""
-        from pyflw.blocks import XYGraph
+        from flode.blocks import XYGraph
 
         sim = Simulator(t_end=1.0, dt=0.01)
         i1 = sim.add(Integrator(id="i1"))

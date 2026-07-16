@@ -89,18 +89,18 @@ describe("interpolation", () => {
 describe("language persistence", () => {
   it("writes lang choice to localStorage", async () => {
     await setLanguage("ja");
-    expect(window.localStorage.getItem("pyflw.lang")).toBe("ja");
+    expect(window.localStorage.getItem("flode.lang")).toBe("ja");
   });
 
   it("detectInitialLanguage prefers stored value", () => {
-    window.localStorage.setItem("pyflw.lang", "ja");
+    window.localStorage.setItem("flode.lang", "ja");
     expect(detectInitialLanguage()).toBe("ja");
-    window.localStorage.setItem("pyflw.lang", "en");
+    window.localStorage.setItem("flode.lang", "en");
     expect(detectInitialLanguage()).toBe("en");
   });
 
   it("detectInitialLanguage ignores invalid stored values", () => {
-    window.localStorage.setItem("pyflw.lang", "fr"); // 不正
+    window.localStorage.setItem("flode.lang", "fr"); // 不正
     // navigator.language fallback が走る (jsdom default = en-US)
     const detected = detectInitialLanguage();
     expect(["en", "ja"]).toContain(detected);
@@ -110,9 +110,9 @@ describe("language persistence", () => {
 describe("setLanguage rejects invalid codes", () => {
   it("ignores unsupported language codes (no localStorage write)", async () => {
     await setLanguage("ja");
-    window.localStorage.removeItem("pyflw.lang");
+    window.localStorage.removeItem("flode.lang");
     // @ts-expect-error: explicitly testing runtime guard
     await setLanguage("xx");
-    expect(window.localStorage.getItem("pyflw.lang")).toBeNull();
+    expect(window.localStorage.getItem("flode.lang")).toBeNull();
   });
 });

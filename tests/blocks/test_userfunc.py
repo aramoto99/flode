@@ -22,16 +22,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Fcn, Scope, Sine
-from pyflw.blocks.userfunc import (
+from flode import Simulator
+from flode.blocks import Fcn, Scope, Sine
+from flode.blocks.userfunc import (
     _MAX_AST_DEPTH,
     _MAX_AST_NODES,
     _MAX_EXPR_LEN,
     _MAX_POW_EXPONENT,
 )
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([])
 
@@ -405,7 +405,7 @@ class TestFcnPersistence:
             "blocks": [
                 {
                     "id": "attacker",
-                    "type": "pyflw.blocks.userfunc.Fcn",
+                    "type": "flode.blocks.userfunc.Fcn",
                     "params": {
                         "expression": "__import__('os').system('echo pwned')",
                         "n_inputs": 1,
@@ -430,16 +430,16 @@ class TestFcnPersistence:
 
 class TestFcnRegistry:
     def test_translation_entry_exists(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.userfunc.Fcn"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.userfunc.Fcn"]
         assert entry["ja"]["display_name"] == "数式ブロック"
         assert entry["en"]["display_name"] == "Fcn"
 
     def test_registry_metadata_entry(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.userfunc.Fcn"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.userfunc.Fcn"]
         assert cat == "userfunc"
         assert name == "Fcn"
         assert icon == "userfunc.fcn"

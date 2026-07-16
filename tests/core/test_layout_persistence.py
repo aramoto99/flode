@@ -21,15 +21,15 @@ from pathlib import Path
 
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Gain, Scope
-from pyflw.core.persistence import (
+from flode import Simulator
+from flode.blocks import Constant, Gain, Scope
+from flode.core.persistence import (
     CURRENT_SCHEMA_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
     normalize_layout,
 )
-from pyflw.exceptions import ModelLoadError
-from pyflw.subsystems import Inport, Outport, Subsystem
+from flode.exceptions import ModelLoadError
+from flode.subsystems import Inport, Outport, Subsystem
 
 
 def _build_simple_sim() -> Simulator:
@@ -48,10 +48,10 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_9(self) -> None:
-        # ADR-0058: 0.8 → 0.9 bump (TriggeredSubsystem を Subsystem + 内部 Trigger
-        # block に migration、識別の真実源を class 名から内部 control block に変更)
-        assert CURRENT_SCHEMA_VERSION == "0.9"
+    def test_current_is_0_10(self) -> None:
+        # プロジェクト名変更 (pyflw → flode): 0.9 → 0.10 bump (ブロック型 FQN の
+        # prefix と metadata.tool をロード時に自動変換)
+        assert CURRENT_SCHEMA_VERSION == "0.10"
 
     def test_supported_includes_current(self) -> None:
         assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS
@@ -73,7 +73,7 @@ class TestMigration0_4_to_0_5:
             "blocks": [
                 {
                     "id": "src",
-                    "type": "pyflw.blocks.sources.Constant",
+                    "type": "flode.blocks.sources.Constant",
                     "params": {"value": 5.0},
                 }
             ],
@@ -128,7 +128,7 @@ class TestMigration0_6_to_0_7:
             "blocks": [
                 {
                     "id": "src",
-                    "type": "pyflw.blocks.sources.Constant",
+                    "type": "flode.blocks.sources.Constant",
                     "params": {"value": 5.0},
                 }
             ],
@@ -141,7 +141,7 @@ class TestMigration0_6_to_0_7:
 
     def test_migrate_function_only_bumps_version(self) -> None:
         """``_builtin_migrate_0_6_to_0_7`` が schema_version 文字列のみ更新する。"""
-        from pyflw.core.persistence import _builtin_migrate_0_6_to_0_7
+        from flode.core.persistence import _builtin_migrate_0_6_to_0_7
 
         before = {"schema_version": "0.6", "blocks": [], "connections": []}
         after = _builtin_migrate_0_6_to_0_7(before)
@@ -275,7 +275,7 @@ class TestStaleLayoutEntries:
             "blocks": [
                 {
                     "id": "src",
-                    "type": "pyflw.blocks.sources.Constant",
+                    "type": "flode.blocks.sources.Constant",
                     "params": {"value": 1.0},
                 }
             ],

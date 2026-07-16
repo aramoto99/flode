@@ -7,8 +7,8 @@ import logging
 import numpy as np
 import pytest
 
-from pyflw import BlockSpecError, Simulator
-from pyflw.blocks import Constant, Gain, Scope, Sine, UnitDelay
+from flode import BlockSpecError, Simulator
+from flode.blocks import Constant, Gain, Scope, Sine, UnitDelay
 
 
 def test_unit_delay_basic_one_step_lag():
@@ -66,7 +66,7 @@ def test_non_integer_ratio_warns(caplog):
     sim.connect(src, a)
     sim.connect(src, b)
 
-    with caplog.at_level(logging.WARNING, logger="pyflw.scheduler"):
+    with caplog.at_level(logging.WARNING, logger="flode.scheduler"):
         sim.run()
     assert any("not integer multiples" in r.message for r in caplog.records)
 

@@ -12,8 +12,8 @@ import math
 import numpy as np
 import pytest
 
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems.control_blocks import (
+from flode.exceptions import BlockSpecError
+from flode.subsystems.control_blocks import (
     TRIGGER_TYPES,
     Trigger,
     is_trigger_edge,

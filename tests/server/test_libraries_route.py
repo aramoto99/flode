@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from pyflw.server.app import create_app
-from pyflw.server.settings import Settings
+from flode.server.app import create_app
+from flode.server.settings import Settings
 
 
 @pytest.fixture
 def client() -> TestClient:
-    tmp = tempfile.mkdtemp(prefix="pyflw_test_workspace_")
+    tmp = tempfile.mkdtemp(prefix="flode_test_workspace_")
     settings = Settings(workspace_root=Path(tmp))
     app = create_app(settings=settings)
     return TestClient(app)
@@ -52,7 +52,7 @@ def test_get_library_entry_returns_subsystem_body(client: TestClient) -> None:
 
     返された subsystem body は ``Subsystem._from_dict()`` で再構築可能。
     """
-    from pyflw.subsystems import Subsystem
+    from flode.subsystems import Subsystem
 
     with client:
         r = client.get("/api/v1/libraries/std/pid_controller")
@@ -60,7 +60,7 @@ def test_get_library_entry_returns_subsystem_body(client: TestClient) -> None:
     data = r.json()
     assert data["id"] == "pid_controller"
     sub_dict = data["subsystem"]
-    assert sub_dict["type"] == "pyflw.subsystems.subsystem.Subsystem"
+    assert sub_dict["type"] == "flode.subsystems.subsystem.Subsystem"
     assert isinstance(sub_dict["params"], dict)
     # 再構築 = byte-identical 保証 (= round-trip 可)
     rebuilt = Subsystem._from_dict(**sub_dict["params"])

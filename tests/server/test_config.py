@@ -1,7 +1,7 @@
-"""``pyflw.server.config`` のユニットテスト (SPEC-0004)。
+"""``flode.server.config`` のユニットテスト (SPEC-0004)。
 
 リファレンス Web IDE 準拠の挙動 (= 不在は default で黙起動、不正値は厳格エラー、未知キーは
-warning + 継続) を確認する。``~/.pyflw/config.toml`` の探索パスは ``Path.home()`` を
+warning + 継続) を確認する。``~/.flode/config.toml`` の探索パスは ``Path.home()`` を
 monkeypatch して隔離する。
 """
 
@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from pyflw.exceptions import PyflwError
-from pyflw.server.config import (
+from flode.exceptions import FlodeError
+from flode.server.config import (
     SettingsResolver,
     generate_config_template,
     load_config_file,
     resolve_config_path,
 )
-from pyflw.server.settings import Settings
+from flode.server.settings import Settings
 
 # ---------------------------------------------------------------------------
 # load_config_file
@@ -62,16 +62,16 @@ class TestLoadConfigFile:
     def test_toml_syntax_error_raises(self, tmp_path: Path) -> None:
         cfg_path = tmp_path / "config.toml"
         cfg_path.write_text("[server\nport = 8770\n", encoding="utf-8")
-        with pytest.raises(PyflwError, match="Failed to parse config"):
+        with pytest.raises(FlodeError, match="Failed to parse config"):
             load_config_file(cfg_path)
 
     def test_missing_file_raises(self, tmp_path: Path) -> None:
         cfg_path = tmp_path / "does-not-exist.toml"
-        with pytest.raises(PyflwError, match="does not exist"):
+        with pytest.raises(FlodeError, match="does not exist"):
             load_config_file(cfg_path)
 
     def test_directory_path_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(PyflwError, match="not a file|directory"):
+        with pytest.raises(FlodeError, match="not a file|directory"):
             load_config_file(tmp_path)
 
 
@@ -89,19 +89,19 @@ class TestResolveConfigPath:
 
     def test_explicit_missing_raises(self, tmp_path: Path) -> None:
         cfg = tmp_path / "missing.toml"
-        with pytest.raises(PyflwError, match="does not exist"):
+        with pytest.raises(FlodeError, match="does not exist"):
             resolve_config_path(explicit=cfg)
 
     def test_explicit_directory_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(PyflwError, match="not a file|directory"):
+        with pytest.raises(FlodeError, match="not a file|directory"):
             resolve_config_path(explicit=tmp_path)
 
     def test_default_search_finds_user_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         home = tmp_path / "home"
-        (home / ".pyflw").mkdir(parents=True)
-        cfg = home / ".pyflw" / "config.toml"
+        (home / ".flode").mkdir(parents=True)
+        cfg = home / ".flode" / "config.toml"
         cfg.write_text("", encoding="utf-8")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
         result = resolve_config_path(explicit=None)
@@ -226,7 +226,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"server": {"port": "abc"}},
         )
-        with pytest.raises(PyflwError, match="port"):
+        with pytest.raises(FlodeError, match="port"):
             resolver.build_server_bind()
 
     def test_type_mismatch_scope_batch_size_raises(self, tmp_path: Path) -> None:
@@ -234,7 +234,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"settings": {"scope_batch_size": "100"}},
         )
-        with pytest.raises(PyflwError, match="scope_batch_size"):
+        with pytest.raises(FlodeError, match="scope_batch_size"):
             resolver.build_settings(default_workspace=tmp_path)
 
     def test_type_mismatch_host_raises(self, tmp_path: Path) -> None:
@@ -242,7 +242,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"server": {"host": 127}},
         )
-        with pytest.raises(PyflwError, match="host"):
+        with pytest.raises(FlodeError, match="host"):
             resolver.build_server_bind()
 
     def test_empty_host_raises(self, tmp_path: Path) -> None:
@@ -251,7 +251,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"server": {"host": ""}},
         )
-        with pytest.raises(PyflwError, match="non-empty"):
+        with pytest.raises(FlodeError, match="non-empty"):
             resolver.build_server_bind()
 
     def test_type_bool_port_raises(self, tmp_path: Path) -> None:
@@ -260,7 +260,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"server": {"port": True}},
         )
-        with pytest.raises(PyflwError, match="port"):
+        with pytest.raises(FlodeError, match="port"):
             resolver.build_server_bind()
 
     def test_type_bool_scope_batch_size_raises(self, tmp_path: Path) -> None:
@@ -269,7 +269,7 @@ class TestSettingsResolver:
             cli={},
             file_config={"settings": {"scope_batch_size": True}},
         )
-        with pytest.raises(PyflwError, match="scope_batch_size"):
+        with pytest.raises(FlodeError, match="scope_batch_size"):
             resolver.build_settings(default_workspace=tmp_path)
 
     def test_unknown_key_warns_and_ignored(
@@ -279,7 +279,7 @@ class TestSettingsResolver:
         ws.mkdir()
         # ``_warn_unknown_sections_and_keys`` は ``__init__`` 内で呼ばれるため、
         # caplog の at_level スコープ内で構築する (code-reviewer MUST)。
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
             resolver = SettingsResolver(
                 cli={"workspace": ws},
                 file_config={
@@ -298,7 +298,7 @@ class TestSettingsResolver:
     ) -> None:
         # ``_warn_unknown_sections_and_keys`` は ``__init__`` 内で呼ばれるため、
         # caplog の at_level スコープ内で構築する (code-reviewer MUST)。
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
             resolver = SettingsResolver(
                 cli={},
                 file_config={"experimental": {"foo": 1}},
@@ -352,7 +352,7 @@ class TestBuildLaunchOptions:
             cli={},
             file_config={"server": {"open_browser": "yes"}},
         )
-        with pytest.raises(PyflwError, match="open_browser"):
+        with pytest.raises(FlodeError, match="open_browser"):
             resolver.build_launch_options()
 
     def test_port_retries_negative_raises(self) -> None:
@@ -360,7 +360,7 @@ class TestBuildLaunchOptions:
             cli={},
             file_config={"server": {"port_retries": -1}},
         )
-        with pytest.raises(PyflwError, match="port_retries"):
+        with pytest.raises(FlodeError, match="port_retries"):
             resolver.build_launch_options()
 
     def test_port_retries_bool_raises(self) -> None:
@@ -369,12 +369,12 @@ class TestBuildLaunchOptions:
             cli={},
             file_config={"server": {"port_retries": True}},
         )
-        with pytest.raises(PyflwError, match="port_retries"):
+        with pytest.raises(FlodeError, match="port_retries"):
             resolver.build_launch_options()
 
     def test_new_keys_do_not_warn_as_unknown(self, caplog: pytest.LogCaptureFixture) -> None:
         """open_browser / port_retries は既知キー (_KNOWN_SERVER_KEYS) であること。"""
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.config"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
             SettingsResolver(
                 cli={},
                 file_config={"server": {"open_browser": False, "port_retries": 5}},
@@ -411,7 +411,7 @@ class TestGenerateConfigTemplate:
     def test_refuses_existing_file(self, tmp_path: Path) -> None:
         cfg = tmp_path / "config.toml"
         cfg.write_text("existing", encoding="utf-8")
-        with pytest.raises(PyflwError, match="already exists"):
+        with pytest.raises(FlodeError, match="already exists"):
             generate_config_template(cfg, force=False)
         # 既存内容が保持される
         assert cfg.read_text(encoding="utf-8") == "existing"

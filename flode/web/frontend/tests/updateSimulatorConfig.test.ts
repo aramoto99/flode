@@ -90,7 +90,7 @@ describe("updateSimulatorConfig", () => {
   it("does not touch blocks / connections / layout", () => {
     const model = makeModel();
     model.blocks = [
-      { id: "g", type: "pyflw.blocks.mathops.Gain", params: { k: 2 } },
+      { id: "g", type: "flode.blocks.mathops.Gain", params: { k: 2 } },
     ];
     model.connections = [];
     model.layout = { g: { x: 1, y: 2 } };

@@ -1,11 +1,11 @@
-"""``pyflw-server`` 設定ファイル loader + Resolver (SPEC-0004)。
+"""``flode`` 設定ファイル loader + Resolver (SPEC-0004)。
 
-``~/.pyflw/config.toml`` の探索・パース・優先順位マージ・雛形生成を担う。
+``~/.flode/config.toml`` の探索・パース・優先順位マージ・雛形生成を担う。
 挙動はリファレンス Web IDE に合わせる:
 
 - 設定ファイル不在: ``None`` を返す (呼び出し側は default で起動)
-- TOML syntax error: :class:`PyflwError`
-- 型違反 (例: ``port = "abc"``): :class:`PyflwError`
+- TOML syntax error: :class:`FlodeError`
+- 型違反 (例: ``port = "abc"``): :class:`FlodeError`
 - 未知のキー / セクション: ``WARNING`` ログを出して継続
 
 優先順位は ``CLI > 設定ファイル > default``。:class:`SettingsResolver` を
@@ -26,10 +26,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from ..exceptions import PyflwError
+from ..exceptions import FlodeError
 from .settings import Settings
 
-_logger = logging.getLogger("pyflw.server.config")
+_logger = logging.getLogger("flode.server.config")
 
 # ---------------------------------------------------------------------------
 # 既知 schema (= warning 対象の判定に使う)
@@ -91,22 +91,22 @@ def resolve_config_path(*, explicit: Path | None) -> Path | None:
 
     Returns:
         - ``explicit`` が file として存在 → 解決済み絶対 path
-        - ``explicit=None`` で ``~/.pyflw/config.toml`` が存在 → その path
+        - ``explicit=None`` で ``~/.flode/config.toml`` が存在 → その path
         - ``explicit=None`` で暗黙 path も不在 → ``None`` (= 呼び出し側は default で起動)
 
     Raises:
-        PyflwError: ``explicit`` 指定で path が存在しない / file ではない。
+        FlodeError: ``explicit`` 指定で path が存在しない / file ではない。
             暗黙探索の不在はエラーにせず ``None`` を返す (リファレンス Web IDE 準拠)。
     """
     if explicit is not None:
         p = _expand_home(explicit).resolve()
         if not p.exists():
-            raise PyflwError(
+            raise FlodeError(
                 f"--config path does not exist: {p}. "
-                f"Use 'pyflw-server --generate-config' to create a template."
+                f"Use 'flode --generate-config' to create a template."
             )
         if not p.is_file():
-            raise PyflwError(f"--config path is not a file (directory?): {p}")
+            raise FlodeError(f"--config path is not a file (directory?): {p}")
         return p
     default = default_user_config_path()
     if default.is_file():
@@ -115,12 +115,12 @@ def resolve_config_path(*, explicit: Path | None) -> Path | None:
 
 
 def default_user_config_path() -> Path:
-    """暗黙探索 path (``~/.pyflw/config.toml``) を返す。
+    """暗黙探索 path (``~/.flode/config.toml``) を返す。
 
     ``--generate-config`` の出力先としても使う。``Path.home()`` を経由するため、
     テストでは ``monkeypatch.setattr(Path, "home", ...)`` で隔離可能。
     """
-    return Path.home() / ".pyflw" / "config.toml"
+    return Path.home() / ".flode" / "config.toml"
 
 
 # ---------------------------------------------------------------------------
@@ -138,20 +138,20 @@ def load_config_file(path: Path) -> dict[str, Any]:
         パースされた dict。空ファイルなら空 dict。
 
     Raises:
-        PyflwError: ファイル不在、ディレクトリ指定、TOML syntax error、
+        FlodeError: ファイル不在、ディレクトリ指定、TOML syntax error、
             読み取り権限なしのいずれか。
     """
     if not path.exists():
-        raise PyflwError(f"Config file does not exist: {path}")
+        raise FlodeError(f"Config file does not exist: {path}")
     if not path.is_file():
-        raise PyflwError(f"Config path is not a file (directory?): {path}")
+        raise FlodeError(f"Config path is not a file (directory?): {path}")
     try:
         with path.open("rb") as f:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
-        raise PyflwError(f"Failed to parse config at {path}: {e}") from e
+        raise FlodeError(f"Failed to parse config at {path}: {e}") from e
     except PermissionError as e:
-        raise PyflwError(f"Cannot read config (permission denied): {path}: {e}") from e
+        raise FlodeError(f"Cannot read config (permission denied): {path}: {e}") from e
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ class SettingsResolver:
             完全に構築された ``Settings``。
 
         Raises:
-            PyflwError: 型違反、または workspace path が存在しない / file 指定など。
+            FlodeError: 型違反、または workspace path が存在しない / file 指定など。
         """
         workspace = self._resolve_workspace(default_workspace=default_workspace)
         scope_batch_size = self._resolve_int_field(
@@ -248,18 +248,18 @@ class SettingsResolver:
             ``(host, port)``。CLI > file > default の順で解決済み。
 
         Raises:
-            PyflwError: 型違反 (port が int でない、host が str でない、空文字 host 等)。
+            FlodeError: 型違反 (port が int でない、host が str でない、空文字 host 等)。
         """
         host_raw = self._lookup("host", section="server")
         if host_raw is None:
             host: str = _DEFAULT_HOST
         else:
             if not isinstance(host_raw, str):
-                raise PyflwError(
+                raise FlodeError(
                     f"Invalid type for [server].host: expected str, got {type(host_raw).__name__}"
                 )
             if not host_raw:
-                raise PyflwError("Invalid value for [server].host: must be a non-empty string.")
+                raise FlodeError("Invalid value for [server].host: must be a non-empty string.")
             host = host_raw
 
         port_raw = self._lookup("port", section="server")
@@ -268,7 +268,7 @@ class SettingsResolver:
         else:
             # bool は int のサブクラスなので明示的に弾く (port = true を許さない)
             if isinstance(port_raw, bool) or not isinstance(port_raw, int):
-                raise PyflwError(
+                raise FlodeError(
                     f"Invalid type for [server].port: expected int, got {type(port_raw).__name__}"
                 )
             port_value = port_raw
@@ -285,7 +285,7 @@ class SettingsResolver:
             ``(open_browser, port_retries)``。CLI > file > default の順で解決済み。
 
         Raises:
-            PyflwError: 型違反 (``open_browser`` が bool でない、``port_retries`` が
+            FlodeError: 型違反 (``open_browser`` が bool でない、``port_retries`` が
                 int でない / 負値 / bool)。
         """
         open_browser = self._resolve_bool_field(
@@ -299,7 +299,7 @@ class SettingsResolver:
             default=_DEFAULT_PORT_RETRIES,
         )
         if port_retries < 0:
-            raise PyflwError(
+            raise FlodeError(
                 f"Invalid value for [server].port_retries: must be >= 0, got {port_retries}"
             )
         return open_browser, port_retries
@@ -329,18 +329,18 @@ class SettingsResolver:
         elif isinstance(raw, str):
             ws = _expand_home(raw)
         else:
-            raise PyflwError(
+            raise FlodeError(
                 f"Invalid type for [settings].workspace: expected str/Path, "
                 f"got {type(raw).__name__}"
             )
         ws_resolved = ws.resolve()
         if not ws_resolved.exists():
-            raise PyflwError(
+            raise FlodeError(
                 f"Workspace root does not exist: {ws_resolved}. "
                 f"Create the directory first or specify a different workspace."
             )
         if not ws_resolved.is_dir():
-            raise PyflwError(
+            raise FlodeError(
                 f"Workspace root is not a directory: {ws_resolved}. "
                 f"workspace must point to a directory, not a file."
             )
@@ -351,7 +351,7 @@ class SettingsResolver:
         if raw is None:
             return default
         if isinstance(raw, bool) or not isinstance(raw, int):
-            raise PyflwError(
+            raise FlodeError(
                 f"Invalid type for [{section}].{key}: expected int, got {type(raw).__name__}"
             )
         return int(raw)
@@ -361,7 +361,7 @@ class SettingsResolver:
         if raw is None:
             return default
         if not isinstance(raw, bool):
-            raise PyflwError(
+            raise FlodeError(
                 f"Invalid type for [{section}].{key}: expected bool, got {type(raw).__name__}"
             )
         return raw
@@ -371,14 +371,14 @@ class SettingsResolver:
         if raw is None:
             return list(default)
         if not isinstance(raw, list):
-            raise PyflwError(
+            raise FlodeError(
                 f"Invalid type for [{section}].{key}: expected list of str, "
                 f"got {type(raw).__name__}"
             )
         result: list[str] = []
         for i, item in enumerate(raw):
             if not isinstance(item, str):
-                raise PyflwError(
+                raise FlodeError(
                     f"Invalid type for [{section}].{key}[{i}]: expected str, "
                     f"got {type(item).__name__}"
                 )
@@ -415,8 +415,8 @@ class SettingsResolver:
 # Template generation
 # ---------------------------------------------------------------------------
 
-_TEMPLATE = """# ~/.pyflw/config.toml — pyflw configuration (SPEC-0004)
-# Generated by `pyflw --generate-config` (alias: pyflw-server).
+_TEMPLATE = """# ~/.flode/config.toml — flode configuration (SPEC-0004)
+# Generated by `flode --generate-config` (alias: flode).
 # Edit values below; uncomment lines to override defaults.
 # Priority: CLI args > this file > defaults.
 
@@ -428,7 +428,7 @@ host = "127.0.0.1"   # bind host (default: "127.0.0.1")
 port = 8770          # bind port (default: 8770)
 
 # Open the default web browser after the server starts listening (SPEC-0021).
-# Disable permanently here, or per-run with `pyflw --no-browser`.
+# Disable permanently here, or per-run with `flode --no-browser`.
 open_browser = true
 
 # When the requested port is busy, try port+1, port+2, ... up to this many
@@ -436,12 +436,12 @@ open_browser = true
 # fail immediately (fixed-port / reverse-proxy setups). SPEC-0021.
 port_retries = 50
 
-# === pyflw.server.Settings dataclass fields ===
+# === flode.server.Settings dataclass fields ===
 # These are passed to `create_app(settings=Settings(...))`.
 [settings]
 # Workspace root for /api/v1/files/* (ADR-0041).
 # Comment out to fall back to the current working directory at startup.
-# workspace = "~/pyflw-workspace"
+# workspace = "~/flode-workspace"
 
 # WebSocket Scope batch size (default: 100, ADR-0011).
 scope_batch_size = 100
@@ -466,14 +466,14 @@ def generate_config_template(path: Path, *, force: bool) -> None:
     """雛形 TOML を ``path`` に書き出す。
 
     Args:
-        path: 出力先 (通常 ``~/.pyflw/config.toml``)。
-        force: ``True`` で既存ファイルを上書き、``False`` で既存時は :class:`PyflwError`。
+        path: 出力先 (通常 ``~/.flode/config.toml``)。
+        force: ``True`` で既存ファイルを上書き、``False`` で既存時は :class:`FlodeError`。
 
     Raises:
-        PyflwError: ``force=False`` で既存ファイルあり。
+        FlodeError: ``force=False`` で既存ファイルあり。
     """
     if path.exists() and not force:
-        raise PyflwError(f"Config file already exists: {path}. Use --force to overwrite.")
+        raise FlodeError(f"Config file already exists: {path}. Use --force to overwrite.")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_TEMPLATE, encoding="utf-8")
     _logger.info("Wrote config template to %s", path)

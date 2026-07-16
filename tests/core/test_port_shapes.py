@@ -15,10 +15,10 @@ import json
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Constant, Gain, Scope
-from pyflw.core.block import Block, _normalize_port_shapes
-from pyflw.exceptions import BlockSpecError
+from flode import Simulator
+from flode.blocks import Constant, Gain, Scope
+from flode.core.block import Block, _normalize_port_shapes
+from flode.exceptions import BlockSpecError
 
 # ---------------------------------------------------------------------------
 # _normalize_port_shapes ヘルパー
@@ -229,7 +229,7 @@ class TestSmBRunEnabled:
 class TestSchema04Migration:
     def test_save_uses_current_schema(self, tmp_path) -> None:
         # ADR-0036: schema bump 0.6 → 0.7 (RateTransition 追加)
-        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+        from flode.core.persistence import CURRENT_SCHEMA_VERSION
 
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(Constant(value=1.0, id="src"))
@@ -243,7 +243,7 @@ class TestSchema04Migration:
         path = tmp_path / "legacy_0_3.flw.json"
         legacy = {
             "schema_version": "0.3",
-            "metadata": {"created_at": "2026-05-06T00:00:00Z", "tool": "pyflw 0.3.0"},
+            "metadata": {"created_at": "2026-05-06T00:00:00Z", "tool": "flode 0.3.0"},
             "simulator": {
                 "t_end": 0.05,
                 "dt": 0.01,
@@ -253,9 +253,9 @@ class TestSchema04Migration:
                 "dt_base": None,
             },
             "blocks": [
-                {"id": "src", "type": "pyflw.blocks.sources.Constant", "params": {"value": 5.0}},
-                {"id": "g", "type": "pyflw.blocks.mathops.Gain", "params": {"k": 2.0}},
-                {"id": "sc", "type": "pyflw.blocks.sinks.Scope", "params": {"n_inputs": 1}},
+                {"id": "src", "type": "flode.blocks.sources.Constant", "params": {"value": 5.0}},
+                {"id": "g", "type": "flode.blocks.mathops.Gain", "params": {"k": 2.0}},
+                {"id": "sc", "type": "flode.blocks.sinks.Scope", "params": {"n_inputs": 1}},
             ],
             "connections": [
                 {"src": "src", "src_idx": 0, "dst": "g", "dst_idx": 0},
@@ -283,7 +283,7 @@ class TestSchema04Migration:
                 "dt_base": None,
             },
             "blocks": [
-                {"id": "src", "type": "pyflw.blocks.sources.Constant", "params": {"value": 1.0}},
+                {"id": "src", "type": "flode.blocks.sources.Constant", "params": {"value": 1.0}},
             ],
             "connections": [],
         }

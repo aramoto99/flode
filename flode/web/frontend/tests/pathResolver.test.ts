@@ -22,26 +22,26 @@ const NESTED_MODEL: FlwModel = {
   blocks: [
     {
       id: "outer",
-      type: "pyflw.subsystems.subsystem.Subsystem",
+      type: "flode.subsystems.subsystem.Subsystem",
       params: {
         n_inputs: 0,
         n_outputs: 0,
         blocks: [
           {
             id: "g",
-            type: "pyflw.blocks.mathops.Gain",
+            type: "flode.blocks.mathops.Gain",
             params: { k: 2.0 },
           },
           {
             id: "inner",
-            type: "pyflw.subsystems.subsystem.Subsystem",
+            type: "flode.subsystems.subsystem.Subsystem",
             params: {
               n_inputs: 0,
               n_outputs: 0,
               blocks: [
                 {
                   id: "h",
-                  type: "pyflw.blocks.mathops.Gain",
+                  type: "flode.blocks.mathops.Gain",
                   params: { k: 3.0 },
                 },
               ],
@@ -103,7 +103,7 @@ describe("resolveBlocksAtPath", () => {
       blocks: [
         {
           id: "Subsystem_0",
-          type: "pyflw.subsystems.subsystem.Subsystem",
+          type: "flode.subsystems.subsystem.Subsystem",
           params: {
             n_inputs: 1,
             n_outputs: 1,
@@ -130,7 +130,7 @@ describe("applyAtPath", () => {
         ...view.blocks,
         {
           id: "new",
-          type: "pyflw.blocks.sources.Constant",
+          type: "flode.blocks.sources.Constant",
           params: { value: 1.0 },
         },
       ],

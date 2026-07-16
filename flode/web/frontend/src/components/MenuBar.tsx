@@ -237,7 +237,7 @@ export function MenuBar(): JSX.Element {
         return;
       }
       // Ctrl+Shift+S = Save As。一部ブラウザの "ページを保存" 等と重複するため
-      // preventDefault で pyflw を優先。selectedFilePath は空依存 useEffect の
+      // preventDefault で flode を優先。selectedFilePath は空依存 useEffect の
       // stale closure を避けるため getState() で最新値を読む。
       if (
         (e.ctrlKey || e.metaKey) &&
@@ -501,7 +501,7 @@ export function MenuBar(): JSX.Element {
         s.setSidebarMode("search");
         if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
         window.dispatchEvent(
-          new CustomEvent("pyflw:open-search", { detail: { kind: "path" } }),
+          new CustomEvent("flode:open-search", { detail: { kind: "path" } }),
         );
       },
     },
@@ -514,7 +514,7 @@ export function MenuBar(): JSX.Element {
         s.setSidebarMode("search");
         if (s.workspaceCollapsed) s.setWorkspaceCollapsed(false);
         window.dispatchEvent(
-          new CustomEvent("pyflw:open-search", { detail: { kind: "content" } }),
+          new CustomEvent("flode:open-search", { detail: { kind: "content" } }),
         );
       },
     },

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyflw.server.migrations import MigrationReport, migrate_models_to
+from flode.server.migrations import MigrationReport, migrate_models_to
 
 
 def _seed(src: Path, name: str, content: str = "{}") -> Path:

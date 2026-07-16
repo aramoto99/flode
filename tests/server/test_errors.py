@@ -13,13 +13,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw.exceptions import (
+from flode.exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
     ModelLoadError,
     SolverError,
 )
-from pyflw.server.errors import (
+from flode.server.errors import (
     _truncate_traceback,
     build_failure_payload,
     classify_exception,
@@ -201,10 +201,10 @@ def test_payload_start_validation_includes_message_in_template_args() -> None:
 
 
 def test_payload_model_load_error_includes_message() -> None:
-    exc = ModelLoadError("Unknown block type: pyflw.blocks.nonexistent.Foo")
+    exc = ModelLoadError("Unknown block type: flode.blocks.nonexistent.Foo")
     payload = build_failure_payload(exc, simulator=None, t=None)
     assert payload["category"] == "start_validation"
-    assert payload["template_args"]["message"] == "Unknown block type: pyflw.blocks.nonexistent.Foo"
+    assert payload["template_args"]["message"] == "Unknown block type: flode.blocks.nonexistent.Foo"
 
 
 def test_payload_picks_up_exception_block_id() -> None:

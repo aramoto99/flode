@@ -16,7 +16,7 @@
 | ``POST`` | ``/files/mkdir?path=<rel>`` | ディレクトリ作成 (mkdir -p、末尾 segment は ``exist_ok=False``) |
 | ``POST`` | ``/files/copy?from=<rel>&to=<rel>`` | ファイル / ディレクトリ複製 (v0.31.9、末尾は ``exist_ok=False``) |
 
-Path traversal 防御は ``pyflw.server.security.resolve_workspace_path`` (ADR-0041
+Path traversal 防御は ``flode.server.security.resolve_workspace_path`` (ADR-0041
 §2) に集約。本モジュールは business logic のみ。
 """
 
@@ -37,7 +37,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from rapidfuzz import fuzz
 
-from ...exceptions import PathTraversalError
+from ...core.persistence import migrate_to_current
+from ...exceptions import ModelLoadError, PathTraversalError, SchemaVersionError
 from ..security import resolve_workspace_path
 
 # ADR-0043 §論点 5-A: 検索時に hard-coded で除外するディレクトリ。
@@ -80,7 +81,7 @@ _MAX_CONTENT_FILE_SIZE = 2 * 1024 * 1024  # 2 MiB
 # security-reviewer SHOULD: fs walk で訪問する file 上限。超過は truncated=True。
 _MAX_FILES_SCANNED = 50_000
 
-_logger = logging.getLogger("pyflw.server.routes.files")
+_logger = logging.getLogger("flode.server.routes.files")
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -329,6 +330,16 @@ def get_content(request: Request, path: str, response: Response) -> dict[str, An
         content = json.loads(text)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=422, detail=f"File is not valid JSON: {e}") from e
+    # ADR-0058 §論点 10: モデルファイル (.flw.json) は旧 schema を最新に自動 migration
+    # して返す。1 段以上適用されたら ``_migrated_from`` メタが付き、frontend は
+    # これを見て toast + dirty flag を出す (= 保存時に新 schema で書き戻される)。
+    # 非モデル JSON や migration 不能なファイルは生のまま返す (= GET は非破壊、
+    # エラーはシミュレーション開始側の Simulator.load が正式に報告する)。
+    if path.endswith(".flw.json") and isinstance(content, dict) and "schema_version" in content:
+        try:
+            content = migrate_to_current(content)
+        except (SchemaVersionError, ModelLoadError) as e:
+            _logger.warning("Model %s left unmigrated: %s", path, e)
     response.headers["ETag"] = etag
     return {
         "path": path,

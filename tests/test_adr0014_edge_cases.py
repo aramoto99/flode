@@ -28,8 +28,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Clock,
     Constant,
     DiscreteIntegrator,
@@ -39,7 +39,7 @@ from pyflw.blocks import (
     UnitDelay,
     ZeroOrderHoldDirect,
 )
-from pyflw.exceptions import BlockSpecError
+from flode.exceptions import BlockSpecError
 
 
 def _flat(scope: Scope) -> np.ndarray:
@@ -67,10 +67,10 @@ def _zohd_persisted(tmp_path):
 
 
 def test_zero_order_hold_direct_json_roundtrip_type_string(_zohd_persisted) -> None:
-    """save/load で ZOHDirect の type 文字列が 'pyflw.blocks.discrete.ZeroOrderHoldDirect' になる。"""
+    """save/load で ZOHDirect の type 文字列が 'flode.blocks.discrete.ZeroOrderHoldDirect' になる。"""
     data, _ = _zohd_persisted
     zohd_entry = next(b for b in data["blocks"] if b["id"] == "zohd")
-    assert zohd_entry["type"] == "pyflw.blocks.discrete.ZeroOrderHoldDirect"
+    assert zohd_entry["type"] == "flode.blocks.discrete.ZeroOrderHoldDirect"
 
 
 def test_zero_order_hold_direct_json_roundtrip_sample_time(_zohd_persisted) -> None:
@@ -229,7 +229,7 @@ def test_zero_order_hold_direct_inherits_continuous_upstream_becomes_continuous(
     ADR-0002 §(2): upstream が全て連続なら継承結果は None (= 連続扱い)。
     これはエラーではなく仕様通りの動作。
     """
-    from pyflw.blocks.continuous import Integrator
+    from flode.blocks.continuous import Integrator
 
     sim = Simulator(t_end=0.05, dt=0.01)
     src = sim.add(Constant(value=1.0))
@@ -322,8 +322,8 @@ def test_subsystem_inner_unit_delay_one_sample_delay() -> None:
     外側 Simulator の run() ループが Subsystem の update() を [A'] で呼び、
     UnitDelay の状態が正しく 1 サンプル遅延することを確認する (ADR-0014 Risks #6)。
     """
-    from pyflw.subsystems import Subsystem
-    from pyflw.subsystems.ports import Inport, Outport
+    from flode.subsystems import Subsystem
+    from flode.subsystems.ports import Inport, Outport
 
     sub = Subsystem(id="sub")
     inp = sub.add(Inport(port_idx=0, id="inp"))
@@ -357,8 +357,8 @@ def test_subsystem_inner_discrete_integrator_resolved_sample_time_not_propagated
     これは Phase 3 で Subsystem と外部スケジューラの統合を再設計する際に修正予定
     (subsystem.py: code-reviewer MUST #1 参照)。
     """
-    from pyflw.subsystems import Subsystem
-    from pyflw.subsystems.ports import Inport, Outport
+    from flode.subsystems import Subsystem
+    from flode.subsystems.ports import Inport, Outport
 
     sub = Subsystem(id="sub")
     inp = sub.add(Inport(port_idx=0, id="inp"))
@@ -534,7 +534,7 @@ def test_discrete_integrator_sine_input_forward_euler() -> None:
     x[k+1] = x[k] + T * sin(2π * t_k)
     解析的な累積和と一致することを確認する。
     """
-    from pyflw.blocks import Sine
+    from flode.blocks import Sine
 
     T = 0.01
     n = 5
@@ -758,5 +758,5 @@ def test_multirate_unit_delay_systematic_semantics() -> None:
         t_n = t_at_sample[i]
         expected_reference = t_n - sample_time  # u(t_{n-1}) = t_n - sample_time
         assert y_at_sample[i] == pytest.approx(expected_reference, abs=1e-10), (
-            f"t={t_n:.2f}: y_pyflw={y_at_sample[i]}, expected_reference={expected_reference}"
+            f"t={t_n:.2f}: y_flode={y_at_sample[i]}, expected_reference={expected_reference}"
         )

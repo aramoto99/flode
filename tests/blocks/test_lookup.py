@@ -20,10 +20,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import LookupTable1D, Scope, Sine
-from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
-from pyflw.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
+from flode import Simulator
+from flode.blocks import LookupTable1D, Scope, Sine
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
+from flode.exceptions import BlockEvalError, BlockSpecError, ModelLoadError
 
 _EMPTY_X = np.array([])
 
@@ -384,7 +384,7 @@ class TestLookupTable1DPersistence:
             "blocks": [
                 {
                     "id": "bad",
-                    "type": "pyflw.blocks.lookup.LookupTable1D",
+                    "type": "flode.blocks.lookup.LookupTable1D",
                     "params": {
                         "breakpoints": [2.0, 1.0],
                         "table": [0.0, 1.0],
@@ -408,18 +408,18 @@ class TestLookupTable1DPersistence:
 
 class TestLookupTable1DRegistry:
     def test_translation_entry_exists(self) -> None:
-        from pyflw.server.registry_translations import _BLOCK_TRANSLATIONS
+        from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
-        entry = _BLOCK_TRANSLATIONS["pyflw.blocks.lookup.LookupTable1D"]
+        entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTable1D"]
         assert "display_name" in entry["en"]
         assert "display_name" in entry["ja"]
         assert entry["ja"]["display_name"] == "ルックアップテーブル (1-D)"
         assert entry["en"]["display_name"] == "Lookup Table (1-D)"
 
     def test_registry_metadata_entry(self) -> None:
-        from pyflw.server.registry import _BUILTIN_METADATA
+        from flode.server.registry import _BUILTIN_METADATA
 
-        cat, name, icon = _BUILTIN_METADATA["pyflw.blocks.lookup.LookupTable1D"]
+        cat, name, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTable1D"]
         assert cat == "lookup"
         assert name == "Lookup Table (1-D)"
         assert icon == "lookup.lookuptable1d"

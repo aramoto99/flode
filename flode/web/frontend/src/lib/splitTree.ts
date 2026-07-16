@@ -2,7 +2,7 @@
 // 純関数。SplitTree は LeafNode (= 単一 pane) と SplitNode (= 縦/横分割) の
 // 再帰的構造で、Diagram + Scope 群を `<main>` 内に任意配置するための骨格。
 //
-// **永続化**: モデル別、key 形式 `pyflw.workspace_layout.<hash>.<b64url(path)>`
+// **永続化**: モデル別、key 形式 `flode.workspace_layout.<hash>.<b64url(path)>`
 // (= storageKeys.makeWorkspaceLayoutKey)。値は ``serializeTree`` の出力。
 //
 // **paneId の semantics** (= ADR-0045 §(2)):
@@ -41,7 +41,7 @@ export const DEFAULT_TREE: SplitTree = Object.freeze({
 }) as SplitTree;
 
 /** ADR-0045 §(2) 最小構成 fallback: Diagram + scopes-stack の縦 60/40 split。
- * v3.5.x までの ``id="pyflw.scope_split"`` レイアウトと同等。本オブジェクトも
+ * v3.5.x までの ``id="flode.scope_split"`` レイアウトと同等。本オブジェクトも
  * frozen。store action は **新規オブジェクト** を作って set するため shallow
  * freeze で十分 (= 内側の a / b は freeze で保護されているとは限らない点に注意、
  * 直接参照を mutate しないこと)。 */
@@ -321,46 +321,23 @@ function isSplitTree(value: unknown): value is SplitTree {
   return false;
 }
 
-/** ADR-0045 §(3-D): 旧 localStorage キー ``pyflw.scope_split`` (= v3.5.x の
- * ``react-resizable-panels`` autosave 想定値) から SplitTree への片方向 migration。
- *
- * 旧キーは ``react-resizable-panels`` の ``autoSaveId`` 経由でないと実際には
- * 保存されないため、現実には存在しないケースが大半。本関数は **存在を検知
- * したら DEFAULT_TREE_WITH_SCOPES (= 縦 60/40) で代用** する保守的な実装と
- * する (= 旧 ratio を厳密に復元するより、構造を確実に新形式に切替する優先)。
- *
- * 旧キーは **削除しない** (= ロールバックで v3.5.x に戻った時に動作する
- * ように、ADR-0043 §論点 8-D の慣例継承)。
- *
- * @param legacy 旧キー ``pyflw.scope_split`` の raw 値 (= localStorage.getItem の結果)
- * @returns 旧キーが存在し読めれば DEFAULT_TREE_WITH_SCOPES、存在しないか
- *          壊れていれば ``null``
- */
-export function migrateFromScopeSplit(
-  legacy: string | null | undefined,
-): SplitTree | null {
-  if (legacy === null || legacy === undefined || legacy === "") return null;
-  return DEFAULT_TREE_WITH_SCOPES;
-}
-
 /** ADR-0045 §(2) §3-C: モデル切替時の SplitTree 初期化ロジック。
  *
- * 1. ``stored`` (= 新キーから読んだ JSON) が valid SplitTree なら復元
- * 2. ``legacy`` (= 旧 ``pyflw.scope_split``) が存在すれば ``DEFAULT_TREE_WITH_SCOPES``
- * 3. それ以外は visibleScopeCount に応じて ``DEFAULT_TREE`` か ``DEFAULT_TREE_WITH_SCOPES``
+ * 1. ``stored`` (= ``flode.workspace_layout.*`` キーから読んだ JSON) が
+ *    valid SplitTree なら復元
+ * 2. それ以外は visibleScopeCount に応じて ``DEFAULT_TREE`` か ``DEFAULT_TREE_WITH_SCOPES``
  *
- * @param stored             新 key (= ``pyflw.workspace_layout.*``) から読んだ raw JSON
- * @param legacy             旧 key (= ``pyflw.scope_split``) の raw 値
+ * 旧 ``scope_split`` キーからの migration (ADR-0045 §3-D) はプロジェクト名変更
+ * (v0.43.0) の localStorage クリーンブレークで撤去した。
+ *
+ * @param stored             ``flode.workspace_layout.*`` キーから読んだ raw JSON
  * @param hasVisibleScopes   現モデルに描画対象 Scope が 1 個以上あるか
  */
 export function chooseInitialTree(
   stored: string | null | undefined,
-  legacy: string | null | undefined,
   hasVisibleScopes: boolean,
 ): SplitTree {
   const restored = deserializeTree(stored);
   if (restored !== null) return restored;
-  const migrated = migrateFromScopeSplit(legacy);
-  if (migrated !== null) return migrated;
   return hasVisibleScopes ? DEFAULT_TREE_WITH_SCOPES : DEFAULT_TREE;
 }

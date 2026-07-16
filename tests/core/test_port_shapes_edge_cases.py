@@ -31,8 +31,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import (
+from flode import Simulator
+from flode.blocks import (
     Abs,
     Clock,
     Constant,
@@ -63,10 +63,10 @@ from pyflw.blocks import (
     UnitDelay,
     ZeroOrderHoldDirect,
 )
-from pyflw.core.block import Block, _normalize_port_shapes
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems.ports import Inport, Outport
-from pyflw.subsystems.subsystem import Subsystem
+from flode.core.block import Block, _normalize_port_shapes
+from flode.exceptions import BlockSpecError
+from flode.subsystems.ports import Inport, Outport
+from flode.subsystems.subsystem import Subsystem
 
 # ---------------------------------------------------------------------------
 # テスト用ヘルパーブロック
@@ -413,7 +413,7 @@ class TestSmBRunEnabled:
 
     def test_sm_a_only_model_uses_sm_a_path(self) -> None:
         """SM-A only モデルは引き続き SM-A hot path を使う (回帰防止)。"""
-        from pyflw.blocks import Constant, Gain, Scope
+        from flode.blocks import Constant, Gain, Scope
 
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=2.0))
@@ -505,7 +505,7 @@ class TestUnconnectedPortShapeCheckSkipped:
 class TestEmptyModelSchema04RoundTrip:
     def test_empty_simulator_save_produces_current_schema(self, tmp_path: Path) -> None:
         """ブロックなし Simulator を保存すると CURRENT schema (= 0.7 / ADR-0036) のファイルになる。"""
-        from pyflw.core.persistence import CURRENT_SCHEMA_VERSION
+        from flode.core.persistence import CURRENT_SCHEMA_VERSION
 
         sim = Simulator(t_end=1.0, dt=0.01)
         path = tmp_path / "empty.flw.json"
@@ -535,7 +535,7 @@ class TestEmptyModelSchema04RoundTrip:
         path = tmp_path / "empty_legacy.flw.json"
         legacy = {
             "schema_version": "0.3",
-            "metadata": {"created_at": "2026-05-06T00:00:00Z", "tool": "pyflw 0.3.0"},
+            "metadata": {"created_at": "2026-05-06T00:00:00Z", "tool": "flode 0.3.0"},
             "simulator": {
                 "t_end": 0.1,
                 "dt": 0.01,

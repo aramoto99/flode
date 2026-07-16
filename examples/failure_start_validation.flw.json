@@ -3,7 +3,7 @@
   "blocks": [
     {
       "id": "x",
-      "type": "pyflw.blocks.nonexistent.Foo",
+      "type": "flode.blocks.nonexistent.Foo",
       "params": {}
     }
   ],

@@ -127,15 +127,15 @@ def _ensure_jax_available() -> Any:
         ``jax`` モジュール。
 
     Raises:
-        ImportError: ``pyflw[codegen]`` 未インストール時。
+        ImportError: ``flode[codegen]`` 未インストール時。
     """
     try:
         import jax
     except ImportError as e:
         raise ImportError(
-            "pyflw[codegen] is required for jax-backed compile / linearize. "
-            "Install with: pip install pyflw[codegen] (= jax[cpu]>=0.4,<0.5). "
-            "GPU support: pip install pyflw[gpu] (= jax[cuda12]). "
+            "flode[codegen] is required for jax-backed compile / linearize. "
+            "Install with: pip install flode[codegen] (= jax[cpu]>=0.4,<0.5). "
+            "GPU support: pip install flode[gpu] (= jax[cuda12]). "
             "See ADR-0037 §Decision §6 / docs/codegen_guide.rst for details."
         ) from e
     # ADR-0037 §Risks #2: 64-bit 強制を遅延設定 (= ML エコシステムへの副作用最小化)。
@@ -162,7 +162,7 @@ def _build_compiled_simulator(
         backend: ``"jax"`` または ``"numpy"``。
 
     Raises:
-        ImportError: ``backend="jax"`` で ``pyflw[codegen]`` 未インストール。
+        ImportError: ``backend="jax"`` で ``flode[codegen]`` 未インストール。
         BlockSpecError: モデル内に jax tracing 不可能なブロック (= Subsystem 内部に
             等) がある (ADR-0036 §(9) / ADR-0037 §Decision §(10) 規約)。
     """

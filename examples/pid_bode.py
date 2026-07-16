@@ -1,7 +1,7 @@
 """ADR-0027 §(11) サンプル: PID 制御モデルの線形化 → Bode 線図 + 安定性。
 
 PI 制御 + 1 次プラント (1/(s+1)) のフィードバックループを構築し、
-``pyflw.linearize()`` で線形化、``bode()`` / ``is_stable()`` /
+``flode.linearize()`` で線形化、``bode()`` / ``is_stable()`` /
 ``eigenvalues()`` を呼んで結果を可視化する。
 
 実行:
@@ -13,8 +13,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pyflw import Simulator, bode, eigenvalues, is_stable, linearize
-from pyflw.blocks import Gain, Integrator, Scope, Sum, TransferFunction
+from flode import Simulator, bode, eigenvalues, is_stable, linearize
+from flode.blocks import Gain, Integrator, Scope, Sum, TransferFunction
 
 
 def build_pi_loop(Kp: float = 2.0, Ki: float = 0.5) -> Simulator:

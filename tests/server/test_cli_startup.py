@@ -1,4 +1,4 @@
-"""``pyflw-server`` 起動 UX (SPEC-0021 / ADR-0069) のテスト。
+"""``flode`` 起動 UX (SPEC-0021 / ADR-0069) のテスト。
 
 ポート自動フォールバック (事前 socket bind プローブ)、ブラウザ URL 正規化、
 ブラウザ自動オープン (daemon スレッド + TCP ポーリング) を検証する。
@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 from pytest_mock import MockerFixture
 
-from pyflw.exceptions import PyflwError
-from pyflw.server import cli
-from pyflw.server.cli import (
+from flode.exceptions import FlodeError
+from flode.server import cli
+from flode.server.cli import (
     _browser_url,
     _open_browser_when_ready,
     _probe_bind,
@@ -64,37 +64,37 @@ class TestFindFreePort:
         assert occupied_port < result <= occupied_port + 50
 
     def test_retries_zero_busy_raises(self, occupied_port: int) -> None:
-        """port_retries=0 はフォールバック無効 = 使用中なら即 PyflwError (SPEC-0021 §4-2)。"""
-        with pytest.raises(PyflwError, match=str(occupied_port)):
+        """port_retries=0 はフォールバック無効 = 使用中なら即 FlodeError (SPEC-0021 §4-2)。"""
+        with pytest.raises(FlodeError, match=str(occupied_port)):
             find_free_port("127.0.0.1", occupied_port, 0)
 
     def test_exhausted_raises_with_range(self, mocker: MockerFixture) -> None:
-        """全ポート使用中なら試行範囲入りのメッセージで PyflwError (SPEC-0021 §4-3)。"""
+        """全ポート使用中なら試行範囲入りのメッセージで FlodeError (SPEC-0021 §4-3)。"""
         mocker.patch.object(cli, "_probe_bind", return_value=False)
-        with pytest.raises(PyflwError, match="9000-9003"):
+        with pytest.raises(FlodeError, match="9000-9003"):
             find_free_port("127.0.0.1", 9000, 3)
 
     def test_unresolvable_host_raises(self) -> None:
-        with pytest.raises(PyflwError, match="resolve"):
+        with pytest.raises(FlodeError, match="resolve"):
             find_free_port("no-such-host.invalid", 8770, 0)
 
     def test_search_range_capped_at_max_tcp_port(self, mocker: MockerFixture) -> None:
         """port_retries 誤設定 (極端に大きい値) でも 65535 で探索を打ち切る。"""
         probe = mocker.patch.object(cli, "_probe_bind", return_value=False)
-        with pytest.raises(PyflwError, match="65534-65535"):
+        with pytest.raises(FlodeError, match="65534-65535"):
             find_free_port("127.0.0.1", 65534, 100000)
         assert probe.call_count == 2  # 65534 と 65535 のみ
 
     def test_port0_above_max_raises(self) -> None:
-        with pytest.raises(PyflwError, match="65535"):
+        with pytest.raises(FlodeError, match="65535"):
             find_free_port("127.0.0.1", 65536, 0)
 
     def test_probe_bind_wraps_unexpected_oserror(self, mocker: MockerFixture) -> None:
-        """EADDRINUSE 以外の OSError は「使用中」扱いにせず PyflwError で表面化する。"""
+        """EADDRINUSE 以外の OSError は「使用中」扱いにせず FlodeError で表面化する。"""
         fake_sock = mocker.MagicMock()
         fake_sock.bind.side_effect = OSError(errno.EPERM, "operation not permitted")
         mocker.patch("socket.socket", return_value=fake_sock)
-        with pytest.raises(PyflwError, match="Failed to bind"):
+        with pytest.raises(FlodeError, match="Failed to bind"):
             _probe_bind("127.0.0.1", 8770)
         fake_sock.close.assert_called_once()
 
@@ -157,7 +157,7 @@ class TestOpenBrowserWhenReady:
         """ヘッドレス環境想定: webbrowser.open が False → WARNING に URL を出して継続。"""
         mocker.patch("socket.create_connection")
         mocker.patch("webbrowser.open", return_value=False)
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.cli"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.cli"):
             _open_browser_when_ready("127.0.0.1", 8770, "http://127.0.0.1:8770")
         assert any("http://127.0.0.1:8770" in r.message for r in caplog.records)
 
@@ -166,7 +166,7 @@ class TestOpenBrowserWhenReady:
     ) -> None:
         mocker.patch("socket.create_connection")
         mocker.patch("webbrowser.open", side_effect=webbrowser.Error("no browser"))
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.cli"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.cli"):
             _open_browser_when_ready("127.0.0.1", 8770, "http://127.0.0.1:8770")
         assert any("http://127.0.0.1:8770" in r.message for r in caplog.records)
 
@@ -209,7 +209,7 @@ class TestMainStartupIntegration:
         occupied_port: int,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        with caplog.at_level(logging.WARNING, logger="pyflw.server.cli"):
+        with caplog.at_level(logging.WARNING, logger="flode.server.cli"):
             main(["--port", str(occupied_port)])
         _, kwargs = mock_uvicorn.call_args
         actual_port = kwargs["port"]
@@ -251,7 +251,7 @@ class TestMainStartupIntegration:
         mock_browser_thread,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text("[server]\nopen_browser = true\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
@@ -266,7 +266,7 @@ class TestMainStartupIntegration:
         mock_browser_thread,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        cfg = isolated_home / ".pyflw" / "config.toml"
+        cfg = isolated_home / ".flode" / "config.toml"
         cfg.parent.mkdir(parents=True)
         cfg.write_text("[server]\nopen_browser = false\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)

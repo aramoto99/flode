@@ -21,11 +21,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyflw import Simulator
-from pyflw.blocks import Gain
-from pyflw.exceptions import BlockSpecError
-from pyflw.subsystems import Inport, Outport, Subsystem
-from pyflw.subsystems._mask import (
+from flode import Simulator
+from flode.blocks import Gain
+from flode.exceptions import BlockSpecError
+from flode.subsystems import Inport, Outport, Subsystem
+from flode.subsystems._mask import (
     collect_placeholder_names,
     extract_placeholder_name,
     is_placeholder,
@@ -131,7 +131,7 @@ def _build_mask_pi_subsystem_dict(
     """
     return {
         "id": sub_id,
-        "type": "pyflw.subsystems.subsystem.Subsystem",
+        "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
             "n_inputs": 1,
             "n_outputs": 1,
@@ -142,17 +142,17 @@ def _build_mask_pi_subsystem_dict(
             "blocks": [
                 {
                     "id": "Inport_0",
-                    "type": "pyflw.subsystems.ports.Inport",
+                    "type": "flode.subsystems.ports.Inport",
                     "params": {"port_idx": 0},
                 },
                 {
                     "id": "g_kp",
-                    "type": "pyflw.blocks.mathops.Gain",
+                    "type": "flode.blocks.mathops.Gain",
                     "params": {"k": inner_kp_param},
                 },
                 {
                     "id": "Outport_0",
-                    "type": "pyflw.subsystems.ports.Outport",
+                    "type": "flode.subsystems.ports.Outport",
                     "params": {"port_idx": 0},
                 },
             ],
@@ -220,7 +220,7 @@ class TestSubsystemMask:
         """
         spec = {
             "id": "msub",
-            "type": "pyflw.subsystems.subsystem.Subsystem",
+            "type": "flode.subsystems.subsystem.Subsystem",
             "params": {
                 "n_inputs": 2,
                 "n_outputs": 1,
@@ -231,18 +231,18 @@ class TestSubsystemMask:
                 "blocks": [
                     {
                         "id": "Inport_0",
-                        "type": "pyflw.subsystems.ports.Inport",
+                        "type": "flode.subsystems.ports.Inport",
                         "params": {"port_idx": 0},
                     },
                     {
                         "id": "Inport_1",
-                        "type": "pyflw.subsystems.ports.Inport",
+                        "type": "flode.subsystems.ports.Inport",
                         "params": {"port_idx": 1},
                     },
-                    {"id": "m", "type": "pyflw.blocks.routing.Mux", "params": {"n": "$N"}},
+                    {"id": "m", "type": "flode.blocks.routing.Mux", "params": {"n": "$N"}},
                     {
                         "id": "Outport_0",
-                        "type": "pyflw.subsystems.ports.Outport",
+                        "type": "flode.subsystems.ports.Outport",
                         "params": {"port_idx": 0, "port_shape": [2]},
                     },
                 ],
@@ -270,7 +270,7 @@ class TestMaskJsonRoundTrip:
     def _full_model_dict(self, sub_spec: dict, *, model_id: str = "test") -> dict:
         return {
             "schema_version": "0.6",
-            "metadata": {"name": model_id, "tool": "pyflw test"},
+            "metadata": {"name": model_id, "tool": "flode test"},
             "simulator": {
                 "t_end": 0.05,
                 "dt": 0.01,
@@ -321,9 +321,9 @@ class TestMaskJsonRoundTrip:
                 "dt_base": None,
             },
             "blocks": [
-                {"id": "c", "type": "pyflw.blocks.sources.Constant", "params": {"value": 1.0}},
+                {"id": "c", "type": "flode.blocks.sources.Constant", "params": {"value": 1.0}},
                 sub_spec,
-                {"id": "sc", "type": "pyflw.blocks.sinks.Scope", "params": {"n_inputs": 1}},
+                {"id": "sc", "type": "flode.blocks.sinks.Scope", "params": {"n_inputs": 1}},
             ],
             "connections": [
                 {"src": "c", "src_idx": 0, "dst": "amp", "dst_idx": 0},
@@ -379,7 +379,7 @@ class TestSchemaMigration:
             "blocks": [
                 {
                     "id": "src",
-                    "type": "pyflw.blocks.sources.Constant",
+                    "type": "flode.blocks.sources.Constant",
                     "params": {"value": 1.0},
                 }
             ],

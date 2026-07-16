@@ -1,4 +1,4 @@
-"""``pyflw.__version__`` と ``pyproject.toml`` + frontend ``package.json`` の version が
+"""``flode.__version__`` と ``pyproject.toml`` + frontend ``package.json`` の version が
 一致することを検証する (ADR-0013 §V-A、ADR-0032 §6-A で 3 ファイル整合に拡張)。
 
 リリースのたびに 3 ファイルを同コミットで更新する運用のため、ズレた状態で merge
@@ -12,7 +12,7 @@ import json
 import tomllib
 from pathlib import Path
 
-import pyflw
+import flode
 
 
 def test_version_matches_pyproject() -> None:
@@ -22,24 +22,24 @@ def test_version_matches_pyproject() -> None:
     with pyproject_path.open("rb") as fh:
         project_meta = tomllib.load(fh)
     project_version = project_meta["project"]["version"]
-    assert pyflw.__version__ == project_version, (
-        f"Version mismatch: pyflw.__version__={pyflw.__version__!r}, "
+    assert flode.__version__ == project_version, (
+        f"Version mismatch: flode.__version__={flode.__version__!r}, "
         f"pyproject.toml [project].version={project_version!r}. "
-        "Update all three files (pyflw/__init__.py + pyproject.toml + "
-        "pyflw/web/frontend/package.json) in the same commit (ADR-0032 §6-A)."
+        "Update all three files (flode/__init__.py + pyproject.toml + "
+        "flode/web/frontend/package.json) in the same commit (ADR-0032 §6-A)."
     )
 
 
 def test_version_matches_frontend_package_json() -> None:
     """frontend ``package.json`` の version も同期する (ADR-0032 §6-A)。"""
     project_root = Path(__file__).parent.parent
-    package_json_path = project_root / "pyflw" / "web" / "frontend" / "package.json"
+    package_json_path = project_root / "flode" / "web" / "frontend" / "package.json"
     assert package_json_path.is_file(), f"package.json not found at {package_json_path}"
     package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
     package_version = package_json["version"]
-    assert pyflw.__version__ == package_version, (
-        f"Version mismatch: pyflw.__version__={pyflw.__version__!r}, "
+    assert flode.__version__ == package_version, (
+        f"Version mismatch: flode.__version__={flode.__version__!r}, "
         f"package.json version={package_version!r}. "
-        "Update all three files (pyflw/__init__.py + pyproject.toml + "
-        "pyflw/web/frontend/package.json) in the same commit (ADR-0032 §6-A)."
+        "Update all three files (flode/__init__.py + pyproject.toml + "
+        "flode/web/frontend/package.json) in the same commit (ADR-0032 §6-A)."
     )

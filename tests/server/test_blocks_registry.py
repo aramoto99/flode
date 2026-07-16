@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from pyflw.server import create_app
-from pyflw.server.settings import Settings
+from flode.server import create_app
+from flode.server.settings import Settings
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ class TestListBlocks:
             i18n_name = entry["display_name_i18n"]
             i18n_summary = entry["docstring_summary_i18n"]
             # 3rd-party 拡張は空 dict を許容するが、built-in は両言語が揃う
-            if type_path.startswith("pyflw.blocks.") or type_path.startswith("pyflw.subsystems."):
+            if type_path.startswith("flode.blocks.") or type_path.startswith("flode.subsystems."):
                 assert "en" in i18n_name and "ja" in i18n_name, (
                     f"{type_path}: missing locale in display_name_i18n {i18n_name}"
                 )
@@ -100,7 +100,7 @@ class TestListBlocks:
         """ADR-0028: Constant の ja 翻訳が "定数" になっている。"""
         resp = client.get("/api/v1/blocks")
         c = next(
-            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sources.Constant"
+            b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.sources.Constant"
         )
         assert c["display_name_i18n"]["ja"] == "定数"
         assert c["docstring_summary_i18n"]["ja"].startswith("定数値ソース")
@@ -108,7 +108,7 @@ class TestListBlocks:
     def test_gain_entry_specifics(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
         gain = next(
-            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.mathops.Gain"
+            b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.mathops.Gain"
         )
         assert gain["category"] == "mathops"
         assert gain["display_name"] == "Gain"
@@ -119,14 +119,14 @@ class TestListBlocks:
 
     def test_mux_is_sm_b_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
-        mux = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.routing.Mux")
+        mux = next(b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.routing.Mux")
         assert "sm_b" in mux["tags"]
         assert mux["category"] == "routing"
 
     def test_constant_is_source_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
         c = next(
-            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sources.Constant"
+            b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.sources.Constant"
         )
         assert "source" in c["tags"]
         assert c["category"] == "sources"
@@ -135,7 +135,7 @@ class TestListBlocks:
 
     def test_scope_is_sink_tagged(self, client: TestClient) -> None:
         resp = client.get("/api/v1/blocks")
-        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sinks.Scope")
+        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.sinks.Scope")
         assert "sink" in sc["tags"]
         assert sc["category"] == "sinks"
 
@@ -143,7 +143,7 @@ class TestListBlocks:
         """``Scope.buffer_mode`` は ``_param_enums`` 経由で 3 値の enum を露出し、
         Inspector が ``<input>`` でなく ``<select>`` を出せる (ユーザー指摘 2026-05-26)。"""
         resp = client.get("/api/v1/blocks")
-        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.sinks.Scope")
+        sc = next(b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.sinks.Scope")
         buffer_mode = next(p for p in sc["params_spec"] if p["name"] == "buffer_mode")
         assert buffer_mode["enum_values"] == ["ring", "bounded", "unbounded"]
         # buffer_capacity は数値 param なので enum 化されない (= 従来 <input>)
@@ -156,19 +156,19 @@ class TestListBlocks:
         resp = client.get("/api/v1/blocks")
         blocks = {b["type_path"]: b for b in resp.json()["blocks"]}
         for type_path in (
-            "pyflw.subsystems.ports.Inport",
-            "pyflw.subsystems.ports.Outport",
-            "pyflw.subsystems.control_blocks.Trigger",
-            "pyflw.subsystems.control_blocks.Enable",
+            "flode.subsystems.ports.Inport",
+            "flode.subsystems.ports.Outport",
+            "flode.subsystems.control_blocks.Trigger",
+            "flode.subsystems.control_blocks.Enable",
         ):
             assert type_path in blocks, f"missing {type_path}"
             assert blocks[type_path]["category"] == "control", (
                 f"{type_path}: expected 'control', got {blocks[type_path]['category']!r}"
             )
         # Subsystem は移動しない
-        assert blocks["pyflw.subsystems.subsystem.Subsystem"]["category"] == "subsystems"
+        assert blocks["flode.subsystems.subsystem.Subsystem"]["category"] == "subsystems"
         # ADR-0058 v0.38.0: 旧 TriggeredSubsystem class は registry から削除済
-        assert "pyflw.subsystems.triggered.TriggeredSubsystem" not in blocks
+        assert "flode.subsystems.triggered.TriggeredSubsystem" not in blocks
 
     def test_trigger_block_exposes_trigger_type_enum(self, client: TestClient) -> None:
         """ADR-0058 §論点 10: Trigger.trigger_type は 4 値の enum を露出する。"""
@@ -176,7 +176,7 @@ class TestListBlocks:
         trig = next(
             b
             for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.subsystems.control_blocks.Trigger"
+            if b["type_path"] == "flode.subsystems.control_blocks.Trigger"
         )
         trigger_type_param = next(p for p in trig["params_spec"] if p["name"] == "trigger_type")
         assert trigger_type_param["enum_values"] == [
@@ -193,7 +193,7 @@ class TestListBlocks:
         en = next(
             b
             for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.subsystems.control_blocks.Enable"
+            if b["type_path"] == "flode.subsystems.control_blocks.Enable"
         )
         states = next(p for p in en["params_spec"] if p["name"] == "states_when_enabling")
         outputs = next(p for p in en["params_spec"] if p["name"] == "outputs_when_disabled")
@@ -207,7 +207,7 @@ class TestListBlocks:
         rt = next(
             b
             for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.discrete.RateTransition"
+            if b["type_path"] == "flode.blocks.discrete.RateTransition"
         )
         mode = next(p for p in rt["params_spec"] if p["name"] == "mode")
         assert mode["enum_values"] == ["zoh", "delay", "auto"]
@@ -235,7 +235,7 @@ class TestSearchKeywords:
         rel = next(
             b
             for b in resp.json()["blocks"]
-            if b["type_path"] == "pyflw.blocks.logic.RelationalOperator"
+            if b["type_path"] == "flode.blocks.logic.RelationalOperator"
         )
         assert "compare" in rel["search_keywords"]
         assert "比較" in rel["search_keywords"]
@@ -244,22 +244,22 @@ class TestSearchKeywords:
         """シードした Product / Saturation も別名がレスポンスに乗る
         (= type_path リネーム時に無言で空配列に戻る回帰を検出)。"""
         blocks = {b["type_path"]: b for b in client.get("/api/v1/blocks").json()["blocks"]}
-        assert "multiply" in blocks["pyflw.blocks.mathops.Product"]["search_keywords"]
-        assert "飽和" in blocks["pyflw.blocks.mathops.Saturation"]["search_keywords"]
+        assert "multiply" in blocks["flode.blocks.mathops.Product"]["search_keywords"]
+        assert "飽和" in blocks["flode.blocks.mathops.Saturation"]["search_keywords"]
 
     def test_block_without_synonyms_has_empty_list(self, client: TestClient) -> None:
         """別名未登録のブロックは空配列 (= 後方互換、frontend は ?? [] で扱う)。"""
         resp = client.get("/api/v1/blocks")
         gain = next(
-            b for b in resp.json()["blocks"] if b["type_path"] == "pyflw.blocks.mathops.Gain"
+            b for b in resp.json()["blocks"] if b["type_path"] == "flode.blocks.mathops.Gain"
         )
         assert gain["search_keywords"] == []
 
     def test_class_attribute_overrides_central_table(self) -> None:
         """class 属性 ``_search_keywords`` が中央テーブルより優先される
         (= 3rd-party 拡張ブロックが自前で別名宣言できる)。"""
-        from pyflw.core.block import Block
-        from pyflw.server.registry import _resolve_search_keywords, build_metadata
+        from flode.core.block import Block
+        from flode.server.registry import _resolve_search_keywords, build_metadata
 
         class _DummyBlock(Block):
             _search_keywords = ("synonymx", "別名y")
@@ -277,8 +277,8 @@ class TestSearchKeywords:
     def test_empty_class_attribute_means_explicit_no_synonyms(self) -> None:
         """``_search_keywords = []`` は「明示的に別名なし」として尊重し、
         中央テーブルへフォールバックしない (= is not None 判定)。"""
-        from pyflw.core.block import Block
-        from pyflw.server.registry import _resolve_search_keywords
+        from flode.core.block import Block
+        from flode.server.registry import _resolve_search_keywords
 
         # 中央テーブルに登録済の type_path を持つが、空 list で上書きするブロック
         class _NoKeywords(Block):
@@ -299,10 +299,10 @@ class TestSearchKeywords:
         resp = client.get("/api/v1/blocks")
         blocks = {b["type_path"]: b for b in resp.json()["blocks"]}
         for type_path in (
-            "pyflw.subsystems.ports.Inport",
-            "pyflw.subsystems.ports.Outport",
-            "pyflw.subsystems.control_blocks.Trigger",
-            "pyflw.subsystems.control_blocks.Enable",
+            "flode.subsystems.ports.Inport",
+            "flode.subsystems.ports.Outport",
+            "flode.subsystems.control_blocks.Trigger",
+            "flode.subsystems.control_blocks.Enable",
         ):
             kw = blocks[type_path]["search_keywords"]
             assert "subsystem" in kw, f"{type_path}: missing 'subsystem' search keyword, got {kw}"
@@ -318,10 +318,10 @@ class TestSearchKeywords:
 
 class TestGetBlockMetadata:
     def test_returns_full_docstring(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/blocks/pyflw.blocks.mathops.Gain")
+        resp = client.get("/api/v1/blocks/flode.blocks.mathops.Gain")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["type_path"] == "pyflw.blocks.mathops.Gain"
+        assert data["type_path"] == "flode.blocks.mathops.Gain"
         # full docstring が返る
         assert "docstring_full" in data
         assert isinstance(data["docstring_full"], str)
@@ -340,7 +340,7 @@ class TestResolvePortShapes:
     def test_mux_n_3_returns_three_inputs(self, client: TestClient) -> None:
         resp = client.post(
             "/api/v1/blocks/resolve-port-shapes",
-            json={"type_path": "pyflw.blocks.routing.Mux", "params": {"n": 3}},
+            json={"type_path": "flode.blocks.routing.Mux", "params": {"n": 3}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -352,7 +352,7 @@ class TestResolvePortShapes:
     def test_demux_n_5_returns_five_outputs(self, client: TestClient) -> None:
         resp = client.post(
             "/api/v1/blocks/resolve-port-shapes",
-            json={"type_path": "pyflw.blocks.routing.Demux", "params": {"n": 5}},
+            json={"type_path": "flode.blocks.routing.Demux", "params": {"n": 5}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -364,7 +364,7 @@ class TestResolvePortShapes:
         resp = client.post(
             "/api/v1/blocks/resolve-port-shapes",
             json={
-                "type_path": "pyflw.blocks.mathops.Sum",
+                "type_path": "flode.blocks.mathops.Sum",
                 "params": {"signs": "+++"},
             },
         )
@@ -376,7 +376,7 @@ class TestResolvePortShapes:
     def test_400_on_invalid_params(self, client: TestClient) -> None:
         resp = client.post(
             "/api/v1/blocks/resolve-port-shapes",
-            json={"type_path": "pyflw.blocks.routing.Mux", "params": {"n": 0}},
+            json={"type_path": "flode.blocks.routing.Mux", "params": {"n": 0}},
         )
         # n=0 で BlockSpecError → 400
         assert resp.status_code == 400

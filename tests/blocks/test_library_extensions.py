@@ -14,8 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pyflw import BlockSpecError, Simulator
-from pyflw.blocks import (
+from flode import BlockSpecError, Simulator
+from flode.blocks import (
     Abs,
     Clock,
     Constant,
