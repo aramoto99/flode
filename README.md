@@ -4,12 +4,13 @@ A block-diagram dynamic system simulator for Python. Build continuous, discrete,
 and hybrid models by wiring pre-built blocks, then integrate with
 `scipy.solve_ivp` (default: RK45).
 
-**Current: v0.42.0** (2026-07-14). flode follows
-[ZeroVer](https://0ver.org/) (永久 0.x) — within `0.x`, a **minor** bump is a
-feature or breaking change and a **patch** bump is a fix. The public Python API,
-`.flw.json` JSON schema (now **0.9**), REST `/api/v1/*` surface, and extras
-names (`flode[gui/control/codegen/gpu]`) are kept stable across patch releases;
-breaking changes are called out in `CHANGELOG.md` and bump the minor.
+flode follows [ZeroVer](https://0ver.org/) (永久 0.x) — within `0.x`, a
+**minor** bump is a feature or breaking change and a **patch** bump is a fix.
+The public Python API, `.flw.json` JSON schema, REST `/api/v1/*` surface, and
+extras names (`flode[gui/control/codegen/gpu]`) are kept stable across patch
+releases; breaking changes are called out in `CHANGELOG.md` and bump the minor.
+The current version and release notes live in `CHANGELOG.md` (single source:
+`flode.__version__`).
 
 Recent highlights:
 
