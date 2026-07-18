@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0] - 2026-07-18 — GUI 依存を core に統合 (`pip install flode` だけで GUI が動く)
+
+flode は Web GUI が本体のツール。GUI サーバー依存を opt-in extras にする理由が
+なくなったため core 依存に統合し、`pip install -e .` (ソース) /
+`pip install flode` (wheel) だけで GUI まで含めた全機能が入るようにした。
+
+### Changed
+
+- **旧 `[gui]` extras (fastapi / uvicorn[standard] / websockets / rapidfuzz /
+  pathspec) を core 依存に統合**。`flode[gui]` は空 extras として残るため、
+  既存の手順書・スクリプトの `pip install flode[gui]` は引き続き成功する (no-op)
+- `[dev]` extras から core に重複していた依存 (fastapi / uvicorn / websockets /
+  rapidfuzz / pathspec) を削除
+- `flode.server` / CLI の ImportError 誘導メッセージを
+  `pip install flode[gui]` → `pip install flode` (再インストール案内) に変更
+- README の Installation を「Core only / Web GUI」の 2 セクションから
+  単一の「Install」に統合。ci-frontend.yml も `pip install -e .` に変更
+- `[control]` / `[codegen]` / `[gpu]` extras は従来どおり opt-in
+  (jax は重量・version pin、CUDA wheel は Linux x86_64 限定のため)
+
+### Notes
+
+- ソースから GUI を使う場合に frontend の `npm run build` が必要な点は変わらない
+  (`flode/server/static/` はビルド成果物で git 非管理のため)。wheel (GitHub
+  Releases / PyPI) にはビルド済み frontend が同梱される
+
 ## [0.43.0] - 2026-07-17 — プロジェクト名変更: pyflw → flode
 
 仮名だった pyflw を正式名 **flode** (= **FLO**w + o**DE**) に変更した。

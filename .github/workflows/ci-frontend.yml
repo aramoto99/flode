@@ -71,14 +71,14 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install flode with [gui] extras (FastAPI server)
+      - name: Install flode (FastAPI server is a core dependency since v0.44.0)
         # E2E では `python -m flode.server.cli` でバックエンドを起動するため
         # repo root から editable install。playwright.config.ts の
         # `cwd: "../../.."` で対応する。
         working-directory: ${{ github.workspace }}
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[gui]"
+          pip install -e .
 
       - name: Install npm dependencies
         run: npm ci

@@ -43,7 +43,7 @@ export default defineConfig({
   webServer: [
     {
       // flode FastAPI backend (port 8770)。Python 環境に flode がインストール済み
-      // (例: `pip install -e ".[gui]"`) であること。
+      // (例: `pip install -e .`、v0.44.0 で GUI サーバー依存は core に統合) であること。
       // ``flode`` console script が PATH に通っていない環境でも動くよう
       // ``python -m flode.server.cli`` で起動する。``cwd`` は本ファイルからの
       // 絶対パスでリポジトリルートに固定 (process cwd 依存をなくす)。

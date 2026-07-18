@@ -1,14 +1,14 @@
 """``flode`` コマンドのエントリポイント (ADR-0013 §(2) / ADR-0041 §3 / SPEC-0004)。
 
-``pip install flode[gui]`` 後、コマンドラインから::
+``pip install flode`` 後、コマンドラインから::
 
     flode
 
 だけで FastAPI サーバが起動しブラウザで UI が開く (``--workspace`` / ``--port``
 等で上書き可)。``flode`` は互換 alias として同じエントリポイントを指す
-(SPEC-0021)。``flode[gui]`` extras が無い場合は
-``flode.server`` の import 時点で ``FlodeError`` が出るので、ユーザーが extras を
-インストールするよう誘導される。
+(SPEC-0021)。GUI サーバー依存は core に含まれる (v0.44.0 で旧 ``[gui]`` extras
+から統合)。``fastapi`` が無い壊れた環境では ``flode.server`` の import 時点で
+``FlodeError`` が出るので、再インストールするよう誘導される。
 
 SPEC-0004 (v3.17.0~): ``~/.flode/config.toml`` をサポート。優先順位は
 ``CLI 引数 > 設定ファイル > default``。設定ファイル不在時は warning なしで default
@@ -423,7 +423,7 @@ def main(argv: list[str] | None = None) -> None:
 
     Raises:
         FlodeError: 設定ファイル不正、``--workspace`` 指定 path が不在、または
-            ``uvicorn`` (= ``flode[gui]`` extras) がインストールされていない場合。
+            ``uvicorn`` がインストールされていない (壊れた環境の) 場合。
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -447,13 +447,13 @@ def main(argv: list[str] | None = None) -> None:
 
     settings, host, port0, open_browser, port_retries = _build_settings_from_args(args)
     app = create_app(settings=settings)
-    # ``uvicorn`` を遅延 import: extras 未インストール時にユーザーへ明確に誘導するため
+    # ``uvicorn`` を遅延 import: 壊れた環境でもユーザーへ明確に誘導するため
     # (code-reviewer MUST 修正)。
     try:
         import uvicorn
     except ImportError as e:
         raise FlodeError(
-            "flode requires uvicorn to run the server. Install with: pip install flode[gui]"
+            "flode requires uvicorn to run the server. Reinstall with: pip install flode"
         ) from e
     # SPEC-0021 §4: ポート自動フォールバック。実際に bind するポートを確定する。
     port = find_free_port(host, port0, port_retries)

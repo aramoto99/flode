@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flode"
-version = "0.43.0"
+version = "0.44.0"
 description = "Block-diagram dynamic system simulator"
 requires-python = ">=3.11"
 license = "MIT"
@@ -17,6 +17,14 @@ dependencies = [
     "numpy>=2.3",
     "scipy>=1.10",
     "matplotlib>=3.7",
+    # v0.44.0: flode は Web GUI が本体のツールなので、GUI サーバー依存は core に含める
+    # (旧 ``flode[gui]`` extras から統合。軽量・pure Python・OS 制約なし)
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "websockets>=12",
+    # ADR-0043: workspace 検索 (path fuzzy + content substring)、`.gitignore` 尊重
+    "rapidfuzz>=3.6",
+    "pathspec>=0.12",
 ]
 
 [project.urls]
@@ -38,9 +46,6 @@ dev = [
     "mypy>=1.8",
     "sphinx>=7.0",
     "sphinx-rtd-theme>=2.0",
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
-    "websockets>=12",
     "httpx>=0.27",
     "build>=1.2",
     # ADR-0035: Python 3.11+ で ``tomllib`` stdlib 利用、``tomli`` 条件付き dep 削除
@@ -51,20 +56,10 @@ dev = [
     # ADR-0037: linearize method='jax' / Simulator.compile() の CI 検証用に dev に
     # jax[cpu] を含める (= 本番依存ではないので [project] dependencies には入れない)。
     "jax[cpu]>=0.4,<0.5",
-    # ADR-0043: workspace 検索の CI テスト (= test_files_api.py の Search ケース) に
-    # 必要。gui extras にも入っているが、本番 gui を入れない dev でも tests/server
-    # は走るので dev にも含める。
-    "rapidfuzz>=3.6",
-    "pathspec>=0.12",
 ]
-gui = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
-    "websockets>=12",
-    # ADR-0043: workspace 検索 (path fuzzy + content substring)、`.gitignore` 尊重
-    "rapidfuzz>=3.6",
-    "pathspec>=0.12",
-]
+# v0.44.0: GUI サーバー依存は core に統合済み。旧 ``pip install flode[gui]`` を
+# 既存の手順書・スクリプトが使い続けても壊れないよう、空 extras として残す。
+gui = []
 # ADR-0026: 解析機能の opt-in extras。``LinearSystem.to_control_ss()`` 等で
 # python-control に依存する。コア (`flode.linearize` など) は本 extras なしで動く。
 control = [
