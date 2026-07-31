@@ -412,15 +412,21 @@ const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Elemen
 // =============================================================================
 
 // 斜体 ``f(t,u)``。MathFunction の ``f(u)`` と区別する (Fcn は t も参照可)。
+// v0.44.1: fontSize 9 では 6 文字が viewBox 24 を超え右端の ``)`` が見切れて
+// いた。fontSize 7 + textLength で幅 20 に収める。
+// 注: textLength/lengthAdjust (本ファイルでは StateSpace 系と本 glyph のみ使用)
+// の見た目は Chromium でのみ視覚検証済み。他エンジンは未検証。
 const FcnGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
       x="12"
-      y="16"
+      y="15"
       textAnchor="middle"
-      fontSize="9"
+      fontSize="7"
       fontFamily="ui-monospace,monospace"
       fontStyle="italic"
+      textLength="20"
+      lengthAdjust="spacingAndGlyphs"
       fill="currentColor"
       stroke="none"
     >
@@ -523,6 +529,8 @@ const TransferFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.44.1: fontSize 6 では末尾 ``u`` が両行とも右端で見切れていた。
+// textLength で幅 20 に収める (縮小率が軽微なので fontSize は 6 のまま)。
 const StateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
@@ -532,6 +540,8 @@ const StateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
       fontSize="6"
       fontFamily="serif"
       fontStyle="italic"
+      textLength="20"
+      lengthAdjust="spacingAndGlyphs"
       fill="currentColor"
       stroke="none"
     >
@@ -544,6 +554,8 @@ const StateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
       fontSize="6"
       fontFamily="serif"
       fontStyle="italic"
+      textLength="20"
+      lengthAdjust="spacingAndGlyphs"
       fill="currentColor"
       stroke="none"
     >
@@ -682,31 +694,38 @@ const RateTransitionGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.44.1: 旧 ``x[k+1]=Ax+Bu`` (12 文字) は fontSize 5 でも viewBox 24 を大幅に
+// 超え、左右両端が見切れていた。離散系の次状態を表す標準表記 ``x⁺`` に短縮して
+// StateSpace (``ẋ``) と同レイアウトで収める。
 const DiscreteStateSpaceGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
       x="12"
       y="10"
       textAnchor="middle"
-      fontSize="5"
+      fontSize="6"
       fontFamily="serif"
       fontStyle="italic"
+      textLength="20"
+      lengthAdjust="spacingAndGlyphs"
       fill="currentColor"
       stroke="none"
     >
-      x[k+1]=Ax+Bu
+      x⁺=Ax+Bu
     </text>
     <text
       x="12"
       y="18"
       textAnchor="middle"
-      fontSize="5"
+      fontSize="6"
       fontFamily="serif"
       fontStyle="italic"
+      textLength="20"
+      lengthAdjust="spacingAndGlyphs"
       fill="currentColor"
       stroke="none"
     >
-      y[k]=Cx+Du
+      y=Cx+Du
     </text>
   </svg>
 );
