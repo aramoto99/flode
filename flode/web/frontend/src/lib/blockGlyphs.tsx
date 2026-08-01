@@ -351,8 +351,10 @@ const LookupTable2DGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// SPEC-0018 / ADR-0068 v5.8.0: n-D Lookup の cube 透視図風。3 軸方向の格子を
-// 簡素に描き、n-D 拡張を示唆。
+// SPEC-0018 / ADR-0068 v5.8.0: n-D Lookup の cube 透視図風。
+// v0.44.1: 旧 glyph は cube 中央の塗り点が「サイコロ」に見えていた (ユーザー
+// 指摘)。点を廃し、前面を 2×2 格子に変更 (= LookupTable2D の格子の立体版と
+// いう family 表現で「table の次元拡張」を示唆)。
 const LookupTableNDGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     {/* 前面の四角 (x-y 平面) */}
@@ -363,47 +365,59 @@ const LookupTableNDGlyph = ({ className }: GlyphProps): JSX.Element => (
     <line x1="16" y1="20" x2="20" y2="16" />
     <line x1="8" y1="4" x2="20" y2="4" />
     <line x1="20" y1="4" x2="20" y2="16" />
-    {/* 中央の補間点 */}
-    <circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none" />
+    {/* 前面の 2×2 格子 (LookupTable2D の格子と同族)。外枠 (SW=1.6) より細い
+        strokeWidth=1 で描き、立方体の輪郭を主・内部格子を従にして奥行き感を保つ */}
+    <line x1="10" y1="8" x2="10" y2="20" strokeWidth="1" />
+    <line x1="4" y1="14" x2="16" y2="14" strokeWidth="1" />
   </svg>
 );
 
-// SPEC-0019 / ADR-0067 v5.7.0: Prelookup = 1 入力 → 2 出力分離 (k, f)。
-// 中央の breakpoint 軸からの分岐を視覚化。
+// SPEC-0019 / ADR-0067 v5.7.0: Prelookup。
+// v0.44.1: 旧 glyph (縦軸 + 分岐線 + 極小テキスト k/f) は palette の 28px では
+// 判読不能なノイズになっていた (ユーザー指摘)。テキストを排し、「非等間隔の
+// 目盛付き breakpoint 軸 (ruler) 上で入力位置を矢印で特定する」構図に単純化
+// (= index 検索という本質だけを描く)。
 const PrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* 入力線 (左から中央へ) */}
-    <line x1="3" y1="12" x2="10" y2="12" />
-    {/* breakpoint 軸 (中央の縦線) */}
-    <line x1="10" y1="4" x2="10" y2="20" strokeWidth="2" />
-    {/* 軸の breakpoint 目印 */}
-    <line x1="9" y1="7" x2="11" y2="7" />
-    <line x1="9" y1="12" x2="11" y2="12" />
-    <line x1="9" y1="17" x2="11" y2="17" />
-    {/* 出力 2 本に分離 (上=k、下=f) */}
-    <line x1="10" y1="9" x2="21" y2="6" />
-    <line x1="10" y1="15" x2="21" y2="18" />
-    <text x="18" y="5" fontSize="5" fontFamily="ui-monospace,monospace" fill="currentColor" stroke="none">k</text>
-    <text x="18" y="22" fontSize="5" fontFamily="ui-monospace,monospace" fill="currentColor" stroke="none">f</text>
+    {/* breakpoint 軸 (ruler、目盛は非等間隔 = 実際の breakpoints を示唆) */}
+    <line x1="3" y1="16" x2="21" y2="16" />
+    <line x1="5" y1="16" x2="5" y2="20" />
+    <line x1="9" y1="16" x2="9" y2="20" />
+    <line x1="15" y1="16" x2="15" y2="20" />
+    <line x1="20" y1="16" x2="20" y2="20" />
+    {/* 入力位置を指す下向き矢印 (目盛 9–15 の区間内に着地) */}
+    <line x1="12" y1="4" x2="12" y2="11" />
+    <polyline points="9.8,9 12,11.5 14.2,9" />
   </svg>
 );
 
 // SPEC-0019 / ADR-0067 v5.7.0: InterpolationUsingPrelookup = (k, f) → y。
-// 内部 table の棒グラフ風表示で「table 内補間」を示唆。
+// v0.44.1: 旧 glyph (入力 2 線 + 棒グラフ風 table) は小サイズで「音量アイコン」
+// 風に見えて意味が伝わらなかった (ユーザー指摘)。LookupTable1D と同じ
+// 「faint 軸 + breakpoint 点」の family 表現に揃え、2 つの breakpoint 点の間の
+// **補間点 (白抜き丸)** を主役にする。線分は白抜き丸と重ならないよう 2 分割。
 const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* 入力 2 本が左から (上=k、下=f) */}
-    <line x1="3" y1="7" x2="9" y2="9" />
-    <line x1="3" y1="17" x2="9" y2="15" />
-    {/* 内部 table = 棒グラフ風 4 本 */}
-    <line x1="10" y1="18" x2="10" y2="12" />
-    <line x1="13" y1="18" x2="13" y2="8" />
-    <line x1="16" y1="18" x2="16" y2="10" />
-    <line x1="19" y1="18" x2="19" y2="14" />
-    {/* table の底 */}
-    <line x1="9" y1="18" x2="20" y2="18" strokeWidth="0.6" opacity="0.4" />
-    {/* 出力 1 本 (右辺へ) */}
-    <line x1="20" y1="12" x2="22" y2="12" />
+    {/* faint axes (LookupTable1D と同スタイル) */}
+    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
+    <line x1="3" y1="3" x2="3" y2="20" strokeWidth="0.6" opacity="0.4" />
+    {/* breakpoint 2 点を結ぶ区間 (補間点の周囲は空ける) */}
+    <line x1="6" y1="16" x2="10.4" y2="12.6" />
+    <line x1="14.6" y1="9.4" x2="19" y2="6" />
+    <circle cx="6" cy="16" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="6" r="1.4" fill="currentColor" stroke="none" />
+    {/* 補間点 (白抜き) */}
+    <circle cx="12.5" cy="11" r="2" strokeWidth="1.3" />
+    {/* 補間点から軸への破線 (入力 u の位置を示唆) */}
+    <line
+      x1="12.5"
+      y1="13.4"
+      x2="12.5"
+      y2="20"
+      strokeWidth="0.8"
+      strokeDasharray="1.5 1.2"
+      opacity="0.5"
+    />
   </svg>
 );
 

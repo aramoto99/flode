@@ -453,7 +453,7 @@ class TestLookupTable2DRegistry:
         assert "flode.blocks.lookup.LookupTable2D" in _BUILTIN_METADATA
         category, display, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTable2D"]
         assert category == "lookup"
-        assert display == "Lookup Table (2-D)"
+        assert display == "2-D Lookup Table"
         assert icon == "lookup.lookuptable2d"
 
     def test_in_translations(self) -> None:
@@ -462,8 +462,8 @@ class TestLookupTable2DRegistry:
         assert "flode.blocks.lookup.LookupTable2D" in _BLOCK_TRANSLATIONS
         entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTable2D"]
         assert "ja" in entry and "en" in entry
-        assert "ルックアップテーブル (2-D)" in entry["ja"]["display_name"]
-        assert "Lookup Table (2-D)" in entry["en"]["display_name"]
+        assert "2-D ルックアップテーブル" in entry["ja"]["display_name"]
+        assert "2-D Lookup Table" in entry["en"]["display_name"]
 
     def test_interp_constructed_once_per_instance(self) -> None:
         """RegularGridInterpolator は __init__ で 1 度だけ構築 (ホットパスで再構築しない)。"""

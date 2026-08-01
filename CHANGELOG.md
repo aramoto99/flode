@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.1] - 2026-08-01 — ブロックパレットのサムネイル・表示名改善
+
+パレット左ペインのサムネイル (SVG glyph) の視認性を全数レビューし、
+問題のあったものを修正した。
+
+### Fixed
+
+- **パレットサムネイルのテキスト見切れを修正** (Fcn / State Space /
+  Discrete State Space)。Discrete State Space は 24px viewBox に収まらなかった
+  `x[k+1]=Ax+Bu` を離散系の次状態表記 `x⁺=Ax+Bu` に短縮
+- **lookup カテゴリの glyph 3 つを再設計** (小サイズで意味が伝わらなかったため)
+  - Prelookup: 判読不能だった極小テキスト (k/f) を廃し、
+    「目盛付き breakpoint 軸上の位置を下向き矢印で特定する」構図に
+  - Interpolation Using Prelookup: 棒グラフ風表示を廃し、1-D Lookup Table と
+    同族の「breakpoint 2 点の間の補間点 (白抜き丸)」に
+  - N-D Lookup Table: サイコロに見えた中央の塗り点を廃し、
+    前面 2×2 格子の立方体に (2-D の格子の立体版)
+
+### Changed
+
+- **Lookup Table 系の表示名を次元先頭形式に変更**:
+  「Lookup Table (1-D)」→「1-D Lookup Table」、
+  「ルックアップテーブル (1-D)」→「1-D ルックアップテーブル」(2-D / N-D も同様)。
+  パレット幅で末尾が切り詰められても 1-D/2-D/N-D を区別できるようにするため
+
 ## [0.44.0] - 2026-07-18 — GUI 依存を core に統合 (`pip install flode` だけで GUI が動く)
 
 flode は Web GUI が本体のツール。GUI サーバー依存を opt-in extras にする理由が

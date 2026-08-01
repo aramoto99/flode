@@ -209,15 +209,19 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
         "discontinuities.relay",
     ),
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
+    # v0.44.1: 表示名を「次元先頭」形式に変更。パレット幅では末尾が
+    # 「ルックアップテーブル (1…」と切り詰められて 1-D/2-D/N-D が区別
+    # できなかった (ユーザー指摘)。次元を先頭に置けば truncation 耐性があり、
+    # 業界標準ブロック線図ツールの命名 (次元先頭) とも一致する。
     "flode.blocks.lookup.LookupTable1D": (
         "lookup",
-        "Lookup Table (1-D)",
+        "1-D Lookup Table",
         "lookup.lookuptable1d",
     ),
     # SPEC-0017 / ADR-0064 (v5.6.0): Wave 3 第 1 弾 = 2-D Lookup Table
     "flode.blocks.lookup.LookupTable2D": (
         "lookup",
-        "Lookup Table (2-D)",
+        "2-D Lookup Table",
         "lookup.lookuptable2d",
     ),
     # SPEC-0019 / ADR-0067 (v5.7.0): Wave 3 第 2 弾 = Prelookup + Interpolation 分離
@@ -234,7 +238,7 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
     "flode.blocks.lookup.LookupTableND": (
         "lookup",
-        "Lookup Table (N-D)",
+        "N-D Lookup Table",
         "lookup.lookuptablend",
     ),
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾

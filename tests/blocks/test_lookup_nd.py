@@ -345,14 +345,14 @@ class TestLookupTableNDRegistry:
         assert "flode.blocks.lookup.LookupTableND" in _BUILTIN_METADATA
         category, display, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTableND"]
         assert category == "lookup"
-        assert display == "Lookup Table (N-D)"
+        assert display == "N-D Lookup Table"
 
     def test_in_translations(self) -> None:
         from flode.server.registry_translations import _BLOCK_TRANSLATIONS
 
         entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTableND"]
         assert "ja" in entry and "en" in entry
-        assert "ルックアップテーブル (N-D)" in entry["ja"]["display_name"]
+        assert "N-D ルックアップテーブル" in entry["ja"]["display_name"]
 
     def test_dynamic_n_inputs_resolver_in_payload(self) -> None:
         """SPEC-0018 / ADR-0068 §A-1: registry payload に resolver 式が含まれる。"""

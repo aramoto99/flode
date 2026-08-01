@@ -268,14 +268,14 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
     "flode.blocks.lookup.LookupTable1D": {
         "en": {
-            "display_name": "Lookup Table (1-D)",
+            "display_name": "1-D Lookup Table",
             "docstring_summary": (
                 "Interpolate y(t) from a 1-D breakpoint array and table values "
                 "(linear / nearest / flat; extrapolation clip / linear / error)."
             ),
         },
         "ja": {
-            "display_name": "ルックアップテーブル (1-D)",
+            "display_name": "1-D ルックアップテーブル",
             "docstring_summary": (
                 "1 次元ブレークポイント配列とテーブル値で y(t) を補間 "
                 "(linear / nearest / flat、外挿は clip / linear / error)。"
@@ -285,7 +285,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     # SPEC-0017 / ADR-0064 (v5.6.0): Wave 3 第 1 弾 = 2-D Lookup Table
     "flode.blocks.lookup.LookupTable2D": {
         "en": {
-            "display_name": "Lookup Table (2-D)",
+            "display_name": "2-D Lookup Table",
             "docstring_summary": (
                 "Interpolate z = f(u[0], u[1]) from two 1-D breakpoint arrays "
                 "and a 2-D table (bilinear / nearest / flat; extrapolation "
@@ -293,7 +293,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
         "ja": {
-            "display_name": "ルックアップテーブル (2-D)",
+            "display_name": "2-D ルックアップテーブル",
             "docstring_summary": (
                 "2 つのブレークポイント配列と 2-D テーブル値で z = f(u[0], u[1]) "
                 "を補間 (双線形 / nearest / flat、外挿は clip / linear / error)。"
@@ -339,7 +339,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     # SPEC-0018 / ADR-0068 (v5.8.0): Wave 3 第 3 弾 = N-D Lookup Table
     "flode.blocks.lookup.LookupTableND": {
         "en": {
-            "display_name": "Lookup Table (N-D)",
+            "display_name": "N-D Lookup Table",
             "docstring_summary": (
                 "Interpolate y = f(u[0], ..., u[n-1]) from n breakpoint arrays "
                 "and an n-D table (n-linear / nearest / flat; extrapolation "
@@ -347,7 +347,7 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
         "ja": {
-            "display_name": "ルックアップテーブル (N-D)",
+            "display_name": "N-D ルックアップテーブル",
             "docstring_summary": (
                 "n 個のブレークポイント配列と n-D テーブルで y = f(u[0], ..., "
                 "u[n-1]) を補間 (n 線形 / nearest / flat、外挿は clip / linear "

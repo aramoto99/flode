@@ -413,15 +413,15 @@ class TestLookupTable1DRegistry:
         entry = _BLOCK_TRANSLATIONS["flode.blocks.lookup.LookupTable1D"]
         assert "display_name" in entry["en"]
         assert "display_name" in entry["ja"]
-        assert entry["ja"]["display_name"] == "ルックアップテーブル (1-D)"
-        assert entry["en"]["display_name"] == "Lookup Table (1-D)"
+        assert entry["ja"]["display_name"] == "1-D ルックアップテーブル"
+        assert entry["en"]["display_name"] == "1-D Lookup Table"
 
     def test_registry_metadata_entry(self) -> None:
         from flode.server.registry import _BUILTIN_METADATA
 
         cat, name, icon = _BUILTIN_METADATA["flode.blocks.lookup.LookupTable1D"]
         assert cat == "lookup"
-        assert name == "Lookup Table (1-D)"
+        assert name == "1-D Lookup Table"
         assert icon == "lookup.lookuptable1d"
 
 
