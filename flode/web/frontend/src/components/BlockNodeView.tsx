@@ -781,15 +781,25 @@ function ShapeContent({
     );
   }
 
-  // Logical / Relational: param.operator をそのまま中央表示
+  // Logical / Relational: param.operator を中央表示。
+  // Logical は IEC 61131-3 FBD 流の機能名テキスト (AND / OR / ...) をそのまま。
+  // Relational は ADR-0070: ASCII 二重字 (<= 等) を CompareTo 系と同じ
+  // compareOpSymbol で JIS Z 8201 の数学記号 (≤ / ≥ / ≠ / =) にして表示する
+  // (param 値・enum は ASCII のまま、表示のみ変換)。
   if (
     typePath.endsWith(".LogicalOperator") ||
     typePath.endsWith(".RelationalOperator")
   ) {
     const op = (paramsRaw as Record<string, unknown>).operator;
+    const display =
+      typeof op === "string"
+        ? typePath.endsWith(".RelationalOperator")
+          ? compareOpSymbol(op)
+          : op
+        : "?";
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-slate-800">
-        <span>{typeof op === "string" ? op : "?"}</span>
+        <span>{display}</span>
       </div>
     );
   }

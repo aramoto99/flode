@@ -776,6 +776,9 @@ const DiscreteTransferFunctionGlyph = ({ className }: GlyphProps): JSX.Element =
 // Logic
 // =============================================================================
 
+// v0.44.2 (ADR-0070): 旧 glyph は「≥」だったが、ライブラリ default の operator は
+// "<" のため drop 直後の canvas 表示と不一致だった (v0.15.0 の glyph=canvas 原則)。
+// default と同じ "<" に修正。
 const RelationalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     <text
@@ -787,7 +790,7 @@ const RelationalOperatorGlyph = ({ className }: GlyphProps): JSX.Element => (
       fill="currentColor"
       stroke="none"
     >
-      ≥
+      &lt;
     </text>
   </svg>
 );

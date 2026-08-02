@@ -112,10 +112,12 @@ export function switchOpForCriterion(criterion: unknown): string {
 
 /**
  * 比較演算子文字列 (``==`` / ``!=`` / ``<`` / ``<=`` / ``>`` / ``>=``) を表示用に
- * Unicode 記号化する。``CompareToConstant`` / ``CompareToZero`` の Canvas 表示で
- * 使用。``==`` のみは数式慣習に従い ``=`` 1 文字に短縮する。
+ * Unicode 記号 (JIS Z 8201 の数学記号) 化する。``CompareToConstant`` /
+ * ``CompareToZero`` / ``RelationalOperator`` の Canvas 表示で使用。
+ * ``==`` のみは数式慣習に従い ``=`` 1 文字に短縮する。
  *
  * v0.36.2 (SPEC-0002 / ADR-0053 の glyph 動的表示化)。
+ * v0.44.2 (ADR-0070): RelationalOperator の表示にも適用。
  */
 export function compareOpSymbol(op: unknown): string {
   switch (op) {

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.2] - 2026-08-02 — glyph の規格準拠方針 (ADR-0070) と RelationalOperator 表示修正
+
+「block glyph は JIS 規格かそれに準ずる規格に基づき、独自構図を発明しない」という
+方針を ADR-0070 として策定した。優先順位: ① JIS C 0617 (= IEC 60617) の記号を転写
+→ ② IEC 61131-3 FBD 流の機能名テキスト → ③ 制御工学教科書標準 (伝達関数表記・
+特性カーブ) → ④ 業界標準ツールの de facto 形状踏襲 → ⑤ 上記に無い場合のみ
+idiom の最小限延長。全 55 glyph を監査し、既存 glyph の大半は ①〜④ に適合済みで
+あることを確認した。
+
+### Fixed
+
+- **RelationalOperator の palette glyph をライブラリ default に一致させた**:
+  旧 glyph は「≥」だったが default operator は `<` のため、drop 直後の canvas
+  表示と食い違っていた → `<` に修正
+
+### Changed
+
+- **RelationalOperator の canvas 表示を JIS Z 8201 の数学記号に変更**:
+  `<=` → `≤`、`>=` → `≥`、`!=` → `≠`、`==` → `=` (param 値・保存形式は ASCII の
+  まま、表示のみ変換)。Compare To Constant / Zero と同じ `compareOpSymbol` を共用
+
 ## [0.44.1] - 2026-08-01 — ブロックパレットのサムネイル・表示名改善
 
 パレット左ペインのサムネイル (SVG glyph) の視認性を全数レビューし、
