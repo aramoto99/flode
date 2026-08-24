@@ -4,93 +4,55 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
-**flode** (**FLO**w + o**DE**) is a block-diagram dynamic system simulator: build a
-model visually in your browser by wiring together blocks, then simulate it —
-continuous, discrete, or a mix of both — on top of `scipy.solve_ivp`.
+**flode** (**FLO**w + o**DE**) はブロック線図ベースの動的システムシミュレータです。
+ブラウザ上でブロックを配線してモデルを組み、連続系・離散系・その混在系を
+`scipy.solve_ivp` (既定 RK45) でシミュレートします。
 
-## Features
+## 特徴
 
-- **Web-based diagram editor** — drag blocks onto a canvas, wire them up, edit
-  parameters in an inspector panel, and run the simulation with live-streaming
-  plots, all in the browser. No separate app to install.
-- **50+ built-in blocks** covering sources, sinks, continuous/discrete dynamics,
-  math, logic, lookup tables, routing, and discontinuities (see
-  [Block Library](#block-library)).
-- **Continuous, discrete, and hybrid simulation** via `scipy.solve_ivp`
-  (default solver: RK45), with automatic detection of algebraic loops.
-- **Subsystems** for hierarchical models, with in-subsystem Trigger / Enable
-  blocks to control when a subsystem executes.
-- **Custom blocks in a few lines of Python** via the `@block` decorator — no
-  need to subclass anything.
-- **Analysis tools** — numerical linearization, Bode/Nyquist frequency
-  response, eigenvalue-based stability, and root locus.
-- **Optional GPU/autodiff backend** (JAX) for machine-precision Jacobians and
-  compiled simulation, opt-in via extras.
-- **Plain JSON models** (`.flw.json`) — version-control friendly, editable by
-  hand or by any tool.
+- **Web ベースのブロック線図エディタ** — ブロックをドラッグして配線、inspector
+  パネルでパラメータ編集、実行するとライブプロット。ブラウザだけで完結
+- **50+ の組み込みブロック** (下記 [ブロックライブラリ](#ブロックライブラリ))
+- **連続・離散・ハイブリッドシミュレーション** (代数ループ自動検出)
+- **Subsystem による階層化** (内部の Trigger / Enable ブロックで実行制御)
+- **`@block` デコレータ** — Python 関数を数行でカスタムブロック化
+- **解析機能** — 線形化、Bode / Nyquist、固有値による安定判別、根軌跡
+- **JAX による codegen + autodiff** (opt-in、実験的)
+- **モデルはプレーン JSON** (`.flw.json`) — バージョン管理と相性が良い
 
-## Installation
+## インストール
 
-### Prerequisites
-
-- **Python 3.11+**
-- **Node.js 20+ and npm** — only needed for a source install (the Web GUI's
-  frontend is not committed to git, so you build it once locally). Prebuilt
-  wheels attached to [GitHub Releases](https://github.com/aramoto99/flode/releases)
-  already contain the built frontend and need no Node.
-
-### Install from source
+前提: **Python 3.11+**。ソースから入れる場合は **Node.js 20+** も必要
+(frontend を一度ローカルでビルドするため)。
 
 ```bash
 git clone https://github.com/aramoto99/flode.git
 cd flode
 
-# Build the frontend once (outputs into flode/server/static/)
+# frontend をビルド (flode/server/static/ に出力される)
 cd flode/web/frontend
 npm install
 npm run build
 cd ../../..
 
-# Install the package (core simulator + server + bundled frontend)
 pip install -e .
 ```
 
-Re-run `npm run build` after any `git pull` that touches
-`flode/web/frontend/`. Skipping the build step still lets `pip install -e .`
-succeed, but the browser will show a 404 at `/` (the REST/WebSocket API under
-`/api/v1/*` keeps working regardless).
+[GitHub Releases](https://github.com/aramoto99/flode/releases) 添付の
+prebuilt wheel なら frontend 同梱のため Node 不要
+(`pip install flode-<version>-py3-none-any.whl`)。
+PyPI には未公開のため `pip install flode` はまだ使えません。
 
-### Install a prebuilt wheel (no Node.js required)
+オプション extras (`pip install -e ".[control,dev]"` のように併用可):
 
-Download the `.whl` file from the
-[latest GitHub Release](https://github.com/aramoto99/flode/releases/latest)
-and install it directly:
+| extras | 内容 |
+|---|---|
+| `[control]` | python-control による Bode / Nyquist / 根軌跡 |
+| `[codegen]` | JAX (CPU) — `Simulator.compile()` / `linearize(method="jax")` |
+| `[gpu]` | JAX GPU backend (NVIDIA CUDA 12 / Linux x86_64 のみ) |
+| `[dev]` | pytest, ruff, mypy, sphinx |
 
-```bash
-pip install flode-<version>-py3-none-any.whl
-```
-
-flode is not yet published on PyPI, so `pip install flode` does not work today.
-
-### Optional extras
-
-```bash
-# Analysis extras: python-control-backed Bode/Nyquist/root locus
-pip install -e ".[control]"
-
-# JAX-based codegen + autodiff (CPU): Simulator.compile() and linearize(method="jax")
-pip install -e ".[codegen]"
-
-# GPU backend (NVIDIA CUDA 12, Linux x86_64 only, best-effort)
-pip install -e ".[gpu]"
-
-# Development environment (pytest, ruff, mypy, sphinx)
-pip install -e ".[dev]"
-```
-
-Extras can be combined, e.g. `pip install -e ".[control,dev]"`.
-
-## Getting Started
+## 使い方
 
 ### Web GUI
 
@@ -98,23 +60,17 @@ Extras can be combined, e.g. `pip install -e ".[control,dev]"`.
 flode
 ```
 
-This starts the local server and opens the UI in your default browser
-automatically. If the requested port is busy it falls back to the next free
-one. Useful flags:
+サーバが起動し、既定ブラウザで UI が自動的に開きます (ポートが使用中なら
+空きポートへ自動フォールバック)。
 
 ```bash
-flode --workspace ./my-models --port 8770   # custom workspace + port
-flode --no-browser                          # headless (CI, background use)
+flode --workspace ./my-models --port 8770   # workspace とポートを指定
+flode --no-browser                          # ブラウザを開かない
 ```
 
-A workspace is just a directory of `.flw.json` files — open the file tree in
-the sidebar, drag a block from the library onto the canvas, wire it up in the
-inspector panel, and hit Run to see live plots in the Scope panel.
-
-The server binds to `127.0.0.1` by default, and the workspace search API
-always excludes well-known credential paths (`.env*`, `id_rsa`, `.ssh/`,
-`.aws/`, ...) regardless of workspace contents, so search results cannot leak
-secrets.
+workspace は `.flw.json` を置くただのディレクトリです。サーバは既定で
+`127.0.0.1` に bind し、workspace 検索 API は `.env*` / `id_rsa` / `.ssh/`
+等の credential パスを常に除外します。
 
 ### Python API
 
@@ -137,11 +93,11 @@ sim.run()
 scope.plot(show=True)
 ```
 
-See `examples/spring_mass_damper.py` for a complete second-order system example.
+2 次系の完全な例は `examples/spring_mass_damper.py` を参照してください。
 
-## Block Library
+## ブロックライブラリ
 
-| Category        | Blocks                                                                    |
+| カテゴリ | ブロック |
 |-----------------|---------------------------------------------------------------------------|
 | Sources         | Constant, Step, Sine, Ramp, Clock, PulseGenerator, RandomSource          |
 | Sinks           | Scope, Terminator, Display, XYGraph                                       |
@@ -152,19 +108,17 @@ See `examples/spring_mass_damper.py` for a complete second-order system example.
 | Lookup          | LookupTable1D, LookupTable2D, LookupTableND, Prelookup, InterpolationUsingPrelookup |
 | Logic           | RelationalOperator, LogicalOperator                                       |
 | Routing         | Switch, MultiportSwitch, Mux, Demux, Merge, Goto, From                    |
-| User Function   | Fcn (arbitrary `y = f(t, u)` expression, AST-whitelisted for safety)     |
-| Subsystem       | Subsystem (behavior modified via inner Trigger / Enable control blocks)  |
+| User Function   | Fcn (任意式 `y = f(t, u)`、AST whitelist で安全に評価)                    |
+| Subsystem       | Subsystem (内部の Trigger / Enable ブロックで実行制御)                    |
 | Control         | Inport, Outport, Trigger, Enable                                          |
 
-Most blocks are importable directly from `flode.blocks`; a few GUI-oriented
-variants (e.g. `Add`) live in their submodule (`flode.blocks.mathops.Add`).
+多くは `flode.blocks` から直接 import できます (一部の GUI 向け変種、例えば
+`Add` は `flode.blocks.mathops` 配下)。API リファレンスは
+`sphinx-build -b html docs docs/_build` でビルドできます。
 
-For the full API reference, build the docs locally:
-`sphinx-build -b html docs docs/_build`.
+## `@block` デコレータ
 
-## `@block` Decorator
-
-Turn a plain function into a `Block` subclass without subclassing `Block` directly:
+`Block` を継承せずに、関数 1 つでカスタムブロックを定義できます:
 
 ```python
 import numpy as np
@@ -177,13 +131,13 @@ def my_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]
     return y, x_dot
 ```
 
-A class-based form (`@block` applied to a class) is also supported for blocks
-that prefer separate `output` / `derivative` / `update` methods.
+`output` / `derivative` / `update` を分けたい場合はクラス形式 (`@block` を
+クラスに適用) も使えます。
 
-## Analysis
+## 解析
 
-`flode.linearize()` numerically linearizes a model around an operating point
-`(t, x, u)` and returns a `LinearSystem` with state-space matrices `(A, B, C, D)`:
+`flode.linearize()` はモデルを動作点まわりで数値線形化し、状態空間行列
+`(A, B, C, D)` を持つ `LinearSystem` を返します:
 
 ```python
 from flode import linearize
@@ -192,118 +146,46 @@ ls = linearize(sim)
 print(ls.A.shape, ls.eigenvalues(), ls.is_stable())
 ```
 
-`bode()`, `nyquist()`, and `root_locus()` build on `LinearSystem` and require
-the `flode[control]` extras (`python-control`); `eigenvalues()` / `is_stable()`
-work with numpy alone.
+`eigenvalues()` / `is_stable()` は numpy のみで動作し、`bode()` /
+`nyquist()` / `root_locus()` は `flode[control]` extras が必要です。
 
-## Codegen + Autodiff (JAX, opt-in)
+## Codegen + Autodiff (JAX、opt-in)
 
-`Simulator.compile(backend="jax")` and `linearize(method="jax")` trace
-selected blocks through `jax.jit` / `jax.jacfwd` for XLA compilation and
-machine-precision Jacobians. The default numpy execution path is unaffected
-unless `compile()` is explicitly called.
+`Simulator.compile(backend="jax")` と `linearize(method="jax")` は対象ブロック
+を `jax.jit` / `jax.jacfwd` でトレースし、XLA コンパイルと機械精度 Jacobian を
+提供します (`flode[codegen]` extras が必要)。`compile()` を呼ばない限り、
+既定の numpy 実行パスには一切影響しません。
 
-```python
-from flode import Simulator, linearize
+まだ実験的機能で、対応ブロックは `Constant` / `Step` / `Sine` / `Ramp` /
+`Clock` / `Gain` / `Sum` / `Integrator` + sink 系のみです。それ以外を含む
+モデルは `BlockSpecError` になります。
 
-sim = Simulator(t_end=10.0, dt=0.01)
-# ... build model ...
+## 設定
 
-# machine-precision (A, B, C, D) via jax.jacfwd
-ls = linearize(sim, method="jax")
+`--workspace` / `--port` 等の既定値は `~/.flode/config.toml`
+(Windows は `%USERPROFILE%\.flode\config.toml`) に永続化できます。
+コメント付き雛形は `flode --generate-config` で生成されます。
+優先順位は **CLI 引数 > config ファイル > 既定値** です。
 
-compiled = sim.compile(backend="jax")
-print(compiled.n_states, compiled.backend)
-```
+## バージョニング
 
-Requires the `flode[codegen]` extras (`jax[cpu]`). The GPU backend uses
-`flode[gpu]` (`jax[cuda12]`, Linux x86_64 with NVIDIA CUDA 12 only).
+flode は [ZeroVer](https://0ver.org/) を採用しており、`0.x` に留まり続けます。
+**minor** は機能追加または破壊的変更、**patch** は修正です。リリースノートは
+`CHANGELOG.md` を参照してください。
 
-Note that the JAX backend is still experimental and supports only a small
-subset of blocks so far (`Constant`, `Step`, `Sine`, `Ramp`, `Clock`, `Gain`,
-`Sum`, `Integrator`, plus sinks); models containing any other block are
-rejected with `BlockSpecError`.
-
-## Configuration
-
-Persist server defaults (`--workspace`, `--port`, `--allow-origin`, ...) in
-`~/.flode/config.toml` (`%USERPROFILE%\.flode\config.toml` on Windows) so you
-don't have to pass them every time. Generate a commented template with:
+## 開発
 
 ```bash
-flode --generate-config
+pytest -ra                                  # テスト
+ruff check flode tests examples             # lint (CI と同一対象)
+ruff format --check flode tests examples    # format チェック
+mypy flode                                  # 型チェック
+sphinx-build -W -b html docs docs/_build    # ドキュメント (CI は warning を error 扱い)
 ```
 
-```toml
-[server]
-host = "127.0.0.1"
-port = 8770
+frontend の開発手順 (Vite dev server) は `flode/web/frontend/README.md` を
+参照してください。
 
-[settings]
-workspace = "~/flode-workspace"
-scope_batch_size = 100
-max_concurrent = 4
-allow_origins = []
-library_paths = []
-bundle_builtin_libraries = true
-```
+## ライセンス
 
-Priority is **CLI args > config file > defaults** — e.g. `--port 9000` on the
-command line overrides the file for a single run. Use `--config=PATH` to load
-a non-default file, or omit the config file entirely to fall back to defaults
-(workspace defaults to the current working directory).
-
-If you are upgrading from a very old version that used the flat `--model-dir`
-layout, migrate it once with
-`flode --migrate-models-to=./workspace --legacy-models-dir=./old_models`
-(deprecated; will be removed in a future release).
-
-## Versioning
-
-flode follows [ZeroVer](https://0ver.org/): it stays on `0.x` indefinitely.
-Within `0.x`, a **minor** bump is a feature or breaking change and a **patch**
-bump is a fix. See `CHANGELOG.md` for release notes (single source of truth:
-`flode.__version__`).
-
-## Development
-
-```bash
-# Run tests
-pytest -ra
-
-# Lint + format check (same targets as CI)
-ruff check flode tests examples
-ruff format --check flode tests examples
-
-# Type-check
-mypy flode
-
-# Build HTML docs (CI treats warnings as errors)
-sphinx-build -W -b html docs docs/_build
-```
-
-Frontend development (Vite dev server with hot reload) is documented in
-`flode/web/frontend/README.md`.
-
-## Directory Layout
-
-```
-flode/
-  core/       Block base class, Simulator, @block decorator, JSON persistence
-  blocks/     Block implementations (sources, mathops, continuous, discrete,
-              logic, routing, sinks, lookup, discontinuities, ...)
-  subsystems/ Subsystem, Trigger/Enable behavior, ports, mask
-  analysis/   linearize / frequency_response / stability
-  compile/    compiled_simulator / jax_backend codegen (flode[codegen])
-  libraries/  Block library loader + std.flwlib.json
-  server/     FastAPI Web GUI backend
-  web/
-    frontend/ Vite + React + TypeScript GUI source (built into server/static)
-examples/     Runnable scripts (e.g. spring_mass_damper.py)
-tests/        pytest test suite
-docs/         Sphinx source
-```
-
-## License
-
-MIT — see `LICENSE`.
+MIT — `LICENSE` を参照。
