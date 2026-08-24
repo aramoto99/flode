@@ -24,6 +24,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..core.block import Block
+from ..core.identifiers import fold_block_id
 from ..core.persistence import LayoutDict, normalize_layout
 from ..exceptions import AlgebraicLoopError, BlockSpecError
 from ._mask import (
@@ -102,6 +103,9 @@ class Subsystem(Block):
 
         self._inner_blocks: list[Block] = []
         self._inner_blocks_by_id: dict[str, Block] = {}
+        # ADR-0071 §(2): NFKC fold key → NFC id。Simulator._folded_ids と同じ
+        # 「見た目類似 id の共存拒否」を内部スコープにも適用する
+        self._inner_folded_ids: dict[str, str] = {}
         self._inner_type_counters: dict[str, int] = {}
 
         # 内部状態 layout: 各内部ブロックに対し state vector の slice を割り当てる
@@ -256,7 +260,16 @@ class Subsystem(Block):
                 raise BlockSpecError(
                     f"Subsystem {self.id!r}: inner block id {block.id!r} already exists"
                 )
+            # ADR-0071 §(2): NFKC fold key での衝突 (全角/半角違い等) も拒否
+            existing = self._inner_folded_ids.get(fold_block_id(block.id))
+            if existing is not None:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: inner block id {block.id!r} conflicts "
+                    f"with existing id {existing!r}: the two are NFKC-equivalent "
+                    f"(visually confusable). Choose a distinct name."
+                )
         self._inner_blocks_by_id[block.id] = block
+        self._inner_folded_ids[fold_block_id(block.id)] = block.id
         self._inner_blocks.append(block)
         # ADR-0039: Inport が追加されたら外側 input_sources を拡張 (= n_inputs
         # property に同期させる、Block 契約「input_sources の長さ == n_inputs」を維持)。
@@ -291,7 +304,8 @@ class Subsystem(Block):
         type_name = type(block).__name__
         n = self._inner_type_counters.get(type_name, 0)
         candidate = f"{type_name}_{n}"
-        while candidate in self._inner_blocks_by_id:
+        # fold key での衝突もスキップ (ADR-0071 §(2)、Simulator._auto_id と同方針)
+        while candidate in self._inner_blocks_by_id or candidate in self._inner_folded_ids:
             n += 1
             candidate = f"{type_name}_{n}"
         self._inner_type_counters[type_name] = n + 1

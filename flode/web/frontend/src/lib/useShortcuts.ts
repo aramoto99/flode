@@ -300,6 +300,17 @@ export function useShortcuts(): void {
         return;
       }
 
+      // F2: 単一選択ブロックの rename (SPEC-0022 §機能要件 1-3)。
+      // BlockNodeView の BlockIdLabel が renameRequest を検知して inline 編集に入る。
+      if (key === "F2") {
+        const state = useAppStore.getState();
+        if (state.selectedNodeIds.length === 1) {
+          e.preventDefault();
+          state.requestRename(state.selectedNodeIds[0]!);
+        }
+        return;
+      }
+
       // Esc: 階層を上に / 選択解除
       // Subsystem の中にいるなら drillUp、それ以外は選択解除。リファレンスツールでも
       // Esc は段階的に「外向き」のキャンセル動作。

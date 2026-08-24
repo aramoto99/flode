@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
+import { useBlockRenameEditor } from "../lib/useBlockRename";
 import {
   inferArrayElementType,
   isLongStringParam,
@@ -38,6 +39,7 @@ import {
   PropertyRow,
   SectionDivider,
   SELECT_CLS,
+  TextInput,
 } from "./ui/inspector";
 
 interface ParameterPanelProps {
@@ -98,21 +100,51 @@ function BlockHeader({
   block: BlockEntry;
   subtitle?: string;
 }): JSX.Element {
+  const { t } = useTranslation();
+  // SPEC-0022 §機能要件 1-1: id 表示をクリックで rename 編集に切り替える
+  const editor = useBlockRenameEditor(block.id);
   const shortType = block.type.split(".").at(-1) ?? block.type;
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-slate-300 bg-gradient-to-b from-slate-100 to-slate-50 px-2 py-1">
-      <span
-        className="truncate text-[12px] font-semibold text-slate-800"
-        title={block.id}
-      >
-        {block.id}
-      </span>
-      <span
-        className="truncate font-mono text-[10px] text-slate-500"
-        title={block.type}
-      >
-        {subtitle ? `${shortType} · ${subtitle}` : shortType}
-      </span>
+    <div className="border-b border-slate-300 bg-gradient-to-b from-slate-100 to-slate-50 px-2 py-1">
+      <div className="flex items-center justify-between gap-2">
+        {editor.editing ? (
+          <TextInput
+            value={editor.draft}
+            onChange={editor.setDraft}
+            onBlur={editor.handleBlur}
+            onKeyDown={editor.handleKeyDown}
+            onCompositionStart={editor.handleCompositionStart}
+            onCompositionEnd={editor.handleCompositionEnd}
+            autoFocus
+            widthClass="min-w-0 flex-1"
+            testId="block-header-rename-input"
+            ariaLabel={t("diagram.rename.aria_label")}
+          />
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 cursor-text truncate text-left text-[12px] font-semibold text-slate-800"
+            title={`${block.id} — ${t("diagram.rename.hint")}`}
+            data-testid="block-header-id"
+            onClick={editor.start}
+          >
+            {block.id}
+          </button>
+        )}
+        <span
+          className="shrink-0 truncate font-mono text-[10px] text-slate-500"
+          title={block.type}
+        >
+          {subtitle ? `${shortType} · ${subtitle}` : shortType}
+        </span>
+      </div>
+      {editor.editing && editor.error !== null && (
+        <div className="pb-0.5 text-[10px] text-rose-600" data-testid="block-header-rename-error">
+          {t(`diagram.rename.${editor.error.code}`, {
+            conflictId: editor.error.conflictId ?? "",
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -240,7 +272,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       data-testid="parameter-panel"
       className="flex h-full flex-col bg-white text-[11px]"
     >
-      <BlockHeader block={block} />
+      {/* key={block.id}: 選択切替・rename 確定時に rename editor 状態
+          (editing/draft) を確実にリセットする (code-reviewer SHOULD-2) */}
+      <BlockHeader key={block.id} block={block} />
 
       <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
         <PropertyGrid>
@@ -531,7 +565,7 @@ function MaskValuesEditor({
       data-testid="parameter-panel-mask"
       className="flex h-full flex-col bg-white text-[11px]"
     >
-      <BlockHeader block={block} subtitle={t("inspector.mask.suffix")} />
+      <BlockHeader key={block.id} block={block} subtitle={t("inspector.mask.suffix")} />
 
       <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
         <PropertyGrid>

@@ -1,0 +1,49 @@
+{
+  "description": "ADR-0071 block id 検証の共有ケース表。Python (tests/core/test_identifiers.py) と frontend (flode/web/frontend/tests/blockIdValidation.test.ts) の両方がこのファイルを読み、validate_block_id / validateBlockId の判定が一致することを保証する (乖離検出、ADR-0071 §(9))。`valid` は NFC 正規化を経ない生文字列に対する純粋述語の結果。`keyword` は Python keyword 一致 (valid だが warning)。制御文字・結合文字・全半角が紛らわしいケースは \\uXXXX エスケープで記述する。",
+  "cases": [
+    { "id": "Gain_0", "valid": true, "note": "既存 ASCII 代表 (自動採番形)" },
+    { "id": "abc", "valid": true, "note": "ASCII 小文字" },
+    { "id": "_", "valid": true, "note": "アンダースコア単独 (ADR-0004 時代からの互換)" },
+    { "id": "_private", "valid": true, "note": "アンダースコア始まり" },
+    { "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": true, "note": "64 code points ちょうど (上限)" },
+    { "id": "速度指令", "valid": true, "note": "日本語 (漢字)" },
+    { "id": "トルクゲイン", "valid": true, "note": "日本語 (カタカナ)" },
+    { "id": "モータ1", "valid": true, "note": "日本語 + ASCII 数字" },
+    { "id": "速度_指令", "valid": true, "note": "日本語 + アンダースコア (空白の代替)" },
+    { "id": "ｿｸﾄﾞ", "valid": true, "note": "半角カタカナ ｿｸﾄﾞ (NFC では不変。全角との共存は fold 突合で拒否)" },
+    { "id": "Ｇａｉｎ", "valid": true, "note": "全角ラテン Ｇａｉｎ (NFC では不変。ASCII との共存は fold 突合で拒否)" },
+    { "id": "α係数", "valid": true, "note": "ギリシャ文字 + 漢字" },
+    { "id": "class", "valid": true, "keyword": true, "note": "Python keyword は valid + warning (ADR-0071 §(4): error 昇格しない)" },
+    { "id": "for", "valid": true, "keyword": true, "note": "Python keyword" },
+    { "id": "", "valid": false, "note": "空文字" },
+    { "id": "123abc", "valid": false, "note": "数字始まり" },
+    { "id": "１st", "valid": false, "note": "全角数字 １ 始まり (XID_Start に Nd は含まれない)" },
+    { "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": false, "note": "65 code points (上限超過)" },
+    { "id": "my block", "valid": false, "note": "半角空白" },
+    { "id": "速度 指令", "valid": false, "note": "日本語 + 半角空白" },
+    { "id": "速度　指令", "valid": false, "note": "全角空白 (U+3000, Zs)" },
+    { "id": "a:b", "valid": false, "note": "コロン (branch_waypoints キー区切りと衝突、XID 外)" },
+    { "id": "x-y", "valid": false, "note": "ハイフン" },
+    { "id": "x.y", "valid": false, "note": "ドット (階層パス表記の予約)" },
+    { "id": "1/m", "valid": false, "note": "スラッシュ" },
+    { "id": "🚀Boost", "valid": false, "note": "絵文字 🚀 (id は名前でありキャプションではない、ADR-0071 §(8))" },
+    { "id": "a‍b", "valid": false, "note": "ZWJ (U+200D, Cf)。str.isidentifier() は通過するためカテゴリ検査が唯一の防波堤 (必須の一次防御)" },
+    { "id": "a‌b", "valid": false, "note": "ZWNJ (U+200C, Cf)。同上、isidentifier() を通過する不可視文字" },
+    { "id": "ab", "valid": false, "note": "私用領域 (U+E000, Co — Unicode 安定性保証により恒久的に Co)" },
+    { "id": "a﷐b", "valid": false, "note": "noncharacter (U+FDD0, Cn — 恒久的に未割当保証、Cn 検査の回帰固定)" },
+    { "id": "‮gain", "valid": false, "note": "bidi RLO (U+202E, Cf)" },
+    { "id": "がいん", "valid": false, "note": "NFD 入力「がいん」(か U+304B + 結合濁点 U+3099)。NFC 済でないため述語としては invalid。入口層の normalize 後は valid" },
+    { "id": "a\tb", "valid": false, "note": "タブ (Cc)" },
+    { "id": "a\nb", "valid": false, "note": "改行 (Cc)" }
+  ],
+  "fold_conflicts": [
+    { "a": "Gain_1", "b": "Gain_１", "note": "ASCII vs 全角数字 (NFKC で同一視)" },
+    { "a": "ソクド", "b": "ｿｸﾄﾞ", "note": "全角カタカナ vs 半角カタカナ" },
+    { "a": "Gain", "b": "Ｇａｉｎ", "note": "ASCII vs 全角ラテン" },
+    { "a": "Gain_0", "b": "Ｇａｉｎ＿０", "note": "自動採番形と fold 衝突する全角形 (auto_id がスキップすること)" }
+  ],
+  "fold_distinct": [
+    { "a": "Gain", "b": "gain", "note": "case-sensitive は維持 (ADR-0071 §(1))" },
+    { "a": "速度指令", "b": "速度_指令", "note": "アンダースコア有無は別 id" }
+  ]
+}

@@ -29,12 +29,13 @@ from ..exceptions import (
     UnknownBlockIdError,
 )
 from .block import Block
-from .identifiers import validate_block_id
+from .identifiers import fold_block_id, normalize_block_id, validate_block_id
 from .persistence import (
     CURRENT_SCHEMA_VERSION,
     LayoutDict,
     migrate_to_current,
     normalize_layout,
+    normalize_model_ids,
     parse_t_end,
     resolve_block_class,
     serialize_connections,
@@ -90,6 +91,10 @@ class Simulator:
         self.dt_base_hint: float | None = None if dt_base is None else float(dt_base)
         self.blocks: list[Block] = []
         self._blocks_by_id: dict[str, Block] = {}
+        # ADR-0071 §(2): NFKC fold key → NFC id。重複判定専用 (``Gain_1`` と
+        # 全角 ``Gain_１`` のような見た目類似 id の共存を拒否する)。
+        # ``add`` / ``rename`` で ``_blocks_by_id`` と必ず併走更新する。
+        self._folded_ids: dict[str, str] = {}
         self._type_counters: dict[str, int] = {}
         # ADR-0011 §(4): 各 ``record`` 後に呼ばれる progress hook。GUI バックエンドが
         # シミュレーション進捗を WebSocket で配信するため。``None`` で no-op。
@@ -130,7 +135,18 @@ class Simulator:
                     f"Block id {block.id!r} already exists. "
                     "Use a unique `id=` argument or omit it for auto-generation."
                 )
+            # ADR-0071 §(2): NFKC fold key での衝突 (全角/半角・互換文字違いの
+            # 見た目類似 id) も拒否する
+            existing = self._folded_ids.get(fold_block_id(block.id))
+            if existing is not None:
+                raise BlockSpecError(
+                    f"Block id {block.id!r} conflicts with existing id "
+                    f"{existing!r}: the two are NFKC-equivalent (visually "
+                    f"confusable, e.g. full-width vs half-width). Choose a "
+                    f"distinct name."
+                )
         self._blocks_by_id[block.id] = block
+        self._folded_ids[fold_block_id(block.id)] = block.id
         self.blocks.append(block)
         return block
 
@@ -138,7 +154,9 @@ class Simulator:
         type_name = type(block).__name__
         n = self._type_counters.get(type_name, 0)
         candidate = f"{type_name}_{n}"
-        while candidate in self._blocks_by_id:
+        # fold key での衝突もスキップする (全角形 ``Ｇａｉｎ＿０`` が既に居ても
+        # 自動採番が例外を出さない、ADR-0071 §(2))
+        while candidate in self._blocks_by_id or candidate in self._folded_ids:
             n += 1
             candidate = f"{type_name}_{n}"
         self._type_counters[type_name] = n + 1
@@ -162,14 +180,27 @@ class Simulator:
         """
         if old_id not in self._blocks_by_id:
             raise UnknownBlockIdError(f"No block registered with id {old_id!r}")
+        # ADR-0071 §(3): 入口層で NFC 正規化してから検証・比較する
+        if isinstance(new_id, str):
+            new_id = normalize_block_id(new_id)
         validate_block_id(new_id)
         if new_id == old_id:
             return
         if new_id in self._blocks_by_id:
             raise BlockSpecError(f"Block id {new_id!r} already exists")
+        new_fold = fold_block_id(new_id)
+        existing = self._folded_ids.get(new_fold)
+        if existing is not None and existing != old_id:
+            raise BlockSpecError(
+                f"Block id {new_id!r} conflicts with existing id {existing!r}: "
+                f"the two are NFKC-equivalent (visually confusable). Choose a "
+                f"distinct name."
+            )
         block = self._blocks_by_id.pop(old_id)
+        del self._folded_ids[fold_block_id(old_id)]
         block.id = new_id
         self._blocks_by_id[new_id] = block
+        self._folded_ids[new_fold] = new_id
 
     def _resolve(self, x: Block | str) -> Block:
         if isinstance(x, Block):
@@ -1362,7 +1393,10 @@ class Simulator:
                     b.id: normalized_layout[b.id] for b in self.blocks if b.id in normalized_layout
                 }
                 payload["layout"] = ordered
-        text = json.dumps(payload, indent=indent if indent > 0 else None)
+        # ADR-0071 §(7): 非 ASCII id を \uXXXX エスケープせず生の UTF-8 で書く。
+        # GUI 保存経路 (server/routes/files.py の ensure_ascii=False) とバイト列を
+        # 一致させ、保存経路の違いで git diff が壊れるのを防ぐ。
+        text = json.dumps(payload, indent=indent if indent > 0 else None, ensure_ascii=False)
         Path(path).write_text(text + ("\n" if indent > 0 else ""), encoding="utf-8")
 
     @classmethod
@@ -1418,6 +1452,9 @@ class Simulator:
         if not isinstance(data, dict):
             raise ModelLoadError(f"Top-level JSON must be an object, got {type(data).__name__}")
         data = migrate_to_current(data)
+        # ADR-0071 §(3): id とその全参照 (connections / layout / branch_waypoints /
+        # scope_settings) を単一関数で NFC 正規化する (片側だけだと参照が切れる)
+        data = normalize_model_ids(data)
 
         for key in ("simulator", "blocks", "connections"):
             if key not in data:
@@ -1469,8 +1506,10 @@ class Simulator:
                 # BlockSpecError: __init__ 検証エラー (e.g. LookupTable1D の breakpoints
                 # 非単調) も ModelLoadError にラップし、ロード時に実行前で拒否する
                 # (ADR-0008 セマンティクス + SPEC-0008 §エッジケース)。
+                # id は未検証 (任意長) のため先頭 80 文字に丸めて増幅を避ける
                 raise ModelLoadError(
-                    f"Cannot instantiate block {b_data['id']!r} of type {b_data['type']!r}: {e}"
+                    f"Cannot instantiate block {str(b_data['id'])[:80]!r} "
+                    f"of type {str(b_data['type'])[:120]!r}: {e}"
                 ) from e
             sim.add(block)
 

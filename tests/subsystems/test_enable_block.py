@@ -133,10 +133,12 @@ class TestEnableIDValidation:
         e = Enable(id=max_id)
         assert e.id == max_id
 
-    def test_id_with_non_ascii_rejected(self) -> None:
-        # 非 ASCII は文字集合違反
+    def test_id_with_non_ascii_accepted(self) -> None:
+        # ADR-0071: 非 ASCII (Unicode 識別子) は valid。記号・空白は引き続き拒否
+        e = Enable(id="en_α")
+        assert e.id == "en_α"
         with pytest.raises(BlockSpecError):
-            Enable(id="en_α")
+            Enable(id="en α")
 
 
 class TestEnableNameIdMutualExclusion:

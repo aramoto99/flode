@@ -122,6 +122,15 @@ class Scope(Block):
         return np.array(list(self._values))
 
     def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
+        """記録済みサンプルを matplotlib で折れ線プロットする。
+
+        Note:
+            タイトルにはブロック id を使う。日本語などの CJK 文字を含む id
+            (ADR-0071) は、matplotlib の既定フォント (DejaVu Sans) では豆腐
+            (□) になる。日本語タイトルを表示するには利用側で
+            ``matplotlib.rcParams["font.family"]`` に CJK 対応フォントを設定
+            すること (Web GUI の Scope はブラウザ描画のため影響しない)。
+        """
         import matplotlib.pyplot as plt
 
         created = ax is None
@@ -250,7 +259,12 @@ class XYGraph(Block):
         return np.array(self._values)
 
     def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
-        """Matplotlib で y vs x の散布線プロットを描く (CLI / pytest 用)。"""
+        """Matplotlib で y vs x の散布線プロットを描く (CLI / pytest 用)。
+
+        Note:
+            タイトルの CJK id は既定フォントで豆腐 (□) になる。
+            ``Scope.plot`` の Note を参照 (ADR-0071)。
+        """
         import matplotlib.pyplot as plt
 
         created = ax is None

@@ -24,6 +24,7 @@ from ..exceptions import (
     SchemaVersionError,
     UnknownBlockTypeError,
 )
+from .identifiers import normalize_block_id
 
 if TYPE_CHECKING:
     from .block import Block
@@ -458,9 +459,11 @@ def _strip_subsystem_port_fields_recursive(
 
             entry_id = entry.get("id", "<no-id>")
             path = f"{parent_path}/{entry_id}"
+            # NOTE: id は検証前 (migration は normalize/validate より先に走る) の
+            # ため %r でエスケープして log injection (改行入り id) を防ぐ
             if old_n_inputs is not None and old_n_inputs != expected_n_inputs:
                 logger.warning(
-                    "Subsystem %s: legacy n_inputs=%s does not match inner Inport "
+                    "Subsystem %r: legacy n_inputs=%s does not match inner Inport "
                     "count=%s; using inner count after migration (ADR-0039)",
                     path,
                     old_n_inputs,
@@ -468,7 +471,7 @@ def _strip_subsystem_port_fields_recursive(
                 )
             if old_n_outputs is not None and old_n_outputs != expected_n_outputs:
                 logger.warning(
-                    "Subsystem %s: legacy n_outputs=%s does not match inner Outport "
+                    "Subsystem %r: legacy n_outputs=%s does not match inner Outport "
                     "count=%s; using inner count after migration (ADR-0039)",
                     path,
                     old_n_outputs,
@@ -547,7 +550,8 @@ def _convert_triggered_subsystem_recursive(
             )
             entry["type"] = _NEW_SUBSYSTEM_TYPE
             logger.debug(
-                "Subsystem %s: converted TriggeredSubsystem (trigger_mode=%r) → "
+                # id は検証前のため %r で log injection を防ぐ
+                "Subsystem %r: converted TriggeredSubsystem (trigger_mode=%r) → "
                 "Subsystem + Trigger block id=%r (ADR-0058 schema 0.9 migration)",
                 path,
                 trigger_mode,
@@ -626,7 +630,8 @@ def _rename_block_type_prefix_recursive(
             new_type = _NEW_FQN_PREFIX + block_type[len(_OLD_FQN_PREFIX) :]
             entry["type"] = new_type
             logger.debug(
-                "Block %s/%s: renamed type %r -> %r (schema 0.10 migration)",
+                # id は検証前のため %r で log injection を防ぐ
+                "Block %r/%r: renamed type %r -> %r (schema 0.10 migration)",
                 parent_path,
                 entry.get("id", "<no-id>"),
                 block_type,
@@ -741,3 +746,93 @@ def migrate_to_current(data: dict[str, Any]) -> dict[str, Any]:
     # を立てる / toast を出すかを決める。
     data["_migrated_from"] = original_version
     return data
+
+
+def _normalize_waypoint_key(key: str) -> str:
+    """``"<block id>:<src_idx>"`` 合成キー (ADR-0057) の id 部のみ NFC 正規化する。"""
+    if ":" not in key:
+        return key  # 不正形。後段の検証に委ねてここでは触らない
+    prefix, idx = key.rsplit(":", 1)
+    return f"{normalize_block_id(prefix)}:{idx}"
+
+
+def _normalize_block_entry_ids(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    out = dict(entry)
+    if isinstance(out.get("id"), str):
+        out["id"] = normalize_block_id(out["id"])
+    params = out.get("params")
+    # Subsystem: ``params`` 自体が blocks / connections / layout /
+    # branch_waypoints を持つネストしたモデル構造 (ADR-0009 / 0020 / 0057)
+    if isinstance(params, dict) and isinstance(params.get("blocks"), list):
+        out["params"] = normalize_model_ids(params)
+    return out
+
+
+def _normalize_connection_entry_ids(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    out = dict(entry)
+    for key in ("src", "dst"):
+        if isinstance(out.get(key), str):
+            out[key] = normalize_block_id(out[key])
+    return out
+
+
+def normalize_model_ids(data: dict[str, Any]) -> dict[str, Any]:
+    """モデル dict 内の block id とその参照を一括で NFC 正規化する (ADR-0071 §(3))。
+
+    対象 (存在するもののみ): ``blocks[].id`` / ``connections[].src`` / ``.dst`` /
+    ``layout`` キー / ``branch_waypoints`` キーの id 部 / ``scope_settings`` キー。
+    Subsystem の ``params`` (ネストした blocks / connections / layout /
+    branch_waypoints) にも再帰する。
+
+    macOS のファイルシステム由来テキスト等で NFD 形が混入した場合、id とその
+    参照 (結線・layout キー) の**片方だけ**正規化すると参照が切れるため、必ず
+    この単一関数で全参照を同時に正規化する。ASCII のみのモデルでは恒等変換。
+
+    Args:
+        data: parsed JSON のモデル dict (top-level または Subsystem の params)。
+
+    Returns:
+        正規化済みの新しい dict (入力は変更しない)。dict 以外はそのまま返す。
+    """
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    if isinstance(out.get("blocks"), list):
+        out["blocks"] = [_normalize_block_entry_ids(b) for b in out["blocks"]]
+    if isinstance(out.get("connections"), list):
+        out["connections"] = [_normalize_connection_entry_ids(c) for c in out["connections"]]
+    for dict_key in ("layout", "scope_settings"):
+        section = out.get(dict_key)
+        if isinstance(section, dict):
+            normalized_section = {
+                (normalize_block_id(k) if isinstance(k, str) else k): v for k, v in section.items()
+            }
+            # NFD と NFC が併存するキーは正規化で衝突し後勝ちで片方が消える。
+            # silent にせず観測点を残す (ADR-0071 §(12)-2)
+            if len(normalized_section) != len(section):
+                logging.getLogger("flode.persistence.normalize_ids").warning(
+                    "normalize_model_ids: %d %r key(s) collided after NFC "
+                    "normalization and were dropped (visually identical keys "
+                    "with different normalization forms)",
+                    len(section) - len(normalized_section),
+                    dict_key,
+                )
+            out[dict_key] = normalized_section
+    waypoints = out.get("branch_waypoints")
+    if isinstance(waypoints, dict):
+        normalized_waypoints = {
+            (_normalize_waypoint_key(k) if isinstance(k, str) else k): v
+            for k, v in waypoints.items()
+        }
+        if len(normalized_waypoints) != len(waypoints):
+            logging.getLogger("flode.persistence.normalize_ids").warning(
+                "normalize_model_ids: %d 'branch_waypoints' key(s) collided "
+                "after NFC normalization and were dropped",
+                len(waypoints) - len(normalized_waypoints),
+            )
+        out["branch_waypoints"] = normalized_waypoints
+    return out

@@ -359,6 +359,14 @@
   "diagram.library_drop_invalid_ref": "Invalid library entry reference dropped.",
   "diagram.library_drop_failed": "Failed to load library entry: {{message}}",
   "diagram.reset_branch_waypoint": "Reset junction position",
+  "diagram.rename.aria_label": "Edit block name",
+  "diagram.rename.hint": "Click to rename",
+  "diagram.rename.empty": "Name must not be empty",
+  "diagram.rename.charset": "Name contains invalid characters. Only letters, digits, and _ are allowed (use _ instead of spaces)",
+  "diagram.rename.too_long": "Name is too long (max 64 characters)",
+  "diagram.rename.not_normalized": "Name has an invalid normalization form (please re-enter)",
+  "diagram.rename.duplicate": "A block with this name already exists: {{conflictId}}",
+  "diagram.rename.confusable_duplicate": "A confusingly similar block name already exists (e.g. full-width vs half-width): {{conflictId}}",
 
   "palette.library_prefix": "Library",
 

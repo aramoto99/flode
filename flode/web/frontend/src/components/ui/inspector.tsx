@@ -24,7 +24,12 @@
 //    section の中身は indent しない (= ラベル右寄せ整列で揃える)。
 // 8. **背景色 / ダークモード**: 永続的 out-of-scope (memory `feedback_no_dark_mode`)。
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 // ---------------------------------------------------------------------------
@@ -448,11 +453,20 @@ export function NumberInput({
   );
 }
 
-/** 文字列入力。 */
+/** 文字列入力。
+ *
+ * SPEC-0022: rename UI (Inspector ヘッダ) で Enter 確定 / Escape 取消 / IME
+ * composition 対応が必要になったため、optional な keyboard / composition /
+ * autoFocus props を追加 (未指定なら従来挙動のまま)。
+ */
 export function TextInput({
   value,
   onChange,
   onBlur,
+  onKeyDown,
+  onCompositionStart,
+  onCompositionEnd,
+  autoFocus = false,
   testId,
   ariaLabel,
   widthClass = "w-32",
@@ -461,6 +475,10 @@ export function TextInput({
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
+  onKeyDown?: (e: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onCompositionStart?: () => void;
+  onCompositionEnd?: () => void;
+  autoFocus?: boolean;
   testId?: string;
   ariaLabel?: string;
   widthClass?: string;
@@ -472,6 +490,12 @@ export function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
+      onCompositionStart={onCompositionStart}
+      onCompositionEnd={onCompositionEnd}
+      // eslint-disable-next-line jsx-a11y/no-autofocus -- rename 編集開始時の
+      // 即時入力のため (ユーザー操作起点でのみ true になる)
+      autoFocus={autoFocus}
       data-testid={testId}
       aria-label={ariaLabel}
       className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass}`}

@@ -293,10 +293,12 @@ class TestTriggerIDValidation:
         t = Trigger(id=max_id)
         assert t.id == max_id
 
-    def test_id_with_non_ascii_rejected(self) -> None:
-        # 非 ASCII は文字集合違反
+    def test_id_with_non_ascii_accepted(self) -> None:
+        # ADR-0071: 非 ASCII (Unicode 識別子) は valid。記号・空白は引き続き拒否
+        t = Trigger(id="trig_α")
+        assert t.id == "trig_α"
         with pytest.raises(BlockSpecError):
-            Trigger(id="trig_α")
+            Trigger(id="trig α")
 
 
 class TestTriggerNameIdMutualExclusion:

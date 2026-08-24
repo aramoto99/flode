@@ -12,6 +12,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   compareOpSymbol,
@@ -30,10 +31,19 @@ import {
   type BlockShape,
   type BlockShapeKind,
 } from "../lib/blockShapes";
-import { ENABLE_TYPE, TRIGGER_TYPE } from "../lib/blockTypes";
+import {
+  ENABLE_TYPE,
+  getNumberParam,
+  INPORT_TYPE,
+  OUTPORT_TYPE,
+  TRIGGER_TYPE,
+} from "../lib/blockTypes";
 import type { BlockNodeData } from "../lib/diagramConverter";
+import { isDefaultGeneratedId } from "../lib/idGenerator";
+import { useBlockRenameEditor } from "../lib/useBlockRename";
 import type { BlockEntry } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
+import { INPUT_CLS } from "./ui/inspector";
 
 /**
  * ADR-0058 §論点 4 / §論点 11: Subsystem に含まれる control block の有無を
@@ -59,6 +69,106 @@ function resolveControlSlots(
       typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
   );
   return { hasTrigger, hasEnable };
+}
+
+/**
+ * SPEC-0022 §機能要件 7: Subsystem 外面ポートラベルの収集。
+ *
+ * 内部 Inport / Outport のうち、既定 id ({TypeName}_{n}) から rename 済のものだけ
+ * を `port_idx → id` のラベルとして返す (部分表示を許す、Q6)。等分配の分母計算の
+ * ため、data 入力ポート総数 (= Inport 件数) / 出力ポート総数も返す。slot 順序は
+ * [data..., enable, trigger] (ADR-0058) で、Trigger / Enable slot はラベル対象外。
+ */
+interface SubsystemPortLabelInfo {
+  inputs: Array<{ portIdx: number; label: string }>;
+  outputs: Array<{ portIdx: number; label: string }>;
+  nDataIn: number;
+  nOut: number;
+}
+
+function collectSubsystemPortLabels(
+  params: Record<string, unknown>,
+): SubsystemPortLabelInfo {
+  const out: SubsystemPortLabelInfo = {
+    inputs: [],
+    outputs: [],
+    nDataIn: 0,
+    nOut: 0,
+  };
+  const inner = params.blocks;
+  if (!Array.isArray(inner)) return out;
+  for (const raw of inner) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const b = raw as BlockEntry;
+    if (b.type !== INPORT_TYPE && b.type !== OUTPORT_TYPE) continue;
+    const isInput = b.type === INPORT_TYPE;
+    if (isInput) out.nDataIn += 1;
+    else out.nOut += 1;
+    const portIdx = getNumberParam(
+      (b.params ?? {}) as Record<string, unknown>,
+      "port_idx",
+      -1,
+    );
+    if (portIdx < 0) continue;
+    if (typeof b.id !== "string" || isDefaultGeneratedId(b.id, b.type)) continue;
+    (isInput ? out.inputs : out.outputs).push({ portIdx, label: b.id });
+  }
+  return out;
+}
+
+/**
+ * Subsystem 外面のポート脇ラベル描画 (SPEC-0022 §機能要件 7)。
+ *
+ * y 位置は handle の等分配式 (`((i+1)*100)/(n+1)`、inputHandlePosition /
+ * outputHandlePosition と同じ分母) に揃える。入力=内側左寄せ / 出力=内側右寄せ、
+ * flip 時は左右を入れ替える (テキスト自体は反転しない)。長いラベルは CSS 幅で
+ * truncate し、`title` 属性で全体を出す。ブロック幅は自動拡張しない (Q5)。
+ */
+function SubsystemPortLabels({
+  labels,
+  flipped,
+}: {
+  labels: SubsystemPortLabelInfo;
+  flipped: boolean;
+}): JSX.Element {
+  const inputSide = flipped ? { right: 4 } : { left: 4 };
+  const outputSide = flipped ? { left: 4 } : { right: 4 };
+  const labelCls =
+    "absolute -translate-y-1/2 truncate text-[9px] leading-none text-slate-800";
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {labels.inputs.map(({ portIdx, label }) => (
+        <span
+          key={`in-${portIdx}`}
+          data-testid={`subsystem-port-label-in-${portIdx}`}
+          className={labelCls}
+          title={label}
+          style={{
+            top: `${((portIdx + 1) * 100) / (labels.nDataIn + 1)}%`,
+            maxWidth: "45%",
+            ...inputSide,
+          }}
+        >
+          {label}
+        </span>
+      ))}
+      {labels.outputs.map(({ portIdx, label }) => (
+        <span
+          key={`out-${portIdx}`}
+          data-testid={`subsystem-port-label-out-${portIdx}`}
+          className={labelCls}
+          title={label}
+          style={{
+            top: `${((portIdx + 1) * 100) / (labels.nOut + 1)}%`,
+            maxWidth: "45%",
+            ...outputSide,
+          }}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 interface BlockNodeViewProps extends NodeProps {
@@ -248,12 +358,77 @@ export function BlockNodeView({
         })}
       </div>
       {/* ID ラベル: absolute で React Flow のノード境界 BOX の **下** に escape させる。
-          pointer-events:none で配線 / クリック判定を妨げない。 */}
+          SPEC-0022: dblclick / F2 (renameRequest) で inline rename に切り替わる。 */}
+      <BlockIdLabel blockId={id} />
+    </div>
+  );
+}
+
+/**
+ * ノード下の block id ラベル + inline rename (SPEC-0022 §機能要件 1)。
+ *
+ * dblclick または F2 (store の ``renameRequest`` 経由) で編集モードに入り、
+ * Enter 確定 / Escape 取消 / blur 確定。IME composition 中の Enter / Escape は
+ * 変換操作として IME に渡す (ADR-0071 §(11))。検証 NG 時は確定を拒否して
+ * エラーを表示し、編集モードを維持する (SPEC-0022 §機能要件 3)。
+ */
+export function BlockIdLabel({ blockId }: { blockId: string }): JSX.Element {
+  const { t } = useTranslation();
+  const renameRequest = useAppStore((s) => s.renameRequest);
+  const editor = useBlockRenameEditor(blockId);
+  const { start } = editor;
+
+  // F2 / メニューからの rename 要求 (nonce 単調増加で同一ブロック連打にも反応)
+  useEffect(() => {
+    if (renameRequest && renameRequest.blockId === blockId) {
+      start();
+    }
+  }, [renameRequest, blockId, start]);
+
+  if (!editor.editing) {
+    return (
       <div
-        className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap text-center text-[10px] font-medium leading-tight text-slate-700"
+        className="absolute left-1/2 top-full mt-1 -translate-x-1/2 cursor-text whitespace-nowrap text-center text-[10px] font-medium leading-tight text-slate-700"
+        data-testid="block-id-label"
+        onDoubleClick={(e) => {
+          // Subsystem の dblclick ドリルダウン (DiagramCanvas.onNodeDoubleClick)
+          // と衝突させない
+          e.stopPropagation();
+          start();
+        }}
       >
-        {id}
+        {blockId}
       </div>
+    );
+  }
+  return (
+    <div
+      className="nodrag nopan absolute left-1/2 top-full mt-1 -translate-x-1/2 text-center"
+      onDoubleClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={editor.inputRef}
+        className={`${INPUT_CLS} w-32 text-center text-[10px]`}
+        data-testid="block-id-input"
+        aria-label={t("diagram.rename.aria_label")}
+        value={editor.draft}
+        onChange={(e) => editor.setDraft(e.target.value)}
+        onCompositionStart={editor.handleCompositionStart}
+        onCompositionEnd={editor.handleCompositionEnd}
+        onKeyDown={editor.handleKeyDown}
+        onBlur={editor.handleBlur}
+      />
+      {editor.error !== null && (
+        <div
+          className="mt-0.5 whitespace-nowrap text-[9px] text-rose-600"
+          data-testid="block-id-error"
+        >
+          {t(`diagram.rename.${editor.error.code}`, {
+            conflictId: editor.error.conflictId ?? "",
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -508,24 +683,37 @@ function ShapeContent({
   // block の有無 (= filter ベース) に移行。両方ある時は横並びで両方描画。
   // controlSlots は親コンポーネントで一度算出した結果を受け取る (DRY)。
   if (typePath.endsWith(".Subsystem")) {
-    if (!controlSlots.hasTrigger && !controlSlots.hasEnable) {
-      // 普通の Subsystem: 単枠で identification 済なので中央は空 (ADR-0021、
-      // リファレンスツール互換、glyph 過剰を避ける)。
+    // SPEC-0022 §機能要件 7: 内部 Inport / Outport が rename されていれば、その
+    // id を外面のポート脇 (入力=内側左寄せ / 出力=内側右寄せ) に表示する。
+    // 既定 id ({TypeName}_{n}) のポートは非表示 (Q6)。中央は従来どおり空
+    // (ADR-0021、リファレンスツール互換)。
+    const portLabels = collectSubsystemPortLabels(paramsRaw);
+    const hasIndicator = controlSlots.hasTrigger || controlSlots.hasEnable;
+    const hasLabels =
+      portLabels.inputs.length > 0 || portLabels.outputs.length > 0;
+    if (!hasIndicator && !hasLabels) {
       return <></>;
     }
     return (
-      <div
-        data-testid="subsystem-control-indicator"
-        className="absolute inset-y-0 left-0 flex items-start gap-0.5 pl-1 pt-1"
-        style={{ color }}
-      >
-        {controlSlots.hasEnable && (
-          <EnableIndicatorGlyph className="h-3 w-3" />
+      <>
+        {hasIndicator && (
+          <div
+            data-testid="subsystem-control-indicator"
+            className="absolute inset-y-0 left-0 flex items-start gap-0.5 pl-1 pt-1"
+            style={{ color }}
+          >
+            {controlSlots.hasEnable && (
+              <EnableIndicatorGlyph className="h-3 w-3" />
+            )}
+            {controlSlots.hasTrigger && (
+              <TriggerIndicatorGlyph className="h-3 w-3" />
+            )}
+          </div>
         )}
-        {controlSlots.hasTrigger && (
-          <TriggerIndicatorGlyph className="h-3 w-3" />
+        {hasLabels && (
+          <SubsystemPortLabels labels={portLabels} flipped={flipped} />
         )}
-      </div>
+      </>
     );
   }
   // rect (default): リファレンスツール風の専用 render を type ごとに優先する

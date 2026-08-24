@@ -12,6 +12,11 @@ import {
 import { resolvePortCounts } from "../lib/dynamicPorts";
 import { findBlockPath } from "../lib/findBlockPath";
 import {
+  normalizeBlockId,
+  validateBlockIdDetailed,
+  type BlockIdValidationError,
+} from "../lib/idGenerator";
+import {
   applyAtPath,
   applyBranchWaypointsAtPath,
   pruneBranchWaypoints,
@@ -491,6 +496,12 @@ interface AppState {
   // をまとめてセットし、DiagramCanvas の effect が canvas を pan する。
   focusBlockRequest: { blockId: string; nonce: number } | null;
   focusBlock: (blockId: string) => void;
+
+  // SPEC-0022 §機能要件 1: F2 / メニュー等からキャンバス inline rename を起動する
+  // 一方向要求。BlockNodeView が自ノード宛の要求を検知して編集モードに入る
+  // (focusBlockRequest と同型、nonce 単調増加で同一ブロック連打にも再発火)。
+  renameRequest: { blockId: string; nonce: number } | null;
+  requestRename: (blockId: string) => void;
 
   // Scope データ (scope_id -> 時系列)
   scopes: Record<string, ScopeBuffer>;
@@ -1279,6 +1290,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  renameRequest: null,
+  requestRename: (blockId) => {
+    const prevNonce = get().renameRequest?.nonce ?? 0;
+    set({ renameRequest: { blockId, nonce: prevNonce + 1 } });
+  },
+
   scopes: {},
   resetScopes: () => {
     cancelPendingStream();
@@ -1721,6 +1738,158 @@ export function removeBlockFromEditing(blockId: string): void {
 
     return updated;
   });
+}
+
+/**
+ * 現 editingPath スコープの block を rename し、モデル内の全参照を原子的に更新する
+ * (SPEC-0022 §機能要件 2 / ADR-0071)。
+ *
+ * 更新対象 (R1〜R6): blocks[].id / connections[].src・dst / layout キー /
+ * branch_waypoints の `"<id>:<idx>"` キー / top-level scope_settings キー
+ * (以上 1 回の applyEditingModel = 1 undo 履歴)、および非永続 GUI 状態
+ * (選択・Scope パネル・Scope バッファ・workspaceLayout の `scope:<id>` 葉)。
+ *
+ * @param oldId rename 元の block id (現スコープに存在すること)。
+ * @param rawNewId ユーザー入力の新 id。trim + NFC 正規化してから検証する。
+ * @returns 検証エラー詳細 (確定拒否、duplicate 系は衝突相手 id 付き)。
+ *     成功または no-op なら null。
+ */
+export function renameBlockInEditing(
+  oldId: string,
+  rawNewId: string,
+): BlockIdValidationError | null {
+  const path = currentPath();
+  const store = useAppStore.getState();
+  const model = store.editingModel;
+  if (!model) return null;
+
+  const newId = normalizeBlockId(rawNewId.trim());
+  if (newId === oldId) return null; // no-op (履歴に積まない、SPEC-0022 §機能要件 3-4)
+
+  let siblings: BlockEntry[];
+  try {
+    siblings = resolveBlocksAtPath(model, path).blocks;
+  } catch (err) {
+    console.error("[appStore] renameBlockInEditing: failed to resolve path", path, err);
+    return null;
+  }
+  if (!siblings.some((b) => b.id === oldId)) {
+    console.error(
+      `[appStore] renameBlockInEditing: block "${oldId}" not found at path`,
+      path,
+    );
+    return null;
+  }
+  const siblingIds = new Set(siblings.map((b) => b.id));
+  const error = validateBlockIdDetailed(newId, siblingIds, oldId);
+  if (error) return error;
+
+  store.applyEditingModel((m) => {
+    // R1〜R3: 現スコープの blocks / connections / layout
+    let updated = applyAtPath(m, path, (view) => ({
+      blocks: view.blocks.map((b) => (b.id === oldId ? { ...b, id: newId } : b)),
+      connections: view.connections.map((c) => {
+        if (c.src !== oldId && c.dst !== oldId) return c;
+        return {
+          ...c,
+          src: c.src === oldId ? newId : c.src,
+          dst: c.dst === oldId ? newId : c.dst,
+        };
+      }),
+      layout: renameDictKey(view.layout, oldId, newId),
+    }));
+    // R4: branch_waypoints の合成キー "<id>:<idx>" (ADR-0057)
+    updated = applyBranchWaypointsAtPath(updated, path, (waypoints) => {
+      let changed = false;
+      const out: BranchWaypointDict = {};
+      for (const [key, pos] of Object.entries(waypoints)) {
+        const sep = key.lastIndexOf(":");
+        if (sep >= 0 && key.slice(0, sep) === oldId) {
+          out[`${newId}${key.slice(sep)}`] = pos;
+          changed = true;
+        } else {
+          out[key] = pos;
+        }
+      }
+      return changed ? out : waypoints;
+    });
+    // R5: top-level scope_settings (ADR-0044、Subsystem 内 Scope もフラット格納)
+    if (updated.scope_settings && oldId in updated.scope_settings) {
+      updated = {
+        ...updated,
+        scope_settings: renameDictKey(updated.scope_settings, oldId, newId),
+      };
+    }
+    return updated;
+  });
+
+  // R6: 非永続 GUI 状態の追従 (履歴の対象外、SPEC-0022 §機能要件 6)。
+  // 注: editingPath は rename 対象の**親スコープ**なので、rename されたブロック
+  // 自身が path のセグメントになることはない (更新不要)。また SPEC §機能要件 6 の
+  // 「他タブの editingPath」も更新しない: タブは filePath ごとに一意 (= 他タブは
+  // 別ファイル・別モデル) なので、字面が一致する id を書き換えるとむしろ無関係
+  // モデルの状態を汚染する。同一ファイルを複数ペインに表示する機能 (workspace
+  // convergence の将来 Stage) が入った時に初めて必要になる予約事項。
+  useAppStore.setState((state) => {
+    const patch: Partial<AppState> = {};
+    if (state.selectedNodeIds.includes(oldId)) {
+      const ids = state.selectedNodeIds.map((i) => (i === oldId ? newId : i));
+      patch.selectedNodeIds = ids;
+      patch.selectedNodeId = ids.length === 1 ? (ids[0] ?? null) : null;
+    }
+    if (state.scopePanels.includes(oldId)) {
+      patch.scopePanels = state.scopePanels.map((i) => (i === oldId ? newId : i));
+    }
+    if (oldId in state.scopes) {
+      // 実行中の run は旧 id で送り続ける (SPEC-0022 Q7) が、既存バッファは
+      // 新 id パネルへ引き継いで表示を途切れさせない
+      patch.scopes = renameDictKey(state.scopes, oldId, newId);
+    }
+    if (state.editingScopeSettingsId === oldId) {
+      patch.editingScopeSettingsId = newId;
+    }
+    // WorkspaceSplit の `scope:<id>` 葉 (ADR-0045) を追従
+    const oldLeafId = `scope:${oldId}`;
+    if (findLeaf(state.workspaceLayout, oldLeafId)) {
+      const renamed = splitTreeRenameLeaf(
+        state.workspaceLayout,
+        oldLeafId,
+        `scope:${newId}`,
+      );
+      if (renamed !== state.workspaceLayout) {
+        patch.workspaceLayout = renamed;
+        persistWorkspaceLayoutFor(
+          state.workspaceHash,
+          state.activeTabFilePath,
+          renamed,
+        );
+      }
+    }
+    return patch;
+  });
+  return null;
+}
+
+/** dict のキー ``oldKey`` を ``newKey`` に付け替えた新しい dict を返す (値は不変)。 */
+function renameDictKey<T>(
+  dict: Record<string, T>,
+  oldKey: string,
+  newKey: string,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  // キーの順序を保ちながら付け替える (JSON diff を最小に保つ)。
+  // 素の代入 (out[k] = v) だと k === "__proto__" (XID 的には合法な id) のとき
+  // own property が作られず prototype 汚染 + エントリの silent 消失が起きるため、
+  // defineProperty で必ず own property として書く (security-reviewer MEDIUM-1)。
+  for (const [key, value] of Object.entries(dict)) {
+    Object.defineProperty(out, key === oldKey ? newKey : key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return out;
 }
 
 export function updateBlockPosition(

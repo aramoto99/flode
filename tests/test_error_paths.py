@@ -652,7 +652,7 @@ class TestBlockIdEdgeCases:
             "has-hyphen",
             "has.dot",
             "has/slash",
-            "日本語",
+            # "日本語" は ADR-0071 で valid になった (tests/test_block_id.py で担保)
             "a" * 65,
         ],
     )

@@ -1,5 +1,8 @@
 // ADR-0019 §(4.4) §(9): フロント側 block ID 自動採番。
-// ADR-0004 のブロック ID 規則に従う ({type_name}_{counter}、英数記号制限)。
+// ADR-0004 のブロック ID 規則に従う ({type_name}_{counter})。
+// ADR-0071: id の文字集合は Unicode 識別子 (UAX #31 XID)。検証・正規化関数は
+// Python 側 flode/core/identifiers.py の単一の写しであり、両者の等価性は
+// 共有ケース表 tests/data/block_id_cases.json を読む双方のテストで担保する。
 
 /** type_path から末尾の class 名 (= 採番 prefix) を取り出す。 */
 export function typeNameFromPath(typePath: string): string {
@@ -60,6 +63,127 @@ export function buildDefaultParams(
     if (out.connections === null || out.connections === undefined) out.connections = [];
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0071: block id の検証・正規化 (Python flode/core/identifiers.py の写し)
+// ---------------------------------------------------------------------------
+
+/** NFC 後の code point 数の上限 (ADR-0071 §(1)、Python 側 _MAX_LEN と同値)。 */
+export const BLOCK_ID_MAX_LEN = 64;
+
+/**
+ * rename 検証エラーの種別 (ADR-0071 / SPEC-0022 §機能要件 3)。
+ * - `not_normalized`: NFC 済でない (入口で normalizeBlockId を通せば通常発生しない)
+ * - `confusable_duplicate`: NFKC fold key が既存 id と衝突 (全角/半角違い等)
+ */
+export type BlockIdError =
+  | "empty"
+  | "charset"
+  | "too_long"
+  | "not_normalized"
+  | "duplicate"
+  | "confusable_duplicate";
+
+// UAX #31: XID_Start (XID_Continue)* + 先頭 `_` 許容 (= Python str.isidentifier())
+const XID_PATTERN = /^[\p{XID_Start}_][\p{XID_Continue}]*$/u;
+// ADR-0071 §(1)-(4): 多層防御の明示拒否カテゴリ (制御・書式・サロゲート・私用・
+// 未割当・空白/区切り)。Python 側 _FORBIDDEN_CATEGORIES と同一
+const FORBIDDEN_PATTERN = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zs}\p{Zl}\p{Zp}]/u;
+
+// Python の hard keyword 一覧 (keyword.kwlist、Python 3.13)。warning 用途のみで
+// 確定は拒否しない (ADR-0071 §(4): codegen は id を変数名に使わない)
+const PYTHON_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break",
+  "class", "continue", "def", "del", "elif", "else", "except", "finally",
+  "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+  "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+]);
+
+/** 保存形 (NFC) への正規化。入口層 (rename UI / store) のみが呼ぶ (ADR-0071 §(3))。 */
+export function normalizeBlockId(raw: string): string {
+  return raw.normalize("NFC");
+}
+
+/**
+ * 重複判定専用の NFKC fold key (ADR-0071 §(2))。保存しない。
+ * `Gain_1` と全角の `Gain_１`、`ソクド` と `ｿｸﾄﾞ` を同一視するための比較キー。
+ */
+export function foldBlockId(nfcId: string): string {
+  return nfcId.normalize("NFKC");
+}
+
+/** 検証エラーの詳細。`conflictId` は duplicate 系のとき衝突相手の既存 id。 */
+export interface BlockIdValidationError {
+  code: BlockIdError;
+  conflictId?: string;
+}
+
+/**
+ * block id 候補を検証する (Python `validate_block_id` + 兄弟重複判定の写し)。
+ *
+ * duplicate / confusable_duplicate では衝突相手の id を `conflictId` に載せる
+ * (SPEC-0022 §機能要件 9: エラー表示に衝突相手を明示する)。
+ *
+ * @param candidate 検証対象 (呼び出し側で `normalizeBlockId` 済みであること)。
+ * @param siblingIds 同一スコープの既存 block id 集合 (NFC 形)。
+ * @param currentId rename 元の id (自分自身との一致は重複とみなさない)。
+ * @returns エラー詳細。OK なら null。
+ */
+export function validateBlockIdDetailed(
+  candidate: string,
+  siblingIds: ReadonlySet<string>,
+  currentId?: string,
+): BlockIdValidationError | null {
+  if (candidate.length === 0) return { code: "empty" };
+  // 巨大貼り付け対策: UTF-16 長 > 2*MAX なら code point 数も必ず > MAX なので
+  // スプレッド (全 code point の配列化) を経ずに早期拒否する
+  if (candidate.length > BLOCK_ID_MAX_LEN * 2) return { code: "too_long" };
+  if ([...candidate].length > BLOCK_ID_MAX_LEN) return { code: "too_long" };
+  if (candidate.normalize("NFC") !== candidate) return { code: "not_normalized" };
+  if (!XID_PATTERN.test(candidate) || FORBIDDEN_PATTERN.test(candidate)) {
+    return { code: "charset" };
+  }
+  if (siblingIds.has(candidate) && candidate !== currentId) {
+    return { code: "duplicate", conflictId: candidate };
+  }
+  const fold = foldBlockId(candidate);
+  for (const sibling of siblingIds) {
+    if (sibling === currentId) continue;
+    if (sibling !== candidate && foldBlockId(sibling) === fold) {
+      return { code: "confusable_duplicate", conflictId: sibling };
+    }
+  }
+  return null;
+}
+
+/**
+ * `validateBlockIdDetailed` のエラー種別のみ版 (共有ケース表テスト等、
+ * 衝突相手が不要な呼び出し向け)。
+ */
+export function validateBlockId(
+  candidate: string,
+  siblingIds: ReadonlySet<string>,
+  currentId?: string,
+): BlockIdError | null {
+  return validateBlockIdDetailed(candidate, siblingIds, currentId)?.code ?? null;
+}
+
+/** Python keyword との一致 (valid だが warning を出す、ADR-0071 §(4))。 */
+export function isReservedWord(candidate: string): boolean {
+  return PYTHON_KEYWORDS.has(candidate);
+}
+
+/**
+ * ADR-0019 の自動採番パターン (`{TypeName}_{n}`) に一致するか。
+ * Subsystem 外面ポートラベルの表示判定に使う (既定 id の間は非表示、
+ * SPEC-0022 Q6)。
+ */
+export function isDefaultGeneratedId(id: string, typePath: string): boolean {
+  const prefix = `${typeNameFromPath(typePath)}_`;
+  if (!id.startsWith(prefix)) return false;
+  const rest = id.slice(prefix.length);
+  return rest.length > 0 && /^[0-9]+$/.test(rest);
 }
 
 function fallbackForType(type: string): unknown {

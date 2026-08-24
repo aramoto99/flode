@@ -44,10 +44,67 @@ def test_explicit_id_collision_raises():
 
 
 def test_invalid_id_characters():
-    bad_ids = ["1/m", "my block", "123abc", "x.y", "x-y", "日本語", ""]
+    # ADR-0071: 日本語 (非 ASCII 文字) は valid になった。記号・空白は引き続き拒否
+    bad_ids = ["1/m", "my block", "123abc", "x.y", "x-y", "a:b", ""]
     for bad in bad_ids:
         with pytest.raises(BlockSpecError):
             Gain(id=bad)
+
+
+def test_japanese_id_ok():
+    """ADR-0071: 日本語ブロック名を許容する。"""
+    g = Gain(id="トルクゲイン")
+    assert g.id == "トルクゲイン"
+
+
+def test_id_normalized_to_nfc_at_entry():
+    """ADR-0071 §(3): NFD 入力は入口層で NFC に正規化して格納される。"""
+    nfd = "がいん"  # か + 結合濁点 U+3099 (NFD)
+    g = Gain(id=nfd)
+    assert g.id == "がいん"  # NFC 合成済
+    assert g.id != nfd
+
+
+def test_add_rejects_nfkc_confusable_id():
+    """ADR-0071 §(2): 全角/半角違いの見た目類似 id の共存を拒否する。"""
+    sim = Simulator()
+    sim.add(Gain(id="Gain_1"))
+    with pytest.raises(BlockSpecError, match="NFKC-equivalent"):
+        sim.add(Gain(id="Gain_１"))  # 全角の１
+
+
+def test_rename_rejects_nfkc_confusable_id():
+    sim = Simulator()
+    sim.add(Gain(id="ソクド"))
+    sim.add(Gain(id="a"))
+    with pytest.raises(BlockSpecError, match="NFKC-equivalent"):
+        sim.rename("a", "ｿｸﾄﾞ")  # 半角カナ
+
+
+def test_rename_normalizes_nfc():
+    sim = Simulator()
+    sim.add(Gain(id="a"))
+    sim.rename("a", "がいん")  # NFD 入力
+    assert "がいん" in sim._blocks_by_id  # NFC で格納される
+
+
+def test_rename_updates_fold_index():
+    """rename 後は旧 fold key が解放され、新 fold key が予約される。"""
+    sim = Simulator()
+    sim.add(Gain(id="ソクド"))
+    sim.rename("ソクド", "トルク")
+    # 旧 id の fold key が解放されたので半角カナ版を新規追加できる
+    sim.add(Gain(id="ｿｸﾄﾞ"))
+    with pytest.raises(BlockSpecError, match="NFKC-equivalent"):
+        sim.add(Gain(id="ﾄﾙｸ"))
+
+
+def test_auto_id_skips_fold_collision():
+    """全角形 (Ｇａｉｎ＿０) が居ても自動採番は例外を出さずスキップする。"""
+    sim = Simulator()
+    sim.add(Gain(id="Ｇａｉｎ＿０"))  # fold key = "Gain_0"
+    g = sim.add(Gain())
+    assert g.id == "Gain_1"
 
 
 def test_id_too_long():

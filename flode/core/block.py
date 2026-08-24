@@ -17,7 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
-from .identifiers import validate_block_id
+from .identifiers import normalize_block_id, validate_block_id
 
 # ADR-0017 §(3): SM-A 互換 (rank-0 scalar) を表す port shape
 _SCALAR_SHAPE: tuple[int, ...] = ()
@@ -117,6 +117,9 @@ class Block:
             raise BlockSpecError("id and name cannot both be set; use id (name is a Phase 0 alias)")
         resolved_id = id if id is not None else name
         if resolved_id is not None:
+            # ADR-0071 §(3): 入口層で NFC 正規化してから検証・格納する
+            if isinstance(resolved_id, str):
+                resolved_id = normalize_block_id(resolved_id)
             validate_block_id(resolved_id)
         self._id: str | None = resolved_id
 
@@ -187,6 +190,9 @@ class Block:
     @id.setter
     def id(self, value: str | None) -> None:
         if value is not None:
+            # ADR-0071 §(3): 入口層で NFC 正規化してから検証・格納する
+            if isinstance(value, str):
+                value = normalize_block_id(value)
             validate_block_id(value)
         self._id = value
 

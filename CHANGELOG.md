@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0] - 2026-08-24 — ブロック名の GUI rename・ポート名表示・日本語ブロック名 (SPEC-0022 / ADR-0071)
+
+### Added
+
+- **ブロック名 (id) を GUI から rename できるようになった** (SPEC-0022)。
+  起動口は 3 つ: Inspector ヘッダの名前クリック / キャンバスの id ラベル
+  ダブルクリック / 単一選択中の **F2**。Enter 確定・Escape 取消・blur 確定。
+  rename はモデル内の全参照 (結線・layout・分岐点・Scope 設定) を原子的に
+  書き換えるため配線や Scope 設定は壊れず、Ctrl+Z 1 回で完全に元へ戻る
+- **ブロック名に日本語などの非 ASCII 文字が使えるようになった** (ADR-0071)。
+  文字集合は Unicode 識別子 (UAX #31 XID): `速度指令` / `トルクゲイン` は OK、
+  空白・記号・絵文字は不可 (空白は `_` で代用)。既存の ASCII 名はすべて
+  そのまま有効。IME 変換確定の Enter が rename 確定と誤認されない
+  (composition 対応)
+- **Subsystem 外面にポート名を表示** (SPEC-0022 §7)。内部の Inport / Outport を
+  rename すると、その名前が Subsystem ブロックの対応するポート脇
+  (入力=内側左寄せ / 出力=内側右寄せ) に表示される。既定 id (`Inport_0` 等) の
+  ポートは従来どおり無表示。長い名前は truncate + ホバーで全体表示
+- **見た目が紛らわしい名前の共存を拒否**: `Gain_1` と全角の `Gain_１`、
+  `ソクド` と半角の `ｿｸﾄﾞ` のような NFKC 等価の名前は同一スコープに共存できない
+
+### Changed
+
+- **`.flw.json` の保存を `ensure_ascii=False` に統一** (Python `Simulator.save`)。
+  従来は Python 保存と GUI 保存で非 ASCII 文字のエスケープが異なり、保存経路の
+  違いだけで git diff が壊れる潜在バグがあった (ADR-0071 V5)。ASCII のみの
+  モデルはバイト等価で影響なし
+- Python API: `Simulator.rename` / `add` の重複判定が NFKC fold key ベースに
+  なり、`flode.core.identifiers` に `normalize_block_id` / `fold_block_id` を追加
+
+### Compatibility
+
+- **非 ASCII の名前を含むモデルは、v0.46.0 より前の flode では開けない**
+  (旧版の `validate_block_id` が明示エラーで拒否する)。`schema_version` は
+  据え置き (構造変更なし、ADR-0008 / ADR-0071 §(7))。ASCII 名のみのモデルは
+  完全互換
+- Python API から `Scope.plot()` (matplotlib) を使う場合、日本語タイトルの表示
+  には CJK 対応フォントの設定が必要 (`matplotlib.rcParams["font.family"]`)。
+  Web GUI の Scope は影響なし
+
 ## [0.45.0] - 2026-08-24 — アプリアイコン (favicon) 追加
 
 ### Added

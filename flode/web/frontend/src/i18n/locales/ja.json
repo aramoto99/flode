@@ -359,6 +359,14 @@
   "diagram.library_drop_invalid_ref": "不正なライブラリ参照がドロップされました。",
   "diagram.library_drop_failed": "ライブラリ entry の取得に失敗: {{message}}",
   "diagram.reset_branch_waypoint": "分岐点位置をリセット",
+  "diagram.rename.aria_label": "ブロック名を編集",
+  "diagram.rename.hint": "クリックして名前を変更",
+  "diagram.rename.empty": "名前を入力してください",
+  "diagram.rename.charset": "使用できない文字が含まれています。文字・数字・_ のみ使えます (空白は _ で代用してください)",
+  "diagram.rename.too_long": "名前が長すぎます (最大 64 文字)",
+  "diagram.rename.not_normalized": "名前の正規化形式が不正です (もう一度入力してください)",
+  "diagram.rename.duplicate": "同じ名前のブロックが既にあります: {{conflictId}}",
+  "diagram.rename.confusable_duplicate": "見た目が似た名前のブロックが既にあります (全角/半角違いなど): {{conflictId}}",
 
   "palette.library_prefix": "ライブラリ",
 
