@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- flode アプリアイコン (2026-08-24 ユーザー選定の C-2 案)。
+     角丸四角 = ブロック線図の block、中の正弦波 = 信号 (FLOw + ODE)。
+     色: 背景 slate-800 (#1e293b) / 波 blue-400 (#60a5fa) = アプリ UI の accent。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#1e293b"/>
+  <path d="M12 32 Q 22 12, 32 32 T 52 32" fill="none" stroke="#60a5fa"
+        stroke-width="6" stroke-linecap="round"/>
+</svg>

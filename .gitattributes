@@ -1,0 +1,3 @@
+# バイナリ資産を明示 (autocrlf 環境での改行変換・自動判定依存を避ける)
+*.ico binary
+*.png binary

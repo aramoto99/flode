@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.0] - 2026-08-24 — アプリアイコン (favicon) 追加
+
+### Added
+
+- **favicon を追加** (これまで未設定で `/favicon.ico` が 404 だった)。
+  デザインは「角丸四角 = ブロック線図の block、中の正弦波 = 信号」で
+  flode (= FLOw + ODE) を表現。SVG (`/favicon.svg`) を主、
+  マルチサイズ ICO (`/favicon.ico`、16/32/48px 透過) をフォールバックとして
+  `frontend/public/` に配置し、ビルド成果物と一緒に配信する
+
 ## [0.44.2] - 2026-08-02 — glyph の規格準拠方針 (ADR-0070) と RelationalOperator 表示修正
 
 「block glyph は JIS 規格かそれに準ずる規格に基づき、独自構図を発明しない」という
