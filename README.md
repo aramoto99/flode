@@ -8,69 +8,47 @@
 ブラウザ上でブロックを配線してモデルを組み、連続系・離散系・その混在系を
 `scipy.solve_ivp` (既定 RK45) でシミュレートします。
 
-## 特徴
-
-- **Web ベースのブロック線図エディタ** — ブロックをドラッグして配線、inspector
-  パネルでパラメータ編集、実行するとライブプロット。ブラウザだけで完結
-- **50+ の組み込みブロック** (下記 [ブロックライブラリ](#ブロックライブラリ))
-- **連続・離散・ハイブリッドシミュレーション** (代数ループ自動検出)
-- **Subsystem による階層化** (内部の Trigger / Enable ブロックで実行制御)
+- **Web ベースのエディタ** — ドラッグ&ドロップで配線、inspector でパラメータ編集、ライブプロット
+- **50+ の組み込みブロック**、Subsystem による階層化 (Trigger / Enable)
 - **`@block` デコレータ** — Python 関数を数行でカスタムブロック化
-- **解析機能** — 線形化、Bode / Nyquist、固有値による安定判別、根軌跡
-- **JAX による codegen + autodiff** (opt-in、実験的)
+- **解析機能** — 線形化、Bode / Nyquist、安定判別、根軌跡
 - **モデルはプレーン JSON** (`.flw.json`) — バージョン管理と相性が良い
 
 ## インストール
 
-前提: **Python 3.11+**。ソースから入れる場合は **Node.js 20+** も必要
-(frontend を一度ローカルでビルドするため)。
+前提: **Python 3.11+**。ソースから入れる場合は **Node.js 20+** も必要です。
 
 ```bash
 git clone https://github.com/aramoto99/flode.git
 cd flode
 
 # frontend をビルド (flode/server/static/ に出力される)
-cd flode/web/frontend
-npm install
-npm run build
-cd ../../..
+cd flode/web/frontend && npm install && npm run build && cd ../../..
 
 pip install -e .
 ```
 
-[GitHub Releases](https://github.com/aramoto99/flode/releases) 添付の
-prebuilt wheel なら frontend 同梱のため Node 不要
-(`pip install flode-<version>-py3-none-any.whl`)。
-PyPI には未公開のため `pip install flode` はまだ使えません。
+[GitHub Releases](https://github.com/aramoto99/flode/releases) の prebuilt wheel
+なら frontend 同梱のため Node 不要です。PyPI には未公開のため
+`pip install flode` はまだ使えません。
 
-オプション extras (`pip install -e ".[control,dev]"` のように併用可):
-
-| extras | 内容 |
-|---|---|
-| `[control]` | python-control による Bode / Nyquist / 根軌跡 |
-| `[codegen]` | JAX (CPU) — `Simulator.compile()` / `linearize(method="jax")` |
-| `[gpu]` | JAX GPU backend (NVIDIA CUDA 12 / Linux x86_64 のみ) |
-| `[dev]` | pytest, ruff, mypy, sphinx |
+オプション extras: `[control]` (Bode / Nyquist / 根軌跡)、
+`[codegen]` / `[gpu]` (JAX backend)、`[dev]` (pytest, ruff, mypy, sphinx)。
 
 ## 使い方
 
 ### Web GUI
 
 ```bash
-flode
-```
-
-サーバが起動し、既定ブラウザで UI が自動的に開きます (ポートが使用中なら
-空きポートへ自動フォールバック)。
-
-```bash
+flode                                       # サーバ起動 + ブラウザが自動で開く
 flode --workspace ./my-models --port 8770   # workspace とポートを指定
 flode --no-browser                          # ブラウザを開かない
 ```
 
 workspace は `.flw.json` を置くただのディレクトリです。サーバは既定で
-`127.0.0.1` に bind し、workspace 検索 API は `.env*` / `id_rsa` / `.ssh/`
-等の credential パスを常に除外します。
+`127.0.0.1` に bind し、workspace 検索は credential パス (`.env*` / `.ssh/` 等)
+を常に除外します。既定値は `flode --generate-config` で生成される
+`~/.flode/config.toml` に永続化できます (優先順位: CLI > config > 既定値)。
 
 ### Python API
 
@@ -112,32 +90,13 @@ scope.plot(show=True)
 | Subsystem       | Subsystem (内部の Trigger / Enable ブロックで実行制御)                    |
 | Control         | Inport, Outport, Trigger, Enable                                          |
 
-多くは `flode.blocks` から直接 import できます (一部の GUI 向け変種、例えば
-`Add` は `flode.blocks.mathops` 配下)。API リファレンスは
-`sphinx-build -b html docs docs/_build` でビルドできます。
+API リファレンスは `sphinx-build -b html docs docs/_build` でビルドできます。
 
-## `@block` デコレータ
+## 解析・カスタムブロック
 
-`Block` を継承せずに、関数 1 つでカスタムブロックを定義できます:
-
-```python
-import numpy as np
-from flode import block
-
-@block(states=1)
-def my_integrator(t: float, x: np.ndarray, u: float) -> tuple[float, np.ndarray]:
-    y = x[0]
-    x_dot = np.array([u])
-    return y, x_dot
-```
-
-`output` / `derivative` / `update` を分けたい場合はクラス形式 (`@block` を
-クラスに適用) も使えます。
-
-## 解析
-
-`flode.linearize()` はモデルを動作点まわりで数値線形化し、状態空間行列
-`(A, B, C, D)` を持つ `LinearSystem` を返します:
+`flode.linearize()` はモデルを動作点まわりで数値線形化し、`(A, B, C, D)` を持つ
+`LinearSystem` を返します。`eigenvalues()` / `is_stable()` は numpy のみで動作し、
+`bode()` / `nyquist()` / `root_locus()` には `flode[control]` が必要です。
 
 ```python
 from flode import linearize
@@ -146,31 +105,22 @@ ls = linearize(sim)
 print(ls.A.shape, ls.eigenvalues(), ls.is_stable())
 ```
 
-`eigenvalues()` / `is_stable()` は numpy のみで動作し、`bode()` /
-`nyquist()` / `root_locus()` は `flode[control]` extras が必要です。
+カスタムブロックは `@block` デコレータで関数 1 つから定義できます:
 
-## Codegen + Autodiff (JAX、opt-in)
+```python
+@block(states=1)
+def my_integrator(t, x, u):
+    return x[0], np.array([u])   # (出力, 状態微分)
+```
 
-`Simulator.compile(backend="jax")` と `linearize(method="jax")` は対象ブロック
-を `jax.jit` / `jax.jacfwd` でトレースし、XLA コンパイルと機械精度 Jacobian を
-提供します (`flode[codegen]` extras が必要)。`compile()` を呼ばない限り、
-既定の numpy 実行パスには一切影響しません。
-
-まだ実験的機能で、対応ブロックは `Constant` / `Step` / `Sine` / `Ramp` /
-`Clock` / `Gain` / `Sum` / `Integrator` + sink 系のみです。それ以外を含む
-モデルは `BlockSpecError` になります。
-
-## 設定
-
-`--workspace` / `--port` 等の既定値は `~/.flode/config.toml`
-(Windows は `%USERPROFILE%\.flode\config.toml`) に永続化できます。
-コメント付き雛形は `flode --generate-config` で生成されます。
-優先順位は **CLI 引数 > config ファイル > 既定値** です。
+実験的機能として、JAX による XLA コンパイルと機械精度 Jacobian
+(`Simulator.compile(backend="jax")` / `linearize(method="jax")`、
+`flode[codegen]` extras) もあります。対応ブロックはまだ基本 8 種 + sink 系のみです。
 
 ## バージョニング
 
-flode は [ZeroVer](https://0ver.org/) を採用しており、`0.x` に留まり続けます。
-**minor** は機能追加または破壊的変更、**patch** は修正です。リリースノートは
+[ZeroVer](https://0ver.org/) を採用しており `0.x` に留まり続けます。
+**minor** は機能追加または破壊的変更、**patch** は修正。リリースノートは
 `CHANGELOG.md` を参照してください。
 
 ## 開発
@@ -183,8 +133,7 @@ mypy flode                                  # 型チェック
 sphinx-build -W -b html docs docs/_build    # ドキュメント (CI は warning を error 扱い)
 ```
 
-frontend の開発手順 (Vite dev server) は `flode/web/frontend/README.md` を
-参照してください。
+frontend の開発手順は `flode/web/frontend/README.md` を参照してください。
 
 ## ライセンス
 
