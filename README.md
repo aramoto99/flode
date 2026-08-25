@@ -33,7 +33,7 @@ pip install -e .
 `pip install flode` はまだ使えません。
 
 オプション extras: `[control]` (Bode / Nyquist / 根軌跡)、
-`[codegen]` / `[gpu]` (JAX backend)、`[dev]` (pytest, ruff, mypy, sphinx)。
+`[dev]` (pytest, ruff, mypy, sphinx)。
 
 ## 使い方
 
@@ -112,10 +112,6 @@ print(ls.A.shape, ls.eigenvalues(), ls.is_stable())
 def my_integrator(t, x, u):
     return x[0], np.array([u])   # (出力, 状態微分)
 ```
-
-実験的機能として、JAX による XLA コンパイルと機械精度 Jacobian
-(`Simulator.compile(backend="jax")` / `linearize(method="jax")`、
-`flode[codegen]` extras) もあります。対応ブロックはまだ基本 8 種 + sink 系のみです。
 
 ## バージョニング
 

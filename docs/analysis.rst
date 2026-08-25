@@ -144,8 +144,6 @@ Numerical method
 * ``method="forward"``: forward difference, error ``O(h)``. ``n + 1``
   evaluations, half the cost of central. Useful for very large models
   where the precision difference is acceptable.
-* ``method="jax"``: reserved for Phase 5+ (autodifferentiation via
-  ``jax``). Calling now raises :class:`NotImplementedError`.
 
 The perturbation step ``h`` is selected per dimension as
 ``sqrt(eps_machine) * max(|x_i|, 1.0)`` by default, balancing

@@ -6,8 +6,7 @@
 設計方針:
 
 - **数値手法**: 中心差分 default (誤差 O(h²))、`method="forward"` で前進差分
-  (半分のコスト + 誤差 O(h)) を opt-in。`method="jax"` は将来 Phase 5 GPU で
-  追加する API スロットのみ確保 (現状は :class:`NotImplementedError`)。
+  (半分のコスト + 誤差 O(h)) を opt-in。
 - **依存追加なし**: numpy / scipy のみ。`python-control` は :func:`LinearSystem.to_control_ss`
   経由でのみ使い、未インストールでも本モジュールは動作する。
 - **既存 33 ブロック無改修**: ``Block.derivative`` / ``Block.output`` (および SM-B の
@@ -493,7 +492,7 @@ def linearize(
     t: float = 0.0,
     x: npt.NDArray[Any] | None = None,
     u: npt.NDArray[Any] | None = None,
-    method: Literal["central", "forward", "jax"] = "central",
+    method: Literal["central", "forward"] = "central",
     epsilon: float | None = None,
 ) -> LinearSystem:
     """動作点 ``(t, x, u)`` 周りでモデルを線形化し ``(A, B, C, D)`` を返す。
@@ -510,11 +509,8 @@ def linearize(
 
             - ``"central"`` (default): 中心差分、誤差 O(h²)、評価 2n+1 回
             - ``"forward"``: 前進差分、誤差 O(h)、評価 n+1 回
-            - ``"jax"``: ``jax.jacfwd`` 自動微分、機械精度 (= ADR-0037)。
-              ``flode[codegen]`` extras (= ``jax[cpu]``) が必要
         epsilon: 摂動相対サイズ。``None`` のとき次元ごとに
             ``h_i = sqrt(eps_machine) * max(|x_i|, 1.0)`` を自動採用。
-            ``method="jax"`` の場合は ``epsilon`` は無視され UserWarning。
 
     Returns:
         :class:`LinearSystem` インスタンス。
@@ -527,8 +523,6 @@ def linearize(
             出力 ndim 不整合などの構造エラー。
         SolverError: 動作点で ``derivative`` または ``output`` が NaN / Inf を返す。
         ValueError: ``method`` / ``epsilon`` の値が不正。
-        ImportError: ``method="jax"`` で ``flode[codegen]`` 未インストール
-            (= ADR-0037 §Decision §6)。
 
     Example:
         Integrator with one external input:
@@ -546,18 +540,8 @@ def linearize(
         >>> ls.C.shape  # (n_external_outputs, n_states)
         (1, 1)
     """
-    if method == "jax":
-        # ADR-0037: flode[codegen] (= jax[cpu]) で自動微分による機械精度線形化。
-        # central / forward と異なり摂動 epsilon が無関係 (= 微分が解析的)。
-        if epsilon is not None:
-            warnings.warn(
-                "linearize(method='jax'): epsilon is ignored (autodiff has no perturbation step)",
-                category=UserWarning,
-                stacklevel=2,
-            )
-        return _linearize_jax(simulator, t=t, x=x, u=u, jacobian_method="jax")
     if method not in ("central", "forward"):
-        raise ValueError(f"linearize: method must be 'central' / 'forward' / 'jax', got {method!r}")
+        raise ValueError(f"linearize: method must be 'central' / 'forward', got {method!r}")
     if epsilon is not None and epsilon <= 0.0:
         raise ValueError(f"linearize: epsilon must be > 0 (or None for auto), got {epsilon}")
 
@@ -687,100 +671,6 @@ def linearize(
             xdot_p, y_p = evaluate(t, x_op, u_plus)
             B[:, i] = (xdot_p - xdot0) / h
             D[:, i] = (y_p - y0) / h
-
-    return LinearSystem(
-        A=A,
-        B=B,
-        C=C,
-        D=D,
-        state_names=_build_state_names(layout),
-        input_names=_build_input_names(input_specs),
-        output_names=_build_output_names(output_specs),
-        operating_point={"t": float(t), "x": x_op.copy(), "u": u_op.copy()},
-    )
-
-
-def _linearize_jax(
-    simulator: Simulator,
-    *,
-    t: float,
-    x: npt.NDArray[Any] | None,
-    u: npt.NDArray[Any] | None,
-    jacobian_method: str = "jax",
-) -> LinearSystem:
-    """``jax.jacfwd`` 経由の機械精度線形化 (ADR-0037 §(3))。
-
-    ``method="jax"`` 経路の本体。``flode.compile.jax_backend`` に jax-native 評価器
-    + ``jax.jacfwd`` 計算を委譲する。central / forward と同じ前処理 (= simulator
-    setup、input/output specs 構築、動作点解決) を行ってから、最終 (A, B, C, D)
-    計算だけ jax に切替える。
-
-    Args:
-        simulator: 線形化対象の :class:`Simulator`。
-        t / x / u: 動作点 (= ADR-0026 と同形式)。
-        jacobian_method: ``LinearSystem.jacobian_method`` に記録する文字列
-            (= ``"jax"``、ADR-0037 §(4))。
-
-    Raises:
-        ImportError: ``flode[codegen]`` 未インストール (= ``_ensure_jax_available``)。
-        BlockSpecError: jax-native 未サポートのブロックを含む (= ``_validate_supported_blocks``)、
-            または連続状態がゼロ。
-    """
-    from ..compile.jax_backend import _validate_supported_blocks, linearize_via_jacfwd
-
-    # central と同じ前処理を再現 (= 副作用なしで simulator metadata を読む)
-    order = simulator._execution_order()
-    if simulator._is_sm_a_mode():
-        pass
-    else:
-        simulator._check_scope_inputs_are_scalar()
-        simulator._check_subsystem_sm_b_unsupported()
-    simulator._resolve_sample_times(order)
-    simulator._compute_dt_base()
-    layout, n_states = simulator._state_layout()
-
-    if n_states == 0:
-        raise BlockSpecError(
-            "linearize(method='jax'): model has no continuous states. Linearisation "
-            "requires at least one continuous block (ADR-0026 §(8))."
-        )
-
-    # ADR-0037 §(3) MVP: 未サポートブロックを早期検出して method='central' を案内
-    _validate_supported_blocks(simulator)
-
-    input_specs = _build_input_specs(simulator)
-    output_specs = _build_output_specs(simulator)
-    n_in = len(input_specs)
-
-    # 動作点解決
-    x_op: npt.NDArray[Any]
-    if x is None:
-        x_op = np.zeros(n_states)
-        for b, sl in layout:
-            x_op[sl] = np.asarray(b.x0, dtype=float)
-    else:
-        x_op = np.asarray(x, dtype=float).copy()
-        if x_op.shape != (n_states,):
-            raise BlockSpecError(f"linearize: x must have shape ({n_states},), got {x_op.shape}")
-
-    u_op: npt.NDArray[Any]
-    if u is None:
-        u_op = np.zeros(n_in)
-    else:
-        u_op = np.asarray(u, dtype=float).copy()
-        if u_op.shape != (n_in,):
-            raise BlockSpecError(f"linearize: u must have shape ({n_in},), got {u_op.shape}")
-
-    # jax.jacfwd で (A, B, C, D) を計算
-    A, B, C, D = linearize_via_jacfwd(
-        simulator,
-        t=t,
-        x_op=x_op,
-        u_op=u_op,
-        layout=layout,
-        input_specs=input_specs,
-        output_specs=output_specs,
-    )
 
     return LinearSystem(
         A=A,

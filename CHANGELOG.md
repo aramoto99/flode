@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.0] - 2026-08-26 — 実験的 JAX / GPU 経路の削除
+
+### Removed
+
+- **JAX backend (codegen / GPU) 経路を削除** (破壊的変更)。
+  `Simulator.compile()`、`flode.compile` パッケージ (`CompiledSimulator`)、
+  `linearize(method="jax")`、extras `flode[codegen]` / `flode[gpu]`、
+  `examples/jax_jacfwd_pid.py` を除去し、`[dev]` から `jax[cpu]` を外した。
+  実装は線形化時の Jacobian 1 回分にしか JAX を使っておらず
+  (`CompiledSimulator.run()` / `.step()` は未実装、`jax.jit` 未使用、
+  jax-native 対応ブロック 8 / 55 種)、シミュレーションの GPU 加速は
+  一度も提供できていなかった。GPU / バッチ実行の方向性は再設計の上で
+  改めて判断する (保留)
+- `linearize(method="jax")` を渡すと他の不正値と同様 `ValueError`。
+  中心差分 (`"central"`、既定) / 前進差分 (`"forward"`) は無変更
+
 ## [0.47.1] - 2026-08-25 — ルックアップテーブル系 glyph をプロット構図に統一
 
 ### Fixed

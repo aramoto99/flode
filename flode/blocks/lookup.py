@@ -71,9 +71,6 @@ class LookupTable1D(Block):
         入力 ``nan`` は ``extrapolation`` 設定に関わらず ``nan`` を伝播する
         (scipy 仕様、ADR-0053 寛容方針と整合)。入力 ``±inf`` は ``extrapolation``
         設定に従う (clip で端点値、linear で ``±inf``、error で例外)。
-
-        ``Simulator.compile()`` (ADR-0037 codegen + GPU jax) 経路では
-        ``scipy.interpolate`` が XLA トレース不可なため fallback 対象になる。
     """
 
     _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")
@@ -328,9 +325,6 @@ class LookupTable2D(Block):
         実用上限は 50×50 程度を目安とする (SPEC-0017 §非機能要件)。それ以上の
         サイズも構築・評価は可能だが、frontend ``<GridEditor>`` の描画が重くなる。
         virtualization は SPEC-0018 (n-D Lookup) で再考。
-
-        ``Simulator.compile()`` (ADR-0037) 経路では ``RegularGridInterpolator``
-        が XLA トレース不可なため fallback 対象 (1-D と同じ)。
     """
 
     _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")
@@ -567,10 +561,7 @@ class Prelookup(Block):
             ``extrapolation`` の enum 値外、または要素が float に coerce できない。
 
     Note:
-        scipy 不使用の純 numpy 実装のため、``Simulator.compile()`` (ADR-0037)
-        経路で **XLA トレース可能候補** (SPEC-0008/0017 とは対照的)。ただし
-        ``_SUPPORTED_BLOCK_TYPES`` への正式追加は ADR-0037 follow-up で扱う
-        (Wave 3 全体方針、ADR-0067 §D-1)。
+        scipy 不使用の純 numpy 実装 (SPEC-0008/0017 とは対照的)。
     """
 
     _ALLOWED_EXTRAPOLATIONS: tuple[str, ...] = ("clip", "linear", "error")
@@ -686,8 +677,7 @@ class InterpolationUsingPrelookup(Block):
             ``interpolation`` の enum 値外。
 
     Note:
-        scipy 不使用の純 numpy 実装。GPU codegen 対応は ADR-0037 follow-up
-        で扱う (ADR-0067 §D-1)。
+        scipy 不使用の純 numpy 実装。
     """
 
     _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")
@@ -800,11 +790,6 @@ class LookupTableND(Block):
     Raises:
         BlockSpecError: 軸数 < 2 / 各軸長さ < 2 / 厳密単調増加違反 / shape 不一致 /
             enum 値外 / 数値 coerce 失敗。
-
-    Note:
-        ``Simulator.compile()`` (ADR-0037) 経路では ``RegularGridInterpolator``
-        が XLA トレース不可なため fallback 対象 (LookupTable1D/2D と同方針、
-        ADR-0037 follow-up で正式対応)。
     """
 
     _ALLOWED_INTERPOLATIONS: tuple[str, ...] = ("linear", "nearest", "flat")

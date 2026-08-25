@@ -62,10 +62,6 @@ class RateLimiter(Block):
     Raises:
         BlockSpecError: ``rising_slew_rate <= 0``、``falling_slew_rate >= 0``、
             ``sample_time <= 0``。
-
-    Note:
-        ``Simulator.compile()`` (ADR-0037 codegen) では既存 ZOH と同パターン
-        のため、特別な fallback は不要。
     """
 
     def __init__(

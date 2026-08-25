@@ -63,9 +63,6 @@ class RandomSource(Block):
         ``low >= high`` / ``std <= 0`` の検証は ``distribution`` に関係なく実行する
         (= 後で distribution を切り替えたときの罠を回避する safety net)。
 
-        ``Simulator.compile()`` (ADR-0037 codegen + GPU jax) 経路では
-        ``np.random.Generator`` が XLA トレース不可なため fallback 対象になる。
-
     Example:
         >>> # uniform [0, 1] (既定)、seed 指定で決定性
         >>> rs = RandomSource(sample_time=0.1, seed=42)

@@ -44,7 +44,6 @@ from .persistence import (
 
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
     from ..analysis.linearize import LinearSystem
-    from ..compile.compiled_simulator import CompiledSimulator
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
@@ -929,45 +928,6 @@ class Simulator:
                 inputs[b] = _gather_inputs(b)
         return outputs, inputs
 
-    def compile(
-        self,
-        *,
-        backend: Literal["jax", "numpy"] = "jax",
-    ) -> CompiledSimulator:
-        """純粋関数表現を生成して compile (= XLA HLO 化、ADR-0037 §Decision §(2))。
-
-        Phase 5b で導入された opt-in API。``backend="jax"`` の場合 ``jax.jit`` で
-        XLA 化、``backend="numpy"`` の場合は numpy 参照実装。``Simulator.run()``
-        (= numpy ホットパス) は本メソッドを呼び出さない限り影響を受けない (=
-        ADR-0036 §(8) / ADR-0037 §Decision §(8) 数値完全不変ガード)。
-
-        Args:
-            backend: ``"jax"`` (default、jax.jit + XLA) または ``"numpy"`` (= numpy
-                参照実装、テスト / debug 用)。
-
-        Returns:
-            :class:`flode.compile.CompiledSimulator`。``linearize()`` で
-            ``jax.jacfwd`` 経由の機械精度線形化、``step()`` / ``run()`` は v0.17.1+
-            で本格実装される。
-
-        Raises:
-            ImportError: ``backend="jax"`` で ``flode[codegen]`` 未インストール。
-            BlockSpecError: モデル内に Codegen 不可能なブロック (= 内部に
-                ``Trigger`` / ``Enable`` control block を持つ ``Subsystem``、MVP では
-                Python fallback 必須、ADR-0058 §論点 5) がある。
-            ValueError: ``backend`` が ``"jax"`` / ``"numpy"`` 以外。
-
-        Examples:
-            >>> from flode import Simulator
-            >>> sim = Simulator()
-            >>> # ... add blocks ...
-            >>> compiled = sim.compile(backend="jax")  # doctest: +SKIP
-            >>> ls = compiled.linearize()  # 機械精度 Jacobian (= ADR-0037 §(3))
-        """
-        from ..compile.compiled_simulator import _build_compiled_simulator
-
-        return _build_compiled_simulator(self, backend=backend)
-
     def run(self) -> None:
         """シミュレーションを実行する。
 
@@ -1286,7 +1246,7 @@ class Simulator:
         t: float = 0.0,
         x: npt.NDArray[Any] | None = None,
         u: npt.NDArray[Any] | None = None,
-        method: Literal["central", "forward", "jax"] = "central",
+        method: Literal["central", "forward"] = "central",
         epsilon: float | None = None,
     ) -> LinearSystem:
         """動作点 ``(t, x, u)`` 周りでモデルを線形化する (ADR-0026)。
@@ -1299,7 +1259,7 @@ class Simulator:
             x: 連続状態の動作点 (shape ``(n_states,)``)。``None`` で各ブロックの
                 ``x0`` を ``_state_layout()`` 順に concat したもの。
             u: 外部入力の動作点 (shape ``(n_inputs_total,)``)。``None`` で全ゼロ。
-            method: ``"central"`` (default) / ``"forward"``。``"jax"`` は Phase 5+ 予約。
+            method: ``"central"`` (default) / ``"forward"``。
             epsilon: 摂動相対 step。``None`` で次元ごと自動 (``sqrt(eps_machine)``)。
 
         Returns:
