@@ -71,12 +71,12 @@ describe("blockSISOPorts", () => {
       x: 100,
       y: 200,
     };
-    // Gain shape: triangle-r, width=60, height=50 → output at center (50%)
+    // Gain shape: triangle-r, width=56, height=48 (v0.47.0) → output at center (50%)
     // input topPct = (0+1)*100/(1+1) = 50
     const ports = blockSISOPorts(block, 1, 1);
     expect(ports).not.toBeNull();
-    expect(ports!.input).toEqual({ x: 100, y: 225 }); // 200 + 50/2
-    expect(ports!.output).toEqual({ x: 160, y: 225 }); // 100 + 60, 200 + 25
+    expect(ports!.input).toEqual({ x: 100, y: 224 }); // 200 + 48/2
+    expect(ports!.output).toEqual({ x: 156, y: 224 }); // 100 + 56, 200 + 24
   });
 
   it("returns null for non-SISO blocks", () => {

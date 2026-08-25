@@ -1031,18 +1031,57 @@ const OutportGlyph = ({ className }: GlyphProps): JSX.Element => (
 // ADR-0058 §論点 1: control block glyph。Subsystem 内部に置く境界ブロック
 // (Inport / Outport と並ぶ"control"カテゴリ) の palette アイコン。
 // 純線画、24×24 viewBox 中央寄せ、currentColor で外側から色制御可能。
+/** Trigger のエッジ種別 (Python ``TriggerType`` と同じ literal)。 */
+export type TriggerEdgeMode = "rising" | "falling" | "either" | "function-call";
+
+/**
+ * v0.47.0: Trigger glyph を稲妻 (発明) からリファレンスツールの de facto
+ * 「エッジ記号」(ステップ波形の立ち上がり/立ち下がりに矢印) に変更 (ADR-0070 ④、
+ * 初版で「保留」としていた項目)。canvas では ``trigger_type`` に応じて
+ * rising ↑ / falling ↓ / either ↕ / function-call ``f()`` を描き分ける。
+ */
+export const TriggerEdgeGlyph = ({
+  mode = "rising",
+  className,
+}: GlyphProps & { mode?: TriggerEdgeMode }): JSX.Element => {
+  if (mode === "function-call") {
+    return (
+      <svg {...G_PROPS} className={className}>
+        <text
+          x="12"
+          y="15"
+          textAnchor="middle"
+          fontSize="9"
+          fontFamily="ui-monospace,monospace"
+          fill="currentColor"
+          stroke="none"
+        >
+          f()
+        </text>
+      </svg>
+    );
+  }
+  if (mode === "falling") {
+    return (
+      <svg {...G_PROPS} className={className}>
+        {/* 高 → 低のステップ + 下向き矢印頭 */}
+        <polyline points="3,7 10,7 10,17 21,17" />
+        <polyline points="7,14 10,17 13,14" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...G_PROPS} className={className}>
+      {/* 低 → 高のステップ + 上向き矢印頭 (either は下向きも重ねる) */}
+      <polyline points="3,17 10,17 10,7 21,7" />
+      <polyline points="7,10 10,7 13,10" />
+      {mode === "either" && <polyline points="7,14 10,17 13,14" />}
+    </svg>
+  );
+};
+
 const TriggerGlyph = ({ className }: GlyphProps): JSX.Element => (
-  <svg {...G_PROPS} className={className}>
-    {/* 稲妻シルエット (Trigger を象徴) */}
-    <polyline
-      points="14,3 9,12 13,12 10,21"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={SW}
-      strokeLinejoin="miter"
-      strokeLinecap="round"
-    />
-  </svg>
+  <TriggerEdgeGlyph mode="rising" className={className} />
 );
 
 const EnableGlyph = ({ className }: GlyphProps): JSX.Element => (
@@ -1071,7 +1110,9 @@ const TriggerIndicatorGlyph = ({ className }: GlyphProps): JSX.Element => (
     strokeLinecap="round"
     className={className}
   >
-    <polyline points="7,1 4,6 6,6 5,11" />
+    {/* v0.47.0: 稲妻 → 立ち上がりエッジ記号 (palette glyph と同じ文法) */}
+    <polyline points="1,9 5,9 5,3 11,3" />
+    <polyline points="3.5,4.5 5,3 6.5,4.5" />
   </svg>
 );
 

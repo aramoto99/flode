@@ -24,12 +24,17 @@ export interface BlockShape {
  * 各 type_path → 外形。明示エントリにない type_path は default ``rect``。
  */
 const SHAPE_BY_TYPE: Record<string, BlockShape> = {
+  // v0.47.0: 寸法を 8px モジュール基調に整理 (Gain 60×50 → 56×48、円 44 → 48、
+  // rect-wide 96×48、Subsystem 120×64)。正方形群 (48) と並べたときの段差を無くし、
+  // 配線の水平が合いやすくする。例外: 境界 / タグ系 (Inport / Outport 44×26、
+  // Goto / From 72×28) は「通常ブロックより一段小さい」ことを優先し高さは 8 の倍数
+  // にしない (意図的)。
   // -------- 三角形 --------
-  "flode.blocks.mathops.Gain": { kind: "triangle-r", width: 60, height: 50 },
+  "flode.blocks.mathops.Gain": { kind: "triangle-r", width: 56, height: 48 },
 
   // -------- 円 --------
-  "flode.blocks.mathops.Sum":     { kind: "circle", width: 44, height: 44 },
-  "flode.blocks.mathops.Product": { kind: "circle", width: 44, height: 44 },
+  "flode.blocks.mathops.Sum":     { kind: "circle", width: 48, height: 48 },
+  "flode.blocks.mathops.Product": { kind: "circle", width: 48, height: 48 },
   // v0.35.4: Divide を矩形化 (ユーザー要望)。signs ("*/") の per-port 表示が
   // 円形より矩形の方が見やすい (Add / Sum と統一)。
   "flode.blocks.mathops.Divide":  { kind: "rect", width: 48, height: 48 },
@@ -38,25 +43,31 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.routing.Mux":   { kind: "bar", width: 6, height: 56 },
   "flode.blocks.routing.Demux": { kind: "bar", width: 6, height: 56 },
 
-  // -------- Subsystem (リファレンスツール風: 二重枠の少し大きめ rect) --------
-  "flode.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
+  // -------- Subsystem --------
+  // v0.47.0: 96×56 → 120×64。ポートラベル常時表示 (v0.46.1) で内側に入力 /
+  // 出力ラベルが並ぶため、中央の余白を確保する。縦はポート数で自動伸長
+  // (diagramConverter、container はピッチ 16px)。
+  "flode.subsystems.subsystem.Subsystem":      { kind: "rect", width: 120, height: 64 },
 
   // -------- カプセル (Inport / Outport) --------
   // v0.46.2: 台形 → 角丸カプセル + ポート番号 (リファレンスツールの de facto 形状、
   // ADR-0070 ④)。台形は信号タグ (Goto/From) 系の「尖った形」に見えるため誤読を
   // 招いていた (ユーザー指摘)。
-  "flode.subsystems.ports.Inport":  { kind: "stadium", width: 56, height: 32 },
-  "flode.subsystems.ports.Outport": { kind: "stadium", width: 56, height: 32 },
+  // v0.47.0: 56×32 → 44×26。境界ブロックは通常ブロック (48 正方形) より一段小さく
+  // して「端点」であることを形の大きさでも示す (リファレンスツール同様)。
+  "flode.subsystems.ports.Inport":  { kind: "stadium", width: 44, height: 26 },
+  "flode.subsystems.ports.Outport": { kind: "stadium", width: 44, height: 26 },
 
   // -------- 広めの矩形 (formula 多め / 値表示) --------
-  "flode.blocks.continuous.TransferFunction":     { kind: "rect-wide", width: 92, height: 44 },
-  "flode.blocks.continuous.StateSpace":           { kind: "rect-wide", width: 100, height: 44 },
-  "flode.blocks.continuous.MimoTransferFunction": { kind: "rect-wide", width: 92, height: 44 },
-  "flode.blocks.discrete.DiscreteTransferFunction":{ kind: "rect-wide", width: 92, height: 44 },
-  "flode.blocks.discrete.DiscreteStateSpace":     { kind: "rect-wide", width: 100, height: 44 },
-  "flode.blocks.discrete.DiscreteIntegrator":     { kind: "rect-wide", width: 80, height: 44 },
+  // v0.47.0: 92/100×44 → 96×48 (8px モジュール、正方形群と天地を揃える)
+  "flode.blocks.continuous.TransferFunction":     { kind: "rect-wide", width: 96, height: 48 },
+  "flode.blocks.continuous.StateSpace":           { kind: "rect-wide", width: 96, height: 48 },
+  "flode.blocks.continuous.MimoTransferFunction": { kind: "rect-wide", width: 96, height: 48 },
+  "flode.blocks.discrete.DiscreteTransferFunction":{ kind: "rect-wide", width: 96, height: 48 },
+  "flode.blocks.discrete.DiscreteStateSpace":     { kind: "rect-wide", width: 96, height: 48 },
+  "flode.blocks.discrete.DiscreteIntegrator":     { kind: "rect-wide", width: 80, height: 48 },
   // -------- Display は live 数値を大きく表示するため広め --------
-  "flode.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 44 },
+  "flode.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 48 },
 
   // -------- v0.35.0: Add (Sum の矩形版) --------
   "flode.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },
@@ -94,8 +105,9 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
   // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
-  "flode.blocks.routing.Goto":               { kind: "tag-notch-l", width: 80, height: 32 },
-  "flode.blocks.routing.From":               { kind: "trapezoid-r", width: 80, height: 32 },
+  // v0.47.0: 80×32 → 72×28 (タグ系は通常ブロックより一段小さく)
+  "flode.blocks.routing.Goto":               { kind: "tag-notch-l", width: 72, height: 28 },
+  "flode.blocks.routing.From":               { kind: "trapezoid-r", width: 72, height: 28 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。

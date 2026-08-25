@@ -25,7 +25,9 @@ import {
 import {
   BlockGlyph,
   EnableIndicatorGlyph,
+  TriggerEdgeGlyph,
   TriggerIndicatorGlyph,
+  type TriggerEdgeMode,
 } from "../lib/blockGlyphs";
 import {
   getBlockShape,
@@ -1012,6 +1014,27 @@ function ShapeContent({
     );
   }
 
+  // v0.47.0: Trigger は trigger_type に応じてエッジ記号を描き分ける (rising ↑ /
+  // falling ↓ / either ↕ / function-call f())。palette glyph は rising 固定。
+  if (typePath === TRIGGER_TYPE) {
+    const raw = (paramsRaw as Record<string, unknown>).trigger_type;
+    const mode: TriggerEdgeMode =
+      raw === "falling" || raw === "either" || raw === "function-call"
+        ? raw
+        : "rising";
+    return (
+      <div
+        className="absolute inset-0 flex items-center justify-center px-1.5"
+        style={{ color }}
+        data-testid={`trigger-glyph-${mode}`}
+      >
+        <div className="h-[70%] w-[80%]">
+          <TriggerEdgeGlyph mode={mode} />
+        </div>
+      </div>
+    );
+  }
+
   // それ以外の rect: リファレンスツール風に **glyph を中央大きく** 配置 (param 値の併記は
   // しない、リファレンスツールも icon only)。param 値はパラメータパネルで見る。
   return (
@@ -1056,6 +1079,12 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
       return 24; // 縦長前提だが極端に小さくはしない
     case "circle":
       return 28;
+    case "stadium":
+    case "tag-notch-l":
+    case "trapezoid-r":
+      // v0.47.0: 境界 / タグ系は既定 26〜28 なので最小値も下げる。幅側
+      // (minWidthForKind) は既存の 36 / 40 で既定幅 44 / 72 を下回るため変更なし
+      return 20;
     default:
       return 28;
   }

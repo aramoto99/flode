@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.0] - 2026-08-25 — ブロック寸法の整理 (8px モジュール基調) と Trigger のエッジ記号化
+
+### Changed
+
+- **ブロック既定サイズを 8px モジュールを基調に整理し、相対比を揃えた**
+  (境界 / タグ系のみ視認性を優先して一段小さい 26 / 28px 高):
+  - Subsystem 96×56 → **120×64**、ポートピッチ 12 → **16px** (container のみ)。
+    v0.46.1 のポートラベル常時表示で内側に入力 / 出力ラベルが並ぶため、
+    中央の余白と行間を確保
+  - Inport / Outport 56×32 → **44×26**、Goto / From 80×32 → **72×28**。
+    境界・タグ系は通常ブロック (48 正方形) より一段小さくし、「端点 / タグ」
+    であることを大きさでも示す (リファレンスツール同様)
+  - Gain 60×50 → **56×48**、Sum / Product 44 → **48**、TransferFunction /
+    StateSpace 系 / Display 92〜100×44 → **96×48**。正方形群 (48) と天地が揃い、
+    配線の水平が合いやすくなった
+  - 正方形 48 / 既定矩形 72×40 / Mux バー / Switch は据え置き
+  - `.flw.json` は無変更。手動リサイズ済み (`layout.w/h` あり) のブロックは
+    そのサイズを維持し、未リサイズのブロックだけ新既定で描画される。
+    既知のトレードオフ: 旧ピッチ (12px) 基準で高さを手動調整済みの Subsystem は
+    新ピッチ (16px) が適用されず手狭なまま残り得る (一度リサイズし直せば解消)
+- **Trigger の glyph を稲妻からエッジ記号に変更** (ADR-0070 ④ de facto、初版で
+  保留していた項目)。canvas では `trigger_type` に応じて rising ↑ / falling ↓ /
+  either ↕ / function-call `f()` を描き分け。パレット glyph と Subsystem 上辺の
+  indicator も同じエッジ記号に統一
+
 ## [0.46.2] - 2026-08-25 — Inport / Outport をカプセル形、Goto / From を五角形タグ形に
 
 ### Fixed

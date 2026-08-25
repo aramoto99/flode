@@ -30,11 +30,11 @@ describe("blockShapes", () => {
     const from = getBlockShape("flode.blocks.routing.From");
     expect(goto.kind).toBe("tag-notch-l");
     expect(from.kind).toBe("trapezoid-r");
-    // 同じサイズ (= UI の統一感)
-    expect(goto.width).toBe(80);
-    expect(goto.height).toBe(32);
-    expect(from.width).toBe(80);
-    expect(from.height).toBe(32);
+    // 同じサイズ (= UI の統一感)、v0.47.0: タグ系は通常ブロックより一段小さい 72×28
+    expect(goto.width).toBe(72);
+    expect(goto.height).toBe(28);
+    expect(from.width).toBe(72);
+    expect(from.height).toBe(28);
   });
 
   it("returns stadium (capsule) for Inport / Outport (v0.46.2, de facto shape)", () => {

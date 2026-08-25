@@ -95,7 +95,10 @@ export function modelToDiagram(
     // 同じ shape kind でも port 数が増えたら高さを伸ばす (ハンドルが密集して重ならない
     // ように)。各ハンドルは ~7px、最低 12px ピッチを確保する。
     const maxPorts = Math.max(ports.nInputs, ports.nOutputs);
-    const minHeightForPorts = maxPorts * 12 + 8;
+    // v0.47.0: Subsystem (container) はポート脇にラベル (9px) が並ぶため 16px
+    // ピッチ、それ以外は従来の 12px (ハンドル ~7px に対して十分)。
+    const portPitch = meta?.is_container ? 16 : 12;
+    const minHeightForPorts = maxPorts * portPitch + 8;
     // ユーザーが NodeResizer で手動リサイズした値が layout にあれば優先する
     // (= ADR-0020 §(2) で Phase 4+ 送りとしていた node サイズ永続化)。
     const layoutEntry = layout[b.id];
