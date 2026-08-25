@@ -24,13 +24,12 @@ describe("blockShapes", () => {
     expect(getBlockShape("flode.blocks.routing.Demux").kind).toBe("bar");
   });
 
-  it("returns rect for Goto / From (SPEC-0003 / ADR-0055)", () => {
-    // tag ラベル中心の表示なので rect、横長 80x32
-    // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り
+  it("returns pentagon tags for Goto (notch-l) / From (trapezoid-r) (v0.46.2, ADR-0070 ④)", () => {
+    // v0.46.2: 矩形 → 五角形タグ。Goto = 左辺が凹むリボン尾、From = 右辺が尖る矢印頭
     const goto = getBlockShape("flode.blocks.routing.Goto");
     const from = getBlockShape("flode.blocks.routing.From");
-    expect(goto.kind).toBe("rect");
-    expect(from.kind).toBe("rect");
+    expect(goto.kind).toBe("tag-notch-l");
+    expect(from.kind).toBe("trapezoid-r");
     // 同じサイズ (= UI の統一感)
     expect(goto.width).toBe(80);
     expect(goto.height).toBe(32);
@@ -38,9 +37,13 @@ describe("blockShapes", () => {
     expect(from.height).toBe(32);
   });
 
-  it("returns trapezoid-r for Inport, trapezoid-l for Outport", () => {
-    expect(getBlockShape("flode.subsystems.ports.Inport").kind).toBe("trapezoid-r");
-    expect(getBlockShape("flode.subsystems.ports.Outport").kind).toBe("trapezoid-l");
+  it("returns stadium (capsule) for Inport / Outport (v0.46.2, de facto shape)", () => {
+    const inport = getBlockShape("flode.subsystems.ports.Inport");
+    const outport = getBlockShape("flode.subsystems.ports.Outport");
+    expect(inport.kind).toBe("stadium");
+    expect(outport.kind).toBe("stadium");
+    // カプセルは rx = h/2 前提なので幅 >= 高さ
+    expect(inport.width).toBeGreaterThanOrEqual(inport.height);
   });
 
   it("returns rect-wide for TransferFunction / StateSpace family", () => {

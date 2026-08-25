@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.2] - 2026-08-25 — Inport / Outport をカプセル形、Goto / From を五角形タグ形に
+
+### Fixed
+
+- **Inport / Outport の外形を台形から角丸カプセル (小判型) + ポート番号に変更**
+  (ADR-0070 ④ de facto 形状踏襲)。従来の台形は業界標準ブロック線図ツールの
+  文法では信号タグ (Goto / From) 系の「尖った形」に見えるため誤読を招いていた
+  (ユーザー指摘)
+- **Goto / From の外形を矩形から五角形タグ形に変更**: Goto は左辺が凹むリボン尾、
+  From は右辺が尖る矢印頭 (ADR-0070 の優先度 5「de facto 確認後に置換」を実施、
+  優先度 4 へ昇格)
+- パレットのサムネイル glyph も同じ形状に描き直し (glyph = canvas 原則)。
+  Inport / Outport は数字 `1` + 向きを示す chevron、Goto / From は五角形 + `A`
+- 内部の shape kind: `stadium` / `tag-notch-l` を追加、`trapezoid-l` を削除
+  (`trapezoid-r` は From に転用)。`.flw.json` の変更なし (形状はコード側の定義)
+
 ## [0.46.1] - 2026-08-25 — Subsystem ポートラベルを既定名でも常時表示
 
 ### Fixed

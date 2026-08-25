@@ -8,8 +8,9 @@ export type BlockShapeKind =
   | "triangle-r"     // 右向き三角形 (Gain)
   | "circle"         // 円 (Sum, Product, Divide)
   | "bar"            // 縦長バー (Mux, Demux)
-  | "trapezoid-r"    // 右向き台形 (Inport)
-  | "trapezoid-l";   // 左向き台形 (Outport)
+  | "trapezoid-r"    // 右辺が尖る五角形タグ (From: 矢印頭、v0.46.2 で Inport から転用)
+  | "tag-notch-l"    // 左辺が凹む五角形タグ (Goto: リボン尾、v0.46.2)
+  | "stadium";       // 角丸カプセル (Inport / Outport、v0.46.2: de facto 形状)
 
 export interface BlockShape {
   kind: BlockShapeKind;
@@ -40,9 +41,12 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // -------- Subsystem (リファレンスツール風: 二重枠の少し大きめ rect) --------
   "flode.subsystems.subsystem.Subsystem":      { kind: "rect", width: 96, height: 56 },
 
-  // -------- 台形 --------
-  "flode.subsystems.ports.Inport":  { kind: "trapezoid-r", width: 64, height: 38 },
-  "flode.subsystems.ports.Outport": { kind: "trapezoid-l", width: 64, height: 38 },
+  // -------- カプセル (Inport / Outport) --------
+  // v0.46.2: 台形 → 角丸カプセル + ポート番号 (リファレンスツールの de facto 形状、
+  // ADR-0070 ④)。台形は信号タグ (Goto/From) 系の「尖った形」に見えるため誤読を
+  // 招いていた (ユーザー指摘)。
+  "flode.subsystems.ports.Inport":  { kind: "stadium", width: 56, height: 32 },
+  "flode.subsystems.ports.Outport": { kind: "stadium", width: 56, height: 32 },
 
   // -------- 広めの矩形 (formula 多め / 値表示) --------
   "flode.blocks.continuous.TransferFunction":     { kind: "rect-wide", width: 92, height: 44 },
@@ -84,12 +88,14 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
 
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベル
-  // (= ``[tag]`` / ``>tag>``) を表示するため横長の rect。
+  // (= ``[tag]`` / ``>tag>``) を表示するため横長。
+  // v0.46.2: 矩形 → 五角形タグ (リファレンスツールの de facto 形状、ADR-0070
+  // 優先度 5 → 4 へ昇格)。Goto = 左辺が凹むリボン尾、From = 右辺が尖る矢印頭。
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
   // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
-  "flode.blocks.routing.Goto":               { kind: "rect", width: 80, height: 32 },
-  "flode.blocks.routing.From":               { kind: "rect", width: 80, height: 32 },
+  "flode.blocks.routing.Goto":               { kind: "tag-notch-l", width: 80, height: 32 },
+  "flode.blocks.routing.From":               { kind: "trapezoid-r", width: 80, height: 32 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。
@@ -117,6 +123,7 @@ export function isKnownShapeKind(s: string): s is BlockShapeKind {
     "circle",
     "bar",
     "trapezoid-r",
-    "trapezoid-l",
+    "tag-notch-l",
+    "stadium",
   ].includes(s);
 }

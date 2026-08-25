@@ -1,5 +1,6 @@
 // ADR-0019 §(2)(3) + 視覚化リファイン: リファレンスツール風にブロック外形を type ごとに変える。
-// - 三角 (Gain) / 円 (Sum, Product, Divide) / バー (Mux, Demux) / 台形 (Inport, Outport)
+// - 三角 (Gain) / 円 (Sum, Product) / バー (Mux, Demux) / カプセル (Inport, Outport)
+//   / 五角形タグ (Goto = 左辺凹み, From = 右辺尖り)
 // - その他は compact rectangle (~72×40px) に固有 SVG glyph
 // - 入力 = 左、出力 = 右 (リファレンスツール慣習)
 // - block id は外形の **下** に小さく出す (リファレンスツールもブロック名はノード下)
@@ -498,14 +499,30 @@ function ShapeOutline({
         />
       )}
       {kind === "trapezoid-r" && (
+        // 右辺が尖る五角形タグ (From: 矢印頭)
         <polygon
           points={`1,1 ${w - h / 2 - 1},1 ${w - 1},${h / 2} ${w - h / 2 - 1},${h - 1} 1,${h - 1}`}
           {...commonProps}
         />
       )}
-      {kind === "trapezoid-l" && (
+      {kind === "tag-notch-l" && (
+        // 左辺が凹む五角形タグ (Goto: リボン尾)。凹みは h/4 と浅めにする:
+        // 配線の終点は bbox 左辺 (edgeRectIntersect) なので、深い凹みだと矢印頭と
+        // 輪郭の間に隙間が目立つ。
         <polygon
-          points={`${h / 2 + 1},1 ${w - 1},1 ${w - 1},${h - 1} ${h / 2 + 1},${h - 1} 1,${h / 2}`}
+          points={`1,1 ${w - 1},1 ${w - 1},${h - 1} 1,${h - 1} ${h / 4 + 1},${h / 2}`}
+          {...commonProps}
+        />
+      )}
+      {kind === "stadium" && (
+        // 角丸カプセル (Inport / Outport): rx = 高さの半分で両端が半円
+        <rect
+          x={1}
+          y={1}
+          width={w - 2}
+          height={h - 2}
+          rx={(h - 2) / 2}
+          ry={(h - 2) / 2}
           {...commonProps}
         />
       )}
@@ -604,8 +621,9 @@ function ShapeContent({
     return <></>;
   }
 
-  // 台形 (Inport / Outport): リファレンスツール風にポート番号 (= port_idx + 1) を表示。
-  if (kind === "trapezoid-r" || kind === "trapezoid-l") {
+  // カプセル (Inport / Outport): リファレンスツール風にポート番号 (= port_idx + 1) を表示。
+  // kind ではなく typePath で判定する (= shape 変更に追従して番号表示が消えない)。
+  if (typePath === INPORT_TYPE || typePath === OUTPORT_TYPE) {
     const portIdx =
       typeof (paramsRaw as Record<string, unknown>).port_idx === "number"
         ? ((paramsRaw as Record<string, unknown>).port_idx as number)
@@ -778,10 +796,12 @@ function ShapeContent({
     const isGoto = typePath.endsWith(".Goto");
     const label = isGoto ? `[${tag}]` : `>${tag}>`;
     const testId = isGoto ? "goto-label" : "from-label";
+    // v0.46.2: 五角形タグの凹み (Goto 左辺) / 尖り (From 右辺) 分だけ内側に寄せる
+    const padCls = isGoto ? "pl-3 pr-1" : "pl-1 pr-3";
     return (
       <div
         data-testid={testId}
-        className="absolute inset-0 flex items-center justify-center px-1 font-mono text-[11px] font-semibold text-slate-800"
+        className={`absolute inset-0 flex items-center justify-center ${padCls} font-mono text-[11px] font-semibold text-slate-800`}
       >
         <span className="truncate">{label}</span>
       </div>
@@ -1021,7 +1041,7 @@ function minWidthForKind(kind: BlockShape["kind"]): number {
     case "triangle-r":
       return 32;
     case "trapezoid-r":
-    case "trapezoid-l":
+    case "stadium":
       return 36;
     case "rect-wide":
       return 56;
@@ -1211,13 +1231,12 @@ function inputHandlePosition(
       pos: { axis: "x", leftPct: controlSlots.hasTrigger ? 25 : 50 },
     };
   }
-  // 単一入力 + 単数前提形状 (円心 1 点 / 台形)。複数あれば縦に並べる。
-  // 三角形 / 円 / バー / Outport (台形-l) は全部「左辺に等間隔配置」で OK。
+  // 単一入力 + 単数前提形状 (三角形 / 円 / バー)。複数あれば縦に並べる。
+  // 三角形 / 円 / バー は全部「左辺に等間隔配置」で OK (制御 slot を持たない)。
   if (
     shape.kind === "triangle-r" ||
     shape.kind === "circle" ||
-    shape.kind === "bar" ||
-    shape.kind === "trapezoid-l"
+    shape.kind === "bar"
   ) {
     return {
       position: Position.Left,
@@ -1243,7 +1262,7 @@ function outputHandlePosition(
 ): { position: Position; pos: HandlePos } {
   // 三角形 (Gain): 出力は頂点 1 点 → 中央。複数想定なし。
   // 円 (Sum/Product/Divide): n_outputs=1 確定なので中央でよい。複数になることはない。
-  // バー / 台形 / その他: 右辺に等間隔配置。
+  // バー / カプセル / 五角形タグ / その他: 右辺に等間隔配置。
   if (shape.kind === "triangle-r" || shape.kind === "circle") {
     return {
       position: Position.Right,

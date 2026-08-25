@@ -86,7 +86,7 @@ export function modelToDiagram(
   const nodes: BlockNode[] = model.blocks.map((b, idx) => {
     const pos = layout[b.id] ?? gridFallback(idx);
     const meta = registry?.get(b.type);
-    // ADR-0019: ブロック type ごとに外形サイズが異なる (三角・円・バー・台形・矩形)。
+    // ADR-0019: ブロック type ごとに外形サイズが異なる (三角・円・バー・カプセル・五角形タグ・矩形)。
     // ノードの bounding box は **shape のみ**。ID ラベルは BlockNodeView が absolute で
     // ノード境界の外に描く (= NodeResizer の枠線 / handle が shape のみを囲むように)。
     const baseShape = getBlockShape(b.type);

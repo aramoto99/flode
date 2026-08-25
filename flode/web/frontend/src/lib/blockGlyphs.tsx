@@ -889,12 +889,14 @@ const MergeGlyph = ({ className }: GlyphProps): JSX.Element => (
 );
 
 // SPEC-0003 / ADR-0055: Goto/From は tag ベースの仮想配線。
-// Goto: tag box (左) → 出力矢印 (右) で「tag に名前付けて送出」を表現。
+// v0.46.2: canvas の輪郭 (blockShapes: tag-notch-l / trapezoid-r) と同じ五角形
+// タグに統一 (glyph = canvas 原則、ADR-0070 ④ de facto 形状)。
+// Goto: 左辺が凹むリボン尾の五角形 + tag。
 const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="3" y="8" width="10" height="8" rx="1" />
+    <polygon points="3,7 21,7 21,17 3,17 7,12" />
     <text
-      x="8"
+      x="13"
       y="14"
       textAnchor="middle"
       fontSize="6"
@@ -904,19 +906,15 @@ const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
     >
       A
     </text>
-    <line x1="13" y1="12" x2="19" y2="12" />
-    <polyline points="17,9 20,12 17,15" />
   </svg>
 );
 
-// From: 入力矢印 (左) → tag box (右) で「tag から名前付き受信」を表現。
+// From: 右辺が尖る矢印頭の五角形 + tag。
 const FromGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <line x1="3" y1="12" x2="10" y2="12" />
-    <polyline points="8,9 11,12 8,15" />
-    <rect x="11" y="8" width="10" height="8" rx="1" />
+    <polygon points="3,7 16,7 21,12 16,17 3,17" />
     <text
-      x="16"
+      x="10"
       y="14"
       textAnchor="middle"
       fontSize="6"
@@ -991,34 +989,41 @@ const SubsystemGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// v0.46.2: Inport / Outport は角丸カプセル + ポート番号 (リファレンスツールの
+// de facto 形状、canvas の stadium 輪郭と同じ)。Inport は右端に出力 chevron、
+// Outport は左端に入力 chevron を添えて向きを示す。
 const InportGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polygon points="3,6 16,6 21,12 16,18 3,18" />
+    <rect x="2" y="7" width="16" height="10" rx="5" />
     <text
-      x="11"
-      y="14"
+      x="10"
+      y="14.2"
       textAnchor="middle"
-      fontSize="6"
+      fontSize="6.5"
+      fontFamily="ui-monospace,monospace"
       fill="currentColor"
       stroke="none"
     >
-      in
+      1
     </text>
+    <polyline points="19,9.5 21.5,12 19,14.5" />
   </svg>
 );
 
 const OutportGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polygon points="3,12 8,6 21,6 21,18 8,18" />
+    <polyline points="2.5,9.5 5,12 2.5,14.5" />
+    <rect x="6" y="7" width="16" height="10" rx="5" />
     <text
       x="14"
-      y="14"
+      y="14.2"
       textAnchor="middle"
-      fontSize="6"
+      fontSize="6.5"
+      fontFamily="ui-monospace,monospace"
       fill="currentColor"
       stroke="none"
     >
-      out
+      1
     </text>
   </svg>
 );
