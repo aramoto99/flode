@@ -39,7 +39,6 @@ import {
   TRIGGER_TYPE,
 } from "../lib/blockTypes";
 import type { BlockNodeData } from "../lib/diagramConverter";
-import { isDefaultGeneratedId } from "../lib/idGenerator";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
 import type { BlockEntry } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
@@ -74,9 +73,10 @@ function resolveControlSlots(
 /**
  * SPEC-0022 §機能要件 7: Subsystem 外面ポートラベルの収集。
  *
- * 内部 Inport / Outport のうち、既定 id ({TypeName}_{n}) から rename 済のものだけ
- * を `port_idx → id` のラベルとして返す (部分表示を許す、Q6)。等分配の分母計算の
- * ため、data 入力ポート総数 (= Inport 件数) / 出力ポート総数も返す。slot 順序は
+ * 内部 Inport / Outport の id を `port_idx → id` のラベルとして返す。
+ * 既定 id (`Inport_0` 等) も表示する (2026-08-25 Q6 撤回: リファレンスツールの
+ * `In1`/`Out1` 常時表示に合わせる)。等分配の分母計算のため、data 入力ポート
+ * 総数 (= Inport 件数) / 出力ポート総数も返す。slot 順序は
  * [data..., enable, trigger] (ADR-0058) で、Trigger / Enable slot はラベル対象外。
  */
 interface SubsystemPortLabelInfo {
@@ -110,7 +110,7 @@ function collectSubsystemPortLabels(
       -1,
     );
     if (portIdx < 0) continue;
-    if (typeof b.id !== "string" || isDefaultGeneratedId(b.id, b.type)) continue;
+    if (typeof b.id !== "string") continue;
     (isInput ? out.inputs : out.outputs).push({ portIdx, label: b.id });
   }
   return out;
@@ -685,7 +685,7 @@ function ShapeContent({
   if (typePath.endsWith(".Subsystem")) {
     // SPEC-0022 §機能要件 7: 内部 Inport / Outport が rename されていれば、その
     // id を外面のポート脇 (入力=内側左寄せ / 出力=内側右寄せ) に表示する。
-    // 既定 id ({TypeName}_{n}) のポートは非表示 (Q6)。中央は従来どおり空
+    // 既定 id (Inport_0 等) も含めて常時表示 (2026-08-25 Q6 撤回)。中央は従来どおり空
     // (ADR-0021、リファレンスツール互換)。
     const portLabels = collectSubsystemPortLabels(paramsRaw);
     const hasIndicator = controlSlots.hasTrigger || controlSlots.hasEnable;

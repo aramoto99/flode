@@ -9,7 +9,6 @@ import rawTable from "../../../../tests/data/block_id_cases.json";
 import {
   BLOCK_ID_MAX_LEN,
   foldBlockId,
-  isDefaultGeneratedId,
   isReservedWord,
   normalizeBlockId,
   validateBlockId,
@@ -95,20 +94,6 @@ describe("normalizeBlockId — NFC 正規化 (ADR-0071 §(3))", () => {
   });
   it("ASCII は恒等", () => {
     expect(normalizeBlockId("Gain_0")).toBe("Gain_0");
-  });
-});
-
-describe("isDefaultGeneratedId — 自動採番パターン判定 (SPEC-0022 Q6)", () => {
-  const INPORT = "flode.subsystems.Inport";
-  it("既定 id (Inport_0) は true", () => {
-    expect(isDefaultGeneratedId("Inport_0", INPORT)).toBe(true);
-    expect(isDefaultGeneratedId("Inport_12", INPORT)).toBe(true);
-  });
-  it("rename 済み id は false", () => {
-    expect(isDefaultGeneratedId("速度", INPORT)).toBe(false);
-    expect(isDefaultGeneratedId("Inport_a", INPORT)).toBe(false);
-    expect(isDefaultGeneratedId("Inport_", INPORT)).toBe(false);
-    expect(isDefaultGeneratedId("Outport_0", INPORT)).toBe(false);
   });
 });
 

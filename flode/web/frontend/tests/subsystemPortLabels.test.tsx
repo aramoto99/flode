@@ -75,23 +75,25 @@ function renderSubsystem(innerBlocks: BlockEntry[], flipped = false) {
   );
 }
 
-describe("Subsystem 外面ポートラベル (SPEC-0022 Q5/Q6)", () => {
-  it("既定 id のみの Subsystem ではラベルを表示しない", () => {
-    const { queryByTestId } = renderSubsystem([
+describe("Subsystem 外面ポートラベル (SPEC-0022 Q5、2026-08-25 Q6 撤回)", () => {
+  it("既定 id (Inport_0 等) でも常時表示する (Q6 撤回、リファレンスツール同等)", () => {
+    const { getByTestId } = renderSubsystem([
       { id: "Inport_0", type: INPORT, params: { port_idx: 0 } },
       { id: "Outport_0", type: OUTPORT, params: { port_idx: 0 } },
     ]);
-    expect(queryByTestId("subsystem-port-label-in-0")).toBeNull();
-    expect(queryByTestId("subsystem-port-label-out-0")).toBeNull();
+    expect(getByTestId("subsystem-port-label-in-0").textContent).toBe("Inport_0");
+    expect(getByTestId("subsystem-port-label-out-0").textContent).toBe(
+      "Outport_0",
+    );
   });
 
-  it("rename 済ポートのみラベル表示 (部分表示)、y は handle 等分配式に一致", () => {
-    const { getByTestId, queryByTestId } = renderSubsystem([
-      { id: "Inport_0", type: INPORT, params: { port_idx: 0 } }, // 既定 → 非表示
+  it("既定・rename 済ポートが混在しても全ポート表示、y は handle 等分配式に一致", () => {
+    const { getByTestId } = renderSubsystem([
+      { id: "Inport_0", type: INPORT, params: { port_idx: 0 } }, // 既定 → 表示
       { id: "速度", type: INPORT, params: { port_idx: 1 } },
       { id: "トルク", type: OUTPORT, params: { port_idx: 0 } },
     ]);
-    expect(queryByTestId("subsystem-port-label-in-0")).toBeNull();
+    expect(getByTestId("subsystem-port-label-in-0").textContent).toBe("Inport_0");
     const inLabel = getByTestId("subsystem-port-label-in-1");
     expect(inLabel.textContent).toBe("速度");
     expect(inLabel.title).toBe("速度");

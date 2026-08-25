@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.1] - 2026-08-25 — Subsystem ポートラベルを既定名でも常時表示
+
+### Fixed
+
+- **Subsystem 外面のポートラベルを、既定名 (`Inport_0` / `Outport_0` 等) の
+  ポートでも常時表示するように変更** (SPEC-0022 Q6 の撤回)。v0.46.0 では
+  「rename して初めて表示」だったが、既定名でもポートの対応が図から読める方が
+  よいというユーザー判断により、リファレンスツールの `In1` / `Out1` 常時表示と
+  同等の挙動にした
+
 ## [0.46.0] - 2026-08-24 — ブロック名の GUI rename・ポート名表示・日本語ブロック名 (SPEC-0022 / ADR-0071)
 
 ### Added

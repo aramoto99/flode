@@ -174,18 +174,6 @@ export function isReservedWord(candidate: string): boolean {
   return PYTHON_KEYWORDS.has(candidate);
 }
 
-/**
- * ADR-0019 の自動採番パターン (`{TypeName}_{n}`) に一致するか。
- * Subsystem 外面ポートラベルの表示判定に使う (既定 id の間は非表示、
- * SPEC-0022 Q6)。
- */
-export function isDefaultGeneratedId(id: string, typePath: string): boolean {
-  const prefix = `${typeNameFromPath(typePath)}_`;
-  if (!id.startsWith(prefix)) return false;
-  const rest = id.slice(prefix.length);
-  return rest.length > 0 && /^[0-9]+$/.test(rest);
-}
-
 function fallbackForType(type: string): unknown {
   // 文字列 type label の shallow 一致 (ADR-0019 §Open Question 4)。
   // container を先に check (= "list[int]" が "int" にマッチする誤りを避ける)。
