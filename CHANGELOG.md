@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.1] - 2026-08-25 — ルックアップテーブル系 glyph をプロット構図に統一
+
+### Fixed
+
+- **lookup 5 種のパレット glyph を「軸付きプロット」ファミリーに統一**
+  (ADR-0070 ④ de facto 形状踏襲)。1-D = 区分線形カーブ + breakpoint 点、
+  2-D / n-D = 3D サーフェス (n-D は "n" 付き)、Prelookup = breakpoint 軸上の
+  位置矢印、Interpolation Using Prelookup = カーブ上の補間点。旧 glyph は
+  格子 / 立方体 / 定規と比喩がばらばらで、小サイズでは「表 / 箱 / 定規」に
+  見えていた (ユーザー指摘)
+
 ## [0.47.0] - 2026-08-25 — ブロック寸法の整理 (8px モジュール基調) と Trigger のエッジ記号化
 
 ### Changed

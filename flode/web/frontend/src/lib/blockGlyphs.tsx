@@ -318,94 +318,102 @@ const RelayGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Lookup Tables (SPEC-0008 / ADR-0059 v5.1.0)
 // =============================================================================
 
-// 補間カーブ + 4 ブレークポイント丸。breakpoints/table のテーブル参照と
-// 区分補間を視覚化する。axis は faint で省スペース。
+// v0.47.1: lookup 5 種を「プロット」ファミリーに統一 (ADR-0070 ④ de facto 形状
+// 踏襲、初版で優先度 5 としていた項目)。リファレンスツールの lookup 系 icon は
+// いずれも「軸付きプロット」で、1-D = 区分線形カーブ、2-D / n-D = 3D サーフェス、
+// Prelookup / Interpolation = breakpoint 軸上の位置特定。旧 glyph は 格子 / 立方体 /
+// ruler と比喩がバラバラで、小サイズでは「表」「箱」「定規」に見えていた。
+
+// 共通: プロットの軸 (左下の L 字、細線)。
+const PLOT_AXES = (
+  <>
+    <line x1="3" y1="20.5" x2="21.5" y2="20.5" strokeWidth="1" />
+    <line x1="3" y1="2.5" x2="3" y2="20.5" strokeWidth="1" />
+  </>
+);
+
+// 1-D: 区分線形カーブ + breakpoint 点。
 const LookupTable1DGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* faint axes */}
-    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
-    <line x1="3" y1="3" x2="3" y2="20" strokeWidth="0.6" opacity="0.4" />
-    {/* 3-segment polyline (区分補間) */}
-    <polyline points="5,18 10,9 15,13 20,5" />
-    {/* 4 breakpoint dots */}
-    <circle cx="5" cy="18" r="1.4" fill="currentColor" stroke="none" />
-    <circle cx="10" cy="9" r="1.4" fill="currentColor" stroke="none" />
-    <circle cx="15" cy="13" r="1.4" fill="currentColor" stroke="none" />
-    <circle cx="20" cy="5" r="1.4" fill="currentColor" stroke="none" />
+    {PLOT_AXES}
+    <polyline points="5.5,17 10,8 14.5,12.5 20,5" />
+    <circle cx="5.5" cy="17" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="8" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="14.5" cy="12.5" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="5" r="1.3" fill="currentColor" stroke="none" />
   </svg>
 );
 
-// SPEC-0017 / ADR-0064 v5.6.0: 2-D Lookup の格子 + 4 セル + 中心の補間点。
-// 1-D の曲線 vs 2-D の格子で視覚的に区別する。
+// 2-D / n-D 共通: 4×4 メッシュのサーフェス (t 方向に山を持つ、透視投影)。
+// 点は 基準平行四辺形 P0=(3,18) + s*(9,4) + t*(9,-8) に高さ h(t) = {0,3.5,3.5,0}
+// を上向きに加えて算出。z 軸を左に立てて「3D プロット」として読ませる。
+const SURFACE_MESH = (
+  <>
+    {/* z 軸 */}
+    <line x1="3" y1="18" x2="3" y2="3" strokeWidth="1" />
+    {/* s を固定し t (手前→奥) を動かした 4 本: 高さ h(t) で山になる */}
+    <polyline points="3,18 6,11.8 9,9.2 12,10" strokeWidth="1.2" />
+    <polyline points="6,19.3 9,13.2 12,10.5 15,11.3" strokeWidth="1.2" />
+    <polyline points="9,20.7 12,14.5 15,11.8 18,12.7" strokeWidth="1.2" />
+    <polyline points="12,22 15,15.8 18,13.2 21,14" strokeWidth="1.2" />
+    {/* t を固定し s (左→右) を動かした 4 本: 同じ高さの直線 */}
+    <polyline points="3,18 6,19.3 9,20.7 12,22" strokeWidth="1.2" />
+    <polyline points="6,11.8 9,13.2 12,14.5 15,15.8" strokeWidth="1.2" />
+    <polyline points="9,9.2 12,10.5 15,11.8 18,13.2" strokeWidth="1.2" />
+    <polyline points="12,10 15,11.3 18,12.7 21,14" strokeWidth="1.2" />
+  </>
+);
+
+// 2-D: サーフェスのみ。
 const LookupTable2DGlyph = ({ className }: GlyphProps): JSX.Element => (
-  <svg {...G_PROPS} className={className}>
-    {/* 3x3 格子 (= 2x2 cells) */}
-    <line x1="5" y1="5" x2="19" y2="5" />
-    <line x1="5" y1="12" x2="19" y2="12" />
-    <line x1="5" y1="19" x2="19" y2="19" />
-    <line x1="5" y1="5" x2="5" y2="19" />
-    <line x1="12" y1="5" x2="12" y2="19" />
-    <line x1="19" y1="5" x2="19" y2="19" />
-    {/* 中央セル内の補間点 */}
-    <circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none" />
-  </svg>
+  <svg {...G_PROPS} className={className}>{SURFACE_MESH}</svg>
 );
 
-// SPEC-0018 / ADR-0068 v5.8.0: n-D Lookup の cube 透視図風。
-// v0.44.1: 旧 glyph は cube 中央の塗り点が「サイコロ」に見えていた (ユーザー
-// 指摘)。点を廃し、前面を 2×2 格子に変更 (= LookupTable2D の格子の立体版と
-// いう family 表現で「table の次元拡張」を示唆)。
+// n-D: 同じサーフェス + 左上に "n" (次元数が任意であることを示す)。
 const LookupTableNDGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* 前面の四角 (x-y 平面) */}
-    <rect x="4" y="8" width="12" height="12" />
-    {/* 背面の四角 (透視図のオフセット) */}
-    <line x1="4" y1="8" x2="8" y2="4" />
-    <line x1="16" y1="8" x2="20" y2="4" />
-    <line x1="16" y1="20" x2="20" y2="16" />
-    <line x1="8" y1="4" x2="20" y2="4" />
-    <line x1="20" y1="4" x2="20" y2="16" />
-    {/* 前面の 2×2 格子 (LookupTable2D の格子と同族)。外枠 (SW=1.6) より細い
-        strokeWidth=1 で描き、立方体の輪郭を主・内部格子を従にして奥行き感を保つ */}
-    <line x1="10" y1="8" x2="10" y2="20" strokeWidth="1" />
-    <line x1="4" y1="14" x2="16" y2="14" strokeWidth="1" />
+    {SURFACE_MESH}
+    <text
+      x="7.5"
+      y="8"
+      textAnchor="middle"
+      fontSize="7"
+      fontStyle="italic"
+      fontFamily="ui-serif,serif"
+      fill="currentColor"
+      stroke="none"
+    >
+      n
+    </text>
   </svg>
 );
 
-// SPEC-0019 / ADR-0067 v5.7.0: Prelookup。
-// v0.44.1: 旧 glyph (縦軸 + 分岐線 + 極小テキスト k/f) は palette の 28px では
-// 判読不能なノイズになっていた (ユーザー指摘)。テキストを排し、「非等間隔の
-// 目盛付き breakpoint 軸 (ruler) 上で入力位置を矢印で特定する」構図に単純化
-// (= index 検索という本質だけを描く)。
+// Prelookup: breakpoint 軸 (非等間隔の目盛) 上で入力位置 (下向き矢印) が
+// どの区間に落ちるかを特定する = index 検索。プロット軸と同じ配置に揃える。
 const PrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* breakpoint 軸 (ruler、目盛は非等間隔 = 実際の breakpoints を示唆) */}
-    <line x1="3" y1="16" x2="21" y2="16" />
-    <line x1="5" y1="16" x2="5" y2="20" />
-    <line x1="9" y1="16" x2="9" y2="20" />
-    <line x1="15" y1="16" x2="15" y2="20" />
-    <line x1="20" y1="16" x2="20" y2="20" />
+    <line x1="3" y1="20.5" x2="21.5" y2="20.5" strokeWidth="1" />
+    {/* breakpoint 目盛 (非等間隔) */}
+    <line x1="5" y1="17" x2="5" y2="20.5" />
+    <line x1="9" y1="17" x2="9" y2="20.5" />
+    <line x1="15" y1="17" x2="15" y2="20.5" />
+    <line x1="20" y1="17" x2="20" y2="20.5" />
     {/* 入力位置を指す下向き矢印 (目盛 9–15 の区間内に着地) */}
-    <line x1="12" y1="4" x2="12" y2="11" />
-    <polyline points="9.8,9 12,11.5 14.2,9" />
+    <line x1="12" y1="4" x2="12" y2="12.5" />
+    <polyline points="9.5,10.5 12,13 14.5,10.5" />
   </svg>
 );
 
-// SPEC-0019 / ADR-0067 v5.7.0: InterpolationUsingPrelookup = (k, f) → y。
-// v0.44.1: 旧 glyph (入力 2 線 + 棒グラフ風 table) は小サイズで「音量アイコン」
-// 風に見えて意味が伝わらなかった (ユーザー指摘)。LookupTable1D と同じ
-// 「faint 軸 + breakpoint 点」の family 表現に揃え、2 つの breakpoint 点の間の
-// **補間点 (白抜き丸)** を主役にする。線分は白抜き丸と重ならないよう 2 分割。
+// InterpolationUsingPrelookup: 1-D カーブの 2 breakpoint 間を、Prelookup が
+// 求めた区間 (k) と比率 (f) で補間する = 白抜きの補間点 + 軸への破線。
 const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    {/* faint axes (LookupTable1D と同スタイル) */}
-    <line x1="3" y1="20" x2="21" y2="20" strokeWidth="0.6" opacity="0.4" />
-    <line x1="3" y1="3" x2="3" y2="20" strokeWidth="0.6" opacity="0.4" />
+    {PLOT_AXES}
     {/* breakpoint 2 点を結ぶ区間 (補間点の周囲は空ける) */}
     <line x1="6" y1="16" x2="10.4" y2="12.6" />
     <line x1="14.6" y1="9.4" x2="19" y2="6" />
-    <circle cx="6" cy="16" r="1.4" fill="currentColor" stroke="none" />
-    <circle cx="19" cy="6" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="16" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="6" r="1.3" fill="currentColor" stroke="none" />
     {/* 補間点 (白抜き) */}
     <circle cx="12.5" cy="11" r="2" strokeWidth="1.3" />
     {/* 補間点から軸への破線 (入力 u の位置を示唆) */}
@@ -413,10 +421,10 @@ const InterpolationUsingPrelookupGlyph = ({ className }: GlyphProps): JSX.Elemen
       x1="12.5"
       y1="13.4"
       x2="12.5"
-      y2="20"
+      y2="20.5"
       strokeWidth="0.8"
       strokeDasharray="1.5 1.2"
-      opacity="0.5"
+      opacity="0.6"
     />
   </svg>
 );
