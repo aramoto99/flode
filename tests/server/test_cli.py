@@ -34,6 +34,7 @@ def _make_args(**overrides: object) -> argparse.Namespace:
         "legacy_models_dir": None,
         "force": False,
         "no_browser": False,
+        "allow_python_blocks": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -107,7 +108,7 @@ class TestParser:
 
 class TestBuildSettingsWorkspaceMode:
     def test_workspace_sets_workspace_root(self, tmp_path: Path, isolated_home: Path) -> None:
-        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
+        settings, _, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         assert settings.workspace_root == tmp_path.resolve()
 
     def test_workspace_resolves_to_absolute(
@@ -118,7 +119,7 @@ class TestBuildSettingsWorkspaceMode:
     ) -> None:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "ws").mkdir()
-        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=Path("ws")))
+        settings, _, _, _, _, _ = _build_settings_from_args(_make_args(workspace=Path("ws")))
         assert settings.workspace_root == (tmp_path / "ws").resolve()
         assert settings.workspace_root.is_absolute()
 
@@ -156,7 +157,7 @@ class TestBuildSettingsDefault:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        settings, host, port, _, _ = _build_settings_from_args(_make_args())
+        settings, host, port, _, _, _ = _build_settings_from_args(_make_args())
         assert settings.workspace_root == tmp_path.resolve()
         assert host == "127.0.0.1"
         assert port == 8770
@@ -170,19 +171,19 @@ class TestBuildSettingsDefault:
 class TestBuildSettingsOtherFields:
     def test_allow_origin_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
         origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
-        settings, _, _, _, _ = _build_settings_from_args(
+        settings, _, _, _, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, allow_origin=origins)
         )
         assert settings.allow_origins == origins
 
     def test_scope_batch_size_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
-        settings, _, _, _, _ = _build_settings_from_args(
+        settings, _, _, _, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, scope_batch_size=42)
         )
         assert settings.scope_batch_size == 42
 
     def test_host_port_propagated(self, tmp_path: Path, isolated_home: Path) -> None:
-        _, host, port, _, _ = _build_settings_from_args(
+        _, host, port, _, _, _ = _build_settings_from_args(
             _make_args(workspace=tmp_path, host="0.0.0.0", port=9000)
         )
         assert host == "0.0.0.0"
@@ -202,7 +203,7 @@ class TestCreateAppIntegration:
     ) -> None:
         from flode.server import create_app
 
-        settings, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
+        settings, _, _, _, _, _ = _build_settings_from_args(_make_args(workspace=tmp_path))
         app = create_app(settings=settings)
         assert app.state.settings.workspace_root == tmp_path.resolve()
 
@@ -263,3 +264,64 @@ class TestMainErrorPaths:
         # JSON 出力が含まれているか
         assert '"migrated"' in captured.out
         assert (dst / "alpha.flw.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0023 / ADR-0073 §論点 4 (H): PythonFunction hard gate
+# ---------------------------------------------------------------------------
+
+
+class TestPythonBlockPolicy:
+    def test_flag_parses(self) -> None:
+        args = _build_parser().parse_args(["--allow-python-blocks"])
+        assert args.allow_python_blocks is True
+        assert _build_parser().parse_args([]).allow_python_blocks is False
+
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [
+            ("localhost", True),
+            ("LOCALHOST", True),
+            ("127.0.0.1", True),
+            ("127.1.2.3", True),
+            ("::1", True),
+            ("[::1]", True),
+            ("0.0.0.0", False),
+            ("::", False),
+            ("192.168.1.5", False),
+            ("my-laptop.local", False),  # 解析不能なホスト名は fail closed
+            ("", False),
+        ],
+    )
+    def test_is_loopback_host_table(self, host: str, expected: bool) -> None:
+        from flode.server.cli import is_loopback_host
+
+        assert is_loopback_host(host) is expected
+
+    def test_policy_loopback_always_allowed(self) -> None:
+        from flode.server.cli import resolve_python_block_policy
+
+        p = resolve_python_block_policy("127.0.0.1", cli_flag=False, file_allow=False)
+        assert p.allowed is True
+
+    def test_policy_non_loopback_denied_without_flag(self) -> None:
+        from flode.server.cli import resolve_python_block_policy
+
+        p = resolve_python_block_policy("0.0.0.0", cli_flag=False, file_allow=False)
+        assert p.allowed is False
+        assert "0.0.0.0" in p.reason
+        assert "--allow-python-blocks" in p.reason
+
+    @pytest.mark.parametrize(("cli_flag", "file_allow"), [(True, False), (False, True)])
+    def test_policy_non_loopback_allowed_with_flag(self, cli_flag: bool, file_allow: bool) -> None:
+        from flode.server.cli import resolve_python_block_policy
+
+        p = resolve_python_block_policy("0.0.0.0", cli_flag=cli_flag, file_allow=file_allow)
+        assert p.allowed is True
+
+    def test_allow_flag_propagates_from_cli(self, tmp_path: Path, isolated_home: Path) -> None:
+        *_, allow = _build_settings_from_args(_make_args(workspace=tmp_path))
+        assert allow is False
+        args = _build_parser().parse_args(["--workspace", str(tmp_path), "--allow-python-blocks"])
+        *_, allow = _build_settings_from_args(args)
+        assert allow is True

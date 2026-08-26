@@ -18,14 +18,20 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
+from ...blocks.pythonfunc import (
+    compute_python_digest,
+    get_python_block_policy,
+    iter_python_functions,
+)
 from ...core.simulator import Simulator
 from ...exceptions import (
     FlodeError,
     ModelLoadError,
     PathTraversalError,
+    PythonBlocksDisabledError,
     SimulationStillRunningError,
 )
-from ..errors import build_failure_payload
+from ..errors import CATEGORY_PYTHON_FUNCTION_UNCONFIRMED, build_failure_payload
 from ..runtime import SimulationManager
 from ..security import resolve_workspace_path
 
@@ -69,6 +75,64 @@ def _start_validation_detail(message: str) -> dict[str, Any]:
 def _exception_detail(exc: BaseException) -> dict[str, Any]:
     """例外から start API 用の構造化 detail を組み立てる (ADR-0056 §B-2)。"""
     return build_failure_payload(exc, simulator=None, t=None)
+
+
+def _python_unconfirmed_detail(simulator: Simulator, digest: str) -> dict[str, Any]:
+    """SPEC-0023 soft gate (ADR-0073 §論点 4 (S)): 409 用の構造化 detail。
+
+    ``template_args.digest`` をクライアントが echo して再送する。この機構は
+    「このモデルは Python を実行する」の告知と同意のための **UX 機構** であり、
+    セキュリティ機構ではない (REST を直接叩けば ack を自分で付けられる)。
+    """
+    entries = list(iter_python_functions(simulator.blocks))
+    labels = [qid for qid, _ in entries]
+    ids = [pf.id for _, pf in entries if isinstance(pf.id, str)]
+    return {
+        "category": CATEGORY_PYTHON_FUNCTION_UNCONFIRMED,
+        "template_key": "error.python_function_unconfirmed",
+        "template_args": {"block_labels": labels, "digest": digest},
+        "block_id": ids[0] if ids else None,
+        "block_ids": ids,
+        "block_type": "flode.blocks.pythonfunc.PythonFunction",
+        "block_label": labels[0] if labels else None,
+        "t": None,
+        "raw_message": (
+            "This model contains PythonFunction blocks. Running it executes their Python "
+            "code with your privileges. Re-send with python_ack=<digest> to confirm."
+        ),
+        "raw_traceback": None,
+    }
+
+
+def _enforce_python_gates(simulator: Simulator, payload: dict[str, Any]) -> None:
+    """``PythonFunction`` を含むモデルの start 前チェック (SPEC-0023 / ADR-0073 §論点 4)。
+
+    * hard gate: プロセス policy が禁止なら **403** (構造化 detail
+      ``python_function_disabled``)。``_build()`` でも同じ判定が走るので、ここでの
+      早期拒否は「ワーカーを起動せずに即答する」ための重複であり bypass 点ではない
+    * soft gate: ``python_ack`` が digest と一致しなければ **409**
+
+    ``PythonFunction`` を含まないモデルでは何もしない (= ``python_ack`` は無視、
+    既存クライアント完全互換)。
+    """
+    digest = compute_python_digest(simulator)
+    if digest is None:
+        return
+    policy = get_python_block_policy()
+    if not policy.allowed:
+        first = next(iter_python_functions(simulator.blocks), None)
+        block_id = first[1].id if first is not None else None
+        reason = f" ({policy.reason})" if policy.reason else ""
+        exc = PythonBlocksDisabledError(
+            f"PythonFunction: execution of Python blocks is disabled in this server{reason}. "
+            f"Start the server with --allow-python-blocks or set [server] "
+            f"allow_python_blocks = true to enable it.",
+            block_id=block_id,
+        )
+        raise HTTPException(status_code=403, detail=_exception_detail(exc))
+    ack = payload.get("python_ack")
+    if not isinstance(ack, str) or ack != digest:
+        raise HTTPException(status_code=409, detail=_python_unconfirmed_detail(simulator, digest))
 
 
 def _scope_batch_size(request: Request) -> int:
@@ -174,6 +238,7 @@ async def start_simulation(request: Request) -> dict[str, str]:
         )
 
     simulator, display_id = _resolve_simulator(request, payload)
+    _enforce_python_gates(simulator, payload)
 
     manager = _manager(request)
     loop = asyncio.get_running_loop()

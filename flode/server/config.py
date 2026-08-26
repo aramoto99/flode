@@ -43,7 +43,9 @@ _SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dataclasses.fi
 }
 
 _KNOWN_SECTIONS = ("server", "settings")
-_KNOWN_SERVER_KEYS: frozenset[str] = frozenset({"host", "port", "open_browser", "port_retries"})
+_KNOWN_SERVER_KEYS: frozenset[str] = frozenset(
+    {"host", "port", "open_browser", "port_retries", "allow_python_blocks"}
+)
 # Settings dataclass の field 名 + workspace alias を許容する (二重管理を避けるため
 # dataclass フィールドから動的生成、code-reviewer SHOULD 修正)。
 _KNOWN_SETTINGS_KEYS: frozenset[str] = _SETTINGS_FIELD_NAMES | {_WORKSPACE_TOML_KEY}
@@ -61,6 +63,8 @@ _DEFAULT_PORT = 8770
 # 既定は 50 回 (リファレンス Web IDE の既定に合わせた値)。
 _DEFAULT_OPEN_BROWSER = True
 _DEFAULT_PORT_RETRIES = 50
+# SPEC-0023 / ADR-0073 §論点 4: 非 loopback bind での PythonFunction 実行は既定で禁止。
+_DEFAULT_ALLOW_PYTHON_BLOCKS = False
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +308,23 @@ class SettingsResolver:
             )
         return open_browser, port_retries
 
+    def build_allow_python_blocks(self) -> bool:
+        """``[server] allow_python_blocks`` (SPEC-0023 / ADR-0073 §論点 4 hard gate) を返す。
+
+        既定 ``False``。CLI ``--allow-python-blocks`` > file > default。
+        ``True`` にすると **非 loopback bind でも** ``PythonFunction`` の実行を許可する
+        (= サーバに到達できる誰もが任意コードを実行できる)。loopback bind では
+        このフラグに関係なく許可される (判定は ``cli.resolve_python_block_policy``)。
+
+        Raises:
+            FlodeError: 型違反 (bool でない)。
+        """
+        return self._resolve_bool_field(
+            "allow_python_blocks",
+            section="server",
+            default=_DEFAULT_ALLOW_PYTHON_BLOCKS,
+        )
+
     # --- internals -----------------------------------------------------------
 
     def _lookup(self, key: str, *, section: str) -> Any:
@@ -435,6 +456,13 @@ open_browser = true
 # times (default: 50). Set 0 to disable fallback and
 # fail immediately (fixed-port / reverse-proxy setups). SPEC-0021.
 port_retries = 50
+
+# Allow "Python Function" blocks to execute arbitrary Python even when the
+# server is bound to a non-loopback address (SPEC-0023). On a loopback bind
+# (127.0.0.1 / localhost / ::1) they are always allowed. WARNING: enabling this
+# on a reachable address exposes remote code execution to anyone who can reach
+# the server. Per-run: `flode --allow-python-blocks`.
+# allow_python_blocks = false
 
 # === flode.server.Settings dataclass fields ===
 # These are passed to `create_app(settings=Settings(...))`.

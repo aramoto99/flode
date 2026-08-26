@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import ipaddress
 import json
 import logging
 import socket
@@ -37,6 +38,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+from ..blocks.pythonfunc import PythonBlockPolicy, set_python_block_policy
 from ..exceptions import FlodeError
 from .app import create_app
 from .config import (
@@ -336,21 +338,74 @@ def _build_parser() -> argparse.ArgumentParser:
             "config file; with --migrate-models-to, overwrite existing destination files."
         ),
     )
+    # SPEC-0023 / ADR-0073 §論点 4 (hard gate): 非 loopback bind での PythonFunction
+    # 実行は明示フラグが無い限り拒否する。恒久設定は [server] allow_python_blocks。
+    parser.add_argument(
+        "--allow-python-blocks",
+        action="store_true",
+        help=(
+            "Allow PythonFunction blocks to execute arbitrary Python even when binding "
+            "to a non-loopback address. This exposes remote code execution to anyone "
+            "who can reach the server. On a loopback bind (127.0.0.1 / localhost / ::1) "
+            "Python blocks are always allowed. SPEC-0023."
+        ),
+    )
     return parser
+
+
+def is_loopback_host(host: str) -> bool:
+    """bind host が loopback かを **fail closed** で判定する (ADR-0073 §論点 4 (H))。
+
+    * ``"localhost"`` → True
+    * IP literal → ``ipaddress.ip_address(host).is_loopback`` (``0.0.0.0`` / ``::`` は False)
+    * 解析不能なホスト名 (DNS 解決はしない) → **False**。「127.0.0.1 に解決される
+      ホスト名」も非 loopback 扱いになるが、それは保守的な方向の誤りなので受容する
+    """
+    stripped = host.strip().strip("[]").lower()
+    if stripped == "localhost":
+        return True
+    try:
+        return bool(ipaddress.ip_address(stripped).is_loopback)
+    except ValueError:
+        return False
+
+
+def resolve_python_block_policy(
+    host: str, *, cli_flag: bool, file_allow: bool
+) -> PythonBlockPolicy:
+    """bind host と許可フラグから ``PythonFunction`` の実行 policy を決める (純粋関数)。
+
+    ``allowed = is_loopback(host) or cli_flag or file_allow``。禁止時の ``reason`` は
+    エラーメッセージに埋め込まれ、有効化方法をユーザーに示す。
+
+    Args:
+        host: uvicorn に渡す bind host。
+        cli_flag: ``--allow-python-blocks`` が指定されたか。
+        file_allow: ``[server] allow_python_blocks`` の解決値。
+    """
+    if is_loopback_host(host):
+        return PythonBlockPolicy(allowed=True, reason="")
+    if cli_flag or file_allow:
+        return PythonBlockPolicy(allowed=True, reason="")
+    return PythonBlockPolicy(
+        allowed=False,
+        reason=f"server is bound to non-loopback address {host!r} without --allow-python-blocks",
+    )
 
 
 def _build_settings_from_args(
     args: argparse.Namespace,
-) -> tuple[Settings, str, int, bool, int]:
-    """argparse Namespace から ``(Settings, host, port, open_browser, port_retries)``
-    を構築する (SPEC-0004 / SPEC-0021)。
+) -> tuple[Settings, str, int, bool, int, bool]:
+    """argparse Namespace から ``(Settings, host, port, open_browser, port_retries,
+    allow_python_blocks)`` を構築する (SPEC-0004 / SPEC-0021 / SPEC-0023)。
 
     SPEC-0004 §4: ``CLI > 設定ファイル > default`` の優先順位で解決する。
 
     Returns:
-        ``(Settings, host, port, open_browser, port_retries)`` のタプル。
+        ``(Settings, host, port, open_browser, port_retries, allow_python_blocks)``。
         ``Settings`` は ``create_app`` に、``host``/``port`` は ``uvicorn.run`` に、
-        ``open_browser``/``port_retries`` は起動シーケンス (SPEC-0021) に渡す。
+        ``open_browser``/``port_retries`` は起動シーケンス (SPEC-0021) に、
+        ``allow_python_blocks`` は :func:`resolve_python_block_policy` に渡す。
 
     Raises:
         FlodeError: 設定ファイルのパースエラー、型違反、workspace path 不在など。
@@ -378,11 +433,17 @@ def _build_settings_from_args(
     if args.no_browser:
         cli_dict["open_browser"] = False
 
+    # SPEC-0023: --allow-python-blocks は CLI 最優先で True。未指定時はキーを渡さない
+    # (= file or default にフォールバック)。
+    if args.allow_python_blocks:
+        cli_dict["allow_python_blocks"] = True
+
     resolver = SettingsResolver(cli=cli_dict, file_config=file_cfg)
     settings = resolver.build_settings(default_workspace=Path.cwd().resolve())
     host, port = resolver.build_server_bind()
     open_browser, port_retries = resolver.build_launch_options()
-    return settings, host, port, open_browser, port_retries
+    allow_python_blocks = resolver.build_allow_python_blocks()
+    return settings, host, port, open_browser, port_retries, allow_python_blocks
 
 
 def _run_migration(src: Path | None, dst: Path, *, force: bool) -> int:
@@ -445,7 +506,22 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(exit_code)
 
-    settings, host, port0, open_browser, port_retries = _build_settings_from_args(args)
+    settings, host, port0, open_browser, port_retries, allow_python = _build_settings_from_args(
+        args
+    )
+    # SPEC-0023 / ADR-0073 §論点 4 (H): PythonFunction の hard gate をプロセス全体に適用。
+    # 判定点は ``PythonFunction._build()`` (= exec 直前) の 1 箇所で、REST / WS /
+    # Python API のどの経路でも同じ policy を通る。
+    policy = resolve_python_block_policy(
+        host, cli_flag=bool(args.allow_python_blocks), file_allow=allow_python
+    )
+    set_python_block_policy(allowed=policy.allowed, reason=policy.reason)
+    if policy.allowed and not is_loopback_host(host):
+        _logger.warning(
+            "PythonFunction blocks are ENABLED on non-loopback host %s: anyone who can "
+            "reach this server can execute arbitrary Python with your privileges.",
+            host,
+        )
     app = create_app(settings=settings)
     # ``uvicorn`` を遅延 import: 壊れた環境でもユーザーへ明確に誘導するため
     # (code-reviewer MUST 修正)。

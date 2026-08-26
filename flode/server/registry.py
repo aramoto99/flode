@@ -26,7 +26,7 @@ import importlib
 import inspect
 import logging
 import pkgutil
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from ..core.block import Block
@@ -494,6 +494,66 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
             )
         )
     return out
+
+
+def introspect_python_source(code: str, *, key: str) -> dict[str, Any]:
+    """``PythonFunction`` ソースを **exec せずに** 静的解析し、frontend 向け spec を返す。
+
+    SPEC-0023 / ADR-0073 §論点 1: introspect REST の本体。``analyze_source`` (SSOT)
+    を呼ぶだけで、``exec`` は一切行わない (= 公開 bind でも安全に呼べる)。
+
+    Args:
+        code: ユーザーソース。
+        key: クライアント指定の突合キー (エラーメッセージの block id にも使う)。
+
+    Returns:
+        成功時 ``{"resolved": True, "func_name", "n_inputs", "n_outputs", "n_states",
+        "direct_feedthrough", "sample_time", "params_spec": [ParamSpec dict...]}``、
+        失敗時 ``{"resolved": False, "error": {"message", "lineno", "col", "kind"}}``。
+        ``params_spec`` の整形は registry の ``ParamSpec`` と同じ規約
+        (``_format_annotation`` / ``to_json_value``)。
+    """
+    from ..blocks.pythonfunc_source import analyze_source
+    from ..exceptions import PythonFunctionSourceError
+
+    try:
+        spec = analyze_source(code, block_id=key)
+    except PythonFunctionSourceError as e:
+        return {
+            "resolved": False,
+            "error": {"message": str(e), "lineno": e.lineno, "col": e.col, "kind": e.kind},
+        }
+    params: list[dict[str, Any]] = []
+    for name, default, ptype, required in spec.params_spec:
+        json_default: Any = None
+        if not required and default is not None:
+            try:
+                json_default = to_json_value(default)
+            except Exception:  # noqa: BLE001 - registry と同じ best-effort fallback
+                json_default = None
+        params.append(
+            asdict(
+                ParamSpec(
+                    name=name,
+                    type=_format_annotation(
+                        ptype if ptype is not None else inspect.Parameter.empty
+                    ),
+                    has_default=not required,
+                    default=json_default,
+                    enum_values=None,
+                )
+            )
+        )
+    return {
+        "resolved": True,
+        "func_name": spec.func_name,
+        "n_inputs": spec.n_inputs,
+        "n_outputs": spec.n_outputs,
+        "n_states": spec.n_states,
+        "direct_feedthrough": spec.direct_feedthrough,
+        "sample_time": spec.sample_time,
+        "params_spec": params,
+    }
 
 
 def _instantiate_for_introspection(cls: type) -> Block | None:

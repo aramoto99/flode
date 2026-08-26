@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ...exceptions import BlockSpecError, UnknownBlockTypeError
 from ..registry import (
     BlockMetadata,
+    introspect_python_source,
     metadata_to_dict,
     resolve_port_shapes,
 )
@@ -108,6 +109,58 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
         "port_shapes_in": resolved.port_shapes_in,
         "port_shapes_out": resolved.port_shapes_out,
     }
+
+
+@router.get("/python-function/introspect")
+def introspect_python_function_get_method_not_allowed() -> None:
+    """``POST /api/v1/blocks/python-function/introspect`` の GET 方向の 405 stub。
+
+    ``resolve-port-shapes`` と同じ理由 (catch-all ``GET /{type_path:path}`` への
+    誤マッチ防止)。
+    """
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "Use POST /api/v1/blocks/python-function/introspect with body "
+            '{"items": [{"key": ..., "code": ...}]} to analyse PythonFunction sources.'
+        ),
+    )
+
+
+@router.post("/python-function/introspect")
+async def introspect_python_function(request: Request) -> dict[str, Any]:
+    """``PythonFunction`` ソースを静的解析して構造 + パラメータ宣言を返す (SPEC-0023 / ADR-0073 §論点 1)。
+
+    Body: ``{"items": [{"key": "<client key>", "code": "<python source>"}, ...]}``。
+    ``key`` はクライアントが突合に使う任意文字列 (index ではなく key で返す)。
+
+    Returns:
+        ``{"results": {key: {"resolved": true, ...} | {"resolved": false, "error": {...}}}}``。
+        個々の解析失敗は 200 の中で表現する (1 件の失敗で他を巻き添えにしない)。
+        body 自体が不正なときだけ 400。
+
+    Note:
+        **この endpoint はユーザーコードを exec しない**。静的解析のみなので、
+        非 loopback bind でも安全に呼べる。
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    items = body.get("items")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="`items` (array) is required in body")
+    results: dict[str, Any] = {}
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail=f"items[{i}] must be a JSON object")
+        key = item.get("key")
+        code = item.get("code")
+        if not isinstance(key, str) or not key:
+            raise HTTPException(status_code=400, detail=f"items[{i}].key (string) is required")
+        if not isinstance(code, str):
+            raise HTTPException(status_code=400, detail=f"items[{i}].code (string) is required")
+        results[key] = introspect_python_source(code, key=key)
+    return {"results": results}
 
 
 @router.get("/{type_path:path}")

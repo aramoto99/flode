@@ -465,3 +465,43 @@ class TestEndToEnd:
         assert isinstance(settings, Settings)
         assert host == "127.0.0.1"
         assert port == 8770
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0023: [server] allow_python_blocks
+# ---------------------------------------------------------------------------
+
+
+class TestAllowPythonBlocks:
+    def test_default_false(self) -> None:
+        assert SettingsResolver(cli={}, file_config={}).build_allow_python_blocks() is False
+
+    def test_file_true(self) -> None:
+        r = SettingsResolver(cli={}, file_config={"server": {"allow_python_blocks": True}})
+        assert r.build_allow_python_blocks() is True
+
+    def test_cli_overrides_file(self) -> None:
+        r = SettingsResolver(
+            cli={"allow_python_blocks": True},
+            file_config={"server": {"allow_python_blocks": False}},
+        )
+        assert r.build_allow_python_blocks() is True
+
+    def test_type_mismatch_raises(self) -> None:
+        r = SettingsResolver(cli={}, file_config={"server": {"allow_python_blocks": "yes"}})
+        with pytest.raises(FlodeError, match="allow_python_blocks"):
+            r.build_allow_python_blocks()
+
+    def test_known_key_does_not_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
+            SettingsResolver(cli={}, file_config={"server": {"allow_python_blocks": True}})
+        assert "allow_python_blocks" not in caplog.text
+
+    def test_template_mentions_key(self, tmp_path: Path) -> None:
+        from flode.server.config import generate_config_template
+
+        p = tmp_path / "config.toml"
+        generate_config_template(p, force=False)
+        assert "allow_python_blocks" in p.read_text(encoding="utf-8")
