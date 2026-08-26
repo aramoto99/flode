@@ -24,6 +24,10 @@ const _KNOWN_TEMPLATE_KEYS = new Set([
   "error.solver_failure",
   "error.start_validation",
   "error.unknown",
+  // SPEC-0023 / ADR-0073 §論点 6
+  "error.python_function_error",
+  "error.python_function_disabled",
+  "error.python_function_unconfirmed",
 ]);
 
 function _resolvedTemplateKey(payload: FailurePayload): string {

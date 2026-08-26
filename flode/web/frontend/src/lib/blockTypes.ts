@@ -12,6 +12,10 @@ export const OUTPORT_TYPE = "flode.subsystems.ports.Outport";
 export const TRIGGER_TYPE = "flode.subsystems.control_blocks.Trigger";
 export const ENABLE_TYPE = "flode.subsystems.control_blocks.Enable";
 
+// SPEC-0023 / ADR-0073: ユーザー Python (@block 形) を実行するブロック。ポート数は
+// ``params.code`` の静的解析 (introspect API) で決まる (= lib/pythonFunctionSpec.ts)。
+export const PYTHON_FUNCTION_TYPE = "flode.blocks.pythonfunc.PythonFunction";
+
 /**
  * `params[key]` を number として取り出す。値が number でなければ `fallback` を返す。
  * `as number` の二段キャストが NaN を黙って混入させる罠を避けるための型ガード

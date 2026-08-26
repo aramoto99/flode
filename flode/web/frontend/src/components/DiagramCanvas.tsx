@@ -31,6 +31,8 @@ import {
   DIAGRAM_MARKER_END,
   type BlockNode,
 } from "../lib/diagramConverter";
+import { collectPythonCodes, ensurePythonSpecs } from "../lib/pythonFunctionSpec";
+import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { generateUniqueId } from "../lib/idGenerator";
 import {
   resolveBlocksAtPath,
@@ -125,6 +127,16 @@ export function DiagramCanvas({
   const drilldownInto = useAppStore((s) => s.drilldownInto);
   // ADR-0056 follow-up: Log tab のエラーからジャンプ要求を受けて canvas を pan する。
   const focusBlockRequest = useAppStore((s) => s.focusBlockRequest);
+
+  // SPEC-0023 / ADR-0073 §論点 1: PythonFunction のポート数はコードの静的解析
+  // (introspect) で決まる。モデル変更時に未解析コードをまとめて要求し、解析完了
+  // (= cache 世代の更新) で再描画してポート数を確定値に置き換える。それまでの
+  // 1 往復は registry default (1 in / 1 out) で描かれる (結線は壊れない、V10)。
+  usePythonSpecVersion();
+  useEffect(() => {
+    const codes = collectPythonCodes(editingModel);
+    if (codes.length > 0) void ensurePythonSpecs(codes);
+  }, [editingModel]);
 
   // リファレンスツール互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
   // 1 回目クリック時の source を保持。2 回目の別ノード Ctrl+click で edge を作成、

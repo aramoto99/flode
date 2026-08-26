@@ -60,3 +60,15 @@ export function makeScopePanelKey(
 ): string {
   return `flode.scope_panel.${workspaceHash}.${b64urlEncode(modelPath)}.${scopeId}`;
 }
+
+/** SPEC-0023 / ADR-0073 §論点 4 (S): PythonFunction 実行の承認 digest 保存キー。
+ *
+ * フォーマット: ``flode.python_trust.<workspaceHash>.<b64url(modelPath)>``
+ * 値はサーバ計算の SHA-256 hex (= モデル内の全 PythonFunction コードの digest)。
+ */
+export function makePythonTrustKey(
+  workspaceHash: string,
+  modelPath: string,
+): string {
+  return `flode.python_trust.${workspaceHash}.${b64urlEncode(modelPath)}`;
+}

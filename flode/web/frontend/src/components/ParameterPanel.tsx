@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
+import { PYTHON_FUNCTION_TYPE } from "../lib/blockTypes";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
 import {
@@ -28,6 +29,7 @@ import {
   useAppStore,
 } from "../store/appStore";
 import type { BlockEntry, MaskParamSpec } from "../types/api";
+import { PythonFunctionEditor } from "./PythonFunctionEditor";
 import {
   CHECKBOX_CLS,
   ExpressionEditor,
@@ -83,6 +85,16 @@ export function ParameterPanel({
       <MaskValuesEditor
         block={block}
         maskParams={maskParamsRaw as MaskParamSpec[]}
+      />
+    );
+  }
+  // SPEC-0023 / ADR-0073: PythonFunction はコードが SSOT の専用エディタ
+  // (構造 read-only + コード + 動的パラメータ行)。
+  if (block.type === PYTHON_FUNCTION_TYPE) {
+    return (
+      <PythonFunctionEditor
+        block={block}
+        header={<BlockHeader key={block.id} block={block} />}
       />
     );
   }

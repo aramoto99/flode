@@ -9,7 +9,7 @@ import {
   OUTPORT_TYPE,
   TRIGGER_TYPE,
 } from "../lib/blockTypes";
-import { resolvePortCounts } from "../lib/dynamicPorts";
+import { canPruneOnParamChange, resolvePortCounts } from "../lib/dynamicPorts";
 import { findBlockPath } from "../lib/findBlockPath";
 import {
   normalizeBlockId,
@@ -2210,11 +2210,16 @@ export function updateBlockParams(
           b.id === blockId ? { ...b, params } : b,
         );
         // param 変更により port 数が減った場合、index out-of-range の edge を剪定する。
+        // SPEC-0023: PythonFunction は新コードの解析結果が未着なら剪定しない
+        // (= default ポート数を「確定値」と誤認して結線を落とさない)。
         const meta = registry?.get(target.type);
         const before = resolvePortCounts(target.type, target.params, meta);
         const after = resolvePortCounts(target.type, params, meta);
         let newConnections = view.connections;
-        if (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs) {
+        if (
+          canPruneOnParamChange(target.type, params) &&
+          (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs)
+        ) {
           newConnections = view.connections.filter((c) => {
             if (c.dst === blockId && c.dst_idx >= after.nInputs) return false;
             if (c.src === blockId && c.src_idx >= after.nOutputs) return false;

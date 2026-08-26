@@ -294,6 +294,38 @@ export interface ResolvedPortShapes {
 // WS の ``failed`` メッセージにマージされる + REST start API の ``detail`` にも同じ
 // schema で入る。``category === "unknown"`` で fallback、frontend 未知の
 // ``template_key`` は ``error.unknown`` に落とす (ADR-0056 §D-3)。
+// SPEC-0023 / ADR-0073 §論点 1: PythonFunction の静的解析結果
+// (``POST /api/v1/blocks/python-function/introspect``)。exec は行われない。
+export interface PythonFunctionSpec {
+  resolved: true;
+  func_name: string;
+  n_inputs: number;
+  n_outputs: number;
+  n_states: number;
+  direct_feedthrough: boolean;
+  sample_time: number | null;
+  params_spec: BlockParamSpec[];
+}
+
+export interface PythonFunctionSpecError {
+  resolved: false;
+  error: {
+    message: string;
+    lineno: number | null;
+    col: number | null;
+    /** "syntax" = 構文エラー / "spec" = 静的解析で受理できない (@block 0/2 個、語彙外注釈等) */
+    kind: "syntax" | "spec";
+  };
+}
+
+export type PythonFunctionIntrospectResult =
+  | PythonFunctionSpec
+  | PythonFunctionSpecError;
+
+export interface PythonFunctionIntrospectResponse {
+  results: Record<string, PythonFunctionIntrospectResult>;
+}
+
 export interface FailurePayload {
   /** Phase 1: algebraic_loop / shape_mismatch / divide_by_zero / solver_failure /
    *  start_validation / unknown */

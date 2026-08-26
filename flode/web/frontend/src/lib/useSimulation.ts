@@ -18,6 +18,8 @@ import { streamSimulation } from "../api/stream";
 import { useAppStore } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
 import i18n from "../i18n";
+import { dialog } from "./dialogService";
+import { startWithPythonGate } from "./pythonTrust";
 
 /**
  * 終端後 backfill を実施済みの simulation_id。useSimulation は Toolbar と
@@ -89,9 +91,30 @@ export function useSimulation(): {
       );
       state.setEditingFileMeta(resp.mtime, resp.etag);
       state.setDirty(false);
-      const { simulation_id } = await startSimulationByPath(
-        state.selectedFilePath,
+      // SPEC-0023 / ADR-0073 §論点 4 (S): PythonFunction を含むモデルは初回のみ
+      // 確認ダイアログ (承認 digest は localStorage、コード変更で自動失効)。
+      // これは UX 機構であってセキュリティ機構ではない (hard gate はサーバ側)。
+      const filePath = state.selectedFilePath;
+      const started = await startWithPythonGate(
+        (ack) => startSimulationByPath(filePath, ack),
+        {
+          workspaceHash: state.workspaceHash,
+          modelPath: filePath,
+          confirm: (info) =>
+            dialog.confirm(
+              i18n.t("python_function.confirm.message", {
+                blocks: info.blockLabels.join(", "),
+              }),
+              {
+                title: i18n.t("python_function.confirm.title"),
+                okLabel: i18n.t("python_function.confirm.ok"),
+                variant: "danger",
+              },
+            ),
+        },
       );
+      if (started === null) return; // ユーザーがキャンセル (= 失敗ではない)
+      const { simulation_id } = started;
       startedSimulation(simulation_id);
       const ws = streamSimulation(simulation_id, handleStreamMessage);
       wsRef.current?.close();

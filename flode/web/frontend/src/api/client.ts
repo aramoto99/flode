@@ -11,6 +11,7 @@ import type {
   FlwModel,
   LibraryEntryDetail,
   LibraryRegistryResponse,
+  PythonFunctionIntrospectResponse,
   ResolvedPortShapes,
   SimulationResults,
   SimulationState,
@@ -91,11 +92,30 @@ async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
  */
 export async function startSimulationByPath(
   modelPath: string,
+  pythonAck?: string,
 ): Promise<{ simulation_id: string; model_id: string }> {
+  // SPEC-0023 soft gate: PythonFunction を含むモデルはサーバ計算 digest の echo
+  // (``python_ack``) が無いと 409 (category ``python_function_unconfirmed``)。
+  // 含まないモデルではサーバが無視する。
+  const body: Record<string, unknown> = { model_path: modelPath };
+  if (pythonAck !== undefined) body.python_ack = pythonAck;
   return _fetch("/simulations", {
     method: "POST",
-    body: JSON.stringify({ model_path: modelPath }),
+    body: JSON.stringify(body),
   });
+}
+
+/**
+ * SPEC-0023 / ADR-0073 §論点 1: PythonFunction ソースの静的解析。
+ * サーバは exec しない (公開 bind でも安全)。``key`` はクライアント側の突合キー。
+ */
+export async function introspectPythonFunctions(
+  items: ReadonlyArray<{ key: string; code: string }>,
+): Promise<PythonFunctionIntrospectResponse> {
+  return _fetch<PythonFunctionIntrospectResponse>(
+    "/blocks/python-function/introspect",
+    { method: "POST", body: JSON.stringify({ items }) },
+  );
 }
 
 /**

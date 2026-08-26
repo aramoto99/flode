@@ -11,8 +11,10 @@ import {
   ENABLE_TYPE,
   INPORT_TYPE,
   OUTPORT_TYPE,
+  PYTHON_FUNCTION_TYPE,
   TRIGGER_TYPE,
 } from "./blockTypes";
+import { getCachedPythonSpec } from "./pythonFunctionSpec";
 
 export interface ResolvedPortCounts {
   nInputs: number;
@@ -118,8 +120,36 @@ export function resolvePortCounts(
     return { nInputs: defaultIn, nOutputs: defaultOut };
   }
 
+  // ----- PythonFunction (SPEC-0023 / ADR-0073 §論点 1) -----
+  // ポート数はコードの静的解析 (introspect API) で決まる。cache hit ならその値、
+  // miss (= 解析中 / 未要求) なら registry default (1 in / 1 out)。
+  // 解析エラーのコードも default で描く (= 結線を壊さない)。
+  if (typePath === PYTHON_FUNCTION_TYPE) {
+    const spec = getCachedPythonSpec(params.code);
+    if (spec !== undefined && spec.resolved) {
+      return { nInputs: spec.n_inputs, nOutputs: spec.n_outputs };
+    }
+    return { nInputs: defaultIn, nOutputs: defaultOut };
+  }
+
   // それ以外は registry default
   return { nInputs: defaultIn, nOutputs: defaultOut };
+}
+
+/**
+ * ``updateBlockParams`` の結線剪定を行ってよいか (SPEC-0023 / ADR-0073 V10 ガード)。
+ *
+ * PythonFunction は新コードの解析結果が cache に無いとポート数が「default に
+ * 見える」だけで確定していないため、その状態で剪定すると結線を誤って落とす。
+ * 解析済み (= PythonCodeDialog が Apply 前に cache へ投入) のときだけ true。
+ */
+export function canPruneOnParamChange(
+  typePath: string,
+  nextParams: Record<string, unknown>,
+): boolean {
+  if (typePath !== PYTHON_FUNCTION_TYPE) return true;
+  const spec = getCachedPythonSpec(nextParams.code);
+  return spec !== undefined && spec.resolved;
 }
 
 function countByType(blocks: unknown[], typePath: string): number {
@@ -152,6 +182,7 @@ export function hasDynamicPorts(typePath: string): boolean {
     ".DiscreteStateSpace",
     ".MimoTransferFunction",
     ".Subsystem",
+    ".PythonFunction",
   ].some((suffix) => typePath.endsWith(suffix));
 }
 
