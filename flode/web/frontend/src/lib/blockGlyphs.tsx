@@ -457,6 +457,26 @@ const FcnGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0023 / ADR-0073 (v0.49.0): PythonFunction。標準記号が無い領域なので Fcn と
+// 同じ等幅テキスト idiom を拡張し、Python の ``def`` キーワードで識別する
+// (= 「式」の Fcn と「関数定義」の PythonFunction を語で区別)。
+const PythonFunctionGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="15"
+      textAnchor="middle"
+      fontSize="8"
+      fontFamily="ui-monospace,monospace"
+      fontWeight="600"
+      fill="currentColor"
+      stroke="none"
+    >
+      def
+    </text>
+  </svg>
+);
+
 // =============================================================================
 // Continuous
 // =============================================================================
@@ -1190,6 +1210,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "flode.blocks.lookup.LookupTableND": LookupTableNDGlyph,
   // SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions
   "flode.blocks.userfunc.Fcn": FcnGlyph,
+  // SPEC-0023 / ADR-0073 (v0.49.0): Python Function
+  "flode.blocks.pythonfunc.PythonFunction": PythonFunctionGlyph,
   // continuous
   "flode.blocks.continuous.Integrator": IntegratorGlyph,
   "flode.blocks.continuous.Derivative": DerivativeGlyph,

@@ -243,6 +243,12 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     ),
     # SPEC-0009 / ADR-0059 (v5.2.0): User-Defined Functions 新カテゴリ第 1 弾
     "flode.blocks.userfunc.Fcn": ("userfunc", "Fcn", "userfunc.fcn"),
+    # SPEC-0023 / ADR-0073 (v0.49.0): 任意 Python ソース (@block 形) を実行するブロック
+    "flode.blocks.pythonfunc.PythonFunction": (
+        "userfunc",
+        "Python Function",
+        "userfunc.pythonfunction",
+    ),
     # routing
     "flode.blocks.routing.Switch": ("routing", "Switch", "routing.switch"),
     "flode.blocks.routing.Mux": ("routing", "Mux", "routing.mux"),
@@ -287,6 +293,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
 _BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
     # 「関係演算」を "comp" / "compare" / "比較" で見つけられるようにする (主因)。
     "flode.blocks.logic.RelationalOperator": ("compare", "comparison", "比較"),
+    # SPEC-0023: 俗称 p-function / script / code でも見つかるように
+    "flode.blocks.pythonfunc.PythonFunction": ("p-function", "script", "code", "スクリプト"),
     "flode.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
     "flode.blocks.mathops.Divide": ("division", "除算", "割り算"),
     "flode.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),

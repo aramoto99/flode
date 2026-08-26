@@ -372,6 +372,23 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
+    # SPEC-0023 / ADR-0073 (v0.49.0): 任意 Python (@block 形) を実行、サンドボックスなし
+    "flode.blocks.pythonfunc.PythonFunction": {
+        "en": {
+            "display_name": "Python Function",
+            "docstring_summary": (
+                "Run a user-written @block Python function (states / MIMO / imports allowed). "
+                "Not sandboxed: running the model runs this code."
+            ),
+        },
+        "ja": {
+            "display_name": "Python 関数",
+            "docstring_summary": (
+                "ユーザーが書いた @block 形の Python 関数を実行 (状態 / MIMO / import 可)。"
+                "サンドボックスなし: モデルの実行 = このコードの実行。"
+            ),
+        },
+    },
     # ----- continuous (5) -------------------------------------------------
     "flode.blocks.continuous.Integrator": {
         "en": {

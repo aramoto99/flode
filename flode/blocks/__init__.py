@@ -37,6 +37,7 @@ from .mathops import (
     Sum,
     TrigFunction,
 )
+from .pythonfunc import PythonFunction
 from .random_source import RandomSource
 from .rounding import Rounding
 from .routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
@@ -78,6 +79,7 @@ __all__ = [
     "Prelookup",
     "Product",
     "PulseGenerator",
+    "PythonFunction",
     "Ramp",
     "RandomSource",
     "RateLimiter",
