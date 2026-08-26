@@ -24,6 +24,7 @@ from __future__ import annotations
 import inspect
 import logging
 import numbers
+from dataclasses import dataclass
 from typing import Any, get_args, get_origin, get_type_hints
 
 import numpy as np
@@ -37,6 +38,30 @@ _logger = logging.getLogger("flode.decorator")
 _RESERVED_X0 = "x0"
 _T_PARAM_RECOMMENDED = "t"
 _X_PARAM_RECOMMENDED = "x"
+
+
+@dataclass(frozen=True)
+class BlockStructure:
+    """``@block`` が推論した構造値のスナップショット (ADR-0073 §論点 2-D)。
+
+    生成 class の ``_flode_structure`` 属性として公開され、**インスタンス化せずに**
+    ポート数 / 状態数 / 直達 / sample_time を読める。必須パラメータを持つ
+    class でも dummy 値での試行インスタンス化が不要になる (``PythonFunction`` の
+    静的解析結果との突合に使う)。
+
+    Attributes:
+        n_inputs: 入力ポート数。
+        n_outputs: 出力ポート数。
+        n_states: 状態次元数。
+        direct_feedthrough: 直達フラグ (推論または明示)。
+        sample_time: ``None`` / ``0.0`` (連続)、``> 0`` (離散)、``-1.0`` (継承)。
+    """
+
+    n_inputs: int
+    n_outputs: int
+    n_states: int
+    direct_feedthrough: bool
+    sample_time: float | None
 
 
 def block(
@@ -478,6 +503,13 @@ def _make_block_class(
         "update": update,
         "_flode_func": staticmethod(func),
         "_flode_params_spec": tuple(params_spec),
+        "_flode_structure": BlockStructure(
+            n_inputs=n_inputs,
+            n_outputs=n_outputs,
+            n_states=n_states,
+            direct_feedthrough=direct_feedthrough,
+            sample_time=sample_time,
+        ),
     }
     return type(cls_name, (Block,), namespace)
 
@@ -920,6 +952,13 @@ def _make_block_class_from_class(
         "update": update,
         "_flode_user_cls": user_cls,
         "_flode_params_spec": tuple(params_spec),
+        "_flode_structure": BlockStructure(
+            n_inputs=n_inputs,
+            n_outputs=n_outputs,
+            n_states=n_states,
+            direct_feedthrough=direct_feedthrough,
+            sample_time=sample_time,
+        ),
     }
     # user class が `record` / `reset` 等の追加メソッドを持っていれば素直に継承する
     # (Sink 系で record を持つケースを想定)。

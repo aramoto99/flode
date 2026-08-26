@@ -754,3 +754,56 @@ def test_simulator_run_two_independent_decorated_gains():
     sim.run()
     np.testing.assert_allclose(scope.values[:, 0], 2.0)
     np.testing.assert_allclose(scope.values[:, 1], 3.0)
+
+
+# ---------------------------------------------------------------
+# ADR-0073 §論点 2-D: ``_flode_structure`` (インスタンス化せずに構造を読む)
+# ---------------------------------------------------------------
+
+
+class TestFlodeStructure:
+    """生成 class の ``_flode_structure`` が推論結果と一致し、インスタンス化不要で読める。"""
+
+    def test_function_form_exposes_structure(self):
+        @block(states=1, sample_time=0.1)
+        def delay2(t: float, x: np.ndarray, u: tuple[float, float], *, k: float) -> tuple[
+            tuple[float, float], np.ndarray
+        ]:
+            return (k * u[0], k * u[1]), np.array([u[0]])
+
+        s = delay2._flode_structure
+        assert (s.n_inputs, s.n_outputs, s.n_states) == (2, 2, 1)
+        assert s.direct_feedthrough is False
+        assert s.sample_time == 0.1
+        # 必須パラメータ ``k`` を渡さずに構造が読めている (= インスタンス化不要)
+        with pytest.raises(BlockSpecError, match="missing required parameter"):
+            delay2()
+
+    def test_class_form_exposes_structure(self):
+        @block(states=1, direct_feedthrough=True)
+        class Leaky:
+            x0: float = 0.0
+
+            def output(self, t: float, x: np.ndarray, u: float) -> float:
+                return x[0] + u
+
+            def derivative(self, t: float, x: np.ndarray, u: float) -> np.ndarray:
+                return np.array([-x[0] + u])
+
+        s = Leaky._flode_structure
+        assert (s.n_inputs, s.n_outputs, s.n_states) == (1, 1, 1)
+        assert s.direct_feedthrough is True
+        assert s.sample_time is None
+
+    def test_structure_matches_instance_attributes(self):
+        @block
+        def src(t: float) -> tuple[float, float, float]:
+            return t, 2 * t, 3 * t
+
+        inst = src()
+        s = src._flode_structure
+        assert s.n_inputs == inst.n_inputs == 0
+        assert s.n_outputs == inst.n_outputs == 3
+        assert s.n_states == inst.n_states == 0
+        assert s.direct_feedthrough == inst.direct_feedthrough
+        assert s.sample_time == inst.sample_time
