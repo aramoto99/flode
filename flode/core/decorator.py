@@ -303,6 +303,25 @@ def _resolve_output_count(
     )
 
 
+def _is_ndarray_hint(hint: Any) -> bool:
+    """``np.ndarray`` (bare) / ``npt.NDArray[...]`` を「ndarray 注釈」として判定する。
+
+    numpy 2.x では ``npt.NDArray`` が ``typing.TypeAliasType`` (PEP 695 alias) で
+    定義され、``get_origin(npt.NDArray[Any])`` は ``np.ndarray`` ではなく alias
+    自身を返す。alias の ``__value__`` (= ``np.ndarray[Any, np.dtype[...]]``) まで
+    unwrap して判定する。
+    """
+    if hint is np.ndarray:
+        return True
+    origin = get_origin(hint)
+    if origin is np.ndarray:
+        return True
+    alias_value = getattr(origin, "__value__", None)
+    if alias_value is not None:
+        return alias_value is np.ndarray or get_origin(alias_value) is np.ndarray
+    return False
+
+
 def _infer_count_from_hint(
     hint: Any, *, role: str, func_name: str, arg_name: str
 ) -> tuple[int, str]:
@@ -328,10 +347,9 @@ def _infer_count_from_hint(
                 f"{arg_name!r} of {func_name!r}. Use @block({role}=N) instead."
             )
         return len(args), "tuple"
-    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` (= ``np.ndarray[Any, np.dtype[Any]]``
-    # generic alias) の両方を「サイズ不明な ndarray」として拒否する。後者は
-    # ``get_origin`` が ``np.ndarray`` を返す。
-    if hint is np.ndarray or origin is np.ndarray:
+    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` の両方を「サイズ不明な ndarray」
+    # として拒否する (alias の unwrap は ``_is_ndarray_hint``)。
+    if _is_ndarray_hint(hint):
         raise BlockSpecError(
             f"@block: bare ndarray annotation for {arg_name!r} of {func_name!r} "
             f"cannot be inferred (size unknown). Use @block({role}=N) to "
@@ -364,11 +382,9 @@ def _split_state_return(return_hint: Any, func_name: str) -> Any:
             f"@block(states>0): return tuple of {func_name!r} must have exactly "
             f"2 elements (output, x_dot/x_next), got {len(args)}"
         )
-    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` (= generic alias) の両方を
-    # 受け入れる。後者の場合 ``get_origin`` が ``np.ndarray`` を返す。
-    second_arg = args[1]
-    second_origin = get_origin(second_arg) or second_arg
-    if second_origin is not np.ndarray:
+    # ``np.ndarray`` (bare) と ``npt.NDArray[Any]`` (= TypeAliasType / generic alias)
+    # の両方を受け入れる (alias の unwrap は ``_is_ndarray_hint``)。
+    if not _is_ndarray_hint(args[1]):
         raise BlockSpecError(
             f"@block(states>0): second element of return tuple of {func_name!r} "
             f"must be `np.ndarray` or `npt.NDArray[Any]` (the x_dot or x_next vector), "

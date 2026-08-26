@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from flode import BlockSpecError, Simulator, block
@@ -766,9 +768,9 @@ class TestFlodeStructure:
 
     def test_function_form_exposes_structure(self):
         @block(states=1, sample_time=0.1)
-        def delay2(t: float, x: np.ndarray, u: tuple[float, float], *, k: float) -> tuple[
-            tuple[float, float], np.ndarray
-        ]:
+        def delay2(
+            t: float, x: np.ndarray, u: tuple[float, float], *, k: float
+        ) -> tuple[tuple[float, float], np.ndarray]:
             return (k * u[0], k * u[1]), np.array([u[0]])
 
         s = delay2._flode_structure
@@ -794,6 +796,25 @@ class TestFlodeStructure:
         assert (s.n_inputs, s.n_outputs, s.n_states) == (1, 1, 1)
         assert s.direct_feedthrough is True
         assert s.sample_time is None
+
+    def test_npt_ndarray_alias_accepted_for_state_return(self):
+        """numpy 2.x の ``npt.NDArray`` (TypeAliasType) を戻り値 2 番目として受理する。"""
+
+        @block(states=1)
+        def integ(t: float, x: np.ndarray, u: float) -> tuple[float, npt.NDArray[Any]]:
+            return x[0], np.array([u])
+
+        assert integ._flode_structure.n_states == 1
+        inst = integ()
+        np.testing.assert_allclose(inst.derivative(0.0, np.zeros(1), np.array([2.0])), [2.0])
+
+    def test_npt_ndarray_alias_rejected_as_input_annotation(self):
+        """``npt.NDArray[Any]`` を ``u`` の注釈にするとサイズ不明として拒否 (bare ndarray と同じ)。"""
+        with pytest.raises(BlockSpecError, match="ndarray annotation"):
+
+            @block
+            def f(t: float, u: npt.NDArray[Any]) -> float:
+                return float(u[0])
 
     def test_structure_matches_instance_attributes(self):
         @block

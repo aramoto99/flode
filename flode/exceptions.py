@@ -39,6 +39,71 @@ class BlockEvalError(FlodeError):
     """
 
 
+class PythonFunctionSourceError(BlockSpecError):
+    """``PythonFunction`` のソースが静的解析で受理できない (SPEC-0023 / ADR-0073 §論点 2-E)。
+
+    構文エラー (``kind="syntax"``) と仕様違反 (``kind="spec"``: ``@block`` が 0 / 2 個以上、
+    非リテラルのデコレータ引数、語彙外の型注釈、class 形など) の両方を表す。
+    introspect API はこの属性を inline エラー表示 (行・列) に使う。
+
+    Args:
+        message: 説明文。
+        kind: ``"syntax"`` または ``"spec"``。
+        lineno: 1 始まりの行番号 (特定できないときは ``None``)。
+        col: 1 始まりの列番号 (特定できないときは ``None``)。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "spec",
+        lineno: int | None = None,
+        col: int | None = None,
+        block_id: str | None = None,
+    ) -> None:
+        super().__init__(message, block_id=block_id)
+        self.kind: str = kind
+        self.lineno: int | None = lineno
+        self.col: int | None = col
+
+
+class PythonBlocksDisabledError(BlockSpecError):
+    """``PythonFunction`` の実行がプロセス policy で禁止されている (ADR-0073 §論点 4 hard gate)。
+
+    非 loopback アドレスに bind したサーバで ``--allow-python-blocks`` が無い場合など。
+    ``_build()`` (= ``exec`` の直前) で投げられ、モデルを開くだけでは発生しない。
+    """
+
+
+class PythonFunctionEvalError(BlockEvalError):
+    """``PythonFunction`` のユーザーコードが実行時に例外を投げた (ADR-0073 §論点 6)。
+
+    flode 内部フレームを除いたユーザーコード側の traceback を保持し、
+    ADR-0056 のログタブに「N 行目: <該当行>」として表示する。
+
+    Args:
+        message: ``"<ExcType>: <msg>"`` 形式の説明文。
+        lineno: ユーザーコード内で実際に落ちた行 (1 始まり)。不明なら ``None``。
+        source_line: その行のソーステキスト。不明なら ``None``。
+        user_traceback: ユーザーコードのフレームだけを整形した traceback 文字列。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        lineno: int | None = None,
+        source_line: str | None = None,
+        user_traceback: str = "",
+        block_id: str | None = None,
+    ) -> None:
+        super().__init__(message, block_id=block_id)
+        self.lineno: int | None = lineno
+        self.source_line: str | None = source_line
+        self.user_traceback: str = user_traceback
+
+
 class UnknownBlockIdError(FlodeError, KeyError):
     """`Simulator.connect` / `get_block` 等で未登録の ID 文字列が渡された。
 
