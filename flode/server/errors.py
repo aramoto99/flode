@@ -22,6 +22,8 @@ from ..exceptions import (
     FlodeError,
     ModelLoadError,
     ModelSerializationError,
+    PythonBlocksDisabledError,
+    PythonFunctionEvalError,
     SchedulingError,
     SchemaVersionError,
     SolverError,
@@ -72,11 +74,19 @@ _CATEGORY_DIVIDE_BY_ZERO = "divide_by_zero"
 _CATEGORY_SOLVER_FAILURE = "solver_failure"
 _CATEGORY_START_VALIDATION = "start_validation"
 _CATEGORY_UNKNOWN = "unknown"
+# SPEC-0023 / ADR-0073 §論点 6: PythonFunction 専用カテゴリ 3 件。
+#   - python_function_error: ユーザーコードの実行時例外 (行番号 + 該当行付き)
+#   - python_function_disabled: hard gate (非 loopback bind でフラグ無し) による拒否
+#   - python_function_unconfirmed: start API の soft gate (409、route が生成)
+CATEGORY_PYTHON_FUNCTION_ERROR = "python_function_error"
+CATEGORY_PYTHON_FUNCTION_DISABLED = "python_function_disabled"
+CATEGORY_PYTHON_FUNCTION_UNCONFIRMED = "python_function_unconfirmed"
 
 # Phase 1 で fall through する例外 (= unknown 扱い、Phase 2 で新カテゴリ追加候補):
 #   - ``TypeError`` / ``IndexError`` (= simulator.py の add/connect 引数 validation)
 #   - ``RuntimeWarning`` (= numpy overflow、Phase 2 で overflow カテゴリ)
-#   - ユーザ式ブロックの任意 Python 例外 (Phase 2)
+#   - ``Fcn`` (式ブロック) の任意 Python 例外 (Phase 2)。``PythonFunction`` は
+#     専用カテゴリ ``python_function_error`` で扱う (ADR-0073 §論点 6)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -90,6 +100,16 @@ class ErrorClassification:
 # 例外クラス → 分類のマッピング。``classify_exception`` が MRO で解決する。
 _CATEGORY_BY_EXC: tuple[tuple[type[BaseException], ErrorClassification], ...] = (
     (AlgebraicLoopError, ErrorClassification(_CATEGORY_ALGEBRAIC_LOOP, "error.algebraic_loop")),
+    # ADR-0073 §論点 6: tuple 順の isinstance 走査なので、``BlockSpecError`` の
+    # サブクラスである ``PythonBlocksDisabledError`` は BlockSpecError より前に置く。
+    (
+        PythonBlocksDisabledError,
+        ErrorClassification(CATEGORY_PYTHON_FUNCTION_DISABLED, "error.python_function_disabled"),
+    ),
+    (
+        PythonFunctionEvalError,
+        ErrorClassification(CATEGORY_PYTHON_FUNCTION_ERROR, "error.python_function_error"),
+    ),
     (ZeroDivisionError, ErrorClassification(_CATEGORY_DIVIDE_BY_ZERO, "error.divide_by_zero")),
     (SolverError, ErrorClassification(_CATEGORY_SOLVER_FAILURE, "error.solver_failure")),
     (BlockSpecError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
@@ -235,6 +255,16 @@ def _template_args_for(
         # ``error.start_validation`` テンプレートが参照する {{message}} を必ず埋める
         # (= 例外由来経路で抜けると UI に "{{message}}" が literal 表示される)。
         args["message"] = str(exc)
+    elif classification.category == CATEGORY_PYTHON_FUNCTION_ERROR:
+        # ADR-0073 §論点 6: ユーザーコードの行番号 + 該当行テキスト。
+        args["message"] = str(exc)
+        args.setdefault("block_label", getattr(exc, "block_id", None) or "?")
+        lineno = getattr(exc, "lineno", None)
+        args["lineno"] = lineno if lineno is not None else "?"
+        args["source_line"] = (getattr(exc, "source_line", None) or "").strip()
+    elif classification.category == CATEGORY_PYTHON_FUNCTION_DISABLED:
+        args["message"] = str(exc)
+        args.setdefault("block_label", getattr(exc, "block_id", None) or "?")
     elif classification.category == _CATEGORY_UNKNOWN:
         args["raw_message"] = f"{type(exc).__name__}: {exc}"
 
@@ -318,7 +348,13 @@ def build_failure_payload(
     raw_message = f"{type(exc).__name__}: {exc}"
     raw_traceback: str | None = None
     if include_traceback:
-        tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        # ADR-0073 §論点 6: PythonFunction のユーザー例外は、flode 内部フレームを
+        # 除いた ``user_traceback`` を優先する (完全な traceback はサーバログに残す)。
+        user_tb = getattr(exc, "user_traceback", None)
+        if isinstance(user_tb, str) and user_tb:
+            tb_str = user_tb
+        else:
+            tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         raw_traceback = _truncate_traceback(tb_str)
 
     payload: dict[str, Any] = {

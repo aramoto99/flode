@@ -263,3 +263,71 @@ def test_truncate_traceback_keeps_tail_when_too_long() -> None:
     assert "earlier lines truncated" in lines[0]
     assert lines[-1] == "line99"
     assert len(lines) == 11  # marker + 10 tail lines
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0023 / ADR-0073 §論点 6: PythonFunction 専用カテゴリ
+# ---------------------------------------------------------------------------
+
+
+def test_classify_python_function_eval_error() -> None:
+    from flode.exceptions import PythonFunctionEvalError
+
+    c = classify_exception(PythonFunctionEvalError("PythonFunction[pf]: ZeroDivisionError: x"))
+    assert c.category == "python_function_error"
+    assert c.template_key == "error.python_function_error"
+
+
+def test_classify_python_blocks_disabled_precedes_block_spec_error() -> None:
+    """``PythonBlocksDisabledError`` は BlockSpecError のサブクラスだが専用カテゴリに落ちる。"""
+    from flode.exceptions import PythonBlocksDisabledError
+
+    c = classify_exception(PythonBlocksDisabledError("disabled", block_id="pf"))
+    assert c.category == "python_function_disabled"
+    # 通常の BlockSpecError は従来どおり
+    assert classify_exception(BlockSpecError("x")).category == "start_validation"
+
+
+def test_payload_python_function_error_has_line_info_and_user_traceback() -> None:
+    from flode.exceptions import PythonFunctionEvalError
+
+    exc = PythonFunctionEvalError(
+        "PythonFunction[pf]: ZeroDivisionError: division by zero (line 5)",
+        lineno=5,
+        source_line="        return 1 / 0",
+        user_traceback='  File "<pythonfunction:pf>", line 5, in bad\n    return 1 / 0\nZeroDivisionError: division by zero',
+        block_id="pf",
+    )
+    payload = build_failure_payload(exc, simulator=_DummySimulator(current_block=None), t=0.06)
+    assert payload["category"] == "python_function_error"
+    assert payload["block_id"] == "pf"
+    assert payload["block_ids"] == ["pf"]
+    args = payload["template_args"]
+    assert args["lineno"] == 5
+    assert args["source_line"] == "return 1 / 0"
+    assert args["block_label"] == "pf"
+    assert "ZeroDivisionError" in args["message"]
+    # flode 内部フレームではなくユーザーフレームだけの traceback
+    assert payload["raw_traceback"].startswith('  File "<pythonfunction:pf>"')
+    assert "errors.py" not in payload["raw_traceback"]
+
+
+def test_payload_python_function_error_without_line_info() -> None:
+    from flode.exceptions import PythonFunctionEvalError
+
+    exc = PythonFunctionEvalError("PythonFunction[pf]: RuntimeError: boom", block_id="pf")
+    payload = build_failure_payload(exc, include_traceback=False)
+    assert payload["template_args"]["lineno"] == "?"
+    assert payload["template_args"]["source_line"] == ""
+    assert payload["raw_traceback"] is None
+
+
+def test_payload_python_blocks_disabled_includes_message() -> None:
+    from flode.exceptions import PythonBlocksDisabledError
+
+    exc = PythonBlocksDisabledError("PythonFunction[pf]: disabled (bind 0.0.0.0)", block_id="pf")
+    payload = build_failure_payload(exc, include_traceback=False)
+    assert payload["category"] == "python_function_disabled"
+    assert payload["template_args"]["message"].endswith("(bind 0.0.0.0)")
+    assert payload["template_args"]["block_label"] == "pf"
+    assert payload["block_id"] == "pf"
