@@ -44,6 +44,7 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..core.decorator import block
+from ..core.identifiers import normalize_block_id
 from ..exceptions import (
     BlockSpecError,
     FlodeError,
@@ -222,21 +223,45 @@ def compute_python_digest(simulator: Simulator) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _wrap_user_exception(
-    exc: BaseException, *, filename: str, block_id: str | None
-) -> PythonFunctionEvalError:
+def _user_frame_info(exc: BaseException, *, filename: str) -> tuple[int | None, str | None, str]:
+    """ユーザーコードのフレームだけから ``(lineno, source_line, user_traceback)`` を抽出する。"""
     frames = [f for f in traceback.extract_tb(exc.__traceback__) if f.filename == filename]
     last = frames[-1] if frames else None
     lineno = last.lineno if last is not None else None
     source_line = (last.line or None) if last is not None else None
     user_tb = "".join(traceback.format_list(frames)) if frames else ""
     user_tb += f"{type(exc).__name__}: {exc}"
+    return lineno, source_line, user_tb
+
+
+def _wrap_user_exception(
+    exc: BaseException, *, filename: str, block_id: str | None
+) -> PythonFunctionEvalError:
+    """実行時 (``output`` / ``derivative`` / ``update`` / ``reset``) のユーザー例外を包む。"""
+    lineno, source_line, user_tb = _user_frame_info(exc, filename=filename)
     where = f" (line {lineno})" if lineno is not None else ""
     return PythonFunctionEvalError(
         f"PythonFunction[{block_id}]: {type(exc).__name__}: {exc}{where}",
         lineno=lineno,
         source_line=source_line,
         user_traceback=user_tb,
+        block_id=block_id,
+    )
+
+
+def _wrap_exec_exception(
+    exc: BaseException, *, filename: str, block_id: str | None
+) -> BlockSpecError:
+    """``exec`` 中 (= module レベル文 / import 失敗) の例外を ``BlockSpecError`` に包む。
+
+    SPEC-0023 §機能要件 6: モデルの構成が壊れている扱い (= ``start_validation``)。
+    実行時の値依存の例外 (``PythonFunctionEvalError``) とは区別する。
+    """
+    lineno, _source_line, _tb = _user_frame_info(exc, filename=filename)
+    where = f" (line {lineno})" if lineno is not None else ""
+    return BlockSpecError(
+        f"PythonFunction[{block_id}]: module-level code failed during exec: "
+        f"{type(exc).__name__}: {exc}{where}",
         block_id=block_id,
     )
 
@@ -304,7 +329,11 @@ class PythonFunction(Block):
         id: str | None = None,
         name: str | None = None,
     ) -> None:
-        spec = analyze_source(code, block_id=id if id is not None else name)
+        # ADR-0071 §(3): Block.__init__ が行う NFC 正規化を先出しし、静的解析の
+        # エラーメッセージ / 擬似ファイル名にも正規化済み id を使う (= _build 時と一致)。
+        raw_id = id if id is not None else name
+        norm_id = normalize_block_id(raw_id) if isinstance(raw_id, str) else raw_id
+        spec = analyze_source(code, block_id=norm_id)
         super().__init__(
             id=id,
             name=name,
@@ -361,8 +390,14 @@ class PythonFunction(Block):
         """
         if self._inner is None:
             _require_execution_allowed(self.id)
-            with self._user_frame_guard():
+            try:
                 cls, ns = exec_block_source(self.code, block_id=self.id)
+            except FlodeError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - module レベル文の任意例外を仕様違反として分類
+                raise _wrap_exec_exception(
+                    exc, filename=source_filename(self.id), block_id=self.id
+                ) from exc
             _verify_structure(cls, self._static_spec, self.id)
             inner = cls(**self.user_params)
             inner.id = self.id
@@ -400,17 +435,25 @@ class PythonFunction(Block):
         with self._user_frame_guard():
             return inner.output(t, x, u)
 
-    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+    def _synced_inner(self) -> Block:
+        """内包インスタンスに ``_resolved_sample_time`` を転送して返す。
+
+        ADR-0073 §論点 3 (V4): 継承 sample_time (-1.0) の解決値は outer に書かれるが、
+        デコレータ生成 class は self (= inner) の同名属性を読む。転送を忘れると継承
+        ブロックが常に連続扱いになる (= 静かな数値バグ) ので、``derivative`` /
+        ``update`` の両方がこの 1 箇所を通る。
+        """
         inner = self._inner_or_raise()
-        # ADR-0073 §論点 3 (V4): 継承 sample_time (-1.0) の解決値は outer に書かれるが、
-        # デコレータ生成 class は self (= inner) の同名属性を読むので毎回転送する。
         inner._resolved_sample_time = self._resolved_sample_time
+        return inner
+
+    def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        inner = self._synced_inner()
         with self._user_frame_guard():
             return inner.derivative(t, x, u)
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        inner = self._inner_or_raise()
-        inner._resolved_sample_time = self._resolved_sample_time
+        inner = self._synced_inner()
         with self._user_frame_guard():
             return inner.update(t, x, u)
 

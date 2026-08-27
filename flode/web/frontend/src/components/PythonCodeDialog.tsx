@@ -10,8 +10,7 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { introspectPythonFunctions } from "../api/client";
-import { putPythonSpec } from "../lib/pythonFunctionSpec";
+import { introspectSingle } from "../lib/pythonFunctionSpec";
 import type { PythonFunctionSpec } from "../types/api";
 import {
   DialogFooter,
@@ -43,13 +42,7 @@ export function PythonCodeDialog({
     setBusy(true);
     setError(null);
     try {
-      const resp = await introspectPythonFunctions([{ key: "k", code }]);
-      const result = resp.results.k;
-      if (result === undefined) {
-        setError(t("python_function.dialog.network_error", { message: "empty response" }));
-        return;
-      }
-      putPythonSpec(code, result);
+      const result = await introspectSingle(code);
       if (!result.resolved) {
         const { lineno, message } = result.error;
         setError(

@@ -14,13 +14,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { introspectPythonFunctions, listBlockMetadata } from "../api/client";
+import { listBlockMetadata } from "../api/client";
 import { parseNumericInput } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
   ensurePythonSpecs,
   getCachedPythonSpec,
-  putPythonSpec,
+  introspectSingle,
 } from "../lib/pythonFunctionSpec";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { updateBlockParams } from "../store/appStore";
@@ -105,11 +105,8 @@ export function PythonFunctionEditor({
         finish(spec);
         return;
       }
-      void introspectPythonFunctions([{ key: "k", code: nextCode }])
-        .then((resp) => {
-          const r = resp.results.k;
-          if (r === undefined) return;
-          putPythonSpec(nextCode, r);
+      void introspectSingle(nextCode)
+        .then((r) => {
           if (!r.resolved) {
             const { lineno, message } = r.error;
             setCodeError(

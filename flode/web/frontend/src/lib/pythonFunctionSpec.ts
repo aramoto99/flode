@@ -62,11 +62,15 @@ export function getPythonSpecVersion(): number {
  * 通信失敗時は cache に何も入れない (= 次回再試行される)。
  */
 export async function ensurePythonSpecs(codes: Iterable<string>): Promise<void> {
-  const missing = Array.from(new Set(codes)).filter(
-    (c) => !cache.has(c) && !inflight.has(c),
-  );
+  const wanted = Array.from(new Set(codes));
+  // 契約: resolve 時点で ``codes`` は全て cache 済み (失敗した要求は除く)。
+  // 他呼び出しで in-flight のものはその Promise を待ち、未要求分だけ新規に問い合わせる。
+  const pending = wanted
+    .map((c) => inflight.get(c))
+    .filter((p): p is Promise<void> => p !== undefined);
+  const missing = wanted.filter((c) => !cache.has(c) && !inflight.has(c));
   if (missing.length === 0) {
-    await Promise.all(inflight.values());
+    await Promise.all(pending);
     return;
   }
   const items = missing.map((code, i) => ({ key: `c${i}`, code }));
@@ -83,7 +87,25 @@ export async function ensurePythonSpecs(codes: Iterable<string>): Promise<void> 
     }
   })();
   for (const { code } of items) inflight.set(code, p);
-  await p;
+  await Promise.all([...pending, p]);
+}
+
+/**
+ * 1 件だけ introspect し、結果を cache に投入して返す (PythonCodeDialog /
+ * PythonFunctionEditor 共通の commit 経路)。通信失敗は throw (cache 不変)。
+ */
+export async function introspectSingle(
+  code: string,
+): Promise<PythonFunctionIntrospectResult> {
+  const cached = cache.get(code);
+  if (cached !== undefined) return cached;
+  const resp = await introspectPythonFunctions([{ key: "k", code }]);
+  const result = resp.results.k;
+  if (result === undefined) {
+    throw new Error("introspect returned no result for the requested key");
+  }
+  putPythonSpec(code, result);
+  return result;
 }
 
 /** モデル (Subsystem 内部を再帰) から PythonFunction の code を集める。 */

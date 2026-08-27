@@ -317,12 +317,34 @@ class TestErrors:
         assert "<pythonfunction:pf>" in err.user_traceback
         assert "simulator.py" not in err.user_traceback
 
-    def test_module_level_exception_is_wrapped(self):
+    def test_module_level_exception_is_block_spec_error(self):
+        """SPEC-0023 §6: exec 中 (module レベル / import 失敗) の例外は BlockSpecError。"""
         code = "raise RuntimeError('boom')\n\n@block\ndef f(t: float, u: float) -> float:\n    return u\n"
         sim = _step_chain(PythonFunction(code=code, id="pf"))
-        with pytest.raises(PythonFunctionEvalError, match="boom") as ei:
+        with pytest.raises(
+            BlockSpecError, match=r"module-level code failed.*boom.*\(line 1\)"
+        ) as ei:
             sim.run()
-        assert ei.value.lineno == 1
+        assert not isinstance(ei.value, PythonFunctionEvalError)
+        assert isinstance(ei.value.__cause__, RuntimeError)
+        assert ei.value.block_id == "pf"
+
+    def test_import_failure_is_block_spec_error(self):
+        code = "import no_such_module_xyz\n\n@block\ndef f(t: float, u: float) -> float:\n    return u\n"
+        sim = _step_chain(PythonFunction(code=code, id="pf"))
+        with pytest.raises(BlockSpecError, match="ModuleNotFoundError"):
+            sim.run()
+
+    def test_unicode_id_is_normalized_before_analysis(self):
+        # NFD の「ガ」(カ + 濁点) は NFC の「ガ」に正規化される (ADR-0071)
+        nfd = "ガ"
+        pf = PythonFunction(
+            code="@block\ndef f(t: float, u: float) -> float:\n    return u", id=nfd
+        )
+        assert pf.id == "ガ"
+        with pytest.raises(PythonFunctionSourceError) as ei:
+            PythonFunction(code="def f(t, u):\n    return u\n", id=nfd)
+        assert ei.value.block_id == "ガ"
 
     def test_shape_mismatch_stays_block_spec_error(self):
         code = textwrap.dedent(
