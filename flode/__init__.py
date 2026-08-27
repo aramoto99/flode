@@ -7,7 +7,7 @@
 # ADR-0044) は docked split と並存。Phase 6c (Workspace
 # convergence) Stage 1 として ADR-0040 §Amendments §(1) で位置付け、Stage 2 /
 # 3 (= activity bar + Launcher、drag-to-split-tab) は後続 ADR で順次着手。
-__version__ = "0.48.0"
+__version__ = "0.49.0"
 
 from .analysis import (
     BodeResponse,

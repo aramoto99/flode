@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.0] - 2026-08-27 — Python Function ブロック (任意 Python を GUI から記述)
+
+### Added
+
+- **`PythonFunction` ブロック** (パレット「User Function」、SPEC-0023 / ADR-0073)。
+  `@block` 形の Python ソースをモデル JSON にインライン保存し (`params.code` /
+  `params.user_params`)、状態あり・MIMO・任意 import のロジックを GUI から書ける。
+  ポート数・状態数・sample_time・パラメータ宣言は **コードが SSOT** で、Inspector は
+  構造を read-only 表示し、コードの keyword-only 引数からパラメータ行を動的生成する
+  (`POST /api/v1/blocks/python-function/introspect`、静的 AST 解析のみで exec しない)
+- Inspector の Python Function エディタ (inline + 「編集...」ダイアログ、Tab で
+  4 スペース)。解析に失敗したコードは行番号付きで表示し、params を更新しない
+- 実行時のユーザー例外は Log タブに **行番号 + 該当行** 付きで表示
+  (カテゴリ `python_function_error`、flode 内部フレームを除いた traceback)
+- `examples/python_function_compensator.py`
+
+### Changed — 脅威モデルの変更 (重要)
+
+- 従来の flode は「モデルファイルを開いても任意コードは実行されない」不変条件を持って
+  いた。本リリースからは **`PythonFunction` を含むモデルを実行することは、その中の
+  Python コードを自分の権限で実行することと同義** になる。サンドボックスはない
+  (部分的な制限は「安全でないのに安全に見える」状態を作るため意図的に行わない)。
+  式で書けるロジックには引き続き `Fcn` (AST whitelist サンドボックス) を使うこと
+- 防御は「実行点の集約」と「2 つの門」で行う:
+  - `exec` は `Simulator.run()` の構造解析直前 (`PythonFunction._build()`) の 1 点だけ。
+    **モデルを開く / ブロックを選択する / コードを編集するだけでは実行されない**
+  - **hard gate** (セキュリティ機構): `127.0.0.1` / `localhost` / `::1` 以外に bind した
+    サーバーでは `flode --allow-python-blocks` または `[server] allow_python_blocks = true`
+    が無い限り実行を拒否 (403 / `python_function_disabled`)。判定は fail closed
+    (解析できないホスト名は非 loopback 扱い)
+  - **soft gate** (UX 機構、**セキュリティ機構ではない**): GUI の初回実行前に確認
+    ダイアログを出し、承認をコードの SHA-256 digest と共に localStorage に記録する。
+    コードが 1 文字でも変われば再確認。`POST /api/v1/simulations` は
+    `python_ack=<digest>` の無い要求を 409 (`python_function_unconfirmed`) で返すが、
+    REST を直接叩けば自分で ack を付けられる (= ローカル単独利用者ツールとして意図した
+    定義)
+- `@block` 生成 class に `_flode_structure` (推論した構造値のスナップショット) を追加
+  (ADR-0003 Amend)。既存の動作は不変
+
+### Fixed
+
+- `@block` で `npt.NDArray[Any]` を戻り値 2 番目 (`x_dot` / `x_next`) に指定すると
+  numpy 2.x では `TypeAliasType` のため拒否されていた (docstring は受理を謳っていた)。
+  alias を unwrap して受理するよう修正
+
 ## [0.48.0] - 2026-08-26 — 実験的 JAX / GPU 経路の削除
 
 ### Removed

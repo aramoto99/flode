@@ -409,7 +409,7 @@
   "error.solver_failure": "ODE ソルバが収束しませんでした (t={{t, t_sec}}, reason={{reason}})",
   "error.start_validation": "モデル検証エラー: {{message}}",
   "error.unknown": "{{raw_message}}",
-  "error.python_function_error": "Python 関数 {{block_label}} が {{lineno}} 行目で例外: {{message}}",
+  "error.python_function_error": "Python 関数 {{block_label}} で例外: {{message}}",
   "error.python_function_disabled": "このサーバーでは Python 関数ブロックが無効です: {{message}}",
   "error.python_function_unconfirmed": "このモデルは Python 関数ブロック ({{block_labels, block_labels}}) を含みます。実行前に確認してください。",
   "python_function.section.structure": "構造",

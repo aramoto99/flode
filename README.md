@@ -86,7 +86,7 @@ scope.plot(show=True)
 | Lookup          | LookupTable1D, LookupTable2D, LookupTableND, Prelookup, InterpolationUsingPrelookup |
 | Logic           | RelationalOperator, LogicalOperator                                       |
 | Routing         | Switch, MultiportSwitch, Mux, Demux, Merge, Goto, From                    |
-| User Function   | Fcn (任意式 `y = f(t, u)`、AST whitelist で安全に評価)                    |
+| User Function   | Fcn (任意式 `y = f(t, u)`、AST whitelist で安全に評価)、PythonFunction (`@block` 形の Python ソースを GUI から記述、**サンドボックスなし**) |
 | Subsystem       | Subsystem (内部の Trigger / Enable ブロックで実行制御)                    |
 | Control         | Inport, Outport, Trigger, Enable                                          |
 
@@ -112,6 +112,16 @@ print(ls.A.shape, ls.eigenvalues(), ls.is_stable())
 def my_integrator(t, x, u):
     return x[0], np.array([u])   # (出力, 状態微分)
 ```
+
+同じ `@block` 形のソースを GUI から書けるのが **Python Function** ブロックです
+(パレット「User Function」)。ポート数・状態数・パラメータはコードから自動で決まり、
+パラメータは Inspector に行として現れます。
+
+> **セキュリティ**: Python Function はサンドボックスされません。このブロックを
+> 含むモデルを実行することは、その中のコードを自分の権限で実行することと同義です
+> (モデルを開くだけでは実行されず、初回実行前に確認ダイアログが出ます)。
+> `127.0.0.1` 以外に bind したサーバーでは `flode --allow-python-blocks` を付けない
+> 限り実行が拒否されます。式で書けるロジックには `Fcn` を使ってください。
 
 ## バージョニング
 

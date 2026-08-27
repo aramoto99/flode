@@ -409,7 +409,7 @@
   "error.solver_failure": "ODE solver failed to converge (t={{t, t_sec}}, reason={{reason}})",
   "error.start_validation": "Model validation error: {{message}}",
   "error.unknown": "{{raw_message}}",
-  "error.python_function_error": "Python Function {{block_label}} raised at line {{lineno}}: {{message}}",
+  "error.python_function_error": "Python Function {{block_label}} raised an exception: {{message}}",
   "error.python_function_disabled": "Python Function blocks are disabled on this server: {{message}}",
   "error.python_function_unconfirmed": "This model contains Python Function blocks ({{block_labels, block_labels}}); confirm before running.",
   "python_function.section.structure": "Structure",

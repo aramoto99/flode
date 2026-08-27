@@ -109,3 +109,36 @@ Signal selection and routing blocks.
    :nosignatures:
 
    flode.blocks.Switch
+
+.. _user-function:
+
+User Function
+-------------
+
+Blocks whose behaviour is written by the user.
+
+- ``Fcn`` evaluates a single expression ``y = f(t, u)`` in an AST-whitelisted
+  sandbox (no imports, no statements). **Prefer it whenever the logic fits in
+  one expression** — a model that only uses ``Fcn`` never executes arbitrary
+  code when it is run.
+- ``PythonFunction`` embeds a complete ``@block``-style Python source in the
+  model (``params.code``) and is **not sandboxed**: running a model that
+  contains one executes that code with your privileges. Port counts, state
+  size, ``sample_time`` and the parameter list are derived from the source by
+  static analysis (no ``exec``) so the diagram stays consistent while you
+  edit; the code itself runs exactly once, right before ``Simulator.run()``
+  resolves the execution order. Opening or editing a model never runs it.
+
+  On the server, Python Function blocks are always allowed on a loopback bind
+  (``127.0.0.1`` / ``localhost`` / ``::1``). On any other address they are
+  refused unless ``flode --allow-python-blocks`` (or
+  ``[server] allow_python_blocks = true``) is given. The GUI additionally asks
+  for confirmation the first time a model with Python code is run and remembers
+  the answer per model until the code changes — this is a convenience, not a
+  security boundary.
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   flode.blocks.PythonFunction

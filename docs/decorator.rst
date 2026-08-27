@@ -120,3 +120,24 @@ Design notes
 - The ``u`` argument is evaluated twice per time step in Phase 1 (once in
   ``output()``, once in ``derivative()``). For expensive functions, consider
   direct ``Block`` subclassing with manual caching.
+
+Writing the same source in the GUI (Python Function block)
+----------------------------------------------------------
+
+The ``PythonFunction`` block (palette category *User Function*) accepts a
+``@block``-style source string and applies **the same inference engine** as
+the decorator, so a function that works with ``@block`` in Python works
+unchanged when pasted into the block. Two restrictions apply because the
+structure is derived without executing the code:
+
+- ``@block(...)`` arguments and parameter defaults must be literals
+  (``@block(states=N)`` with ``N`` defined elsewhere is rejected), and
+- type annotations must use the built-in vocabulary (``float``, ``int``,
+  ``bool``, ``str``, ``tuple[...]``, ``np.float64``, ``np.ndarray``,
+  ``npt.NDArray[...]``, ``Any``). Module-level aliases are not resolved;
+  declare the structure explicitly with ``@block(inputs=N, outputs=M)``
+  instead.
+
+Only the function form is accepted in the block; class-form ``@block`` is
+rejected with a message. See :ref:`the block library <user-function>` for the
+security model of ``PythonFunction``.
