@@ -26,6 +26,7 @@ UI を開き (``--no-browser`` / ``[server] open_browser`` で無効化)、要�
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import errno
 import ipaddress
 import json
@@ -38,7 +39,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from ..blocks.pythonfunc import PythonBlockPolicy, set_python_block_policy
+from ..blocks.pythonfunc import PythonBlockPolicy
 from ..exceptions import FlodeError
 from .app import create_app
 from .config import (
@@ -515,7 +516,10 @@ def main(argv: list[str] | None = None) -> None:
     policy = resolve_python_block_policy(
         host, cli_flag=bool(args.allow_python_blocks), file_allow=allow_python
     )
-    set_python_block_policy(allowed=policy.allowed, reason=policy.reason)
+    # 適用は create_app() に一本化 (= Settings 経由、埋め込み利用でも同じ経路)。
+    settings = dataclasses.replace(
+        settings, python_blocks_allowed=policy.allowed, python_blocks_reason=policy.reason
+    )
     if policy.allowed and not is_loopback_host(host):
         _logger.warning(
             "PythonFunction blocks are ENABLED on non-loopback host %s: anyone who can "

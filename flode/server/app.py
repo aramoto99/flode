@@ -8,10 +8,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..blocks.pythonfunc import set_python_block_policy
 from .errors import register_error_handlers
 from .library_registry import build_library_registry
 from .registry import build_block_registry
@@ -22,6 +24,7 @@ from .routes import (
     simulations_router,
 )
 from .runtime import SimulationManager
+from .security.origin import check_state_changing_request
 from .settings import Settings
 
 
@@ -48,6 +51,15 @@ def create_app(*, settings: Settings) -> FastAPI:
         allow_origins=list(settings.allow_origins),
         library_paths=[Path(p) for p in settings.library_paths],
         bundle_builtin_libraries=settings.bundle_builtin_libraries,
+        python_blocks_allowed=settings.python_blocks_allowed,
+        python_blocks_reason=settings.python_blocks_reason,
+    )
+    # SPEC-0023 / ADR-0073 §論点 4 (H): PythonFunction の hard gate をプロセス policy に
+    # 適用する唯一の場所。CLI は bind host から決めた値を Settings に入れて渡す。
+    # 判定点は ``PythonFunction._build()`` (= exec 直前) の 1 箇所で、REST / WS /
+    # Python API のどの経路でも同じ policy を通る。
+    set_python_block_policy(
+        allowed=settings.python_blocks_allowed, reason=settings.python_blocks_reason
     )
 
     @asynccontextmanager
@@ -75,6 +87,33 @@ def create_app(*, settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    # CSRF guard (security/origin.py): 書き込み要求は application/json 必須 + Origin 検証。
+    # ブラウザ経由の cross-site 要求 (simple request) で loopback サーバーを叩かせない。
+    # CORS ミドルウェアより内側に置く (= preflight OPTIONS は CORS が先に処理する)。
+    @app.middleware("http")
+    async def _csrf_guard(request: Request, call_next: object) -> Response:
+        headers = request.headers
+        content_length = headers.get("content-length") or "0"
+        has_body = headers.get("transfer-encoding") is not None or (
+            content_length.isdigit() and int(content_length) > 0
+        )
+        rejection = check_state_changing_request(
+            method=request.method,
+            origin=headers.get("origin"),
+            host=headers.get("host"),
+            content_type=headers.get("content-type"),
+            has_body=has_body,
+            allow_origins=settings.allow_origins,
+        )
+        if rejection is not None:
+            logging.getLogger("flode.server.app").warning(
+                "Rejected %s %s: %s", request.method, request.url.path, rejection.detail
+            )
+            return JSONResponse(
+                status_code=rejection.status_code, content={"detail": rejection.detail}
+            )
+        return await call_next(request)  # type: ignore[operator, no-any-return]
 
     if settings.allow_origins:
         app.add_middleware(

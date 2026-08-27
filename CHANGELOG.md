@@ -44,6 +44,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@block` 生成 class に `_flode_structure` (推論した構造値のスナップショット) を追加
   (ADR-0003 Amend)。既存の動作は不変
 
+### Security
+
+- **CSRF guard を追加** (`flode/server/security/origin.py`)。従来の flode は loopback bind を
+  「ローカルの信頼できる利用者しか到達しない」前提で無認証だったが、ブラウザはその前提の
+  外にいる: 閲覧中の任意サイトの JS が `Content-Type: text/plain` の simple request で
+  `POST /api/v1/simulations` を叩けた (soft gate の digest はオフラインで計算可能)。
+  `PythonFunction` 導入後はこれが任意コード実行に直結するため、書き込み要求
+  (`POST` / `PUT` / `PATCH` / `DELETE`) に (1) `Content-Type: application/json` を必須化
+  (415)、(2) `Origin` ヘッダの検証 (`--allow-origin` の許可リスト、または `Host` と同一
+  オリジンかつ IP リテラル / `localhost` のみ、`null` は拒否、403) を課す。`Origin` の無い
+  非ブラウザクライアント (curl 等) は従来どおり。ホスト名でアクセスする運用
+  (`http://mypc.local:8770`) は DNS rebinding 対策のため `--allow-origin` で明示する
+- `PythonFunction` の hard gate 適用を `create_app()` (= `Settings.python_blocks_allowed`) に
+  一本化。`create_app` を直接使う埋め込みでも同じ経路で policy が設定される
+- `exec_block_source` 自身が policy を検査 (呼び出し側の規約に依存しない)、introspect API に
+  入力上限 (64 件 / 256 KiB) と threadpool 実行、擬似ファイル名をインスタンス一意化
+  (同 id ブロックの traceback 混線防止)
+
 ### Fixed
 
 - `@block` で `npt.NDArray[Any]` を戻り値 2 番目 (`x_dot` / `x_next`) に指定すると

@@ -34,6 +34,7 @@ import hashlib
 import linecache
 import logging
 import traceback
+import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -142,26 +143,36 @@ def _exec_namespace() -> dict[str, Any]:
     }
 
 
-def exec_block_source(code: str, *, block_id: str | None) -> tuple[type[Block], dict[str, Any]]:
-    """信頼判断を通過した後にのみ呼ばれる、``PythonFunction`` の唯一の ``exec`` 実行点。
+def exec_block_source(
+    code: str, *, block_id: str | None, filename: str | None = None
+) -> tuple[type[Block], dict[str, Any]]:
+    """``PythonFunction`` の唯一の ``exec`` 実行点。冒頭で hard gate を必ず通る。
 
     ``linecache`` にソースを登録してから ``exec`` するため、ユーザーコード内の例外
-    traceback に該当行のテキストが載る。
+    traceback に該当行のテキストが載る。``__builtins__`` は制限しない (= ユーザーコードが
+    ``builtins`` を書き換えればプロセス全体に及ぶ。``import builtins`` と等価で、
+    サンドボックスしない設計上の既知の性質)。
 
     Args:
         code: ユーザーソース。
-        block_id: 擬似ファイル名 ``<pythonfunction:{block_id}>`` に使う。
+        block_id: エラーメッセージ用のブロック ID。
+        filename: ``compile`` / ``linecache`` に使う擬似ファイル名。省略時は
+            ``<pythonfunction:{block_id}>``。インスタンスごとに一意な名前を渡すと、
+            同 id のブロックが共存しても traceback のソース行が混ざらない。
 
     Returns:
         ``(生成 Block サブクラス, exec 名前空間)``。名前空間は生成関数の
         ``__globals__`` が参照し続けるので、呼び出し側が寿命を管理する。
 
     Raises:
+        PythonBlocksDisabledError: プロセス policy が実行を禁止している。
         BlockSpecError: 名前空間に ``@block`` 生成 class がちょうど 1 個見つからない。
         Exception: ユーザーコードの module レベル文が投げた例外はそのまま伝播する
             (呼び出し側 :meth:`PythonFunction._build` が包み直す)。
     """
-    filename = source_filename(block_id)
+    # 呼び出し側の規約に依存せず、この関数自体が gate を通る (不変条件 (a) を構造で担保)。
+    _require_execution_allowed(block_id)
+    filename = filename if filename is not None else source_filename(block_id)
     linecache.cache[filename] = (len(code), None, code.splitlines(True), filename)
     ns = _exec_namespace()
     compiled = compile(code, filename, "exec")
@@ -348,6 +359,9 @@ class PythonFunction(Block):
         self.user_params: dict[str, Any] = self._filter_user_params(user_params, spec)
         self._inner: Block | None = None
         self._exec_ns: dict[str, Any] | None = None
+        # 擬似ファイル名はインスタンスごとに一意にする (同 id のブロックが top-level と
+        # Subsystem 内部で共存しても linecache / traceback のソース行が混ざらない)。
+        self._source_filename: str = f"{source_filename(self.id)[:-1]}#{uuid.uuid4().hex[:8]}>"
         self._params = {"code": code, "user_params": dict(self.user_params)}
 
     @property
@@ -390,16 +404,26 @@ class PythonFunction(Block):
         """
         if self._inner is None:
             _require_execution_allowed(self.id)
+            filename = self._source_filename
             try:
-                cls, ns = exec_block_source(self.code, block_id=self.id)
+                cls, ns = exec_block_source(self.code, block_id=self.id, filename=filename)
             except FlodeError:
+                linecache.cache.pop(filename, None)
                 raise
             except Exception as exc:  # noqa: BLE001 - module レベル文の任意例外を仕様違反として分類
-                raise _wrap_exec_exception(
-                    exc, filename=source_filename(self.id), block_id=self.id
-                ) from exc
+                linecache.cache.pop(filename, None)
+                raise _wrap_exec_exception(exc, filename=filename, block_id=self.id) from exc
             _verify_structure(cls, self._static_spec, self.id)
-            inner = cls(**self.user_params)
+            try:
+                inner = cls(**self.user_params)
+            except TypeError as exc:
+                # 静的解析 (params_spec) と exec 後の生成 class で kwarg 名がずれた場合の
+                # 生 TypeError を仕様エラーに揃える (通常は起きない = 突合は名前まで一致)。
+                raise BlockSpecError(
+                    f"PythonFunction[{self.id}]: cannot instantiate the generated block "
+                    f"with user_params {sorted(self.user_params)}: {exc}",
+                    block_id=self.id,
+                ) from exc
             inner.id = self.id
             self._inner = inner
             self._exec_ns = ns
@@ -418,7 +442,7 @@ class PythonFunction(Block):
             raise
         except Exception as exc:  # noqa: BLE001 - ユーザーコード境界: 任意例外を構造化して再送出
             raise _wrap_user_exception(
-                exc, filename=source_filename(self.id), block_id=self.id
+                exc, filename=self._source_filename, block_id=self.id
             ) from exc
 
     def _inner_or_raise(self) -> Block:

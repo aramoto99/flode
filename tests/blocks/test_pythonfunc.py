@@ -314,7 +314,7 @@ class TestErrors:
         assert err.lineno == 5
         assert "1 / 0" in (err.source_line or "")
         assert "ZeroDivisionError" in str(err)
-        assert "<pythonfunction:pf>" in err.user_traceback
+        assert "<pythonfunction:pf#" in err.user_traceback  # インスタンス一意の擬似ファイル名
         assert "simulator.py" not in err.user_traceback
 
     def test_module_level_exception_is_block_spec_error(self):
@@ -464,3 +464,19 @@ class TestSubsystemIntegration:
         sim.connect("sub", "scope")
         sim.run()
         np.testing.assert_allclose(_scope_values(sim), 6.0)
+
+
+class TestSourceFilenameIsolation:
+    def test_same_id_blocks_do_not_share_traceback_source(self):
+        """同 id (top-level と Subsystem 内部) でも擬似ファイル名がインスタンス一意。"""
+        code_a = "@block\ndef f(t: float, u: float) -> float:\n    raise ValueError('AAA')\n"
+        code_b = "@block\ndef f(t: float, u: float) -> float:\n    raise ValueError('BBB')  # B\n"
+        a = PythonFunction(code=code_a, id="pf")
+        b = PythonFunction(code=code_b, id="pf")
+        assert a._source_filename != b._source_filename
+        a._build()
+        b._build()
+        with pytest.raises(PythonFunctionEvalError) as ei:
+            a.output(0.0, np.zeros(0), np.array([1.0]))
+        assert "AAA" in (ei.value.source_line or "")
+        assert "BBB" not in (ei.value.source_line or "")

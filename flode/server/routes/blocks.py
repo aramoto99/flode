@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from ...exceptions import BlockSpecError, UnknownBlockTypeError
 from ..registry import (
@@ -19,6 +20,11 @@ from ..registry import (
 )
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
+
+# SPEC-0023 introspect の入力上限 (security-reviewer: 無認証の CPU 消費点になるため)。
+# 1 モデルに 64 個超の PythonFunction、256 KiB 超のソースは実用上あり得ない。
+MAX_INTROSPECT_ITEMS = 64
+MAX_INTROSPECT_CODE_CHARS = 256 * 1024
 
 
 def _registry(request: Request) -> list[BlockMetadata]:
@@ -140,8 +146,9 @@ async def introspect_python_function(request: Request) -> dict[str, Any]:
         body 自体が不正なときだけ 400。
 
     Note:
-        **この endpoint はユーザーコードを exec しない**。静的解析のみなので、
-        非 loopback bind でも安全に呼べる。
+        **この endpoint はユーザーコードを exec しない** (RCE の観点では静的解析のみ)。
+        DoS 耐性は別で、``MAX_INTROSPECT_ITEMS`` / ``MAX_INTROSPECT_CODE_CHARS`` で
+        入力量を制限し、解析は threadpool で行って event loop を塞がない。
     """
     body = await request.json()
     if not isinstance(body, dict):
@@ -149,7 +156,11 @@ async def introspect_python_function(request: Request) -> dict[str, Any]:
     items = body.get("items")
     if not isinstance(items, list):
         raise HTTPException(status_code=400, detail="`items` (array) is required in body")
-    results: dict[str, Any] = {}
+    if len(items) > MAX_INTROSPECT_ITEMS:
+        raise HTTPException(
+            status_code=400, detail=f"`items` must have at most {MAX_INTROSPECT_ITEMS} entries"
+        )
+    validated: list[tuple[str, str]] = []
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             raise HTTPException(status_code=400, detail=f"items[{i}] must be a JSON object")
@@ -159,7 +170,17 @@ async def introspect_python_function(request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail=f"items[{i}].key (string) is required")
         if not isinstance(code, str):
             raise HTTPException(status_code=400, detail=f"items[{i}].code (string) is required")
-        results[key] = introspect_python_source(code, key=key)
+        if len(code) > MAX_INTROSPECT_CODE_CHARS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"items[{i}].code exceeds {MAX_INTROSPECT_CODE_CHARS} characters",
+            )
+        validated.append((key, code))
+
+    def _analyse_all() -> dict[str, Any]:
+        return {key: introspect_python_source(code, key=key) for key, code in validated}
+
+    results = await run_in_threadpool(_analyse_all)
     return {"results": results}
 
 

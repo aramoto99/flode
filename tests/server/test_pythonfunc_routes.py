@@ -214,3 +214,34 @@ class TestStartGates:
         assert detail["category"] == "python_function_disabled"
         assert "allow-python-blocks" in detail["template_args"]["message"]
         assert detail["block_id"] == "pf"
+
+
+class TestIntrospectLimits:
+    def test_too_many_items_is_400(self, client: TestClient) -> None:
+        from flode.server.routes.blocks import MAX_INTROSPECT_ITEMS
+
+        items = [{"key": f"k{i}", "code": "x = 1"} for i in range(MAX_INTROSPECT_ITEMS + 1)]
+        resp = client.post("/api/v1/blocks/python-function/introspect", json={"items": items})
+        assert resp.status_code == 400
+        assert str(MAX_INTROSPECT_ITEMS) in resp.json()["detail"]
+
+    def test_oversized_code_is_400(self, client: TestClient) -> None:
+        from flode.server.routes.blocks import MAX_INTROSPECT_CODE_CHARS
+
+        code = "#" * (MAX_INTROSPECT_CODE_CHARS + 1)
+        resp = client.post(
+            "/api/v1/blocks/python-function/introspect",
+            json={"items": [{"key": "k", "code": code}]},
+        )
+        assert resp.status_code == 400
+
+
+class TestExecGateInsideLoader:
+    def test_exec_block_source_itself_checks_policy(self) -> None:
+        """不変条件 (a): 呼び出し側の規約に依存せず、ローダ自身が policy を見る。"""
+        from flode.blocks.pythonfunc import exec_block_source
+        from flode.exceptions import PythonBlocksDisabledError
+
+        set_python_block_policy(allowed=False, reason="test")
+        with pytest.raises(PythonBlocksDisabledError):
+            exec_block_source(GAIN_CODE, block_id="pf")

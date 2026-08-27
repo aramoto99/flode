@@ -25,6 +25,11 @@ class Settings:
             組み込み ``std`` が利用可能になる。
         bundle_builtin_libraries: 組み込み ``flode/libraries/std.flwlib.json`` を
             自動的に library registry に追加するか (default ``True``、ADR-0029 §LOC-A)。
+        python_blocks_allowed: ``PythonFunction`` の実行可否 (SPEC-0023 / ADR-0073 hard gate)。
+            ``create_app`` がプロセス policy に適用する。CLI は bind host とフラグから
+            決めた値を入れる (loopback → True、非 loopback はフラグ必須)。``create_app`` を
+            直接使う埋め込み利用者は **公開 bind なら必ず False にする** こと。
+        python_blocks_reason: 拒否理由 (エラーメッセージに埋め込む、``allowed=False`` 時のみ)。
     """
 
     workspace_root: Path
@@ -33,3 +38,5 @@ class Settings:
     allow_origins: list[str] = field(default_factory=list)
     library_paths: list[Path] = field(default_factory=list)
     bundle_builtin_libraries: bool = True
+    python_blocks_allowed: bool = True
+    python_blocks_reason: str = ""
