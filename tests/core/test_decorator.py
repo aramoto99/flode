@@ -828,3 +828,87 @@ class TestFlodeStructure:
         assert s.n_states == inst.n_states == 0
         assert s.direct_feedthrough == inst.direct_feedthrough
         assert s.sample_time == inst.sample_time
+
+
+# ---------------------------------------------------------------
+# SPEC-0024 / ADR-0074: input_names / output_names (N1〜N8)
+# ---------------------------------------------------------------
+
+
+class TestPortNames:
+    def test_names_stored_in_structure_function_form(self):
+        @block(input_names=("速度指令", "負荷トルク"), output_names=("トルク",))
+        def controller(t: float, u: tuple[float, float], *, kp: float = 1.0) -> float:
+            return kp * (u[0] - u[1])
+
+        s = controller._flode_structure
+        assert s.input_names == ("速度指令", "負荷トルク")
+        assert s.output_names == ("トルク",)
+        assert s.has_u_arg is True
+
+    def test_default_is_empty_and_has_u_arg_false_for_source(self):
+        @block
+        def src(t: float) -> float:
+            return t
+
+        s = src._flode_structure
+        assert s.input_names == ()
+        assert s.output_names == ()
+        assert s.has_u_arg is False
+
+    def test_names_class_form(self):
+        @block(input_names=("in",), output_names=("out",))
+        class Pass:
+            def output(self, t: float, u: float) -> float:
+                return u
+
+        s = Pass._flode_structure
+        assert s.input_names == ("in",)
+        assert s.output_names == ("out",)
+        assert s.has_u_arg is True
+
+    def test_length_mismatch_raises(self):
+        with pytest.raises(BlockSpecError, match="must match exactly"):
+
+            @block(input_names=("a", "b", "c"))
+            def f(t: float, u: tuple[float, float]) -> float:
+                return u[0]
+
+    def test_non_str_element_raises(self):
+        with pytest.raises(BlockSpecError, match="must be a str"):
+
+            @block(input_names=(1,))  # type: ignore[arg-type]
+            def f(t: float, u: float) -> float:
+                return u
+
+    def test_bare_string_rejected(self):
+        with pytest.raises(BlockSpecError, match="sequence of str"):
+
+            @block(input_names="ab")  # type: ignore[arg-type]
+            def f(t: float, u: tuple[float, float]) -> float:
+                return u[0]
+
+    def test_control_char_rejected(self):
+        with pytest.raises(BlockSpecError, match="control/format"):
+
+            @block(input_names=("a\nb",))
+            def f(t: float, u: float) -> float:
+                return u
+
+    def test_over_32_codepoints_rejected(self):
+        with pytest.raises(BlockSpecError, match="32 code points"):
+
+            @block(input_names=("x" * 33,))
+            def f(t: float, u: float) -> float:
+                return u
+
+    def test_caption_semantics_allowed(self):
+        """空白・絵文字・重複・空文字 (無名)・正規化なし = キャプション扱い (N6〜N8)。"""
+        nfd = "ガ"  # NFD (カ + 濁点) のまま保持されること
+
+        @block(input_names=("a b 🚀", "a b 🚀", "", nfd))
+        def f(t: float, u: tuple[float, float, float, float]) -> float:
+            return u[0]
+
+        assert f._flode_structure.input_names == ("a b 🚀", "a b 🚀", "", nfd)
+        assert f._flode_structure.input_names[3] == nfd  # NFC 化されていない

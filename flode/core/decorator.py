@@ -24,6 +24,8 @@ from __future__ import annotations
 import inspect
 import logging
 import numbers
+import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin, get_type_hints
 
@@ -55,6 +57,11 @@ class BlockStructure:
         n_states: 状態次元数。
         direct_feedthrough: 直達フラグ (推論または明示)。
         sample_time: ``None`` / ``0.0`` (連続)、``> 0`` (離散)、``-1.0`` (継承)。
+        input_names: 入力ポート名 (SPEC-0024 / ADR-0074)。空 tuple = 全ポート無名 (既定)。
+            要素の空文字列は「そのポートだけ無名」。長さは 0 または ``n_inputs`` に一致。
+        output_names: 出力ポート名。規則は ``input_names`` と同じ。
+        has_u_arg: 関数 (または class の ``output``) が ``u`` 引数を持つか。
+            GUI が「入力数を編集できるか」の判定に使う (``u`` 無し = 0 入力固定)。
     """
 
     n_inputs: int
@@ -62,6 +69,9 @@ class BlockStructure:
     n_states: int
     direct_feedthrough: bool
     sample_time: float | None
+    input_names: tuple[str, ...] = ()
+    output_names: tuple[str, ...] = ()
+    has_u_arg: bool = True
 
 
 def block(
@@ -74,6 +84,8 @@ def block(
     states: int = 0,
     sample_time: float | None = None,
     direct_feedthrough: bool | None = None,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
 ) -> Any:
     """関数または class から ``Block`` サブクラスを生成する。
 
@@ -94,6 +106,10 @@ def block(
             ``-1.0`` で上流から継承 (ADR-0002 §(1))。
         direct_feedthrough: ``None`` で自動推論 (``states == 0`` → ``True``、
             ``states > 0`` → ``False``)。明示 True/False で上書き。
+        input_names: 入力ポート名の列 (SPEC-0024)。指定時は **長さがポート数と完全一致**
+            すること。空文字列 = そのポートは無名。名前は表示用キャプションで、
+            重複可・正規化なし・32 コードポイント以内・制御文字不可。
+        output_names: 出力ポート名の列。規則は ``input_names`` と同じ。
 
     Returns:
         ``Block`` のサブクラス。インスタンス化はキーワード引数のみ
@@ -115,6 +131,8 @@ def block(
                 n_states=states,
                 sample_time=sample_time,
                 direct_feedthrough_override=direct_feedthrough,
+                input_names=input_names,
+                output_names=output_names,
             )
         if not callable(target):
             raise BlockSpecError(f"@block expects a function or class, got {type(target).__name__}")
@@ -126,6 +144,8 @@ def block(
             n_states=states,
             sample_time=sample_time,
             direct_feedthrough_override=direct_feedthrough,
+            input_names=input_names,
+            output_names=output_names,
         )
 
     if func_or_cls is None:
@@ -142,6 +162,8 @@ def _build_class_from_function(
     n_states: int,
     sample_time: float | None,
     direct_feedthrough_override: bool | None,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
 ) -> type[Block]:
     if not isinstance(n_states, int) or n_states < 0:
         raise BlockSpecError(f"@block: states must be a non-negative int, got {n_states!r}")
@@ -231,6 +253,14 @@ def _build_class_from_function(
 
     cls_name = class_name if class_name is not None else _to_pascal_case(func.__name__)
 
+    # SPEC-0024: ポート名はポート数確定後に検証する (N3 = 長さ完全一致)
+    resolved_input_names = _resolve_port_names(
+        input_names, n_inputs, role="input_names", owner_name=func.__name__
+    )
+    resolved_output_names = _resolve_port_names(
+        output_names, n_outputs, role="output_names", owner_name=func.__name__
+    )
+
     return _make_block_class(
         func=func,
         cls_name=cls_name,
@@ -244,6 +274,8 @@ def _build_class_from_function(
         y_arg_kind=y_arg_kind,
         has_state=has_state,
         has_u_in_func=(u_param is not None),
+        input_names=resolved_input_names,
+        output_names=resolved_output_names,
     )
 
 
@@ -393,6 +425,68 @@ def _split_state_return(return_hint: Any, func_name: str) -> Any:
     return args[0]
 
 
+#: ポート名の最大長 (コードポイント数、SPEC-0024 N5)。
+_MAX_PORT_NAME_CODEPOINTS = 32
+
+#: ポート名に使えない Unicode カテゴリ (SPEC-0024 N4: 制御 / 書式 / 行・段落区切り)。
+_FORBIDDEN_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
+def _resolve_port_names(
+    names: Sequence[str] | None, count: int, *, role: str, owner_name: str
+) -> tuple[str, ...]:
+    """``input_names`` / ``output_names`` を検証して tuple 化する (SPEC-0024 N1〜N8)。
+
+    ポート名は **キャプション** であって識別子ではない (ADR-0071 §(8) の裏返し):
+    空白・記号・絵文字・重複を許し、正規化 (NFC) も行わない。禁止するのは
+    制御文字系カテゴリのみ。空文字列は「そのポートは無名」。
+
+    Args:
+        names: デコレータに渡された名前列。``None`` = 全ポート無名。
+        count: 確定済みのポート数 (長さはこれと完全一致すること = N3)。
+        role: ``"input_names"`` / ``"output_names"`` (エラーメッセージ用)。
+        owner_name: デコレート対象の関数 / class 名 (エラーメッセージ用)。
+
+    Returns:
+        検証済みの ``tuple[str, ...]``。``None`` のときは空 tuple。
+
+    Raises:
+        BlockSpecError: 型違反 / 長さ不一致 / 制御文字 / 32 コードポイント超。
+    """
+    if names is None:
+        return ()
+    if isinstance(names, str) or not isinstance(names, Sequence):
+        raise BlockSpecError(
+            f"@block: {role} of {owner_name!r} must be a sequence of str "
+            f'(e.g. ("a", "b")), got {type(names).__name__}'
+        )
+    resolved: list[str] = []
+    for i, n in enumerate(names):
+        if not isinstance(n, str):
+            raise BlockSpecError(
+                f"@block: {role}[{i}] of {owner_name!r} must be a str, got {type(n).__name__}"
+            )
+        if len(n) > _MAX_PORT_NAME_CODEPOINTS:
+            raise BlockSpecError(
+                f"@block: {role}[{i}] of {owner_name!r} exceeds "
+                f"{_MAX_PORT_NAME_CODEPOINTS} code points (got {len(n)})"
+            )
+        for ch in n:
+            if unicodedata.category(ch) in _FORBIDDEN_NAME_CATEGORIES:
+                raise BlockSpecError(
+                    f"@block: {role}[{i}] of {owner_name!r} contains a control/format "
+                    f"character (U+{ord(ch):04X}); port names must be printable"
+                )
+        resolved.append(n)
+    if len(resolved) != count:
+        raise BlockSpecError(
+            f"@block: {role} of {owner_name!r} has {len(resolved)} element(s) but the "
+            f"block has {count} port(s); the lengths must match exactly "
+            f'(use "" for an unnamed port)'
+        )
+    return tuple(resolved)
+
+
 def _to_pascal_case(snake: str) -> str:
     parts = snake.split("_")
     return "".join(p[:1].upper() + p[1:] for p in parts if p)
@@ -412,6 +506,8 @@ def _make_block_class(
     y_arg_kind: str,
     has_state: bool,
     has_u_in_func: bool,
+    input_names: tuple[str, ...] = (),
+    output_names: tuple[str, ...] = (),
 ) -> type[Block]:
     # 連続/離散の確定判定。sample_time が確定値 (None / 0 / >0) なら
     # デコレータ呼び出し時に決まる。``-1.0`` (継承) は ``Simulator`` がビルド時に
@@ -525,6 +621,9 @@ def _make_block_class(
             n_states=n_states,
             direct_feedthrough=direct_feedthrough,
             sample_time=sample_time,
+            input_names=input_names,
+            output_names=output_names,
+            has_u_arg=has_u_in_func,
         ),
     }
     return type(cls_name, (Block,), namespace)
@@ -640,6 +739,8 @@ def _build_class_from_class(
     n_states: int,
     sample_time: float | None,
     direct_feedthrough_override: bool | None,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
 ) -> type[Block]:
     """User class から ``Block`` サブクラスを生成する (Option C)。
 
@@ -714,6 +815,14 @@ def _build_class_from_class(
 
     cls_name = class_name if class_name is not None else _to_pascal_case(user_cls.__name__)
 
+    # SPEC-0024: 関数形と同じ検証 (N1〜N8) を class 形にも適用する
+    resolved_input_names = _resolve_port_names(
+        input_names, n_inputs, role="input_names", owner_name=user_cls.__name__
+    )
+    resolved_output_names = _resolve_port_names(
+        output_names, n_outputs, role="output_names", owner_name=user_cls.__name__
+    )
+
     return _make_block_class_from_class(
         user_cls=user_cls,
         cls_name=cls_name,
@@ -732,6 +841,8 @@ def _build_class_from_class(
         user_output=user_output,
         user_derivative=user_derivative,
         user_update=user_update,
+        input_names=resolved_input_names,
+        output_names=resolved_output_names,
     )
 
 
@@ -869,6 +980,8 @@ def _make_block_class_from_class(
     user_output: Any,
     user_derivative: Any,
     user_update: Any,
+    input_names: tuple[str, ...] = (),
+    output_names: tuple[str, ...] = (),
 ) -> type[Block]:
     def _effective_is_discrete(instance: Block) -> bool:
         if is_inherited:
@@ -974,6 +1087,9 @@ def _make_block_class_from_class(
             n_states=n_states,
             direct_feedthrough=direct_feedthrough,
             sample_time=sample_time,
+            input_names=input_names,
+            output_names=output_names,
+            has_u_arg=has_u_in_method,
         ),
     }
     # user class が `record` / `reset` 等の追加メソッドを持っていれば素直に継承する
