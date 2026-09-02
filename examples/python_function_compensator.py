@@ -26,7 +26,7 @@ _logger = logging.getLogger(__name__)
 # 1 回だけ起きる。
 COMPENSATOR_CODE = textwrap.dedent(
     """
-    @block(states=1, direct_feedthrough=True)
+    @block(states=1, direct_feedthrough=True, input_names=("指令",), output_names=("補償量",))
     def saturating_lag(
         t: float, x: np.ndarray, u: float, *, tau: float = 0.1, limit: float = 0.8
     ) -> tuple[float, np.ndarray]:

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.0] - 2026-09-02 — Python Function のポート数/ポート名を UI から編集
+
+### Added
+
+- **Inspector からポート数を編集できるようになった** (SPEC-0024 / ADR-0074)。
+  「構造」節の入力/出力が数値入力になり、変更は **コードの書き換え** として実現される
+  (SSOT はコードのまま): `POST /api/v1/blocks/python-function/rewrite` がソースの
+  型注釈 (`u: float` ⇄ `tuple[float, ...]`) や `@block(inputs=N)` リテラルを
+  AST 位置ベースの最小 diff で splice する。コメント・docstring・改行コード
+  (CRLF 含む)・日本語コメントは無傷 (バイト領域で処理、`ast.get_source_segment`
+  全ノード照合テストで固定)。書き換え結果は必ず再解析して要求構造と突合し、
+  一致しなければ元コード不変のまま失敗を報告 (壊れたコードは決して保存されない)
+- **ポート名**: `@block(input_names=("速度指令", ...), output_names=(...))` を DSL に追加。
+  線図上のポート脇ラベル表示 (Subsystem のポートラベルと同じ流儀、無名 = 非表示、
+  名前があるときだけ中央の `def` グリフを縮小)、Inspector の「ポート名」節から編集可
+  (これもコード書き換え)。名前はキャプション扱い (空白・絵文字可、重複可、
+  32 コードポイント以内、制御文字不可)。ポート数変更時は名前列の長さも同期
+  (増 = 無名を追加 / 減 = 末尾削除、全部無名になればキーワード自体を削除)
+- introspect レスポンスに `input_names` / `output_names` / `editable` を後方互換で追加。
+  `u` 引数の無い関数は入力 0 固定 (Inspector は理由付きで編集不可表示)
+- ポート数の編集範囲は 1〜32。関数本体は書き換えない (減らして残った `u[2]` 参照は
+  従来どおり実行時エラーとして行番号付きで報告)
+
+### Changed
+
+- `@block` 生成 class の `BlockStructure` に `input_names` / `output_names` / `has_u_arg`
+  を追加 (既定値付き純粋追加、ADR-0003 Amend)
+
 ## [0.49.0] - 2026-08-27 — Python Function ブロック (任意 Python を GUI から記述)
 
 ### Added

@@ -141,3 +141,25 @@ structure is derived without executing the code:
 Only the function form is accepted in the block; class-form ``@block`` is
 rejected with a message. See :ref:`the block library <user-function>` for the
 security model of ``PythonFunction``.
+
+Port names (``input_names`` / ``output_names``)
+-----------------------------------------------
+
+Ports can carry display names::
+
+    @block(input_names=("speed ref", "load torque"), output_names=("torque",))
+    def controller(t: float, u: tuple[float, float], *, kp: float = 1.0) -> float:
+        ref, load = u
+        return kp * (ref - load)
+
+The names are **captions, not identifiers**: spaces, symbols, emoji and
+duplicates are allowed, the empty string means "unnamed" (no label is drawn for
+that port), and no Unicode normalisation is applied. Each name is limited to
+32 code points and must not contain control characters. When given, the
+sequence length must exactly match the port count.
+
+In the GUI, the Python Function block draws non-empty names next to the ports
+(the same convention as Subsystem port labels), and the Inspector lets you edit
+both the port counts and the names — those edits **rewrite this decorator's
+arguments and the type annotations in the source** (the code stays the single
+source of truth; the function body is never touched).

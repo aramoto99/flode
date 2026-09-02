@@ -142,3 +142,10 @@ Blocks whose behaviour is written by the user.
    :nosignatures:
 
    flode.blocks.PythonFunction
+
+Since v0.50.0 the Inspector can edit the port structure of a
+``PythonFunction`` block (input/output counts and per-port names declared with
+``@block(input_names=..., output_names=...)``). These edits are performed by
+**rewriting the source** through a static AST-based endpoint — the code remains
+the single source of truth, nothing is executed, and the rewritten source is
+re-analysed and verified before it is saved.
