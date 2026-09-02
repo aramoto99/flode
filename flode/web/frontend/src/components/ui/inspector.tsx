@@ -423,6 +423,8 @@ export function NumberInput({
   value,
   onChange,
   onBlur,
+  onKeyDown,
+  disabled = false,
   testId,
   ariaLabel,
   widthClass = "w-24",
@@ -430,6 +432,10 @@ export function NumberInput({
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   onBlur?: () => void;
+  /** SPEC-0024: Enter で commit する編集 UI 用 (未指定なら従来挙動)。 */
+  onKeyDown?: (e: ReactKeyboardEvent<HTMLInputElement>) => void;
+  /** SPEC-0024: サーバ判定 (editable) で編集不可の行を無効化する。 */
+  disabled?: boolean;
   testId?: string;
   ariaLabel?: string;
   widthClass?: string;
@@ -446,9 +452,13 @@ export function NumberInput({
         if (Number.isFinite(n)) onChange(n);
       }}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
+      disabled={disabled}
       data-testid={testId}
       aria-label={ariaLabel}
-      className={`${INPUT_MONO_CLS} ${widthClass}`}
+      className={`${INPUT_MONO_CLS} ${widthClass} ${
+        disabled ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
+      }`}
     />
   );
 }
@@ -471,6 +481,8 @@ export function TextInput({
   ariaLabel,
   widthClass = "w-32",
   mono = false,
+  maxLength,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -483,6 +495,10 @@ export function TextInput({
   ariaLabel?: string;
   widthClass?: string;
   mono?: boolean;
+  /** SPEC-0024: 入力長の上限 (ポート名 32 コードポイント等)。 */
+  maxLength?: number;
+  /** SPEC-0024: in-flight 中の編集ロック等。 */
+  disabled?: boolean;
 }): JSX.Element {
   return (
     <input
@@ -496,9 +512,13 @@ export function TextInput({
       // eslint-disable-next-line jsx-a11y/no-autofocus -- rename 編集開始時の
       // 即時入力のため (ユーザー操作起点でのみ true になる)
       autoFocus={autoFocus}
+      maxLength={maxLength}
+      disabled={disabled}
       data-testid={testId}
       aria-label={ariaLabel}
-      className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass}`}
+      className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass} ${
+        disabled ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
+      }`}
     />
   );
 }

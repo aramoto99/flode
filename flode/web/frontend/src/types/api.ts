@@ -305,7 +305,33 @@ export interface PythonFunctionSpec {
   direct_feedthrough: boolean;
   sample_time: number | null;
   params_spec: BlockParamSpec[];
+  // SPEC-0024 (後方互換の純粋追加): ポート名と編集可否 (サーバ判定)
+  input_names: string[];
+  output_names: string[];
+  editable: {
+    inputs: boolean;
+    outputs: boolean;
+    min_inputs: number;
+    max_inputs: number;
+    min_outputs: number;
+    max_outputs: number;
+  };
 }
+
+// SPEC-0024 §3.1: rewrite endpoint のレスポンス。``applied: false`` のとき
+// ``code`` は返らない (元コードはクライアント側にある)。``kind`` は introspect の
+// 2 値に加えて "unsupported" (書き換え規則の対象外) / "verify" (自己検証失敗) を取る。
+export type PythonFunctionRewriteResponse =
+  | { applied: true; code: string; spec: PythonFunctionSpec }
+  | {
+      applied: false;
+      error: {
+        message: string;
+        lineno: number | null;
+        col: number | null;
+        kind: "syntax" | "spec" | "unsupported" | "verify";
+      };
+    };
 
 export interface PythonFunctionSpecError {
   resolved: false;

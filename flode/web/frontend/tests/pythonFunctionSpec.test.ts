@@ -54,6 +54,16 @@ const SPEC_2IN = {
   direct_feedthrough: true,
   sample_time: null,
   params_spec: [],
+  input_names: [],
+  output_names: [],
+  editable: {
+    inputs: true,
+    outputs: true,
+    min_inputs: 1,
+    max_inputs: 32,
+    min_outputs: 1,
+    max_outputs: 32,
+  },
 };
 
 beforeEach(() => {

@@ -437,6 +437,15 @@
   "python_function.confirm.title": "Python コードを実行しますか？",
   "python_function.confirm.message": "このモデルは Python 関数ブロック ({{blocks}}) を含みます。実行すると、そのコードがサンドボックスなしで自分の権限で動きます。信頼できるモデルの場合のみ続行してください。コードが変わるまで、このモデルでは再確認しません。",
   "python_function.confirm.ok": "実行",
+  "python_function.section.port_names": "ポート名",
+  "python_function.port_names.in": "入力 {{index}}",
+  "python_function.port_names.out": "出力 {{index}}",
+  "python_function.port_names.unset": "(無名)",
+  "python_function.inputs_locked_no_u": "この関数には u 引数が無いため入力は 0 固定です。入力を編集するにはコードに u 引数を追加してください。",
+  "python_function.rewrite_failed": "コードを書き換えられませんでした: {{message}}",
+  "python_function.rewrite_network_error": "書き換え要求に失敗しました: {{message}}",
+  "python_function.rewrite_stale": "編集中にコードが変更されたため、この変更は破棄しました。",
+  "python_function.port_range": "1〜{{max}} ポート。変更はコード (型注釈 / @block 引数) を書き換えます。",
   "error.show_details": "詳細 (traceback)",
   "error.copy": "コピー"
 }

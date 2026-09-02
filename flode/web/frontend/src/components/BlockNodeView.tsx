@@ -39,8 +39,10 @@ import {
   getNumberParam,
   INPORT_TYPE,
   OUTPORT_TYPE,
+  PYTHON_FUNCTION_TYPE,
   TRIGGER_TYPE,
 } from "../lib/blockTypes";
+import { getCachedPythonSpec } from "../lib/pythonFunctionSpec";
 import type { BlockNodeData } from "../lib/diagramConverter";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
 import type { BlockEntry } from "../types/api";
@@ -120,19 +122,27 @@ function collectSubsystemPortLabels(
 }
 
 /**
- * Subsystem 外面のポート脇ラベル描画 (SPEC-0022 §機能要件 7)。
+ * ポート脇ラベル描画 (SPEC-0022 §機能要件 7 / SPEC-0024 で一般化)。
  *
  * y 位置は handle の等分配式 (`((i+1)*100)/(n+1)`、inputHandlePosition /
  * outputHandlePosition と同じ分母) に揃える。入力=内側左寄せ / 出力=内側右寄せ、
  * flip 時は左右を入れ替える (テキスト自体は反転しない)。長いラベルは CSS 幅で
  * truncate し、`title` 属性で全体を出す。ブロック幅は自動拡張しない (Q5)。
+ *
+ * ``testIdPrefix`` / ``maxWidth`` の既定値で Subsystem の従来挙動 (testid 含む) を
+ * 完全維持する。``PythonFunction`` は中央 glyph と重ならないよう ``maxWidth="30%"``
+ * を渡す (30% + glyph 36% + 30% ≤ 100% の幾何不変式、ADR-0074 §論点 6)。
  */
-function SubsystemPortLabels({
+function PortSideLabels({
   labels,
   flipped,
+  testIdPrefix = "subsystem",
+  maxWidth = "45%",
 }: {
   labels: SubsystemPortLabelInfo;
   flipped: boolean;
+  testIdPrefix?: string;
+  maxWidth?: string;
 }): JSX.Element {
   const inputSide = flipped ? { right: 4 } : { left: 4 };
   const outputSide = flipped ? { left: 4 } : { right: 4 };
@@ -143,12 +153,12 @@ function SubsystemPortLabels({
       {labels.inputs.map(({ portIdx, label }) => (
         <span
           key={`in-${portIdx}`}
-          data-testid={`subsystem-port-label-in-${portIdx}`}
+          data-testid={`${testIdPrefix}-port-label-in-${portIdx}`}
           className={labelCls}
           title={label}
           style={{
             top: `${((portIdx + 1) * 100) / (labels.nDataIn + 1)}%`,
-            maxWidth: "45%",
+            maxWidth,
             ...inputSide,
           }}
         >
@@ -158,12 +168,12 @@ function SubsystemPortLabels({
       {labels.outputs.map(({ portIdx, label }) => (
         <span
           key={`out-${portIdx}`}
-          data-testid={`subsystem-port-label-out-${portIdx}`}
+          data-testid={`${testIdPrefix}-port-label-out-${portIdx}`}
           className={labelCls}
           title={label}
           style={{
             top: `${((portIdx + 1) * 100) / (labels.nOut + 1)}%`,
-            maxWidth: "45%",
+            maxWidth,
             ...outputSide,
           }}
         >
@@ -172,6 +182,24 @@ function SubsystemPortLabels({
       ))}
     </div>
   );
+}
+
+/** SPEC-0024: PythonFunction の cached spec からラベル情報を組む (無名 = 非表示)。 */
+function collectPythonFunctionPortLabels(
+  params: Record<string, unknown>,
+): SubsystemPortLabelInfo {
+  const spec = getCachedPythonSpec(params.code);
+  const out: SubsystemPortLabelInfo = { inputs: [], outputs: [], nDataIn: 1, nOut: 1 };
+  if (spec === undefined || !spec.resolved) return out;
+  out.nDataIn = spec.n_inputs;
+  out.nOut = spec.n_outputs;
+  spec.input_names.forEach((label, portIdx) => {
+    if (label !== "") out.inputs.push({ portIdx, label });
+  });
+  spec.output_names.forEach((label, portIdx) => {
+    if (label !== "") out.outputs.push({ portIdx, label });
+  });
+  return out;
 }
 
 interface BlockNodeViewProps extends NodeProps {
@@ -731,7 +759,7 @@ function ShapeContent({
           </div>
         )}
         {hasLabels && (
-          <SubsystemPortLabels labels={portLabels} flipped={flipped} />
+          <PortSideLabels labels={portLabels} flipped={flipped} />
         )}
       </>
     );
@@ -1032,6 +1060,35 @@ function ShapeContent({
           <TriggerEdgeGlyph mode={mode} />
         </div>
       </div>
+    );
+  }
+
+  // SPEC-0024: PythonFunction はポート名 (introspect 結果、無名は非表示) を
+  // Subsystem と同じ流儀で描く。ラベルがあるときだけ中央の `def` glyph を
+  // 36% に縮め、ラベル 30% + glyph 36% + ラベル 30% ≤ 100% で重なりを防ぐ
+  // (ADR-0074 §論点 6 の幾何不変式)。名前を付けない限り見た目は従来どおり。
+  if (typePath === PYTHON_FUNCTION_TYPE) {
+    const pfLabels = collectPythonFunctionPortLabels(paramsRaw);
+    const hasPfLabels = pfLabels.inputs.length > 0 || pfLabels.outputs.length > 0;
+    return (
+      <>
+        <div
+          className="absolute inset-0 flex items-center justify-center px-1.5"
+          style={{ color }}
+        >
+          <div className={hasPfLabels ? "h-[70%] w-[36%]" : "h-[70%] w-[80%]"}>
+            <BlockGlyph typePath={typePath} />
+          </div>
+        </div>
+        {hasPfLabels && (
+          <PortSideLabels
+            labels={pfLabels}
+            flipped={flipped}
+            testIdPrefix="pythonfunction"
+            maxWidth="30%"
+          />
+        )}
+      </>
     );
   }
 

@@ -1,41 +1,47 @@
-// SPEC-0023 / ADR-0073: PythonFunction 専用の Inspector 編集 UI。
+// SPEC-0023 / SPEC-0024 / ADR-0073 / ADR-0074: PythonFunction 専用の Inspector 編集 UI。
 //
 // 構成 (ParameterPanel の 3 つ目の分岐):
-//   * STRUCTURE: introspect の結果を read-only 表示 (コードが SSOT、Inspector では
-//     編集できない = SPEC 確定事項 C)
+//   * STRUCTURE: 入力 / 出力を NumberInput で編集可能 (SPEC-0024: 値の commit は
+//     サーバの rewrite endpoint がコードを書き換える = SSOT はコードのまま)。
+//     関数名 / 状態数 / sample_time / 直達は従来どおり read-only
+//   * PORT NAMES: ポートごとの TextInput (maxLength 32、空 = 無名)
 //   * CODE: 既存 ExpressionEditor (blur で commit) + 「編集...」→ PythonCodeDialog
-//   * PARAMETERS: コードの keyword-only 引数から **動的生成** した行 (float/int →
-//     数値、bool → select、str → text)。値は ``params.user_params`` に保存
+//   * PARAMETERS: コードの keyword-only 引数から動的生成した行
 //
-// コードの commit は必ず introspect を通し、解析に失敗したら params を更新しない
-// (= 壊れたコードでポート数が崩れない)。サーバは exec しない。
+// 競合制御 (ADR-0074 §論点 7): rewrite は in-flight 中 disabled + リクエストに使った
+// base code が現在の code と一致するときだけ適用 + 世代 (seq) が古い応答は破棄。
+// commit の順序は rewrite → putPythonSpec → applyCode (剪定ガードを満たす、V14)。
 
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { listBlockMetadata } from "../api/client";
+import { listBlockMetadata, rewritePythonFunction } from "../api/client";
 import { parseNumericInput } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
   ensurePythonSpecs,
   getCachedPythonSpec,
   introspectSingle,
+  putPythonSpec,
 } from "../lib/pythonFunctionSpec";
+import { findBlockAtPath } from "../lib/pathResolver";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
-import { updateBlockParams } from "../store/appStore";
+import { updateBlockParams, useAppStore } from "../store/appStore";
 import type { BlockEntry, BlockParamSpec, PythonFunctionSpec } from "../types/api";
 import { PythonCodeDialog } from "./PythonCodeDialog";
 import {
   ExpressionEditor,
   INPUT_CLS,
   INPUT_MONO_CLS,
+  NumberInput,
   PropertyGrid,
   PropertyHint,
   PropertyRow,
   SecondaryButton,
   SectionDivider,
   SELECT_CLS,
+  TextInput,
 } from "./ui/inspector";
 
 const LABEL_W = 88;
@@ -49,6 +55,12 @@ function _userParams(block: BlockEntry): Record<string, unknown> {
 
 function _isNumericType(p: BlockParamSpec): boolean {
   return p.type === "float" || p.type === "int" || p.type === "float64";
+}
+
+/** 空文字 padding でポート数分の名前配列にする (SPEC-0024 N3 の UI 側)。 */
+function _paddedNames(names: readonly string[] | undefined, count: number): string[] {
+  const base = names ?? [];
+  return Array.from({ length: count }, (_, i) => base[i] ?? "");
 }
 
 export function PythonFunctionEditor({
@@ -79,6 +91,47 @@ export function PythonFunctionEditor({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [paramError, setParamError] = useState<string | null>(null);
+  const [structError, setStructError] = useState<string | null>(null);
+
+  // SPEC-0024 競合制御: in-flight lock + 世代カウンタ
+  const [rewriteBusy, setRewriteBusy] = useState(false);
+  const rewriteSeq = useRef(0);
+  const codeRef = useRef(code);
+  codeRef.current = code;
+  const composingRef = useRef(false);
+
+  /** ストア上の **現在の** コード (ADR-0074 §論点 7 base 一致検証)。
+   *  prop (`codeRef`) は再レンダ前の値でありうるため、応答適用の判定は
+   *  live 値と比較する (再レンダ前に応答が着くレースを塞ぐ)。 */
+  const liveCode = useCallback((): string => {
+    const s = useAppStore.getState();
+    try {
+      const live = s.editingModel
+        ? findBlockAtPath(s.editingModel, s.editingPath, block.id)
+        : undefined;
+      const c = live?.params.code;
+      return typeof c === "string" ? c : codeRef.current;
+    } catch {
+      return codeRef.current;
+    }
+  }, [block.id]);
+
+  const spec = cached !== undefined && cached.resolved ? cached : null;
+  const specError = cached !== undefined && !cached.resolved ? cached.error : null;
+  const editable = spec?.editable;
+
+  // STRUCTURE / PORT NAMES の draft (spec 変化 = 外部からのコード変更でリセット)
+  const [draftInputs, setDraftInputs] = useState<number | undefined>(undefined);
+  const [draftOutputs, setDraftOutputs] = useState<number | undefined>(undefined);
+  const [draftInNames, setDraftInNames] = useState<string[]>([]);
+  const [draftOutNames, setDraftOutNames] = useState<string[]>([]);
+  useEffect(() => {
+    setDraftInputs(spec?.n_inputs);
+    setDraftOutputs(spec?.n_outputs);
+    setDraftInNames(_paddedNames(spec?.input_names, spec?.n_inputs ?? 0));
+    setDraftOutNames(_paddedNames(spec?.output_names, spec?.n_outputs ?? 0));
+    setStructError(null);
+  }, [spec]);
 
   const commitParams = useCallback(
     (next: Record<string, unknown>) => {
@@ -87,22 +140,26 @@ export function PythonFunctionEditor({
     [block.id, block.params, registryMap],
   );
 
-  /** コード変更の唯一の経路: introspect → 成功時のみ params 更新。 */
+  /** rewrite 成功時の共通 commit: 宣言から消えた user_params を落として保存。 */
+  const finishApply = useCallback(
+    (nextCode: string, s: PythonFunctionSpec): void => {
+      const declared = new Set(s.params_spec.map((p) => p.name));
+      const kept: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(_userParams(block))) {
+        if (declared.has(k)) kept[k] = v;
+      }
+      setCodeError(null);
+      commitParams({ code: nextCode, user_params: kept });
+    },
+    [block, commitParams],
+  );
+
+  /** コード全文の変更経路 (inline editor / dialog): introspect 成功時のみ commit。 */
   const applyCode = useCallback(
-    (nextCode: string, spec?: PythonFunctionSpec): void => {
+    (nextCode: string, s?: PythonFunctionSpec): void => {
       if (nextCode === code) return;
-      const finish = (s: PythonFunctionSpec): void => {
-        // 新コードで宣言されなくなった user_params は落とす (= backend と同じ規則)
-        const declared = new Set(s.params_spec.map((p) => p.name));
-        const kept: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(_userParams(block))) {
-          if (declared.has(k)) kept[k] = v;
-        }
-        setCodeError(null);
-        commitParams({ code: nextCode, user_params: kept });
-      };
-      if (spec !== undefined) {
-        finish(spec);
+      if (s !== undefined) {
+        finishApply(nextCode, s);
         return;
       }
       void introspectSingle(nextCode)
@@ -116,7 +173,7 @@ export function PythonFunctionEditor({
             );
             return;
           }
-          finish(r);
+          finishApply(nextCode, r);
         })
         .catch((e: unknown) => {
           setCodeError(
@@ -126,12 +183,107 @@ export function PythonFunctionEditor({
           );
         });
     },
-    [block, code, commitParams, t],
+    [code, finishApply, t],
+  );
+
+  /** 失敗 / 破棄時に draft を現行コードの spec へ戻す (ADR-0074: 値ロールバック)。 */
+  const rollbackDrafts = useCallback((): void => {
+    const current = getCachedPythonSpec(codeRef.current);
+    if (current === undefined || !current.resolved) return;
+    setDraftInputs(current.n_inputs);
+    setDraftOutputs(current.n_outputs);
+    setDraftInNames(_paddedNames(current.input_names, current.n_inputs));
+    setDraftOutNames(_paddedNames(current.output_names, current.n_outputs));
+  }, []);
+
+  /** SPEC-0024: 構造編集の唯一の commit 経路 (rewrite → putPythonSpec → applyCode)。 */
+  const commitRewrite = useCallback(
+    (edits: {
+      inputs?: number;
+      outputs?: number;
+      input_names?: string[];
+      output_names?: string[];
+    }): void => {
+      if (rewriteBusy) return;
+      const baseCode = codeRef.current;
+      const seq = ++rewriteSeq.current;
+      setRewriteBusy(true);
+      setStructError(null);
+      void rewritePythonFunction(baseCode, edits)
+        .then((resp) => {
+          if (seq !== rewriteSeq.current) return; // 古い応答は破棄
+          if (liveCode() !== baseCode) {
+            // 編集中に別経路でコードが変わった → 適用せず破棄 (base 一致検証)
+            setStructError(t("python_function.rewrite_stale"));
+            rollbackDrafts();
+            return;
+          }
+          if (!resp.applied) {
+            const { lineno, message } = resp.error;
+            setStructError(
+              t("python_function.rewrite_failed", {
+                message: lineno !== null ? `L${lineno}: ${message}` : message,
+              }),
+            );
+            rollbackDrafts();
+            return;
+          }
+          // 順序が重要 (ADR-0074 V14): cache 投入 → params 更新。
+          // 逆にすると canPruneOnParamChange が偽になり結線剪定がスキップされる。
+          putPythonSpec(resp.code, resp.spec);
+          finishApply(resp.code, resp.spec);
+        })
+        .catch((e: unknown) => {
+          if (seq !== rewriteSeq.current) return;
+          setStructError(
+            t("python_function.rewrite_network_error", {
+              message: e instanceof Error ? e.message : String(e),
+            }),
+          );
+          rollbackDrafts();
+        })
+        .finally(() => {
+          if (seq === rewriteSeq.current) setRewriteBusy(false);
+        });
+    },
+    [finishApply, liveCode, rewriteBusy, rollbackDrafts, t],
+  );
+
+  const commitCount = useCallback(
+    (role: "inputs" | "outputs", value: number | undefined): void => {
+      if (spec === null || editable === undefined || value === undefined) return;
+      const current = role === "inputs" ? spec.n_inputs : spec.n_outputs;
+      const min = role === "inputs" ? editable.min_inputs : editable.min_outputs;
+      const max = role === "inputs" ? editable.max_inputs : editable.max_outputs;
+      const target = Math.trunc(value);
+      if (target === current) return;
+      if (target < Math.max(1, min) || target > max) {
+        setStructError(t("python_function.port_range", { max }));
+        // 範囲外は draft を現状に戻す
+        if (role === "inputs") setDraftInputs(spec.n_inputs);
+        else setDraftOutputs(spec.n_outputs);
+        return;
+      }
+      commitRewrite({ [role]: target });
+    },
+    [commitRewrite, editable, spec, t],
+  );
+
+  const commitNames = useCallback(
+    (role: "input_names" | "output_names", names: string[]): void => {
+      if (spec === null) return;
+      const current = role === "input_names" ? spec.input_names : spec.output_names;
+      const padded = _paddedNames(
+        current,
+        role === "input_names" ? spec.n_inputs : spec.n_outputs,
+      );
+      if (names.every((n, i) => n === padded[i])) return;
+      commitRewrite({ [role]: names });
+    },
+    [commitRewrite, spec],
   );
 
   const userParams = _userParams(block);
-  const spec = cached !== undefined && cached.resolved ? cached : null;
-  const specError = cached !== undefined && !cached.resolved ? cached.error : null;
 
   const commitUserParam = (p: BlockParamSpec, raw: string): void => {
     let value: unknown;
@@ -157,6 +309,55 @@ export function PythonFunctionEditor({
     return String(st);
   };
 
+  const commitOnEnter = (commit: () => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // IME composition 中の Enter は確定操作なので commit しない (SPEC-0022 踏襲)
+    if (e.key === "Enter" && !e.nativeEvent.isComposing && !composingRef.current) {
+      commit();
+    }
+  };
+
+  const renderNameRows = (
+    role: "input_names" | "output_names",
+    drafts: string[],
+    setDrafts: (v: string[]) => void,
+  ): JSX.Element[] =>
+    drafts.map((name, i) => {
+      const label =
+        role === "input_names"
+          ? t("python_function.port_names.in", { index: i })
+          : t("python_function.port_names.out", { index: i });
+      return (
+      <PropertyRow
+        key={`${role}-${i}`}
+        labelWidth={LABEL_W}
+        labelAlign="left"
+        label={label}
+      >
+        <TextInput
+          value={name}
+          maxLength={32}
+          disabled={rewriteBusy}
+          testId={`pf-${role === "input_names" ? "in" : "out"}-name-${i}`}
+          ariaLabel={label}
+          widthClass="min-w-0 flex-1 max-w-[160px]"
+          onChange={(v) => {
+            const next = drafts.slice();
+            next[i] = v;
+            setDrafts(next);
+          }}
+          onBlur={() => commitNames(role, drafts)}
+          onKeyDown={commitOnEnter(() => commitNames(role, drafts))}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
+        />
+      </PropertyRow>
+      );
+    });
+
   return (
     <div
       data-testid="parameter-panel"
@@ -172,10 +373,35 @@ export function PythonFunctionEditor({
                 <span className="font-mono" data-testid="pf-func-name">{spec.func_name}()</span>
               </PropertyRow>
               <PropertyRow labelWidth={LABEL_W} labelAlign="left" label={t("python_function.inputs")}>
-                <span className="font-mono" data-testid="pf-n-inputs">{spec.n_inputs}</span>
+                <NumberInput
+                  value={draftInputs}
+                  onChange={setDraftInputs}
+                  onBlur={() => commitCount("inputs", draftInputs)}
+                  onKeyDown={commitOnEnter(() => commitCount("inputs", draftInputs))}
+                  disabled={rewriteBusy || editable === undefined || !editable.inputs}
+                  testId="pf-n-inputs-input"
+                  widthClass="w-16"
+                />
+                <span className="sr-only" data-testid="pf-n-inputs">{spec.n_inputs}</span>
               </PropertyRow>
+              {editable !== undefined && !editable.inputs && (
+                <PropertyHint
+                  labelWidth={LABEL_W}
+                  testId="pf-inputs-locked-hint"
+                  text={t("python_function.inputs_locked_no_u")}
+                />
+              )}
               <PropertyRow labelWidth={LABEL_W} labelAlign="left" label={t("python_function.outputs")}>
-                <span className="font-mono" data-testid="pf-n-outputs">{spec.n_outputs}</span>
+                <NumberInput
+                  value={draftOutputs}
+                  onChange={setDraftOutputs}
+                  onBlur={() => commitCount("outputs", draftOutputs)}
+                  onKeyDown={commitOnEnter(() => commitCount("outputs", draftOutputs))}
+                  disabled={rewriteBusy}
+                  testId="pf-n-outputs-input"
+                  widthClass="w-16"
+                />
+                <span className="sr-only" data-testid="pf-n-outputs">{spec.n_outputs}</span>
               </PropertyRow>
               <PropertyRow labelWidth={LABEL_W} labelAlign="left" label={t("python_function.states")}>
                 <span className="font-mono">{spec.n_states}</span>
@@ -206,6 +432,23 @@ export function PythonFunctionEditor({
             <div className="px-2 py-1 text-slate-500" data-testid="pf-analysing">
               {t("python_function.analysing")}
             </div>
+          )}
+          {structError !== null && (
+            <div
+              role="alert"
+              data-testid="pf-struct-error"
+              className="border border-rose-300 bg-rose-50 px-2 py-1 font-mono text-[10px] text-rose-700 whitespace-pre-wrap"
+            >
+              {structError}
+            </div>
+          )}
+
+          {spec !== null && (
+            <>
+              <SectionDivider label={t("python_function.section.port_names")} />
+              {renderNameRows("input_names", draftInNames, setDraftInNames)}
+              {renderNameRows("output_names", draftOutNames, setDraftOutNames)}
+            </>
           )}
 
           <SectionDivider label={t("python_function.section.code")} />

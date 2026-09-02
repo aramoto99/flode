@@ -12,6 +12,7 @@ import type {
   LibraryEntryDetail,
   LibraryRegistryResponse,
   PythonFunctionIntrospectResponse,
+  PythonFunctionRewriteResponse,
   ResolvedPortShapes,
   SimulationResults,
   SimulationState,
@@ -116,6 +117,25 @@ export async function introspectPythonFunctions(
     "/blocks/python-function/introspect",
     { method: "POST", body: JSON.stringify({ items }) },
   );
+}
+
+/**
+ * SPEC-0024 §3.1: PythonFunction ソースのポート構造書き換え (サーバ側 AST splice)。
+ * patch セマンティクス: 省略した key は書き換えない。サーバは exec しない。
+ */
+export async function rewritePythonFunction(
+  code: string,
+  edits: {
+    inputs?: number;
+    outputs?: number;
+    input_names?: string[];
+    output_names?: string[];
+  },
+): Promise<PythonFunctionRewriteResponse> {
+  return _fetch<PythonFunctionRewriteResponse>("/blocks/python-function/rewrite", {
+    method: "POST",
+    body: JSON.stringify({ code, edits }),
+  });
 }
 
 /**

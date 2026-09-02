@@ -437,6 +437,15 @@
   "python_function.confirm.title": "Run Python code?",
   "python_function.confirm.message": "This model contains Python Function blocks ({{blocks}}). Running it executes their code with your privileges, without a sandbox. Only continue if you trust this model. You will not be asked again for this model until its code changes.",
   "python_function.confirm.ok": "Run",
+  "python_function.section.port_names": "Port names",
+  "python_function.port_names.in": "In {{index}}",
+  "python_function.port_names.out": "Out {{index}}",
+  "python_function.port_names.unset": "(unnamed)",
+  "python_function.inputs_locked_no_u": "The function has no `u` parameter, so it has 0 inputs. Add a `u` parameter in the code to enable input editing.",
+  "python_function.rewrite_failed": "Could not rewrite the code: {{message}}",
+  "python_function.rewrite_network_error": "Rewrite request failed: {{message}}",
+  "python_function.rewrite_stale": "The code changed while editing; the change was discarded.",
+  "python_function.port_range": "1 to {{max}} ports. The change rewrites the code (annotations / @block arguments).",
   "error.show_details": "Details (traceback)",
   "error.copy": "Copy"
 }
