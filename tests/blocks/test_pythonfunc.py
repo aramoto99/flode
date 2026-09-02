@@ -480,3 +480,18 @@ class TestSourceFilenameIsolation:
             a.output(0.0, np.zeros(0), np.array([1.0]))
         assert "AAA" in (ei.value.source_line or "")
         assert "BBB" not in (ei.value.source_line or "")
+
+
+class TestPortNamesProperty:
+    def test_properties_without_build(self):
+        code = '@block(input_names=("in1", "in2"), output_names=("out",))\ndef f(t: float, u: tuple[float, float]) -> float:\n    return u[0]\n'
+        pf = PythonFunction(code=code, id="pf")
+        assert pf.input_names == ("in1", "in2")
+        assert pf.output_names == ("out",)
+        assert pf._inner is None  # exec されていない
+
+    def test_names_survive_run(self):
+        code = '@block(input_names=("x",), output_names=("y",))\ndef f(t: float, u: float) -> float:\n    return u\n'
+        sim = _step_chain(PythonFunction(code=code, id="pf"))
+        sim.run()
+        assert sim.get_block("pf").input_names == ("x",)

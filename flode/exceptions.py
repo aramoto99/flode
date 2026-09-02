@@ -68,6 +68,35 @@ class PythonFunctionSourceError(BlockSpecError):
         self.col: int | None = col
 
 
+class PythonFunctionRewriteError(BlockSpecError):
+    """``PythonFunction`` の静的ソース書き換えが適用できない (SPEC-0024 / ADR-0074)。
+
+    構文的に書き換え不能なソース (``kind="unsupported"``)、または書き換え結果の
+    自己検証 (W3: 再解析して要求構造と突合) が失敗した場合 (``kind="verify"``) に
+    投げられる。**元コードは一切変更されない** (呼び出し側は成功時のみ新コードを得る)。
+
+    Args:
+        message: 説明文。
+        kind: ``"syntax"`` / ``"spec"`` / ``"unsupported"`` / ``"verify"``。
+        lineno: 1 始まりの行番号 (特定できないときは ``None``)。
+        col: 1 始まりの列番号 (特定できないときは ``None``)。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "unsupported",
+        lineno: int | None = None,
+        col: int | None = None,
+        block_id: str | None = None,
+    ) -> None:
+        super().__init__(message, block_id=block_id)
+        self.kind: str = kind
+        self.lineno: int | None = lineno
+        self.col: int | None = col
+
+
 class PythonBlocksDisabledError(BlockSpecError):
     """``PythonFunction`` の実行がプロセス policy で禁止されている (ADR-0073 §論点 4 hard gate)。
 

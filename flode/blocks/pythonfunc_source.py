@@ -84,6 +84,9 @@ class SourceSpec:
         params_spec: ``(name, default, type, required)`` のタプル列
             (= 生成 class の ``_flode_params_spec`` と同形)。
         lineno: デコレート対象関数の ``def`` 行 (1 始まり)。
+        input_names: 入力ポート名 (SPEC-0024)。空 tuple = 全ポート無名。
+        output_names: 出力ポート名。
+        has_u_arg: 関数が ``u`` 引数を持つか (= GUI の入力数編集可否判定)。
     """
 
     func_name: str
@@ -94,6 +97,9 @@ class SourceSpec:
     sample_time: float | None
     params_spec: tuple[tuple[str, Any, Any, bool], ...]
     lineno: int
+    input_names: tuple[str, ...] = ()
+    output_names: tuple[str, ...] = ()
+    has_u_arg: bool = True
 
 
 class _UnresolvedAnnotation(Exception):
@@ -190,6 +196,9 @@ def analyze_source(code: str, *, block_id: str | None = None) -> SourceSpec:
         sample_time=structure.sample_time,
         params_spec=tuple(params_spec),
         lineno=func_def.lineno,
+        input_names=structure.input_names,
+        output_names=structure.output_names,
+        has_u_arg=structure.has_u_arg,
     )
 
 

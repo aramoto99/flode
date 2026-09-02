@@ -286,8 +286,18 @@ def _verify_structure(cls: type[Block], spec: SourceSpec, block_id: str | None) 
         spec.n_states,
         spec.direct_feedthrough,
         spec.sample_time,
+        spec.input_names,
+        spec.output_names,
     )
-    actual = (s.n_inputs, s.n_outputs, s.n_states, s.direct_feedthrough, s.sample_time)
+    actual = (
+        s.n_inputs,
+        s.n_outputs,
+        s.n_states,
+        s.direct_feedthrough,
+        s.sample_time,
+        s.input_names,
+        s.output_names,
+    )
     if expected != actual:
         raise BlockSpecError(
             f"PythonFunction[{block_id}]: block structure after execution "
@@ -368,6 +378,16 @@ class PythonFunction(Block):
     def spec(self) -> SourceSpec:
         """静的解析で確定した構造 (read-only)。"""
         return self._static_spec
+
+    @property
+    def input_names(self) -> tuple[str, ...]:
+        """入力ポート名 (SPEC-0024)。``exec`` 不要 = ロードしただけで読める。空 = 全ポート無名。"""
+        return self._static_spec.input_names
+
+    @property
+    def output_names(self) -> tuple[str, ...]:
+        """出力ポート名 (SPEC-0024)。規則は :attr:`input_names` と同じ。"""
+        return self._static_spec.output_names
 
     def _filter_user_params(
         self, user_params: dict[str, Any] | None, spec: SourceSpec

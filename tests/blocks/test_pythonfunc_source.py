@@ -341,3 +341,37 @@ class TestNoExecution:
     def test_source_filename_format(self):
         assert source_filename("pf_1") == "<pythonfunction:pf_1>"
         assert source_filename(None) == "<pythonfunction:unnamed>"
+
+
+class TestPortNamesInSpec:
+    def test_names_readable_without_exec(self, tmp_path):
+        marker = tmp_path / "m.txt"
+        code = (
+            f'open({str(marker)!r}, "w").write("x")\n\n'
+            '@block(input_names=("速度指令", ""), output_names=("トルク",))\n'
+            "def f(t: float, u: tuple[float, float]) -> float:\n"
+            "    return u[0]\n"
+        )
+        spec = analyze_source(code, block_id="pf")
+        assert spec.input_names == ("速度指令", "")
+        assert spec.output_names == ("トルク",)
+        assert spec.has_u_arg is True
+        assert not marker.exists()  # 静的解析だけで exec されない
+
+    def test_defaults_and_has_u_arg_false(self):
+        spec = analyze_source("@block\ndef s(t: float) -> float:\n    return t\n")
+        assert spec.input_names == ()
+        assert spec.output_names == ()
+        assert spec.has_u_arg is False
+
+    def test_dsl_violation_is_source_error(self):
+        code = '@block(input_names=("a",))\ndef f(t: float, u: tuple[float, float]) -> float:\n    return u[0]\n'
+        with pytest.raises(PythonFunctionSourceError, match="must match exactly"):
+            analyze_source(code)
+
+    def test_parity_with_exec_for_names(self):
+        code = '@block(input_names=("a", "b"))\ndef f(t: float, u: tuple[float, float]) -> float:\n    return u[0]\n'
+        spec = analyze_source(code)
+        structure, _ = _exec_structure(code)
+        assert spec.input_names == structure.input_names
+        assert spec.has_u_arg == structure.has_u_arg
