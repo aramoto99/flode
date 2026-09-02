@@ -245,3 +245,135 @@ class TestExecGateInsideLoader:
         set_python_block_policy(allowed=False, reason="test")
         with pytest.raises(PythonBlocksDisabledError):
             exec_block_source(GAIN_CODE, block_id="pf")
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0024: rewrite endpoint と introspect の後方互換拡張
+# ---------------------------------------------------------------------------
+
+SCALAR_CODE = "@block\ndef f(t: float, u: float) -> float:\n    return u\n"
+
+
+class TestRewriteEndpoint:
+    def test_applied_true_returns_code_and_spec(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": SCALAR_CODE, "edits": {"inputs": 2, "input_names": ["速度指令", ""]}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied"] is True
+        assert "tuple[float, float]" in data["code"]
+        assert 'input_names=("速度指令", "")' in data["code"]
+        spec = data["spec"]
+        assert spec["n_inputs"] == 2
+        assert spec["input_names"] == ["速度指令", ""]
+        assert spec["editable"]["inputs"] is True
+        assert spec["editable"]["max_inputs"] == 32
+
+    def test_applied_false_has_no_code_key(self, client: TestClient) -> None:
+        # 名前列の長さ不一致はソース側の事情 → 200 + applied:false、code は返さない
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": SCALAR_CODE, "edits": {"input_names": ["a", "b"]}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied"] is False
+        assert "code" not in data
+        assert data["error"]["kind"] == "spec"
+
+    def test_no_u_function_is_applied_false(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={
+                "code": "@block\ndef f(t: float) -> float:\n    return t\n",
+                "edits": {"inputs": 2},
+            },
+        )
+        assert resp.json()["applied"] is False
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"code": SCALAR_CODE},  # edits なし
+            {"code": SCALAR_CODE, "edits": {"inputs": 0}},
+            {"code": SCALAR_CODE, "edits": {"inputs": 33}},
+            {"code": SCALAR_CODE, "edits": {"inputs": True}},
+            {"code": SCALAR_CODE, "edits": {"input_names": "ab"}},
+            {"code": SCALAR_CODE, "edits": {"input_names": ["x" * 33]}},
+            {"code": SCALAR_CODE, "edits": {"bogus": 1}},
+            {"code": 123, "edits": {}},
+        ],
+    )
+    def test_invalid_body_is_400(self, client: TestClient, body) -> None:
+        resp = client.post("/api/v1/blocks/python-function/rewrite", json=body)
+        assert resp.status_code == 400
+
+    def test_oversized_code_is_400(self, client: TestClient) -> None:
+        from flode.server.routes.blocks import MAX_INTROSPECT_CODE_CHARS
+
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": "#" * (MAX_INTROSPECT_CODE_CHARS + 1), "edits": {"inputs": 2}},
+        )
+        assert resp.status_code == 400
+
+    def test_get_is_405(self, client: TestClient) -> None:
+        assert client.get("/api/v1/blocks/python-function/rewrite").status_code == 405
+
+    def test_does_not_execute_user_code(self, client: TestClient, tmp_path: Path) -> None:
+        marker = tmp_path / "executed.txt"
+        code = f'open({str(marker)!r}, "w").write("x")\n\n@block\ndef f(t: float, u: float) -> float:\n    return u\n'
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": code, "edits": {"inputs": 3}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["applied"] is True
+        assert not marker.exists()
+
+    def test_cross_origin_is_blocked(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": SCALAR_CODE, "edits": {"inputs": 2}},
+            headers={"Origin": "https://evil.example"},
+        )
+        assert resp.status_code == 403
+
+
+class TestIntrospectBackwardCompat:
+    def test_new_keys_added_old_keys_unchanged(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/python-function/introspect",
+            json={"items": [{"key": "k", "code": SCALAR_CODE}]},
+        )
+        r = resp.json()["results"]["k"]
+        # 旧キー (SPEC-0023) は全て健在
+        for key in (
+            "resolved",
+            "func_name",
+            "n_inputs",
+            "n_outputs",
+            "n_states",
+            "direct_feedthrough",
+            "sample_time",
+            "params_spec",
+        ):
+            assert key in r
+        # 新キー (SPEC-0024)
+        assert r["input_names"] == []
+        assert r["output_names"] == []
+        assert r["editable"]["inputs"] is True
+        assert r["editable"]["min_outputs"] == 1
+
+    def test_editable_false_for_source_block(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/v1/blocks/python-function/introspect",
+            json={
+                "items": [{"key": "k", "code": "@block\ndef s(t: float) -> float:\n    return t\n"}]
+            },
+        )
+        r = resp.json()["results"]["k"]
+        assert r["editable"]["inputs"] is False
+        assert r["editable"]["min_inputs"] == 0

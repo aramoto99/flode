@@ -17,6 +17,7 @@ from ..registry import (
     introspect_python_source,
     metadata_to_dict,
     resolve_port_shapes,
+    rewrite_python_source,
 )
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
@@ -182,6 +183,85 @@ async def introspect_python_function(request: Request) -> dict[str, Any]:
 
     results = await run_in_threadpool(_analyse_all)
     return {"results": results}
+
+
+@router.get("/python-function/rewrite")
+def rewrite_python_function_get_method_not_allowed() -> None:
+    """``POST /api/v1/blocks/python-function/rewrite`` の GET 方向の 405 stub。"""
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "Use POST /api/v1/blocks/python-function/rewrite with body "
+            '{"code": ..., "edits": {"inputs"?, "outputs"?, "input_names"?, '
+            '"output_names"?}} to rewrite a PythonFunction source.'
+        ),
+    )
+
+
+def _validated_rewrite_count(edits: dict[str, Any], key: str) -> None:
+    from ...blocks.pythonfunc_rewrite import MAX_PYTHON_FUNCTION_PORTS
+
+    v = edits.get(key)
+    if v is None:
+        return
+    if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= MAX_PYTHON_FUNCTION_PORTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"edits.{key} must be an integer in 1..{MAX_PYTHON_FUNCTION_PORTS}",
+        )
+
+
+def _validated_rewrite_names(edits: dict[str, Any], key: str) -> None:
+    v = edits.get(key)
+    if v is None:
+        return
+    if not isinstance(v, list) or not all(isinstance(n, str) for n in v):
+        raise HTTPException(status_code=400, detail=f"edits.{key} must be a list of strings")
+    for i, n in enumerate(v):
+        if len(n) > 32:
+            raise HTTPException(status_code=400, detail=f"edits.{key}[{i}] exceeds 32 code points")
+
+
+@router.post("/python-function/rewrite")
+async def rewrite_python_function(request: Request) -> dict[str, Any]:
+    """``PythonFunction`` ソースのポート構造を書き換える (SPEC-0024 §3.1)。
+
+    Body: ``{"code": "<source>", "edits": {"inputs"?, "outputs"?, "input_names"?,
+    "output_names"?}}`` (patch セマンティクス: 省略した key は書き換えない)。
+
+    Returns:
+        200 ``{"applied": true, "code", "spec"}`` — 書き換え成功。``spec`` は
+        introspect と同一形なので、frontend は 1 往復で cache 投入 → commit できる。
+        200 ``{"applied": false, "error": {...}}`` — ソース側の事情で書き換え不能
+        (受理契約外・編集不可の形・自己検証失敗)。**元コードは返さない**。
+        400 — body 自体の不正 (型・範囲・サイズ)。クライアントのバグ。
+
+    Note:
+        **この endpoint はユーザーコードを exec しない** (introspect と同じ不変条件)。
+        静的 AST 解析 + テキスト splice + 再解析のみ。
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    code = body.get("code")
+    edits = body.get("edits")
+    if not isinstance(code, str):
+        raise HTTPException(status_code=400, detail="`code` (string) is required in body")
+    if len(code) > MAX_INTROSPECT_CODE_CHARS:
+        raise HTTPException(
+            status_code=400, detail=f"`code` exceeds {MAX_INTROSPECT_CODE_CHARS} characters"
+        )
+    if not isinstance(edits, dict):
+        raise HTTPException(status_code=400, detail="`edits` (object) is required in body")
+    unknown = set(edits) - {"inputs", "outputs", "input_names", "output_names"}
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown edits keys: {sorted(unknown)}")
+    _validated_rewrite_count(edits, "inputs")
+    _validated_rewrite_count(edits, "outputs")
+    _validated_rewrite_names(edits, "input_names")
+    _validated_rewrite_names(edits, "output_names")
+
+    return await run_in_threadpool(rewrite_python_source, code, edits, key="rewrite")
 
 
 @router.get("/{type_path:path}")

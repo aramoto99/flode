@@ -496,33 +496,15 @@ def _build_params_spec(cls: type) -> list[ParamSpec]:
     return out
 
 
-def introspect_python_source(code: str, *, key: str) -> dict[str, Any]:
-    """``PythonFunction`` ソースを **exec せずに** 静的解析し、frontend 向け spec を返す。
+def _python_spec_payload(spec: Any) -> dict[str, Any]:
+    """``SourceSpec`` → introspect / rewrite 共通のレスポンス形 (SPEC-0024 §3)。
 
-    SPEC-0023 / ADR-0073 §論点 1: introspect REST の本体。``analyze_source`` (SSOT)
-    を呼ぶだけで、``exec`` は一切行わない (= 公開 bind でも安全に呼べる)。
-
-    Args:
-        code: ユーザーソース。
-        key: クライアント指定の突合キー (エラーメッセージの block id にも使う)。
-
-    Returns:
-        成功時 ``{"resolved": True, "func_name", "n_inputs", "n_outputs", "n_states",
-        "direct_feedthrough", "sample_time", "params_spec": [ParamSpec dict...]}``、
-        失敗時 ``{"resolved": False, "error": {"message", "lineno", "col", "kind"}}``。
-        ``params_spec`` の整形は registry の ``ParamSpec`` と同じ規約
-        (``_format_annotation`` / ``to_json_value``)。
+    ``editable`` は「GUI がポート数を編集できるか」のサーバ側判定
+    (`u` 引数の無い関数は入力 0 固定 = 編集不可)。frontend に Python 推論の
+    再実装を持ち込まないため、判定はここで返す (ADR-0074 §論点 5f)。
     """
-    from ..blocks.pythonfunc_source import analyze_source
-    from ..exceptions import PythonFunctionSourceError
+    from ..blocks.pythonfunc_rewrite import MAX_PYTHON_FUNCTION_PORTS
 
-    try:
-        spec = analyze_source(code, block_id=key)
-    except PythonFunctionSourceError as e:
-        return {
-            "resolved": False,
-            "error": {"message": str(e), "lineno": e.lineno, "col": e.col, "kind": e.kind},
-        }
     params: list[dict[str, Any]] = []
     for name, default, ptype, required in spec.params_spec:
         json_default: Any = None
@@ -553,7 +535,93 @@ def introspect_python_source(code: str, *, key: str) -> dict[str, Any]:
         "direct_feedthrough": spec.direct_feedthrough,
         "sample_time": spec.sample_time,
         "params_spec": params,
+        # SPEC-0024 (後方互換の純粋追加):
+        "input_names": list(spec.input_names),
+        "output_names": list(spec.output_names),
+        "editable": {
+            "inputs": spec.has_u_arg,
+            "outputs": True,
+            "min_inputs": 1 if spec.has_u_arg else 0,
+            "max_inputs": MAX_PYTHON_FUNCTION_PORTS,
+            "min_outputs": 1,
+            "max_outputs": MAX_PYTHON_FUNCTION_PORTS,
+        },
     }
+
+
+def rewrite_python_source(code: str, edits: dict[str, Any], *, key: str) -> dict[str, Any]:
+    """``PythonFunction`` ソースのポート構造を書き換える (SPEC-0024 §3.1 の本体)。
+
+    ``exec`` しない (静的 AST 解析 + テキスト splice + 再解析のみ)。書き換え不能は
+    200 の中の ``{"applied": false, "error": {...}}`` で表現し、**その場合 ``code`` は
+    返さない** (元コードはクライアント側にある)。
+
+    Args:
+        code: 現在のソース。
+        edits: ``{"inputs"?, "outputs"?, "input_names"?, "output_names"?}``
+            (型・範囲の検証は route 層が済ませている前提。防御的検証は
+            ``rewrite_source`` 自身も行う)。
+        key: エラーメッセージ用のクライアント突合キー。
+
+    Returns:
+        成功 ``{"applied": True, "code": <new>, "spec": {...}}`` /
+        失敗 ``{"applied": False, "error": {"message", "lineno", "col", "kind"}}``。
+    """
+    from ..blocks.pythonfunc_rewrite import rewrite_source
+    from ..blocks.pythonfunc_source import analyze_source
+    from ..exceptions import PythonFunctionRewriteError, PythonFunctionSourceError
+
+    try:
+        new_code = rewrite_source(
+            code,
+            inputs=edits.get("inputs"),
+            outputs=edits.get("outputs"),
+            input_names=edits.get("input_names"),
+            output_names=edits.get("output_names"),
+            block_id=key,
+        )
+        spec = analyze_source(new_code, block_id=key)
+    except (PythonFunctionRewriteError, PythonFunctionSourceError) as e:
+        return {
+            "applied": False,
+            "error": {
+                "message": str(e),
+                "lineno": getattr(e, "lineno", None),
+                "col": getattr(e, "col", None),
+                "kind": getattr(e, "kind", "unsupported"),
+            },
+        }
+    return {"applied": True, "code": new_code, "spec": _python_spec_payload(spec)}
+
+
+def introspect_python_source(code: str, *, key: str) -> dict[str, Any]:
+    """``PythonFunction`` ソースを **exec せずに** 静的解析し、frontend 向け spec を返す。
+
+    SPEC-0023 / ADR-0073 §論点 1: introspect REST の本体。``analyze_source`` (SSOT)
+    を呼ぶだけで、``exec`` は一切行わない (= 公開 bind でも安全に呼べる)。
+
+    Args:
+        code: ユーザーソース。
+        key: クライアント指定の突合キー (エラーメッセージの block id にも使う)。
+
+    Returns:
+        成功時 ``{"resolved": True, "func_name", "n_inputs", "n_outputs", "n_states",
+        "direct_feedthrough", "sample_time", "params_spec": [ParamSpec dict...]}``、
+        失敗時 ``{"resolved": False, "error": {"message", "lineno", "col", "kind"}}``。
+        ``params_spec`` の整形は registry の ``ParamSpec`` と同じ規約
+        (``_format_annotation`` / ``to_json_value``)。
+    """
+    from ..blocks.pythonfunc_source import analyze_source
+    from ..exceptions import PythonFunctionSourceError
+
+    try:
+        spec = analyze_source(code, block_id=key)
+    except PythonFunctionSourceError as e:
+        return {
+            "resolved": False,
+            "error": {"message": str(e), "lineno": e.lineno, "col": e.col, "kind": e.kind},
+        }
+    return _python_spec_payload(spec)
 
 
 def _instantiate_for_introspection(cls: type) -> Block | None:
