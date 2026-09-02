@@ -377,3 +377,14 @@ class TestIntrospectBackwardCompat:
         r = resp.json()["results"]["k"]
         assert r["editable"]["inputs"] is False
         assert r["editable"]["min_inputs"] == 0
+
+
+class TestRewriteSecurityHardening:
+    def test_names_list_length_over_port_cap_is_400(self, client: TestClient) -> None:
+        """security-reviewer SHOULD-2: 要素数もポート上限 (32) で 400。"""
+        resp = client.post(
+            "/api/v1/blocks/python-function/rewrite",
+            json={"code": SCALAR_CODE, "edits": {"input_names": ["a"] * 33}},
+        )
+        assert resp.status_code == 400
+        assert "at most 32" in resp.json()["detail"]

@@ -212,11 +212,19 @@ def _validated_rewrite_count(edits: dict[str, Any], key: str) -> None:
 
 
 def _validated_rewrite_names(edits: dict[str, Any], key: str) -> None:
+    from ...blocks.pythonfunc_rewrite import MAX_PYTHON_FUNCTION_PORTS
+
     v = edits.get(key)
     if v is None:
         return
     if not isinstance(v, list) or not all(isinstance(n, str) for n in v):
         raise HTTPException(status_code=400, detail=f"edits.{key} must be a list of strings")
+    # security-reviewer SHOULD-2: 要素数もポート上限で揃える (32 超は常に長さ不一致)
+    if len(v) > MAX_PYTHON_FUNCTION_PORTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"edits.{key} must have at most {MAX_PYTHON_FUNCTION_PORTS} elements",
+        )
     for i, n in enumerate(v):
         if len(n) > 32:
             raise HTTPException(status_code=400, detail=f"edits.{key}[{i}] exceeds 32 code points")

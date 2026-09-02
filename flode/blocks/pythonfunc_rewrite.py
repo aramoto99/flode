@@ -45,10 +45,31 @@ from .pythonfunc_source import (
 
 _logger = logging.getLogger("flode.blocks.pythonfunc_rewrite")
 
+
+def _code_for_log(code: str, max_lines: int = 20) -> str:
+    """verify 失敗ログ用のソース縮約 (security-reviewer NIT-1: 全文をログに残さない)。
+
+    ユーザーコードに秘密情報が書かれている可能性があるため、先頭 ``max_lines`` 行 +
+    SHA-256 に縮める (回帰ケースの特定には digest とテスト再現で足りる)。
+    """
+    import hashlib
+
+    lines = code.splitlines()
+    head = "\n".join(lines[:max_lines])
+    suffix = f"\n... ({len(lines) - max_lines} more lines)" if len(lines) > max_lines else ""
+    digest = hashlib.sha256(code.encode("utf-8", "surrogatepass")).hexdigest()
+    return f"{head}{suffix}\n[sha256={digest}]"
+
+
 #: GUI / REST から編集できるポート数の上限 (SPEC-0024 §2.7)。DSL 自体には課さない
 #: (= コードで書く分には制限しない)。キャンバスのハンドル等分配の実用限界と
 #: 生成リテラル長 (DoS 面) の両方から。
 MAX_PYTHON_FUNCTION_PORTS = 32
+
+#: 書き換え結果のサイズ上限 (= introspect の入力上限と同じ 256 KiB)。長い tuple
+#: 注釈の要素複製はポート数倍まで増幅しうるため、結果が入力上限を超える書き換えは
+#: 拒否する (security-reviewer NIT-2: 再投入による多段増幅も 1 ホップで断つ)。
+MAX_REWRITTEN_CODE_CHARS = 256 * 1024
 
 #: CPython の行区切り (``\r\n`` / ``\r`` / ``\n``)。``str.splitlines()`` は
 #: form feed / U+2028 等でも分割してしまい ``ast`` の行番号と食い違うため使わない。
@@ -175,7 +196,14 @@ class _DecoratorEditor:
         self.splices.append(_Splice(start, end, literal_text.encode("utf-8")))
 
     def remove(self, name: str) -> None:
-        """キーワードを削除する (C-3)。区切りカンマも一緒に除く。"""
+        """キーワードを削除する (C-3)。区切りカンマも一緒に除く。
+
+        ADR-0074 §論点 2(d): **消す側を選ぶ**。削除対象より前にある保持キーワードの
+        trailing comment を巻き込まないため、後続キーワードが在れば前方
+        (``[kw_start, 次キーワードの始端)``) を消し、末尾キーワードのときだけ
+        ``[kw_start, 自分のカンマ/コメントの終端)`` を消す (直前キーワードの
+        カンマは trailing comma として残る = 合法)。
+        """
         kw = self._kwargs.get(name)
         if kw is None or self._call is None:
             return
@@ -183,20 +211,61 @@ class _DecoratorEditor:
         kw_end = self._source.span(kw.value)[1]
         remaining = [k for k in self._call.keywords if k is not kw and k.arg is not None]
         if not remaining and not self._pending_inserts:
-            # 最後のキーワードを消す → `@block(...)` を裸の `@block` に戻す (可逆)
+            # 最後の 1 個を消す → `@block(...)` を裸の `@block` に戻す (可逆)
             func_end = self._source.span(self._call.func)[1]
             call_end = self._source.span(self._call)[1]
             self.splices.append(_Splice(func_end, call_end, b""))
             return
         index = self._call.keywords.index(kw)
-        if index > 0:
-            # 直前のキーワード終端から自分の終端まで (= 手前のカンマ + 空白 + 自分)
-            prev_end = self._source.span(self._call.keywords[index - 1].value)[1]
-            self.splices.append(_Splice(prev_end, kw_end, b""))
-        else:
-            # 先頭 → 自分の始端から次のキーワード名の始端まで (= 自分 + 後ろのカンマ + 空白)
+        if index < len(self._call.keywords) - 1:
+            # 後続キーワードあり → 自分の始端から次キーワード名の始端まで
+            # (= 自分 + 自分のカンマ + 自分の trailing comment + 空白)。
+            # 前方 (保持されるキーワードのコメント) には一切触れない。
             next_start = self._keyword_start(self._call.keywords[index + 1])
             self.splices.append(_Splice(kw_start, next_start, b""))
+        else:
+            # 末尾キーワード → 自分と、直後のカンマ / 同一行の trailing comment を消す。
+            # 直前キーワードとの間が同一行の「空白 + カンマ + 空白」だけ (コメント・
+            # 改行なし) なら区切りカンマも後方に消し `@block(inputs=2)` の形に戻す。
+            # 改行やコメントを挟む複数行形では触れず、直前キーワードのカンマを
+            # trailing comma として残す (Python の呼び出しで合法)。
+            end = self._consume_trailing_separator(kw_end)
+            start = self._extend_back_over_separator(kw_start)
+            self.splices.append(_Splice(start, end, b""))
+
+    def _consume_trailing_separator(self, pos: int) -> int:
+        """``pos`` から空白 → 任意のカンマ → 空白 → 同一行コメントを読み進めた終端を返す。"""
+        data = self._source.data
+        n = len(data)
+        i = pos
+        while i < n and data[i : i + 1] in (b" ", b"\t"):
+            i += 1
+        if i < n and data[i : i + 1] == b",":
+            i += 1
+            while i < n and data[i : i + 1] in (b" ", b"\t"):
+                i += 1
+        if i < n and data[i : i + 1] == b"#":
+            while i < n and data[i : i + 1] not in (b"\n", b"\r"):
+                i += 1
+        return i
+
+    def _extend_back_over_separator(self, pos: int) -> int:
+        """``pos`` の直前が同一行の「空白 + カンマ + 空白」だけなら、その始端を返す。
+
+        改行やコメントを跨ぐ場合 (= 複数行デコレータで直前キーワードが別行) は
+        拡張せず ``pos`` をそのまま返す。コメントは行末まで続くため、カンマより
+        前に同一行でコメントが現れることはない。
+        """
+        data = self._source.data
+        i = pos
+        while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
+            i -= 1
+        if i > 0 and data[i - 1 : i] == b",":
+            i -= 1
+            while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
+                i -= 1
+            return i
+        return pos
 
     def _keyword_start(self, kw: ast.keyword) -> int:
         lineno = getattr(kw, "lineno", None)
@@ -401,6 +470,14 @@ def rewrite_source(
         return code  # 完全 no-op (バイト等価)
 
     new_code = _apply_splices(source, splices)
+    if len(new_code) > MAX_REWRITTEN_CODE_CHARS:
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: the rewritten source would exceed "
+            f"{MAX_REWRITTEN_CODE_CHARS} characters; reduce the annotation size or "
+            f"declare the structure with @block(inputs=N, outputs=M) instead.",
+            kind="unsupported",
+            block_id=block_id,
+        )
 
     # --- 自己検証 (W3): 唯一の導出者に読み直させる ---
     try:
@@ -408,31 +485,33 @@ def rewrite_source(
     except PythonFunctionSourceError as e:
         _logger.error(
             "PythonFunction rewrite self-verification failed (re-analysis) for block %r: %s\n"
-            "--- original code ---\n%s\n--- rewritten (DISCARDED) ---\n%s",
+            "--- original code (truncated) ---\n%s\n--- rewritten (DISCARDED, truncated) ---\n%s",
             block_id,
             e,
-            code,
-            new_code,
+            _code_for_log(code),
+            _code_for_log(new_code),
         )
         raise PythonFunctionRewriteError(
             f"PythonFunction[{block_id}]: rewrite produced source that no longer parses "
             f"({e}); the original code is unchanged. This is a bug in the rewrite rules.",
-            kind="verify",
+            kind="spec",  # wire 語彙は 3 値のまま (ADR-0074 §論点 3)。内部細分は reason
+            reason="rewrite_verify_syntax",
             block_id=block_id,
         ) from e
     if replace(new_spec, lineno=old_spec.lineno) != replace(expected, lineno=old_spec.lineno):
         _logger.error(
             "PythonFunction rewrite self-verification failed (structure mismatch) for "
-            "block %r: expected %r, got %r\n--- original code ---\n%s",
+            "block %r: expected %r, got %r\n--- original code (truncated) ---\n%s",
             block_id,
             expected,
             new_spec,
-            code,
+            _code_for_log(code),
         )
         raise PythonFunctionRewriteError(
             f"PythonFunction[{block_id}]: rewritten source does not match the requested "
             f"structure; the original code is unchanged. This is a bug in the rewrite rules.",
-            kind="verify",
+            kind="spec",
+            reason="rewrite_verify_mismatch",
             block_id=block_id,
         )
     return new_code
@@ -488,13 +567,15 @@ def _plan_names(
         # C-3: 全要素が空文字 = 「全ポート無名」は空 tuple に正規化する
         # (= キーワード削除の対象。`input_names=("", "")` というノイズを書かない)
         return () if resolved and all(n == "" for n in resolved) else resolved
+    # W5 (patch セマンティクス): names を明示要求していない編集では、既存の名前列を
+    # **長さ同期するだけ** に留める。code-reviewer SHOULD: 明示的に書かれた
+    # 全空 tuple (`input_names=("", "")`) を、構造だけの編集で勝手に削除しない
+    # (全空 → キーワード削除の C-3 collapse は、名前を明示編集したときだけ適用)。
     if not current:
         return ()
     if len(current) > final_count:
-        synced = current[:final_count]
-    else:
-        synced = current + ("",) * (final_count - len(current))
-    return () if all(n == "" for n in synced) else synced
+        return current[:final_count]
+    return current + ("",) * (final_count - len(current))
 
 
 def _plan_name_keyword(

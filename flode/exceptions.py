@@ -71,13 +71,16 @@ class PythonFunctionSourceError(BlockSpecError):
 class PythonFunctionRewriteError(BlockSpecError):
     """``PythonFunction`` の静的ソース書き換えが適用できない (SPEC-0024 / ADR-0074)。
 
-    構文的に書き換え不能なソース (``kind="unsupported"``)、または書き換え結果の
-    自己検証 (W3: 再解析して要求構造と突合) が失敗した場合 (``kind="verify"``) に
-    投げられる。**元コードは一切変更されない** (呼び出し側は成功時のみ新コードを得る)。
+    構文的に書き換え不能なソース、要求の仕様違反、または書き換え結果の自己検証
+    (W3: 再解析して要求構造と突合) の失敗で投げられる。**元コードは一切変更されない**
+    (呼び出し側は成功時のみ新コードを得る)。
 
     Args:
         message: 説明文。
-        kind: ``"syntax"`` / ``"spec"`` / ``"unsupported"`` / ``"verify"``。
+        kind: wire に出る分類。``"syntax"`` / ``"spec"`` / ``"unsupported"`` の 3 値のみ
+            (ADR-0074 §論点 3: 語彙を増やさない)。
+        reason: ログ専用の内部細分 (``"rewrite_verify_syntax"`` /
+            ``"rewrite_verify_mismatch"`` 等)。wire には出さない。
         lineno: 1 始まりの行番号 (特定できないときは ``None``)。
         col: 1 始まりの列番号 (特定できないときは ``None``)。
     """
@@ -87,12 +90,14 @@ class PythonFunctionRewriteError(BlockSpecError):
         message: str,
         *,
         kind: str = "unsupported",
+        reason: str = "",
         lineno: int | None = None,
         col: int | None = None,
         block_id: str | None = None,
     ) -> None:
         super().__init__(message, block_id=block_id)
         self.kind: str = kind
+        self.reason: str = reason
         self.lineno: int | None = lineno
         self.col: int | None = col
 

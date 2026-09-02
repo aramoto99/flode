@@ -319,8 +319,8 @@ export interface PythonFunctionSpec {
 }
 
 // SPEC-0024 §3.1: rewrite endpoint のレスポンス。``applied: false`` のとき
-// ``code`` は返らない (元コードはクライアント側にある)。``kind`` は introspect の
-// 2 値に加えて "unsupported" (書き換え規則の対象外) / "verify" (自己検証失敗) を取る。
+// ``code`` は返らない (元コードはクライアント側にある)。``kind`` の wire 語彙は
+// 3 値に固定 (ADR-0074 §論点 3。自己検証失敗は "spec" に畳まれる)。
 export type PythonFunctionRewriteResponse =
   | { applied: true; code: string; spec: PythonFunctionSpec }
   | {
@@ -329,7 +329,7 @@ export type PythonFunctionRewriteResponse =
         message: string;
         lineno: number | null;
         col: number | null;
-        kind: "syntax" | "spec" | "unsupported" | "verify";
+        kind: "syntax" | "spec" | "unsupported";
       };
     };
 

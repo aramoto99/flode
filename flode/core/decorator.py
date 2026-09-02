@@ -429,7 +429,9 @@ def _split_state_return(return_hint: Any, func_name: str) -> Any:
 _MAX_PORT_NAME_CODEPOINTS = 32
 
 #: ポート名に使えない Unicode カテゴリ (SPEC-0024 N4: 制御 / 書式 / 行・段落区切り)。
-_FORBIDDEN_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+#: ``Cs`` (孤立サロゲート) も拒否する — UTF-8 encode 不能で書き換え/永続化が
+#: 未捕捉例外になるため (security-reviewer SHOULD-1)。
+_FORBIDDEN_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
 
 
 def _resolve_port_names(

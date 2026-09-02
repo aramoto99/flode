@@ -483,6 +483,7 @@ export function TextInput({
   mono = false,
   maxLength,
   disabled = false,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -495,10 +496,12 @@ export function TextInput({
   ariaLabel?: string;
   widthClass?: string;
   mono?: boolean;
-  /** SPEC-0024: 入力長の上限 (ポート名 32 コードポイント等)。 */
+  /** SPEC-0024: 入力長の上限 (注意: HTML の maxLength は UTF-16 code unit 単位)。 */
   maxLength?: number;
   /** SPEC-0024: in-flight 中の編集ロック等。 */
   disabled?: boolean;
+  /** SPEC-0024: 未設定時の placeholder (ポート名の「(無名)」等)。 */
+  placeholder?: string;
 }): JSX.Element {
   return (
     <input
@@ -514,6 +517,7 @@ export function TextInput({
       autoFocus={autoFocus}
       maxLength={maxLength}
       disabled={disabled}
+      placeholder={placeholder}
       data-testid={testId}
       aria-label={ariaLabel}
       className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass} ${

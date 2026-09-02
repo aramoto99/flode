@@ -255,7 +255,14 @@ export function PythonFunctionEditor({
       const current = role === "inputs" ? spec.n_inputs : spec.n_outputs;
       const min = role === "inputs" ? editable.min_inputs : editable.min_outputs;
       const max = role === "inputs" ? editable.max_inputs : editable.max_outputs;
-      const target = Math.trunc(value);
+      // SPEC-0024 エッジケース: 小数は commit せず値を戻す (黙って丸めない)
+      if (!Number.isInteger(value)) {
+        setStructError(t("python_function.port_range", { max }));
+        if (role === "inputs") setDraftInputs(spec.n_inputs);
+        else setDraftOutputs(spec.n_outputs);
+        return;
+      }
+      const target = value;
       if (target === current) return;
       if (target < Math.max(1, min) || target > max) {
         setStructError(t("python_function.port_range", { max }));
@@ -335,14 +342,17 @@ export function PythonFunctionEditor({
       >
         <TextInput
           value={name}
-          maxLength={32}
           disabled={rewriteBusy}
+          placeholder={t("python_function.port_names.unset")}
           testId={`pf-${role === "input_names" ? "in" : "out"}-name-${i}`}
           ariaLabel={label}
           widthClass="min-w-0 flex-1 max-w-[160px]"
           onChange={(v) => {
+            // 32 は **コードポイント** 基準 (サーバと同じ)。HTML maxLength は
+            // UTF-16 単位で絵文字が 2 消費になるため使わず、ここで切り詰める
+            const cps = Array.from(v);
             const next = drafts.slice();
-            next[i] = v;
+            next[i] = cps.length > 32 ? cps.slice(0, 32).join("") : v;
             setDrafts(next);
           }}
           onBlur={() => commitNames(role, drafts)}

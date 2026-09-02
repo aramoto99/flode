@@ -254,11 +254,15 @@ class TestCountNameSync:
         new = _rw(self.NAMED2, inputs=1)
         assert _spec(new).input_names == ("a",)
 
-    def test_shrink_to_all_empty_removes_keyword(self) -> None:
+    def test_shrink_count_only_keeps_explicit_empty_keyword(self) -> None:
+        """W5: names を明示編集しない構造編集では、既存キーワードを削除せず長さ同期のみ。"""
         code = '@block(input_names=("", "b"))\ndef f(t: float, u: tuple[float, float]) -> float:\n    return u[0]\n'
         new = _rw(code, inputs=1)
-        assert "input_names" not in new
+        assert 'input_names=("",)' in new  # 全空でもキーワードは残す (削除は明示編集時のみ)
         assert _spec(new).n_inputs == 1
+        # 明示編集で全空にしたときは C-3 でキーワード削除 (可逆)
+        removed = _rw(new, input_names=[""])
+        assert "input_names" not in removed
 
 
 class TestMinimalDiff:
@@ -300,7 +304,9 @@ class TestSelfVerification:
         monkeypatch.setattr(rw, "_rewrite_count_annotation", _bad_annotation)
         with pytest.raises(PythonFunctionRewriteError, match="no longer parses") as ei:
             _rw(SCALAR_IN, inputs=2)
-        assert ei.value.kind == "verify"
+        # wire 語彙は 3 値のまま (ADR-0074 §論点 3)。内部細分は reason に持つ
+        assert ei.value.kind == "spec"
+        assert ei.value.reason == "rewrite_verify_syntax"
 
     def test_structure_mismatch_detected(self, monkeypatch) -> None:
         """E1/E2: 構文は正しいが構造が要求とずれた場合も拒否される。"""
@@ -313,8 +319,83 @@ class TestSelfVerification:
         monkeypatch.setattr(rw, "_rewrite_count_annotation", _wrong_annotation)
         with pytest.raises(PythonFunctionRewriteError, match="does not match") as ei:
             _rw(SCALAR_IN, inputs=2)
-        assert ei.value.kind == "verify"
+        assert ei.value.kind == "spec"
+        assert ei.value.reason == "rewrite_verify_mismatch"
 
     def test_unaccepted_source_raises_source_error(self) -> None:
         with pytest.raises(PythonFunctionSourceError):
             rewrite_source("def f(t, u):\n    return u\n", inputs=2)
+
+
+class TestSecurityHardening:
+    """security-reviewer (v0.50.0) 対応の回帰テスト。"""
+
+    def test_lone_surrogate_name_rejected_as_spec_error(self) -> None:
+        """SHOULD-1: 孤立サロゲート (Cs) は UTF-8 encode 不能 → N4 で拒否。"""
+        with pytest.raises(PythonFunctionRewriteError, match="control/format") as ei:
+            _rw(SCALAR_IN, input_names=["\ud800"])
+        assert ei.value.kind == "spec"
+
+    def test_lone_surrogate_rejected_in_dsl(self) -> None:
+        from flode import block
+        from flode.exceptions import BlockSpecError
+
+        with pytest.raises(BlockSpecError, match="control/format"):
+
+            @block(input_names=("\ud800",))
+            def f(t: float, u: float) -> float:
+                return u
+
+    def test_rewritten_code_size_cap(self) -> None:
+        """NIT-2: 増幅結果が 256 KiB を超える書き換えは unsupported で拒否 (元コード不変)。"""
+        big_elem = "tuple[" + ", ".join(["float"] * 1500) + "]"  # 約 10.5 KB の要素
+        code = (
+            f"@block\ndef f(t: float, u: tuple[{big_elem}, {big_elem}]) -> float:\n    return 0.0\n"
+        )
+        with pytest.raises(PythonFunctionRewriteError, match="exceed") as ei:
+            _rw(code, inputs=32)
+        assert ei.value.kind == "unsupported"
+
+
+class TestKeywordRemovalPreservesComments:
+    """code-reviewer MUST: 削除対象より前の保持キーワードの trailing comment を壊さない。"""
+
+    MULTILINE = (
+        "@block(\n"
+        "    inputs=2,  # note about inputs, keep this\n"
+        '    input_names=("a", "b"),  # remove this one\n'
+        "    outputs=1,\n"
+        ")\n"
+        "def f(t: float, u: np.ndarray) -> np.ndarray:\n"
+        "    return u[:1]\n"
+    )
+
+    def test_middle_removal_keeps_previous_comment(self) -> None:
+        new = _rw(self.MULTILINE, input_names=["", ""])
+        assert "input_names" not in new
+        assert "# note about inputs, keep this" in new  # 保持キーワードのコメント無傷
+        assert "# remove this one" not in new  # 削除対象のコメントは一緒に消える
+        assert "outputs=1" in new
+        assert _spec(new).input_names == ()
+
+    def test_last_removal_keeps_previous_comment(self) -> None:
+        code = (
+            "@block(\n"
+            "    inputs=2,  # keep this comment\n"
+            '    input_names=("a", "b"),  # goes away\n'
+            ")\n"
+            "def f(t: float, u: np.ndarray) -> float:\n"
+            "    return u[0]\n"
+        )
+        new = _rw(code, input_names=["", ""])
+        assert "input_names" not in new
+        assert "# keep this comment" in new
+        assert "# goes away" not in new
+        assert _spec(new).n_inputs == 2  # trailing comma が残っても合法・構造不変
+
+    def test_single_line_last_removal(self) -> None:
+        code = '@block(inputs=2, input_names=("a", "b"))\ndef f(t: float, u: np.ndarray) -> float:\n    return u[0]\n'
+        new = _rw(code, input_names=["", ""])
+        assert "input_names" not in new
+        assert "inputs=2" in new
+        assert _spec(new).n_inputs == 2
