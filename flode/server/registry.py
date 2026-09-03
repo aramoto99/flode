@@ -549,7 +549,9 @@ def _python_spec_payload(spec: Any) -> dict[str, Any]:
     }
 
 
-def rewrite_python_source(code: str, edits: dict[str, Any], *, key: str) -> dict[str, Any]:
+def rewrite_python_source(
+    code: str, edits: dict[str, Any], *, key: str, params: list[Any] | None = None
+) -> dict[str, Any]:
     """``PythonFunction`` ソースのポート構造を書き換える (SPEC-0024 §3.1 の本体)。
 
     ``exec`` しない (静的 AST 解析 + テキスト splice + 再解析のみ)。書き換え不能は
@@ -562,6 +564,8 @@ def rewrite_python_source(code: str, edits: dict[str, Any], *, key: str) -> dict
             (型・範囲の検証は route 層が済ませている前提。防御的検証は
             ``rewrite_source`` 自身も行う)。
         key: エラーメッセージ用のクライアント突合キー。
+        params: route 層 (``_validated_rewrite_params``) が変換済みの
+            ``ParamEdit`` 列 (SPEC-0025)。``None`` = パラメータ編集なし。
 
     Returns:
         成功 ``{"applied": True, "code": <new>, "spec": {...}}`` /
@@ -578,6 +582,7 @@ def rewrite_python_source(code: str, edits: dict[str, Any], *, key: str) -> dict
             outputs=edits.get("outputs"),
             input_names=edits.get("input_names"),
             output_names=edits.get("output_names"),
+            params=params,
             block_id=key,
         )
         spec = analyze_source(new_code, block_id=key)

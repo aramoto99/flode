@@ -193,7 +193,7 @@ def rewrite_python_function_get_method_not_allowed() -> None:
         detail=(
             "Use POST /api/v1/blocks/python-function/rewrite with body "
             '{"code": ..., "edits": {"inputs"?, "outputs"?, "input_names"?, '
-            '"output_names"?}} to rewrite a PythonFunction source.'
+            '"output_names"?, "params"?}} to rewrite a PythonFunction source.'
         ),
     )
 
@@ -230,6 +230,132 @@ def _validated_rewrite_names(edits: dict[str, Any], key: str) -> None:
             raise HTTPException(status_code=400, detail=f"edits.{key}[{i}] exceeds 32 code points")
 
 
+def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
+    """``edits.params`` (SPEC-0025 §機能要件 5) を検証して ``ParamEdit`` 列に変換する。
+
+    ここで弾くのは **body だけで判定できる静的規則** (P1〜P4 / 型語彙 / default の
+    JSON 型・サイズ / 1 request 1 op / rename × ポート編集の併用) = クライアントの
+    バグなので 400。ソースの中身に依存する P5〜P9 / U1〜U8 は engine 側が
+    ``applied:false`` で返す。wire の ``from`` / ``to`` は Python の予約語のため、
+    ここで ``old`` / ``new`` に変換する (ADR-0075 §論点 5: 変換は REST 層の 1 箇所だけ)。
+    """
+    import keyword
+    import math
+    import unicodedata
+
+    from ...blocks.pythonfunc_rewrite import (
+        _FORBIDDEN_DEFAULT_CATEGORIES,
+        _PARAM_NAME_RE,
+        MAX_PARAM_NAME_LENGTH,
+        MAX_PARAM_STR_DEFAULT_LENGTH,
+        PARAM_TYPE_NAMES,
+        AddParam,
+        RemoveParam,
+        RenameParam,
+    )
+
+    v = edits.get("params")
+    if v is None:
+        return None
+    if not isinstance(v, list) or len(v) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="edits.params must be a list with exactly one edit (1 request = 1 op)",
+        )
+    raw = v[0]
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="edits.params[0] must be an object")
+
+    def _checked_name(field: str) -> str:
+        value = raw.get(field)
+        if (
+            not isinstance(value, str)
+            or not _PARAM_NAME_RE.match(value)
+            or keyword.iskeyword(value)
+            or len(value) > MAX_PARAM_NAME_LENGTH
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"edits.params[0].{field} must be an ASCII identifier "
+                    f"(non-keyword, at most {MAX_PARAM_NAME_LENGTH} characters)"
+                ),
+            )
+        return value
+
+    op = raw.get("op")
+    if op == "add":
+        if set(raw) != {"op", "name", "type", "default"}:
+            raise HTTPException(
+                status_code=400,
+                detail='edits.params[0] for "add" must have exactly op/name/type/default',
+            )
+        name = _checked_name("name")
+        ptype = raw.get("type")
+        if ptype not in PARAM_TYPE_NAMES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"edits.params[0].type must be one of {list(PARAM_TYPE_NAMES)}",
+            )
+        default = raw.get("default")
+        bad_default = HTTPException(
+            status_code=400,
+            detail=f"edits.params[0].default does not match type {ptype!r}",
+        )
+        if ptype == "bool":
+            if not isinstance(default, bool):
+                raise bad_default
+        elif ptype == "int":
+            if isinstance(default, bool) or not isinstance(default, int):
+                raise bad_default
+        elif ptype == "float":
+            if isinstance(default, bool) or not isinstance(default, int | float):
+                raise bad_default
+            if not math.isfinite(float(default)):
+                raise HTTPException(
+                    status_code=400, detail="edits.params[0].default must be finite"
+                )
+        else:  # str
+            if not isinstance(default, str):
+                raise bad_default
+            if len(default) > MAX_PARAM_STR_DEFAULT_LENGTH:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"edits.params[0].default exceeds {MAX_PARAM_STR_DEFAULT_LENGTH} characters"
+                    ),
+                )
+            if any(unicodedata.category(ch) in _FORBIDDEN_DEFAULT_CATEGORIES for ch in default):
+                raise HTTPException(
+                    status_code=400,
+                    detail="edits.params[0].default must not contain control characters",
+                )
+        return [AddParam(name=name, type=ptype, default=default)]
+    if op == "remove":
+        if set(raw) != {"op", "name"}:
+            raise HTTPException(
+                status_code=400,
+                detail='edits.params[0] for "remove" must have exactly op/name',
+            )
+        return [RemoveParam(name=_checked_name("name"))]
+    if op == "rename":
+        if set(raw) != {"op", "from", "to"}:
+            raise HTTPException(
+                status_code=400,
+                detail='edits.params[0] for "rename" must have exactly op/from/to',
+            )
+        # ADR-0075 §論点 2-D: rename × ポート編集の併用は 400 (E4a の証明を単純に保つ)
+        if any(
+            edits.get(k) is not None for k in ("inputs", "outputs", "input_names", "output_names")
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="edits.params rename cannot be combined with port edits",
+            )
+        return [RenameParam(old=_checked_name("from"), new=_checked_name("to"))]
+    raise HTTPException(status_code=400, detail=f"Unknown edits.params op: {op!r}")
+
+
 @router.post("/python-function/rewrite")
 async def rewrite_python_function(request: Request) -> dict[str, Any]:
     """``PythonFunction`` ソースのポート構造を書き換える (SPEC-0024 §3.1)。
@@ -261,15 +387,18 @@ async def rewrite_python_function(request: Request) -> dict[str, Any]:
         )
     if not isinstance(edits, dict):
         raise HTTPException(status_code=400, detail="`edits` (object) is required in body")
-    unknown = set(edits) - {"inputs", "outputs", "input_names", "output_names"}
+    unknown = set(edits) - {"inputs", "outputs", "input_names", "output_names", "params"}
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown edits keys: {sorted(unknown)}")
     _validated_rewrite_count(edits, "inputs")
     _validated_rewrite_count(edits, "outputs")
     _validated_rewrite_names(edits, "input_names")
     _validated_rewrite_names(edits, "output_names")
+    param_edits = _validated_rewrite_params(edits)
 
-    return await run_in_threadpool(rewrite_python_source, code, edits, key="rewrite")
+    return await run_in_threadpool(
+        rewrite_python_source, code, edits, key="rewrite", params=param_edits
+    )
 
 
 @router.get("/{type_path:path}")

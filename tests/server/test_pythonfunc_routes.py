@@ -388,3 +388,132 @@ class TestRewriteSecurityHardening:
         )
         assert resp.status_code == 400
         assert "at most 32" in resp.json()["detail"]
+
+
+KWONLY_CODE = "@block\ndef f(t: float, u: float, *, k: float = 2.0) -> float:\n    return k * u\n"
+
+_REWRITE = "/api/v1/blocks/python-function/rewrite"
+
+
+class TestRewriteParams:
+    """SPEC-0025 §機能要件 5: `edits.params` (add / remove / rename)。"""
+
+    def test_add_applied(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": SCALAR_CODE,
+                "edits": {
+                    "params": [{"op": "add", "name": "gain", "type": "float", "default": 1.5}]
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied"] is True
+        assert "*, gain: float = 1.5" in data["code"]
+        assert any("gain" in str(p) for p in data["spec"]["params_spec"])
+        # レスポンスに key が増えていないこと (SPEC-0024 の形のまま)
+        assert set(data) == {"applied", "code", "spec"}
+
+    def test_remove_applied(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={"code": KWONLY_CODE, "edits": {"params": [{"op": "remove", "name": "k"}]}},
+        )
+        data = resp.json()
+        assert data["applied"] is True
+        assert "def f(t: float, u: float) -> float:" in data["code"]
+        assert "return k * u" in data["code"]  # 本体は検査しない (§確定事項 2)
+
+    def test_rename_applied(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": KWONLY_CODE,
+                "edits": {"params": [{"op": "rename", "from": "k", "to": "gain"}]},
+            },
+        )
+        data = resp.json()
+        assert data["applied"] is True
+        assert "*, gain: float = 2.0" in data["code"]
+        assert "return gain * u" in data["code"]
+
+    def test_rename_with_port_edit_is_400(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": KWONLY_CODE,
+                "edits": {
+                    "inputs": 2,
+                    "params": [{"op": "rename", "from": "k", "to": "gain"}],
+                },
+            },
+        )
+        assert resp.status_code == 400
+        assert "cannot be combined" in resp.json()["detail"]
+
+    def test_two_ops_is_400(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": KWONLY_CODE,
+                "edits": {
+                    "params": [
+                        {"op": "remove", "name": "k"},
+                        {"op": "add", "name": "g", "type": "int", "default": 1},
+                    ]
+                },
+            },
+        )
+        assert resp.status_code == 400
+        assert "exactly one" in resp.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"op": "explode", "name": "g"},
+            {"op": "add", "name": "1a", "type": "float", "default": 1.0},
+            {"op": "add", "name": "def", "type": "float", "default": 1.0},
+            {"op": "add", "name": "g", "type": "list", "default": 1.0},
+            {"op": "add", "name": "g", "type": "int", "default": True},
+            {"op": "add", "name": "g", "type": "str", "default": "x" * 257},
+            {"op": "add", "name": "g", "type": "float", "default": 1.0, "extra": 1},
+            {"op": "rename", "from": "k", "to": "ゲイン"},
+        ],
+    )
+    def test_static_violations_are_400(self, client: TestClient, bad: dict) -> None:
+        resp = client.post(_REWRITE, json={"code": KWONLY_CODE, "edits": {"params": [bad]}})
+        assert resp.status_code == 400
+
+    def test_source_dependent_conflict_is_applied_false(self, client: TestClient) -> None:
+        # P5 (既存名との衝突) はソース依存 → 200 + applied:false、code は返さない
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": KWONLY_CODE,
+                "edits": {"params": [{"op": "add", "name": "k", "type": "float", "default": 1.0}]},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied"] is False
+        assert "code" not in data
+        assert data["error"]["kind"] == "unsupported"
+
+    def test_rename_fstring_is_applied_false(self, client: TestClient) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, k: float = 2.0) -> float:\n"
+            '    s = f"{k}"\n'
+            "    return k * u\n"
+        )
+        resp = client.post(
+            _REWRITE,
+            json={"code": code, "edits": {"params": [{"op": "rename", "from": "k", "to": "g"}]}},
+        )
+        data = resp.json()
+        assert data["applied"] is False
+        assert "code" not in data
+        assert data["error"]["kind"] == "unsupported"
+        assert data["error"]["lineno"] is not None
