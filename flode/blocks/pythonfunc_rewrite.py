@@ -25,8 +25,11 @@ Inspector の操作はここでソーステキストの最小 splice に翻訳�
 from __future__ import annotations
 
 import ast
+import keyword
 import logging
+import math
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -70,6 +73,77 @@ MAX_PYTHON_FUNCTION_PORTS = 32
 #: 注釈の要素複製はポート数倍まで増幅しうるため、結果が入力上限を超える書き換えは
 #: 拒否する (security-reviewer NIT-2: 再投入による多段増幅も 1 ホップで断つ)。
 MAX_REWRITTEN_CODE_CHARS = 256 * 1024
+
+#: GUI / REST から編集できるパラメータ (kw-only 引数) の個数上限 (SPEC-0025 §確定事項 8)。
+#: ポート数上限と同じく GUI / REST の policy であり、DSL 自体には課さない。
+MAX_PYTHON_FUNCTION_PARAMS = 32
+
+#: パラメータ名の最大長 (SPEC-0025 P4)。
+MAX_PARAM_NAME_LENGTH = 64
+
+#: ``str`` 型 default の最大長 (SPEC-0025 §確定事項 8)。
+MAX_PARAM_STR_DEFAULT_LENGTH = 256
+
+#: UI から追加できるパラメータの型語彙 (SPEC-0025 §確定事項 9)。いずれも
+#: :mod:`pythonfunc_source` の ``_ANNOTATION_NAMES`` の内側 = 静的解決できる。
+PARAM_TYPE_NAMES = ("float", "int", "bool", "str")
+
+_PARAM_PY_TYPES: dict[str, type] = {"float": float, "int": int, "bool": bool, "str": str}
+
+#: パラメータ名の文字集合 (SPEC-0025 P2: **ASCII 限定**、§確定事項 3)。
+#: CPython は識別子をトークナイズ時に NFKC 正規化するため、非 ASCII を許すと
+#: 「ソースに書いた名前」と「AST から読み戻る名前」が食い違う経路が生まれる。
+#: ASCII 限定にすることでその経路を設計上消す (P10)。
+_PARAM_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: exec 名前空間に注入される名前 (``pythonfunc._exec_namespace``)。パラメータ名が
+#: これらを shadow すると本体の ``np.array(...)`` 等が静かに壊れるため拒否する (P8)。
+_INJECTED_GLOBAL_NAMES = frozenset({"block", "np", "npt"})
+
+#: ``str`` default で拒否する Unicode カテゴリ (制御・改行・サロゲート類。
+#: ポート名 (decorator の N4) と同じ基準)。
+_FORBIDDEN_DEFAULT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+
+
+@dataclass(frozen=True)
+class AddParam:
+    """末尾にキーワード専用パラメータを 1 つ足す (SPEC-0025 規則 AP)。
+
+    Attributes:
+        name: パラメータ名 (P1〜P9 + N-USED を満たすこと)。
+        type: :data:`PARAM_TYPE_NAMES` のいずれか。
+        default: default 値 (``type`` と整合する Python 値。default 必須 = §確定事項 10)。
+    """
+
+    name: str
+    type: str
+    default: float | int | bool | str
+
+
+@dataclass(frozen=True)
+class RemoveParam:
+    """キーワード専用パラメータを 1 つ消す (規則 DP)。
+
+    本体の残留参照は**検査しない** (SPEC-0025 §確定事項 2 / §機能要件 2.3)。
+    残った参照は実行時に ``NameError`` → 既存の ``PythonFunctionEvalError`` 経路で
+    block id + 行番号付きに報告される。
+    """
+
+    name: str
+
+
+@dataclass(frozen=True)
+class RenameParam:
+    """パラメータ名を変える (W4-E)。``from`` が Python の予約語のため ``old`` / ``new``。"""
+
+    old: str
+    new: str
+
+
+#: パラメータ編集の命令。ポート編集 (宣言的な目標値) と違い**命令列**なのは、
+#: rename を remove + add と区別しないと ``user_params`` の値の引き継ぎが
+#: 表現できないため (ADR-0075 §論点 5)。
+ParamEdit = AddParam | RemoveParam | RenameParam
 
 #: CPython の行区切り (``\r\n`` / ``\r`` / ``\n``)。``str.splitlines()`` は
 #: form feed / U+2028 等でも分割してしまい ``ast`` の行番号と食い違うため使わない。
@@ -143,6 +217,44 @@ def _apply_splices(source: _SourceBytes, splices: Sequence[_Splice]) -> str:
         cursor = s.end
     out.append(source.data[cursor:])
     return b"".join(out).decode("utf-8")
+
+
+def _consume_trailing_separator(data: bytes, pos: int) -> int:
+    """``pos`` から空白 → 任意のカンマ → 空白 → 同一行コメントを読み進めた終端を返す。
+
+    デコレータのキーワード削除 (ADR-0074 §Amendments 2) とシグネチャの kw-only
+    引数削除 (ADR-0075 DP-2 / DP-3) で共用する (規則を 2 箇所に書かない)。
+    """
+    n = len(data)
+    i = pos
+    while i < n and data[i : i + 1] in (b" ", b"\t"):
+        i += 1
+    if i < n and data[i : i + 1] == b",":
+        i += 1
+        while i < n and data[i : i + 1] in (b" ", b"\t"):
+            i += 1
+    if i < n and data[i : i + 1] == b"#":
+        while i < n and data[i : i + 1] not in (b"\n", b"\r"):
+            i += 1
+    return i
+
+
+def _extend_back_over_separator(data: bytes, pos: int) -> int:
+    """``pos`` の直前が同一行の「空白 + カンマ + 空白」だけなら、その始端を返す。
+
+    改行やコメントを跨ぐ場合 (= 複数行形で直前要素が別行) は拡張せず ``pos`` を
+    そのまま返す (前方の trailing comment を巻き込まないため)。コメントは行末まで
+    続くため、カンマより前に同一行でコメントが現れることはない。
+    """
+    i = pos
+    while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
+        i -= 1
+    if i > 0 and data[i - 1 : i] == b",":
+        i -= 1
+        while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
+            i -= 1
+        return i
+    return pos
 
 
 # ---------------------------------------------------------------------------
@@ -229,43 +341,9 @@ class _DecoratorEditor:
             # 改行なし) なら区切りカンマも後方に消し `@block(inputs=2)` の形に戻す。
             # 改行やコメントを挟む複数行形では触れず、直前キーワードのカンマを
             # trailing comma として残す (Python の呼び出しで合法)。
-            end = self._consume_trailing_separator(kw_end)
-            start = self._extend_back_over_separator(kw_start)
+            end = _consume_trailing_separator(self._source.data, kw_end)
+            start = _extend_back_over_separator(self._source.data, kw_start)
             self.splices.append(_Splice(start, end, b""))
-
-    def _consume_trailing_separator(self, pos: int) -> int:
-        """``pos`` から空白 → 任意のカンマ → 空白 → 同一行コメントを読み進めた終端を返す。"""
-        data = self._source.data
-        n = len(data)
-        i = pos
-        while i < n and data[i : i + 1] in (b" ", b"\t"):
-            i += 1
-        if i < n and data[i : i + 1] == b",":
-            i += 1
-            while i < n and data[i : i + 1] in (b" ", b"\t"):
-                i += 1
-        if i < n and data[i : i + 1] == b"#":
-            while i < n and data[i : i + 1] not in (b"\n", b"\r"):
-                i += 1
-        return i
-
-    def _extend_back_over_separator(self, pos: int) -> int:
-        """``pos`` の直前が同一行の「空白 + カンマ + 空白」だけなら、その始端を返す。
-
-        改行やコメントを跨ぐ場合 (= 複数行デコレータで直前キーワードが別行) は
-        拡張せず ``pos`` をそのまま返す。コメントは行末まで続くため、カンマより
-        前に同一行でコメントが現れることはない。
-        """
-        data = self._source.data
-        i = pos
-        while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
-            i -= 1
-        if i > 0 and data[i - 1 : i] == b",":
-            i -= 1
-            while i > 0 and data[i - 1 : i] in (b" ", b"\t"):
-                i -= 1
-            return i
-        return pos
 
     def _keyword_start(self, kw: ast.keyword) -> int:
         lineno = getattr(kw, "lineno", None)
@@ -361,6 +439,408 @@ def _rewrite_count_annotation(
 
 
 # ---------------------------------------------------------------------------
+# パラメータ (kw-only 引数) の編集 (SPEC-0025 / ADR-0075)
+# ---------------------------------------------------------------------------
+
+
+def _identifiers_used_in_function(func_def: ast.FunctionDef) -> set[str]:
+    """関数内で**識別子として**現れる名前の集合 (N-USED、ADR-0075 §論点 1)。
+
+    新しい名前がここに含まれるなら追加 / rename を拒否する。P6 (位置引数名) /
+    P7 (関数名) の上位互換であり、builtins の shadow (``min`` 等を本体で使っている
+    のに同名パラメータを足す) と rename 時の名前捕獲を同じ規則で塞ぐ。
+    ``Attribute.attr`` / ``keyword.arg`` / 文字列は含めない (識別子の名前空間ではない)。
+    無関係な内側スコープのローカル名も含む過剰側の近似だが、安全であり
+    「関数内で既に使われている」というメッセージで説明できる。
+    """
+    used: set[str] = set()
+    for node in ast.walk(func_def):
+        if isinstance(node, ast.Name):
+            used.add(node.id)
+        elif isinstance(node, ast.arg):
+            used.add(node.arg)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            used.add(node.name)
+        elif isinstance(node, ast.alias):
+            used.add((node.asname or node.name).split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+            used.add(node.name)
+        elif isinstance(node, ast.Global | ast.Nonlocal):
+            used.update(node.names)
+        elif isinstance(node, ast.MatchAs | ast.MatchStar) and node.name is not None:
+            used.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+            used.add(node.rest)
+    return used
+
+
+def _module_level_bindings(tree: ast.Module, func_def: ast.FunctionDef) -> set[str]:
+    """module レベルで束縛されうる名前の集合 (P8)。
+
+    ``@block`` 関数以外の top-level 文を丸ごと走査する (他の module 関数の内側
+    ローカルも含む過剰側の近似。安全側に倒す)。
+    """
+    bound: set[str] = set()
+    for stmt in tree.body:
+        if stmt is func_def:
+            continue
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+                bound.add(node.id)
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                bound.add(node.name)
+            elif isinstance(node, ast.alias):
+                bound.add((node.asname or node.name).split(".")[0])
+            elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+                bound.add(node.name)
+    return bound
+
+
+def _validate_new_param_name(
+    name: str,
+    *,
+    spec_params: Sequence[tuple[str, object, object, bool]],
+    n_states: int,
+    func_def: ast.FunctionDef,
+    tree: ast.Module,
+    block_id: str | None,
+) -> None:
+    """新しい名前 (追加 / rename 先) の検証 P1〜P9 + N-USED (SPEC-0025 §機能要件 1)。
+
+    P1〜P4 (body 非依存の静的規則) は REST 層が先に 400 で弾くが、Python API から
+    直接呼ばれる経路を裸にしないためここでも検証する (二重ゲート。ADR-0075 §論点 5)。
+    """
+    if not isinstance(name, str) or not _PARAM_NAME_RE.match(name):
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: parameter name must be an ASCII identifier "
+            f"([A-Za-z_][A-Za-z0-9_]*), got {name!r}",
+            kind="unsupported",
+            reason="rewrite_param_invalid_name",
+            block_id=block_id,
+        )
+    if keyword.iskeyword(name):
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: parameter name {name!r} is a Python keyword",
+            kind="unsupported",
+            reason="rewrite_param_invalid_name",
+            block_id=block_id,
+        )
+    if len(name) > MAX_PARAM_NAME_LENGTH:
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: parameter name must be at most "
+            f"{MAX_PARAM_NAME_LENGTH} characters, got {len(name)}",
+            kind="unsupported",
+            reason="rewrite_param_invalid_name",
+            block_id=block_id,
+        )
+    if n_states > 0 and name == "x0":
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: `x0` is reserved for the initial state when states > 0",
+            kind="unsupported",
+            reason="rewrite_param_name_conflict",
+            block_id=block_id,
+        )
+    if any(p[0] == name for p in spec_params):
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: a parameter named {name!r} already exists",
+            kind="unsupported",
+            reason="rewrite_param_name_conflict",
+            block_id=block_id,
+        )
+    if name in _identifiers_used_in_function(func_def):
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: the name {name!r} is already used inside "
+            f"the function; choose a different name",
+            kind="unsupported",
+            reason="rewrite_param_name_conflict",
+            block_id=block_id,
+        )
+    if name in _INJECTED_GLOBAL_NAMES or name in _module_level_bindings(tree, func_def):
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: the name {name!r} would shadow a module-level "
+            f"or injected binding (block / np / npt); choose a different name",
+            kind="unsupported",
+            reason="rewrite_param_name_conflict",
+            block_id=block_id,
+        )
+
+
+def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, object]:
+    """default 値の決定的リテラルと、E3 用の期待値 (coerce 済み) を返す。
+
+    ``repr`` の揺れに依存しない形に固定する (ADR-0075 §論点 5): float は常に
+    小数点か指数を含む形 (``literal_eval`` で要求値に round-trip する)、str は
+    ダブルクォート + ``\\`` ``"`` のみエスケープ。期待値を要求値 (coerce 済み) に
+    することで「生成リテラルが元の値に戻ること」まで E3 の検査対象になる。
+    """
+    v = edit.default
+    if edit.type == "bool":
+        if not isinstance(v, bool):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for a bool parameter must be a "
+                f"bool, got {v!r}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        return ("True" if v else "False", v)
+    if edit.type == "int":
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for an int parameter must be an "
+                f"int, got {v!r}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        return (str(v), v)
+    if edit.type == "float":
+        if isinstance(v, bool) or not isinstance(v, int | float):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for a float parameter must be a "
+                f"number, got {v!r}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        f = float(v)
+        if not math.isfinite(f):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for a float parameter must be "
+                f"finite, got {f!r}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        text = repr(f)
+        if "." not in text and "e" not in text and "E" not in text:
+            text += ".0"
+        return (text, f)
+    if edit.type == "str":
+        if not isinstance(v, str):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for a str parameter must be a str, got {v!r}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        if len(v) > MAX_PARAM_STR_DEFAULT_LENGTH:
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: str default must be at most "
+                f"{MAX_PARAM_STR_DEFAULT_LENGTH} characters, got {len(v)}",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        if any(unicodedata.category(ch) in _FORBIDDEN_DEFAULT_CATEGORIES for ch in v):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: str default must not contain control or "
+                f"line-separator characters",
+                kind="unsupported",
+                block_id=block_id,
+            )
+        return (f'"{_escape_port_name(v)}"', v)
+    raise PythonFunctionRewriteError(
+        f"PythonFunction[{block_id}]: parameter type must be one of "
+        f"{', '.join(PARAM_TYPE_NAMES)}, got {edit.type!r}",
+        kind="unsupported",
+        block_id=block_id,
+    )
+
+
+class _SignatureEditor:
+    """関数シグネチャの kw-only 引数の追加 / 削除 → splice 列 (SPEC-0025 規則 AP / DP)。
+
+    ``*`` / ``/`` は AST にノードを持たないため、**2 つの AST ノードのスパンに
+    挟まれた領域だけ**をバイト走査する。受理契約 (``*args`` / ``**kwargs`` 禁止 =
+    ``core/decorator.py`` の VAR_POSITIONAL / VAR_KEYWORD 拒否) により、この領域には
+    空白 / 改行 / 行継続 / コメント / カンマ / ``/`` / ``*`` しか現れない
+    (式・文字列は必ず arg / annotation / default ノードのスパンの内側にある)。
+    **受理契約を緩めるときは `_DecoratorEditor` のカンマ探索と併せてここも見直すこと**
+    (ADR-0075 §Consequences)。
+    """
+
+    def __init__(
+        self, source: _SourceBytes, func_def: ast.FunctionDef, block_id: str | None
+    ) -> None:
+        self._source = source
+        self._args = func_def.args
+        self._block_id = block_id
+        self.splices: list[_Splice] = []
+
+    def _elem_end(self, arg: ast.arg, default: ast.expr | None) -> int:
+        """要素の終端 = default 式の end (無ければ ``arg`` の end = 注釈込み)。
+
+        AP のアンカーを ``arg`` の end にすると ``u: float = 0.0`` で
+        ``= 1.0 = 0.0`` という構文破壊になる (SPEC §2.1 / ADR-0075 V19)。
+        """
+        node: ast.AST = default if default is not None else arg
+        return self._source.span(node)[1]
+
+    def _last_positional_end(self) -> int:
+        positional = list(self._args.posonlyargs) + list(self._args.args)
+        if not positional:
+            # AP-3: 受理契約上あり得ない (最低 t がある)。防御的に拒否
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{self._block_id}]: function has no positional "
+                f"parameters; cannot edit keyword-only parameters.",
+                kind="unsupported",
+                block_id=self._block_id,
+            )
+        default = self._args.defaults[-1] if self._args.defaults else None
+        return self._elem_end(positional[-1], default)
+
+    def _scan_separators(self, start: int) -> dict[bytes, int]:
+        """``start`` から separator 領域を走査し、``*`` / ``/`` の位置を返す。"""
+        data = self._source.data
+        n = len(data)
+        found: dict[bytes, int] = {}
+        i = start
+        while i < n:
+            b = data[i : i + 1]
+            if b in (b" ", b"\t", b"\r", b"\n", b"\\", b","):
+                i += 1
+            elif b == b"#":
+                while i < n and data[i : i + 1] not in (b"\n", b"\r"):
+                    i += 1
+            elif b in (b"*", b"/") and b not in found:
+                found[b] = i
+                i += 1
+            else:
+                break
+        return found
+
+    def add(self, name: str, type_name: str, default_literal: str) -> None:
+        """AP-1 / AP-2: 末尾に ``name: type = default`` を挿入する。"""
+        a = self._args
+        if a.kwonlyargs:
+            # AP-1: 末尾 kw-only 要素 (default 込み) の直後
+            anchor = self._elem_end(a.kwonlyargs[-1], a.kw_defaults[-1])
+            text = f", {name}: {type_name} = {default_literal}"
+        else:
+            # AP-2: 末尾位置引数 (default 込み) の直後。`/` があればその直後
+            p = self._last_positional_end()
+            found = self._scan_separators(p)
+            slash = found.get(b"/")
+            anchor = slash + 1 if slash is not None else p
+            text = f", *, {name}: {type_name} = {default_literal}"
+        self.splices.append(_Splice(anchor, anchor, text.encode("utf-8")))
+
+    def remove(self, name: str) -> None:
+        """DP-1 / DP-2 / DP-3: kw-only 引数を 1 つ消す (消す側を選ぶ規則)。"""
+        a = self._args
+        index = next((i for i, arg in enumerate(a.kwonlyargs) if arg.arg == name), None)
+        if index is None:
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{self._block_id}]: no keyword-only parameter named "
+                f"{name!r} to remove.",
+                kind="unsupported",
+                reason="rewrite_param_not_found",
+                block_id=self._block_id,
+            )
+        arg = a.kwonlyargs[index]
+        arg_start = self._source.span(arg)[0]
+        elem_end = self._elem_end(arg, a.kw_defaults[index])
+        data = self._source.data
+        if index < len(a.kwonlyargs) - 1:
+            # DP-1: 前方削除 (自分 + 自分の default + カンマ + trailing comment。
+            # 前方の保持要素には一切触れない)
+            next_start = self._source.span(a.kwonlyargs[index + 1])[0]
+            self.splices.append(_Splice(arg_start, next_start, b""))
+        elif len(a.kwonlyargs) > 1:
+            # DP-2: 末尾 kw-only (他に kw-only が残る)。自分 + 直後カンマ + 同一行
+            # コメントを消し、直前要素と同一行に空白のみで隣接するときだけ前方カンマも消す
+            end = _consume_trailing_separator(data, elem_end)
+            start = _extend_back_over_separator(data, arg_start)
+            self.splices.append(_Splice(start, end, b""))
+        else:
+            # DP-3: 唯一の kw-only → `*` セパレータごと消す (`def f(t, u, *)` は
+            # SyntaxError)。始端を `*` にする (直前カンマから始めると前方の trailing
+            # comment を巻き込む)。`/` は必ず `*` より前にあり削除範囲に入らない
+            p = self._last_positional_end()
+            found = self._scan_separators(p)
+            star = found.get(b"*")
+            if star is None:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{self._block_id}]: cannot locate the `*` separator "
+                    f"in the signature; edit the code directly.",
+                    kind="unsupported",
+                    block_id=self._block_id,
+                )
+            end = _consume_trailing_separator(data, elem_end)
+            start = _extend_back_over_separator(data, star)
+            self.splices.append(_Splice(start, end, b""))
+
+
+def _plan_param_edits(
+    source: _SourceBytes,
+    tree: ast.Module,
+    func_def: ast.FunctionDef,
+    old_spec: SourceSpec,
+    params: Sequence[ParamEdit] | None,
+    block_id: str | None,
+) -> tuple[list[_Splice], tuple[tuple[str, object, object, bool], ...]]:
+    """パラメータ編集命令列 → (splice 列, E3 用の期待 ``params_spec``)。
+
+    期待値は命令を順に適用した姿。検証 (P/N-USED) も命令適用後の状態に対して行う。
+    """
+    if not params:
+        return [], old_spec.params_spec
+    editor = _SignatureEditor(source, func_def, block_id)
+    expected: list[tuple[str, object, object, bool]] = list(old_spec.params_spec)
+    for edit in params:
+        if isinstance(edit, AddParam):
+            if len(expected) >= MAX_PYTHON_FUNCTION_PARAMS:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: at most {MAX_PYTHON_FUNCTION_PARAMS} "
+                    f"parameters can be declared via the UI.",
+                    kind="unsupported",
+                    reason="rewrite_param_limit",
+                    block_id=block_id,
+                )
+            literal, coerced = _param_default_literal(edit, block_id)
+            _validate_new_param_name(
+                edit.name,
+                spec_params=expected,
+                n_states=old_spec.n_states,
+                func_def=func_def,
+                tree=tree,
+                block_id=block_id,
+            )
+            editor.add(edit.name, edit.type, literal)
+            expected.append((edit.name, coerced, _PARAM_PY_TYPES[edit.type], False))
+        elif isinstance(edit, RemoveParam):
+            if old_spec.n_states > 0 and edit.name == "x0":
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: `x0` binds the initial state and "
+                    f"cannot be removed while states > 0.",
+                    kind="unsupported",
+                    reason="rewrite_param_name_conflict",
+                    block_id=block_id,
+                )
+            index = next((i for i, p in enumerate(expected) if p[0] == edit.name), None)
+            if index is None:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: no parameter named {edit.name!r}.",
+                    kind="unsupported",
+                    reason="rewrite_param_not_found",
+                    block_id=block_id,
+                )
+            editor.remove(edit.name)
+            del expected[index]
+        elif isinstance(edit, RenameParam):
+            # SPEC-0025 W4-E。スコープ解析 + E4a/E4b と一体で実装する (ADR-0075
+            # commit 2〜3)。それまでは保守的に拒否する
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: parameter rename is not supported yet.",
+                kind="unsupported",
+                reason="rewrite_rename_unsupported_construct",
+                block_id=block_id,
+            )
+        else:  # 型上は到達しない (防御)
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: unknown parameter edit {edit!r}.",
+                kind="unsupported",
+                block_id=block_id,
+            )
+    return editor.splices, tuple(expected)
+
+
+# ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
 
@@ -372,13 +852,16 @@ def rewrite_source(
     outputs: int | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    params: Sequence[ParamEdit] | None = None,
     block_id: str | None = None,
 ) -> str:
-    """``@block`` 形ソースのポート構造を書き換えた新しいソースを返す (SPEC-0024)。
+    """``@block`` 形ソースのポート / パラメータ構造を書き換えた新しいソースを返す
+    (SPEC-0024 / SPEC-0025)。
 
     patch セマンティクス: ``None`` の項目は書き換えない。ポート数を変更するとき、
     既存のポート名列は同じ書き換えで長さを同期する (§2.6)。要求がすべて現状と
-    一致する場合は **入力をバイト等価のまま** 返す。
+    一致する場合は **入力をバイト等価のまま** 返す。すべての編集は 1 つの splice
+    バッチ + 1 回の自己検証で処理される (中間状態を作らない)。
 
     Args:
         code: 現在のソース (受理契約 ADR-0073 §2-E の内側であること)。
@@ -386,6 +869,9 @@ def rewrite_source(
         outputs: 目標出力ポート数 (1..32)。
         input_names: 入力ポート名列 (長さは **編集後の** 入力数と完全一致)。
         output_names: 出力ポート名列。
+        params: パラメータ編集の命令列 (:class:`AddParam` / :class:`RemoveParam` /
+            :class:`RenameParam`)。命令列なのはポート編集 (宣言的) と違い
+            rename と remove+add を区別する必要があるため (ADR-0075 §論点 5)。
         block_id: エラーメッセージ用。
 
     Returns:
@@ -411,20 +897,25 @@ def rewrite_source(
         output_names, old_spec.output_names, final_outputs, role="output_names", block_id=block_id
     )
 
+    source = _SourceBytes(code)
+    tree = ast.parse(code)
+    func_def = _find_decorated_function(tree, block_id)
+    deco = next(d for d in func_def.decorator_list if _is_block_decorator(d))
+    editor = _DecoratorEditor(source, deco)
+
+    param_splices, expected_params = _plan_param_edits(
+        source, tree, func_def, old_spec, params, block_id
+    )
+    splices: list[_Splice] = list(param_splices)
+
     expected = replace(
         old_spec,
         n_inputs=final_inputs,
         n_outputs=final_outputs,
         input_names=final_input_names,
         output_names=final_output_names,
+        params_spec=expected_params,
     )
-
-    source = _SourceBytes(code)
-    tree = ast.parse(code)
-    func_def = _find_decorated_function(tree, block_id)
-    deco = next(d for d in func_def.decorator_list if _is_block_decorator(d))
-    editor = _DecoratorEditor(source, deco)
-    splices: list[_Splice] = list()
 
     # --- 入力数 (A 規則) ---
     if target_inputs is not None and target_inputs != old_spec.n_inputs:

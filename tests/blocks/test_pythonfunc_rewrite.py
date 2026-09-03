@@ -12,7 +12,12 @@ import ast
 import pytest
 
 from flode.blocks.pythonfunc_rewrite import (
+    MAX_PARAM_NAME_LENGTH,
+    MAX_PARAM_STR_DEFAULT_LENGTH,
     MAX_PYTHON_FUNCTION_PORTS,
+    AddParam,
+    RemoveParam,
+    RenameParam,
     _SourceBytes,
     rewrite_source,
 )
@@ -399,3 +404,237 @@ class TestKeywordRemovalPreservesComments:
         assert "input_names" not in new
         assert "inputs=2" in new
         assert _spec(new).n_inputs == 2
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0025 / ADR-0075: パラメータ (kw-only 引数) の追加 / 削除
+# ---------------------------------------------------------------------------
+
+KW1 = "@block\ndef f(t: float, u: float, *, kp: float = 1.0) -> float:\n    return u * kp\n"
+KW3 = (
+    "@block\n"
+    'def f(t: float, u: float, *, a: float = 1.0, b: int = 2, c: str = "x") -> float:\n'
+    "    return u * a\n"
+)
+
+
+class TestParamAdd:
+    def test_ap1_appends_after_last_kwonly(self) -> None:
+        new = _rw(KW1, params=[AddParam(name="gain", type="float", default=2.0)])
+        assert "*, kp: float = 1.0, gain: float = 2.0)" in new
+        assert _spec(new).params_spec[-1] == ("gain", 2.0, float, False)
+
+    def test_ap2_no_kwonly_inserts_star(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="gain", type="float", default=1.0)])
+        assert "def f(t: float, u: float, *, gain: float = 1.0) -> float:" in new
+        assert _spec(new).params_spec == (("gain", 1.0, float, False),)
+
+    def test_ap2_anchor_after_positional_default(self) -> None:
+        # V19: アンカーは `arg` の end ではなく default 式の end (構文破壊の回帰)
+        code = "@block\ndef f(t: float, u: float = 0.0) -> float:\n    return u\n"
+        new = _rw(code, params=[AddParam(name="gain", type="float", default=1.0)])
+        assert "u: float = 0.0, *, gain: float = 1.0)" in new
+        assert _spec(new).params_spec == (("gain", 1.0, float, False),)
+
+    def test_ap2_after_positional_only_slash(self) -> None:
+        code = "@block\ndef f(t: float, u: float, /) -> float:\n    return u\n"
+        new = _rw(code, params=[AddParam(name="gain", type="float", default=1.0)])
+        assert "u: float, /, *, gain: float = 1.0)" in new
+
+    def test_ap1_multiline_trailing_comma_and_comment(self) -> None:
+        code = (
+            "@block\n"
+            "def f(\n"
+            "    t: float,\n"
+            "    u: float,\n"
+            "    *,\n"
+            "    kp: float = 1.0,  # gain\n"
+            ") -> float:\n"
+            "    return u * kp\n"
+        )
+        new = _rw(code, params=[AddParam(name="g2", type="int", default=3)])
+        assert "kp: float = 1.0, g2: int = 3,  # gain" in new
+        assert [p[0] for p in _spec(new).params_spec] == ["kp", "g2"]
+
+    def test_port_edit_and_param_add_in_one_batch(self) -> None:
+        # ADR-0075 V9: 注釈置換 [s, e) と同位置 e へのゼロ幅挿入は共存できる
+        new = _rw(SCALAR_IN, inputs=2, params=[AddParam(name="gain", type="float", default=1.0)])
+        assert "u: tuple[float, float], *, gain: float = 1.0" in new
+        s = _spec(new)
+        assert s.n_inputs == 2
+        assert s.params_spec == (("gain", 1.0, float, False),)
+
+
+class TestParamRemove:
+    def test_dp1_middle_forward_delete(self) -> None:
+        new = _rw(KW3, params=[RemoveParam(name="b")])
+        assert '*, a: float = 1.0, c: str = "x")' in new
+        assert [p[0] for p in _spec(new).params_spec] == ["a", "c"]
+
+    def test_dp2_last_with_remaining(self) -> None:
+        new = _rw(KW3, params=[RemoveParam(name="c")])
+        assert "*, a: float = 1.0, b: int = 2)" in new
+        assert [p[0] for p in _spec(new).params_spec] == ["a", "b"]
+
+    def test_dp3_only_kwonly_removes_star(self) -> None:
+        new = _rw(KW1, params=[RemoveParam(name="kp")])
+        assert "def f(t: float, u: float) -> float:" in new
+        assert _spec(new).params_spec == ()
+
+    def test_dp3_keeps_slash_marker(self) -> None:
+        code = "@block\ndef f(t: float, u: float, /, *, kp: float = 1.0) -> float:\n    return u\n"
+        new = _rw(code, params=[RemoveParam(name="kp")])
+        assert "def f(t: float, u: float, /) -> float:" in new
+
+    def test_dp3_multiline_keeps_previous_comment(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float,  # keep this\n"
+            "      *, kp: float = 1.0) -> float:\n"
+            "    return u\n"
+        )
+        new = _rw(code, params=[RemoveParam(name="kp")])
+        assert "# keep this" in new
+        assert "kp" not in new
+        assert _spec(new).params_spec == ()
+
+    def test_remove_ignores_body_reference(self) -> None:
+        # 受入基準 (x) / §確定事項 2: 残留参照があっても無警告で適用、本体は不変
+        new = _rw(KW1, params=[RemoveParam(name="kp")])
+        assert "return u * kp" in new
+        assert _spec(new).params_spec == ()
+
+    def test_remove_missing_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="no parameter named"):
+            _rw(KW1, params=[RemoveParam(name="nope")])
+
+    def test_remove_x0_rejected_when_stateful(self) -> None:
+        code = (
+            "@block(states=1)\n"
+            "def f(t: float, x: np.ndarray, u: float, *, x0: float = 0.0) "
+            "-> tuple[float, np.ndarray]:\n"
+            "    return x[0], np.array([u])\n"
+        )
+        with pytest.raises(PythonFunctionRewriteError, match="x0"):
+            _rw(code, params=[RemoveParam(name="x0")])
+
+
+class TestParamNameValidation:
+    @pytest.mark.parametrize(
+        "bad",
+        ["", "1a", "ゲイン", "def", "has space", "a" * (MAX_PARAM_NAME_LENGTH + 1)],
+    )
+    def test_p1_to_p4_rejected(self, bad: str) -> None:
+        with pytest.raises(PythonFunctionRewriteError):
+            _rw(SCALAR_IN, params=[AddParam(name=bad, type="float", default=1.0)])
+
+    def test_soft_keyword_allowed(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="match", type="int", default=0)])
+        assert _spec(new).params_spec[0][0] == "match"
+
+    def test_p5_existing_param_conflict(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="already exists"):
+            _rw(KW1, params=[AddParam(name="kp", type="float", default=1.0)])
+
+    @pytest.mark.parametrize("taken", ["u", "f"])
+    def test_p6_p7_signature_names_rejected(self, taken: str) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="already used"):
+            _rw(SCALAR_IN, params=[AddParam(name=taken, type="float", default=1.0)])
+
+    def test_n_used_body_local_rejected(self) -> None:
+        code = "@block\ndef f(t: float, u: float) -> float:\n    tmp = u\n    return tmp\n"
+        with pytest.raises(PythonFunctionRewriteError, match="already used"):
+            _rw(code, params=[AddParam(name="tmp", type="float", default=1.0)])
+
+    def test_n_used_builtin_shadow_rejected(self) -> None:
+        code = "@block\ndef f(t: float, u: float) -> float:\n    return min(u, 1.0)\n"
+        with pytest.raises(PythonFunctionRewriteError, match="already used"):
+            _rw(code, params=[AddParam(name="min", type="float", default=1.0)])
+
+    @pytest.mark.parametrize("injected", ["np", "npt", "block"])
+    def test_p8_injected_globals_rejected(self, injected: str) -> None:
+        # `block` はデコレータの `Name` として関数内に現れるため N-USED が先に拒否する
+        # (P8 と重複被覆。どちらでも安全側)
+        with pytest.raises(PythonFunctionRewriteError, match="shadow|already used"):
+            _rw(SCALAR_IN, params=[AddParam(name=injected, type="float", default=1.0)])
+
+    def test_p8_module_level_binding_rejected(self) -> None:
+        code = "K = 2.0\n\n@block\ndef f(t: float, u: float) -> float:\n    return u\n"
+        with pytest.raises(PythonFunctionRewriteError, match="shadow"):
+            _rw(code, params=[AddParam(name="K", type="float", default=1.0)])
+
+    def test_p9_x0_reserved_when_stateful(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="reserved"):
+            _rw(STATEFUL, params=[AddParam(name="x0", type="float", default=0.0)])
+
+
+class TestParamDefaultLiterals:
+    """生成リテラルの決定性 (ADR-0075 §論点 5)。E3 が round-trip まで検査する。"""
+
+    def test_float_from_int_gets_decimal_point(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="g", type="float", default=1)])
+        assert "g: float = 1.0" in new
+        assert _spec(new).params_spec[0][1] == 1.0
+
+    def test_float_exponent_form(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="g", type="float", default=1e20)])
+        assert "g: float = 1e+20" in new
+        assert _spec(new).params_spec[0][1] == 1e20
+
+    def test_float_negative_zero(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="g", type="float", default=-0.5)])
+        assert "g: float = -0.5" in new
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_float_non_finite_rejected(self, bad: float) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="finite"):
+            _rw(SCALAR_IN, params=[AddParam(name="g", type="float", default=bad)])
+
+    def test_bool_literal(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="flag", type="bool", default=True)])
+        assert "flag: bool = True" in new
+        assert _spec(new).params_spec[0][1] is True
+
+    def test_bool_passed_as_int_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="int"):
+            _rw(SCALAR_IN, params=[AddParam(name="n", type="int", default=True)])
+
+    def test_str_escaping(self) -> None:
+        new = _rw(SCALAR_IN, params=[AddParam(name="s", type="str", default='a"b\\c')])
+        assert 's: str = "a\\"b\\\\c"' in new
+        assert _spec(new).params_spec[0][1] == 'a"b\\c'
+
+    def test_str_control_char_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="control"):
+            _rw(SCALAR_IN, params=[AddParam(name="s", type="str", default="a\nb")])
+
+    def test_str_too_long_rejected(self) -> None:
+        long = "x" * (MAX_PARAM_STR_DEFAULT_LENGTH + 1)
+        with pytest.raises(PythonFunctionRewriteError, match="at most"):
+            _rw(SCALAR_IN, params=[AddParam(name="s", type="str", default=long)])
+
+    def test_unknown_type_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="type must be one of"):
+            _rw(SCALAR_IN, params=[AddParam(name="g", type="list", default=1.0)])
+
+
+class TestParamMisc:
+    def test_empty_param_list_is_noop(self) -> None:
+        assert _rw(SCALAR_IN, params=[]) == SCALAR_IN
+
+    def test_rename_not_supported_yet(self) -> None:
+        # commit 2〜3 (スコープ解析 + E4a/E4b) で置き換える一時挙動
+        with pytest.raises(PythonFunctionRewriteError, match="rename"):
+            _rw(KW1, params=[RenameParam(old="kp", new="gain")])
+
+    def test_minimal_diff_japanese_comment_preserved(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float) -> float:  # 日本語コメント\n"
+            "    # 本体の説明 ★\n"
+            "    return u\n"
+        )
+        new = _rw(code, params=[AddParam(name="gain", type="float", default=1.0)])
+        assert "# 日本語コメント" in new
+        assert "# 本体の説明 ★" in new
+        assert new.endswith("    return u\n")
