@@ -321,6 +321,16 @@ export interface PythonFunctionSpec {
 // SPEC-0024 §3.1: rewrite endpoint のレスポンス。``applied: false`` のとき
 // ``code`` は返らない (元コードはクライアント側にある)。``kind`` の wire 語彙は
 // 3 値に固定 (ADR-0074 §論点 3。自己検証失敗は "spec" に畳まれる)。
+/**
+ * SPEC-0025 §機能要件 5: `edits.params` の 1 命令 (1 request = 1 op)。
+ * rename の wire key が `from`/`to` なのは Python 側 (`old`/`new`) と違い
+ * JSON では予約語制約が無いため (変換は server の REST 層で行う)。
+ */
+export type PythonFunctionParamEdit =
+  | { op: "add"; name: string; type: "float" | "int" | "bool" | "str"; default: number | boolean | string }
+  | { op: "remove"; name: string }
+  | { op: "rename"; from: string; to: string };
+
 export type PythonFunctionRewriteResponse =
   | { applied: true; code: string; spec: PythonFunctionSpec }
   | {

@@ -82,12 +82,22 @@ export function PropertyGrid({
  */
 export function PropertyRow({
   label,
+  labelControl,
+  action,
   children,
   indent = false,
   labelWidth = 140,
   labelAlign = "right",
 }: {
   label: string;
+  /**
+   * SPEC-0025: label column に静的ラベルの代わりに描く control (パラメータ名の
+   * rename 入力等)。指定時も ``label`` は title / aria の出所として必須のまま。
+   * label column (幅 ``labelWidth``) に収めることで、値入力の縦位置が他の行と揃う。
+   */
+  labelControl?: React.ReactNode;
+  /** SPEC-0025: 行末に右寄せで描くアクション (``RowActionButton`` 等)。 */
+  action?: React.ReactNode;
   children: React.ReactNode;
   indent?: boolean;
   labelWidth?: number;
@@ -95,16 +105,29 @@ export function PropertyRow({
 }): JSX.Element {
   return (
     <div className="flex min-h-[22px] items-center gap-2 py-0.5">
-      <label
-        title={label}
-        className={`shrink-0 truncate text-[11px] text-slate-700 ${
-          labelAlign === "right" ? "text-right" : "text-left"
-        } ${indent ? "pl-3" : ""}`}
-        style={{ width: `${labelWidth}px` }}
-      >
-        {label}:
-      </label>
+      {labelControl !== undefined ? (
+        <div
+          title={label}
+          className={`flex shrink-0 items-center ${indent ? "pl-3" : ""}`}
+          style={{ width: `${labelWidth}px` }}
+        >
+          {labelControl}
+        </div>
+      ) : (
+        <label
+          title={label}
+          className={`shrink-0 truncate text-[11px] text-slate-700 ${
+            labelAlign === "right" ? "text-right" : "text-left"
+          } ${indent ? "pl-3" : ""}`}
+          style={{ width: `${labelWidth}px` }}
+        >
+          {label}:
+        </label>
+      )}
       <div className="flex min-w-0 flex-1 items-center">{children}</div>
+      {action !== undefined && (
+        <div className="flex shrink-0 items-center">{action}</div>
+      )}
     </div>
   );
 }
@@ -346,6 +369,51 @@ export function DangerButton({
         disabled
           ? "cursor-not-allowed bg-rose-300"
           : "bg-rose-600 hover:bg-rose-700 active:bg-rose-800"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * 行内アクションボタン (SPEC-0025 / ADR-0075 §論点 7)。
+ *
+ * ``PropertyRow`` の ``action`` slot に置く小型ボタン。``SecondaryButton`` より
+ * 一回り小さく (px-1.5 / text-[10px])、``tone="danger"`` は**枠と文字だけ** rose
+ * (塗り潰さない = 行が並んでも騒がしくならない。塗り潰しの ``DangerButton`` は
+ * dialog footer 用として残す)。ラベルはテキスト必須 (icon のみは使わない)。
+ */
+export function RowActionButton({
+  children,
+  onClick,
+  disabled,
+  tone = "neutral",
+  testId,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  tone?: "neutral" | "danger";
+  testId?: string;
+  ariaLabel?: string;
+}): JSX.Element {
+  const enabledCls =
+    tone === "danger"
+      ? "border-rose-400 bg-white text-rose-700 hover:bg-rose-50 active:bg-rose-100"
+      : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-200";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      aria-label={ariaLabel}
+      className={`border px-1.5 py-0 text-[10px] leading-4 ${
+        disabled
+          ? "cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400"
+          : enabledCls
       }`}
     >
       {children}

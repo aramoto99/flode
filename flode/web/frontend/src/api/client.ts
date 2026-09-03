@@ -12,6 +12,7 @@ import type {
   LibraryEntryDetail,
   LibraryRegistryResponse,
   PythonFunctionIntrospectResponse,
+  PythonFunctionParamEdit,
   PythonFunctionRewriteResponse,
   ResolvedPortShapes,
   SimulationResults,
@@ -130,6 +131,8 @@ export async function rewritePythonFunction(
     outputs?: number;
     input_names?: string[];
     output_names?: string[];
+    /** SPEC-0025: パラメータ編集 (要素数 1 固定。rename はポート編集と併用不可)。 */
+    params?: PythonFunctionParamEdit[];
   },
 ): Promise<PythonFunctionRewriteResponse> {
   return _fetch<PythonFunctionRewriteResponse>("/blocks/python-function/rewrite", {
