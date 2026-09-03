@@ -245,6 +245,7 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
 
     from ...blocks.pythonfunc_rewrite import (
         FORBIDDEN_DEFAULT_CATEGORIES,
+        MAX_PARAM_INT_DEFAULT_DIGITS,
         MAX_PARAM_NAME_LENGTH,
         MAX_PARAM_STR_DEFAULT_LENGTH,
         PARAM_NAME_RE,
@@ -308,10 +309,26 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
         elif ptype == "int":
             if isinstance(default, bool) or not isinstance(default, int):
                 raise bad_default
+            if len(str(abs(default))) > MAX_PARAM_INT_DEFAULT_DIGITS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"edits.params[0].default must have at most "
+                        f"{MAX_PARAM_INT_DEFAULT_DIGITS} digits"
+                    ),
+                )
         elif ptype == "float":
             if isinstance(default, bool) or not isinstance(default, int | float):
                 raise bad_default
-            if not math.isfinite(float(default)):
+            try:
+                as_float = float(default)
+            except (OverflowError, ValueError) as e:
+                # security-reviewer MUST: 巨大 int の float 変換は OverflowError
+                raise HTTPException(
+                    status_code=400,
+                    detail="edits.params[0].default is out of float range",
+                ) from e
+            if not math.isfinite(as_float):
                 raise HTTPException(
                     status_code=400, detail="edits.params[0].default must be finite"
                 )

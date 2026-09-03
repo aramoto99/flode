@@ -486,6 +486,49 @@ class TestRewriteParams:
         resp = client.post(_REWRITE, json={"code": KWONLY_CODE, "edits": {"params": [bad]}})
         assert resp.status_code == 400
 
+    def test_float_default_huge_int_is_400(self, client: TestClient) -> None:
+        # security-reviewer MUST: OverflowError を漏らして 500 にしない
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": SCALAR_CODE,
+                "edits": {
+                    "params": [{"op": "add", "name": "g", "type": "float", "default": 10**400}]
+                },
+            },
+        )
+        assert resp.status_code == 400
+        assert "float range" in resp.json()["detail"]
+
+    def test_int_default_digit_limit_is_400(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": SCALAR_CODE,
+                "edits": {"params": [{"op": "add", "name": "g", "type": "int", "default": 10**40}]},
+            },
+        )
+        assert resp.status_code == 400
+        assert "digits" in resp.json()["detail"]
+
+    def test_deeply_nested_rename_is_applied_false_not_500(self, client: TestClient) -> None:
+        # security-reviewer SHOULD: RecursionError を 500 にせず applied:false に畳む
+        deep = (
+            "@block\n"
+            "def f(t: float, u: float, *, k: float = 1.0) -> float:\n"
+            "    return u * (" + " + ".join(["k"] * 4000) + ")\n"
+        )
+        resp = client.post(
+            _REWRITE,
+            json={"code": deep, "edits": {"params": [{"op": "rename", "from": "k", "to": "g"}]}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "code" not in data
+        if data["applied"] is False:
+            assert data["error"]["kind"] in ("unsupported", "spec")
+        # (環境の recursion limit によっては成功しうるが、500 にならないことが本質)
+
     def test_source_dependent_conflict_is_applied_false(self, client: TestClient) -> None:
         # P5 (既存名との衝突) はソース依存 → 200 + applied:false、code は返さない
         resp = client.post(

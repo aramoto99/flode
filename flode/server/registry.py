@@ -586,6 +586,19 @@ def rewrite_python_source(
             block_id=key,
         )
         spec = analyze_source(new_code, block_id=key)
+    except RecursionError:
+        # security-reviewer (v0.51.0) SHOULD: 極端に深い式は AST の再帰走査
+        # (rename のスコープ解析等) で RecursionError になりうる。500 にせず
+        # applied:false に畳む (fail-closed、元コードは不変)
+        return {
+            "applied": False,
+            "error": {
+                "message": ("the source is too deeply nested to rewrite; simplify the expression"),
+                "lineno": None,
+                "col": None,
+                "kind": "unsupported",
+            },
+        }
     except (PythonFunctionRewriteError, PythonFunctionSourceError) as e:
         return {
             "applied": False,
@@ -621,6 +634,17 @@ def introspect_python_source(code: str, *, key: str) -> dict[str, Any]:
 
     try:
         spec = analyze_source(code, block_id=key)
+    except RecursionError:
+        # security-reviewer (v0.51.0) SHOULD: 極端に深い式で 500 にしない (rewrite と同じ)
+        return {
+            "resolved": False,
+            "error": {
+                "message": "the source is too deeply nested to analyse",
+                "lineno": None,
+                "col": None,
+                "kind": "spec",
+            },
+        }
     except PythonFunctionSourceError as e:
         return {
             "resolved": False,

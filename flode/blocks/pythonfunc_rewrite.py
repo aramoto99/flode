@@ -60,7 +60,9 @@ def _code_for_log(code: str, max_lines: int = 20) -> str:
     import hashlib
 
     lines = code.splitlines()
-    head = "\n".join(lines[:max_lines])
+    # security-reviewer NIT: 各行に "  | " を前置し、攻撃者制御のソース行が
+    # 偽のログ行として読まれる log injection を無害化する
+    head = "\n".join("  | " + line for line in lines[:max_lines])
     suffix = f"\n... ({len(lines) - max_lines} more lines)" if len(lines) > max_lines else ""
     digest = hashlib.sha256(code.encode("utf-8", "surrogatepass")).hexdigest()
     return f"{head}{suffix}\n[sha256={digest}]"
@@ -85,6 +87,10 @@ MAX_PARAM_NAME_LENGTH = 64
 
 #: ``str`` 型 default の最大長 (SPEC-0025 §確定事項 8)。
 MAX_PARAM_STR_DEFAULT_LENGTH = 256
+
+#: ``int`` 型 default の最大桁数 (security-reviewer SHOULD: str だけ上限があり
+#: int が無制限という非対称の解消。巨大 int はソースへそのまま埋まるため)。
+MAX_PARAM_INT_DEFAULT_DIGITS = 32
 
 #: UI から追加できるパラメータの型語彙 (SPEC-0025 §確定事項 9)。いずれも
 #: :mod:`pythonfunc_source` の ``_ANNOTATION_NAMES`` の内側 = 静的解決できる。
@@ -593,6 +599,13 @@ def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, o
                 kind="unsupported",
                 block_id=block_id,
             )
+        if len(str(abs(v))) > MAX_PARAM_INT_DEFAULT_DIGITS:
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: int default must have at most "
+                f"{MAX_PARAM_INT_DEFAULT_DIGITS} digits",
+                kind="unsupported",
+                block_id=block_id,
+            )
         return (str(v), v)
     if edit.type == "float":
         if isinstance(v, bool) or not isinstance(v, int | float):
@@ -602,7 +615,16 @@ def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, o
                 kind="unsupported",
                 block_id=block_id,
             )
-        f = float(v)
+        try:
+            f = float(v)
+        except (OverflowError, ValueError) as e:
+            # security-reviewer MUST: 巨大 int → float は OverflowError になる。
+            # 未処理で漏らさず契約どおりの例外に変換する (route 側も 400 で二重ゲート)
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: default for a float parameter is out of float range",
+                kind="unsupported",
+                block_id=block_id,
+            ) from e
         if not math.isfinite(f):
             raise PythonFunctionRewriteError(
                 f"PythonFunction[{block_id}]: default for a float parameter must be "
@@ -1495,13 +1517,22 @@ def rewrite_source(
     """
     old_spec = analyze_source(code, block_id=block_id)
 
-    if params is not None and any(isinstance(e, RenameParam) for e in params):
-        # ADR-0075 §論点 2-D: rename は**単独の編集**でなければならない (E4a の証明を
-        # 「計画した識別子変更だけ」という単純命題に保つ)。UI / REST は 1 request
-        # 1 op なので実害はない
+    if params is not None and len(params) > 1:
+        # security-reviewer SHOULD: `params` は常に 1 命令 (REST 契約と同じ)。
+        # Python API の複数 op は AP-2 の `*` 二重挿入等で自己検証落ちし、
+        # 「rewrite rules のバグ」としてユーザーコードが ERROR ログに載る
+        # 誤分類を生むため、契約として拒否する
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: `params` accepts exactly one edit per call "
+            f"(matching the REST contract).",
+            kind="unsupported",
+            block_id=block_id,
+        )
+    if params and isinstance(params[0], RenameParam):
+        # ADR-0075 §論点 2-D: rename はポート編集と併用不可 (E4a の証明を
+        # 「計画した識別子変更だけ」という単純命題に保つ)
         if (
-            len(params) != 1
-            or inputs is not None
+            inputs is not None
             or outputs is not None
             or input_names is not None
             or output_names is not None

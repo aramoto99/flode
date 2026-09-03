@@ -623,10 +623,15 @@ class TestParamMisc:
         assert _rw(SCALAR_IN, params=[]) == SCALAR_IN
 
     def test_rename_must_be_sole_edit(self) -> None:
-        # ADR-0075 §論点 2-D: E4a の証明を単純命題に保つため、rename × 他編集は拒否
+        # ADR-0075 §論点 2-D: E4a の証明を単純命題に保つため、rename × ポート編集は拒否
         with pytest.raises(PythonFunctionRewriteError, match="only edit"):
             _rw(KW1, inputs=2, params=[RenameParam(old="kp", new="gain")])
-        with pytest.raises(PythonFunctionRewriteError, match="only edit"):
+
+    def test_params_accepts_exactly_one_edit(self) -> None:
+        # security-reviewer SHOULD: 複数 op は AP-2 の `*` 二重挿入等で自己検証落ちし
+        # 「rewrite rules のバグ」の ERROR ログ (ユーザーコード付き) を誤発火するため、
+        # REST と同じく常に 1 命令の契約として拒否する
+        with pytest.raises(PythonFunctionRewriteError, match="exactly one edit"):
             _rw(
                 KW1,
                 params=[
@@ -634,6 +639,26 @@ class TestParamMisc:
                     AddParam(name="q", type="int", default=1),
                 ],
             )
+        with pytest.raises(PythonFunctionRewriteError, match="exactly one edit"):
+            _rw(
+                SCALAR_IN,
+                params=[
+                    AddParam(name="a", type="float", default=1.0),
+                    AddParam(name="b", type="float", default=1.0),
+                ],
+            )
+
+    def test_float_default_huge_int_rejected_not_crashed(self) -> None:
+        # security-reviewer MUST: 巨大 int → float の OverflowError を契約例外に変換
+        with pytest.raises(PythonFunctionRewriteError, match="float range"):
+            _rw(SCALAR_IN, params=[AddParam(name="g", type="float", default=10**400)])
+
+    def test_int_default_digit_limit(self) -> None:
+        # security-reviewer SHOULD: int default に桁数上限 (str の 256 と対称)
+        with pytest.raises(PythonFunctionRewriteError, match="digits"):
+            _rw(SCALAR_IN, params=[AddParam(name="g", type="int", default=10**40)])
+        new = _rw(SCALAR_IN, params=[AddParam(name="g", type="int", default=-(10**31))])
+        assert _spec(new).params_spec[0][1] == -(10**31)
 
     def test_every_ast_node_type_is_classified(self) -> None:
         """規則 G の網羅性 guard: 新しい Python 版で AST ノードが増えたら CI で赤くする
