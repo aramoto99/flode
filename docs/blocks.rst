@@ -149,3 +149,21 @@ Since v0.50.0 the Inspector can edit the port structure of a
 **rewriting the source** through a static AST-based endpoint — the code remains
 the single source of truth, nothing is executed, and the rewritten source is
 re-analysed and verified before it is saved.
+
+Since v0.51.0 the parameter list (the keyword-only arguments after ``*``) can
+also be edited from the Inspector: parameters can be **added** (``float`` /
+``int`` / ``bool`` / ``str`` with a default), **removed**, and **renamed**.
+Two rules are worth knowing:
+
+- **Parameter names are Python identifiers** (ASCII, non-keyword, at most 64
+  characters) — unlike port names, which are display captions and may contain
+  spaces or emoji. Renaming rewrites the identifier everywhere it refers to the
+  parameter (including closures) and refuses constructs it cannot rewrite
+  safely (f-strings referencing the name, ``match`` captures, ``global`` /
+  ``nonlocal``, nested ``class`` definitions, dynamic access via ``locals()`` /
+  ``eval``); in those cases edit the code directly.
+- **Removing a parameter does not touch the function body.** If the body still
+  references the removed name, the model fails at run time with a
+  ``NameError`` reported with the block id and line number — fix the body
+  yourself after removing a parameter, exactly like a port-count reduction
+  leaving a stale ``u[2]`` behind.

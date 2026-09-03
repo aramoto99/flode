@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0] - 2026-09-04 — Python Function のパラメータを UI から追加/削除/rename
+
+### Added
+
+- **Inspector からパラメータ (kw-only 引数) の構造を編集できるようになった**
+  (SPEC-0025 / ADR-0075)。PARAMETERS 節の各行で名前を直接 rename、行内の「削除」、
+  末尾の追加行 (型 `float` / `int` / `bool` / `str` + 既定値) で追加。
+  いずれも v0.50.0 と同じ**コード書き換え** (`edits.params`) として実現され、
+  SSOT はコードのまま (exec しない・最小 diff・日本語コメント/CRLF 無傷)
+- **rename は関数本体の参照も書き換える** (「本体に触れない」原則の唯一の例外 W4-E)。
+  対象パラメータを指す識別子だけを scope-aware に置換し (閉包を含む、shadow された
+  内側変数・文字列・属性名・呼び出しキーワード名には触れない)、書き換え結果は
+  二重の独立検証 (計画外の AST 差分ゼロ + `symtable` による束縛構造の同型性) を
+  通らない限り保存されない。安全に書き換えられない構文 (f-string 内参照 /
+  `match` capture / `global`・`nonlocal` / 関数内 `class` / `locals()`・`eval` 等) は
+  理由付きで拒否し、コードでの修正を案内する
+- rename すると **設定済みのパラメータ値 (`user_params`) も新しい名前に追随**し、
+  Ctrl+Z 1 手で完全に戻る。`x0` (states > 0 の初期状態束縛) は名前変更・削除不可
+  (値は従来どおり編集可)
+- パラメータ名は **ASCII 識別子限定** (≤64 文字、予約語不可)。ポート名 (キャプション、
+  絵文字可) との違いは docs に明記
+- 削除は本体の残留参照を検査しない (ポート縮小の `u[2]` 残留と同じ扱い)。
+  残った参照は実行時に block id + 行番号付きの `NameError` としてログタブに出る
+
+### Changed
+
+- Inspector primitives: `PropertyRow` に `labelControl` / `action` slot、
+  行内アクション用の `RowActionButton` を追加 (既存 UI は無変更)
+
 ## [0.50.0] - 2026-09-02 — Python Function のポート数/ポート名を UI から編集
 
 ### Added
