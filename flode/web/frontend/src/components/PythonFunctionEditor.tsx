@@ -278,10 +278,14 @@ export function PythonFunctionEditor({
           }
           if (!resp.applied) {
             const { lineno, message } = resp.error;
+            const prefixed = lineno !== null ? `L${lineno}: ${message}` : message;
+            // SPEC-0025 §8: rename の拒否 (U1〜U8 / 名前衝突等、kind=unsupported) は
+            // 「コードで直す」案内付きのローカライズ文で出す (wire に reason は無い
+            // ため原因別の文面はサーバ message の併記で代替)
             setStructError(
-              t("python_function.rewrite_failed", {
-                message: lineno !== null ? `L${lineno}: ${message}` : message,
-              }),
+              opts?.renameParam !== undefined && resp.error.kind === "unsupported"
+                ? t("python_function.params.rename_unsupported", { message: prefixed })
+                : t("python_function.rewrite_failed", { message: prefixed }),
             );
             rollbackDrafts();
             return;

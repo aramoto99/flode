@@ -454,6 +454,7 @@
   "python_function.params.default": "Default",
   "python_function.params.invalid_identifier": "Parameter names must be ASCII identifiers ([A-Za-z_][A-Za-z0-9_]*, non-keyword, at most 64 characters).",
   "python_function.params.name_conflict": "{{name}} is already in use.",
+  "python_function.params.rename_unsupported": "Could not rename the parameter from the UI ({{message}}). Edit the code directly.",
   "python_function.params.reserved_x0": "x0 binds the initial state; it cannot be renamed or removed (its value is still editable).",
   "python_function.params.limit_reached": "At most 32 parameters.",
   "error.show_details": "Details (traceback)",

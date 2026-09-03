@@ -454,6 +454,7 @@
   "python_function.params.default": "既定値",
   "python_function.params.invalid_identifier": "パラメータ名は ASCII 識別子 ([A-Za-z_][A-Za-z0-9_]*、予約語不可、64 文字以内) にしてください。",
   "python_function.params.name_conflict": "{{name}} は既に使われています。",
+  "python_function.params.rename_unsupported": "パラメータ名を UI から変更できませんでした ({{message}})。コードで直してください。",
   "python_function.params.reserved_x0": "x0 は状態の初期値の束縛のため、名前の変更と削除はできません (値は編集できます)。",
   "python_function.params.limit_reached": "パラメータは最大 32 個です。",
   "error.show_details": "詳細 (traceback)",

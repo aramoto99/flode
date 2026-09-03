@@ -96,7 +96,7 @@ _PARAM_PY_TYPES: dict[str, type] = {"float": float, "int": int, "bool": bool, "s
 #: CPython は識別子をトークナイズ時に NFKC 正規化するため、非 ASCII を許すと
 #: 「ソースに書いた名前」と「AST から読み戻る名前」が食い違う経路が生まれる。
 #: ASCII 限定にすることでその経路を設計上消す (P10)。
-_PARAM_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PARAM_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 #: exec 名前空間に注入される名前 (``pythonfunc._exec_namespace``)。パラメータ名が
 #: これらを shadow すると本体の ``np.array(...)`` 等が静かに壊れるため拒否する (P8)。
@@ -104,7 +104,7 @@ _INJECTED_GLOBAL_NAMES = frozenset({"block", "np", "npt"})
 
 #: ``str`` default で拒否する Unicode カテゴリ (制御・改行・サロゲート類。
 #: ポート名 (decorator の N4) と同じ基準)。
-_FORBIDDEN_DEFAULT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+FORBIDDEN_DEFAULT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
 
 
 @dataclass(frozen=True)
@@ -512,7 +512,7 @@ def _validate_new_param_name(
     P1〜P4 (body 非依存の静的規則) は REST 層が先に 400 で弾くが、Python API から
     直接呼ばれる経路を裸にしないためここでも検証する (二重ゲート。ADR-0075 §論点 5)。
     """
-    if not isinstance(name, str) or not _PARAM_NAME_RE.match(name):
+    if not isinstance(name, str) or not PARAM_NAME_RE.match(name):
         raise PythonFunctionRewriteError(
             f"PythonFunction[{block_id}]: parameter name must be an ASCII identifier "
             f"([A-Za-z_][A-Za-z0-9_]*), got {name!r}",
@@ -628,7 +628,7 @@ def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, o
                 kind="unsupported",
                 block_id=block_id,
             )
-        if any(unicodedata.category(ch) in _FORBIDDEN_DEFAULT_CATEGORIES for ch in v):
+        if any(unicodedata.category(ch) in FORBIDDEN_DEFAULT_CATEGORIES for ch in v):
             raise PythonFunctionRewriteError(
                 f"PythonFunction[{block_id}]: str default must not contain control or "
                 f"line-separator characters",

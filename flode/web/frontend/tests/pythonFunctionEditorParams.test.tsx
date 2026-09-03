@@ -245,6 +245,24 @@ describe("PythonFunctionEditor パラメータ構造編集 (SPEC-0025)", () => {
     expect(screen.getByTestId("pf-param-limit-hint")).toBeTruthy();
   });
 
+  it("rename の applied:false (unsupported) はローカライズキー rename_unsupported で表示", async () => {
+    putPythonSpec(CODE, spec());
+    rewriteMock.mockResolvedValue({
+      applied: false,
+      error: { message: "an f-string references `k`", lineno: 3, col: null, kind: "unsupported" },
+    });
+    renderEditor();
+    const name = screen.getByTestId("pf-param-name-k") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "gain" } });
+    fireEvent.blur(name);
+    await waitFor(() =>
+      expect(screen.getByTestId("pf-struct-error").textContent).toContain(
+        "params.rename_unsupported",
+      ),
+    );
+    expect(name.value).toBe("k"); // ロールバック
+  });
+
   it("IME composition 中の Enter では rename を commit しない", () => {
     putPythonSpec(CODE, spec());
     rewriteMock.mockResolvedValue({ applied: true, code: NEW_CODE, spec: spec() });

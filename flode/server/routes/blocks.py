@@ -244,10 +244,10 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
     import unicodedata
 
     from ...blocks.pythonfunc_rewrite import (
-        _FORBIDDEN_DEFAULT_CATEGORIES,
-        _PARAM_NAME_RE,
+        FORBIDDEN_DEFAULT_CATEGORIES,
         MAX_PARAM_NAME_LENGTH,
         MAX_PARAM_STR_DEFAULT_LENGTH,
+        PARAM_NAME_RE,
         PARAM_TYPE_NAMES,
         AddParam,
         RemoveParam,
@@ -270,7 +270,7 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
         value = raw.get(field)
         if (
             not isinstance(value, str)
-            or not _PARAM_NAME_RE.match(value)
+            or not PARAM_NAME_RE.match(value)
             or keyword.iskeyword(value)
             or len(value) > MAX_PARAM_NAME_LENGTH
         ):
@@ -325,7 +325,7 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
                         f"edits.params[0].default exceeds {MAX_PARAM_STR_DEFAULT_LENGTH} characters"
                     ),
                 )
-            if any(unicodedata.category(ch) in _FORBIDDEN_DEFAULT_CATEGORIES for ch in default):
+            if any(unicodedata.category(ch) in FORBIDDEN_DEFAULT_CATEGORIES for ch in default):
                 raise HTTPException(
                     status_code=400,
                     detail="edits.params[0].default must not contain control characters",
