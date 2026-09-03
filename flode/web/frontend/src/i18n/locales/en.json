@@ -446,6 +446,16 @@
   "python_function.rewrite_network_error": "Rewrite request failed: {{message}}",
   "python_function.rewrite_stale": "The code changed while editing; the change was discarded.",
   "python_function.port_range": "1 to {{max}} ports. The change rewrites the code (annotations / @block arguments).",
+  "python_function.params.new": "New",
+  "python_function.params.add": "Add",
+  "python_function.params.remove": "Remove",
+  "python_function.params.name": "Name",
+  "python_function.params.type": "Type",
+  "python_function.params.default": "Default",
+  "python_function.params.invalid_identifier": "Parameter names must be ASCII identifiers ([A-Za-z_][A-Za-z0-9_]*, non-keyword, at most 64 characters).",
+  "python_function.params.name_conflict": "{{name}} is already in use.",
+  "python_function.params.reserved_x0": "x0 binds the initial state; it cannot be renamed or removed (its value is still editable).",
+  "python_function.params.limit_reached": "At most 32 parameters.",
   "error.show_details": "Details (traceback)",
   "error.copy": "Copy"
 }

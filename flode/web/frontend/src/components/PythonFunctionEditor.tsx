@@ -6,14 +6,16 @@
 //     関数名 / 状態数 / sample_time / 直達は従来どおり read-only
 //   * PORT NAMES: ポートごとの TextInput (maxLength 32、空 = 無名)
 //   * CODE: 既存 ExpressionEditor (blur で commit) + 「編集...」→ PythonCodeDialog
-//   * PARAMETERS: コードの keyword-only 引数から動的生成した行
+//   * PARAMETERS: コードの keyword-only 引数から動的生成した行 + 構造編集
+//     (SPEC-0025: 追加 / 削除 / rename。rename は user_params の key も
+//     pruning より前に追随させる)
 //
 // 競合制御 (ADR-0074 §論点 7): rewrite は in-flight 中 disabled + リクエストに使った
 // base code が現在の code と一致するときだけ適用 + 世代 (seq) が古い応答は破棄。
 // commit の順序は rewrite → putPythonSpec → applyCode (剪定ガードを満たす、V14)。
 
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata, rewritePythonFunction } from "../api/client";
@@ -28,7 +30,12 @@ import {
 import { findBlockAtPath } from "../lib/pathResolver";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { updateBlockParams, useAppStore } from "../store/appStore";
-import type { BlockEntry, BlockParamSpec, PythonFunctionSpec } from "../types/api";
+import type {
+  BlockEntry,
+  BlockParamSpec,
+  PythonFunctionParamEdit,
+  PythonFunctionSpec,
+} from "../types/api";
 import { PythonCodeDialog } from "./PythonCodeDialog";
 import {
   ExpressionEditor,
@@ -38,6 +45,7 @@ import {
   PropertyGrid,
   PropertyHint,
   PropertyRow,
+  RowActionButton,
   SecondaryButton,
   SectionDivider,
   SELECT_CLS,
@@ -61,6 +69,32 @@ function _isNumericType(p: BlockParamSpec): boolean {
 function _paddedNames(names: readonly string[] | undefined, count: number): string[] {
   const base = names ?? [];
   return Array.from({ length: count }, (_, i) => base[i] ?? "");
+}
+
+/** SPEC-0025: パラメータ名 rename の draft (元名 → 表示中の名前)。 */
+function _paramNameDrafts(
+  spec: { params_spec: { name: string }[] } | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries((spec?.params_spec ?? []).map((p) => [p.name, p.name]));
+}
+
+// SPEC-0025 P1〜P4 のクライアント側検証。**権威はサーバ** (route の 400 と engine の
+// 二重ゲート) で、ここは往復を減らすためだけの写し。ずれてもサーバが正しく拒否する。
+const PARAM_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const MAX_PARAM_NAME_LEN = 64;
+const MAX_PARAMS = 32;
+// Python の hard keyword (soft keyword の match / case / type / _ は許可 = P3)
+const PY_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break",
+  "class", "continue", "def", "del", "elif", "else", "except", "finally", "for",
+  "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not",
+  "or", "pass", "raise", "return", "try", "while", "with", "yield",
+]);
+
+function _validParamName(name: string): boolean {
+  return (
+    PARAM_NAME_RE.test(name) && !PY_KEYWORDS.has(name) && name.length <= MAX_PARAM_NAME_LEN
+  );
 }
 
 export function PythonFunctionEditor({
@@ -125,11 +159,17 @@ export function PythonFunctionEditor({
   const [draftOutputs, setDraftOutputs] = useState<number | undefined>(undefined);
   const [draftInNames, setDraftInNames] = useState<string[]>([]);
   const [draftOutNames, setDraftOutNames] = useState<string[]>([]);
+  const [draftParamNames, setDraftParamNames] = useState<Record<string, string>>({});
+  // SPEC-0025: 追加行 (型 / 名前 / 既定値) の draft
+  const [addName, setAddName] = useState("");
+  const [addType, setAddType] = useState<"float" | "int" | "bool" | "str">("float");
+  const [addDefault, setAddDefault] = useState("0");
   useEffect(() => {
     setDraftInputs(spec?.n_inputs);
     setDraftOutputs(spec?.n_outputs);
     setDraftInNames(_paddedNames(spec?.input_names, spec?.n_inputs ?? 0));
     setDraftOutNames(_paddedNames(spec?.output_names, spec?.n_outputs ?? 0));
+    setDraftParamNames(_paramNameDrafts(spec));
     setStructError(null);
   }, [spec]);
 
@@ -140,12 +180,18 @@ export function PythonFunctionEditor({
     [block.id, block.params, registryMap],
   );
 
-  /** rewrite 成功時の共通 commit: 宣言から消えた user_params を落として保存。 */
+  /** rewrite 成功時の共通 commit: 宣言から消えた user_params を落として保存。
+   *  ``userParamsOverride`` は rename の key 追随用 (SPEC-0025 §7: **pruning より
+   *  前に**差し替えないと、rename 直後に値が静かに消える)。 */
   const finishApply = useCallback(
-    (nextCode: string, s: PythonFunctionSpec): void => {
+    (
+      nextCode: string,
+      s: PythonFunctionSpec,
+      userParamsOverride?: Record<string, unknown>,
+    ): void => {
       const declared = new Set(s.params_spec.map((p) => p.name));
       const kept: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(_userParams(block))) {
+      for (const [k, v] of Object.entries(userParamsOverride ?? _userParams(block))) {
         if (declared.has(k)) kept[k] = v;
       }
       setCodeError(null);
@@ -194,16 +240,28 @@ export function PythonFunctionEditor({
     setDraftOutputs(current.n_outputs);
     setDraftInNames(_paddedNames(current.input_names, current.n_inputs));
     setDraftOutNames(_paddedNames(current.output_names, current.n_outputs));
+    setDraftParamNames(_paramNameDrafts(current));
   }, []);
 
-  /** SPEC-0024: 構造編集の唯一の commit 経路 (rewrite → putPythonSpec → applyCode)。 */
+  /** SPEC-0024/0025: 構造編集の唯一の commit 経路 (rewrite → putPythonSpec → applyCode)。
+   *  ポート編集とパラメータ編集は**同じ in-flight lock / seq / base 一致検証を
+   *  共有**する (どちらも params.code を書き換えるため。SPEC-0025 §6-6)。 */
   const commitRewrite = useCallback(
-    (edits: {
-      inputs?: number;
-      outputs?: number;
-      input_names?: string[];
-      output_names?: string[];
-    }): void => {
+    (
+      edits: {
+        inputs?: number;
+        outputs?: number;
+        input_names?: string[];
+        output_names?: string[];
+        params?: PythonFunctionParamEdit[];
+      },
+      opts?: {
+        /** rename 時の user_params key 追随 (pruning より前に差し替える)。 */
+        renameParam?: { from: string; to: string };
+        /** applied:true で commit した直後に呼ぶ (追加行のクリア等)。 */
+        onApplied?: () => void;
+      },
+    ): void => {
       if (rewriteBusy) return;
       const baseCode = codeRef.current;
       const seq = ++rewriteSeq.current;
@@ -230,8 +288,18 @@ export function PythonFunctionEditor({
           }
           // 順序が重要 (ADR-0074 V14): cache 投入 → params 更新。
           // 逆にすると canPruneOnParamChange が偽になり結線剪定がスキップされる。
+          const rename = opts?.renameParam;
+          let override: Record<string, unknown> | undefined;
+          if (rename !== undefined) {
+            const up = _userParams(block);
+            if (rename.from in up) {
+              const { [rename.from]: moved, ...rest } = up;
+              override = { ...rest, [rename.to]: moved };
+            }
+          }
           putPythonSpec(resp.code, resp.spec);
-          finishApply(resp.code, resp.spec);
+          finishApply(resp.code, resp.spec, override);
+          opts?.onApplied?.();
         })
         .catch((e: unknown) => {
           if (seq !== rewriteSeq.current) return;
@@ -246,7 +314,7 @@ export function PythonFunctionEditor({
           if (seq === rewriteSeq.current) setRewriteBusy(false);
         });
     },
-    [finishApply, liveCode, rewriteBusy, rollbackDrafts, t],
+    [block, finishApply, liveCode, rewriteBusy, rollbackDrafts, t],
   );
 
   const commitCount = useCallback(
@@ -289,6 +357,71 @@ export function PythonFunctionEditor({
     },
     [commitRewrite, spec],
   );
+
+  // --- SPEC-0025: パラメータ構造編集 (追加 / 削除 / rename) ---
+
+  const commitParamRename = useCallback(
+    (from: string): void => {
+      if (spec === null) return;
+      const to = (draftParamNames[from] ?? from).trim();
+      if (to === from) return;
+      if (!_validParamName(to)) {
+        setStructError(t("python_function.params.invalid_identifier"));
+        setDraftParamNames((d) => ({ ...d, [from]: from }));
+        return;
+      }
+      if (spec.params_spec.some((p) => p.name === to)) {
+        setStructError(t("python_function.params.name_conflict", { name: to }));
+        setDraftParamNames((d) => ({ ...d, [from]: from }));
+        return;
+      }
+      commitRewrite(
+        { params: [{ op: "rename", from, to }] },
+        { renameParam: { from, to } },
+      );
+    },
+    [commitRewrite, draftParamNames, spec, t],
+  );
+
+  const commitParamRemove = useCallback(
+    (name: string): void => {
+      commitRewrite({ params: [{ op: "remove", name }] });
+    },
+    [commitRewrite],
+  );
+
+  const paramLimitReached = spec !== null && spec.params_spec.length >= MAX_PARAMS;
+  const addNameTrimmed = addName.trim();
+  const addDefaultValid =
+    addType === "bool" || addType === "str" || parseNumericInput(addDefault) !== null;
+  const canAddParam =
+    !rewriteBusy &&
+    spec !== null &&
+    _validParamName(addNameTrimmed) &&
+    !spec.params_spec.some((p) => p.name === addNameTrimmed) &&
+    !paramLimitReached &&
+    addDefaultValid;
+
+  const commitParamAdd = useCallback((): void => {
+    const name = addName.trim();
+    let def: number | boolean | string;
+    if (addType === "bool") def = addDefault === "true";
+    else if (addType === "str") def = addDefault;
+    else {
+      const parsed = parseNumericInput(addDefault);
+      if (parsed === null) return;
+      def = addType === "int" ? Math.trunc(parsed) : parsed;
+    }
+    commitRewrite(
+      { params: [{ op: "add", name, type: addType, default: def }] },
+      {
+        onApplied: () => {
+          setAddName("");
+          setAddDefault(addType === "bool" ? "false" : addType === "str" ? "" : "0");
+        },
+      },
+    );
+  }, [addDefault, addName, addType, commitRewrite]);
 
   const userParams = _userParams(block);
 
@@ -493,23 +626,20 @@ export function PythonFunctionEditor({
             spec.params_spec.map((p) => {
               const current = userParams[p.name] ?? (p.has_default ? p.default : undefined);
               const testId = `pf-param-${p.name}`;
-              if (p.type === "bool") {
-                return (
-                  <PropertyRow key={p.name} labelWidth={LABEL_W} labelAlign="left" label={p.name}>
-                    <select
-                      data-testid={testId}
-                      value={current === true ? "true" : "false"}
-                      onChange={(e) => commitUserParam(p, e.target.value)}
-                      className={`${SELECT_CLS} min-w-0 w-24`}
-                    >
-                      <option value="false">false</option>
-                      <option value="true">true</option>
-                    </select>
-                  </PropertyRow>
-                );
-              }
-              return (
-                <PropertyRow key={p.name} labelWidth={LABEL_W} labelAlign="left" label={p.name}>
+              const isX0 = spec.n_states > 0 && p.name === "x0";
+              const nameDraft = draftParamNames[p.name] ?? p.name;
+              const valueControl =
+                p.type === "bool" ? (
+                  <select
+                    data-testid={testId}
+                    value={current === true ? "true" : "false"}
+                    onChange={(e) => commitUserParam(p, e.target.value)}
+                    className={`${SELECT_CLS} min-w-0 w-24`}
+                  >
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                ) : (
                   <UserParamInput
                     spec={p}
                     value={current}
@@ -517,9 +647,150 @@ export function PythonFunctionEditor({
                     placeholder={!p.has_default ? t("python_function.required") : ""}
                     onCommit={(raw) => commitUserParam(p, raw)}
                   />
-                </PropertyRow>
+                );
+              return (
+                <Fragment key={p.name}>
+                  <PropertyRow
+                    labelWidth={LABEL_W}
+                    labelAlign="left"
+                    label={p.name}
+                    labelControl={
+                      <TextInput
+                        value={nameDraft}
+                        mono
+                        maxLength={64}
+                        disabled={rewriteBusy || isX0}
+                        testId={`pf-param-name-${p.name}`}
+                        ariaLabel={t("python_function.params.name")}
+                        widthClass="min-w-0 w-full"
+                        onChange={(v) =>
+                          setDraftParamNames((d) => ({ ...d, [p.name]: v }))
+                        }
+                        onBlur={() => commitParamRename(p.name)}
+                        onKeyDown={commitOnEnter(() => commitParamRename(p.name))}
+                        onCompositionStart={() => {
+                          composingRef.current = true;
+                        }}
+                        onCompositionEnd={() => {
+                          composingRef.current = false;
+                        }}
+                      />
+                    }
+                    action={
+                      <RowActionButton
+                        tone="danger"
+                        disabled={rewriteBusy || isX0}
+                        onClick={() => commitParamRemove(p.name)}
+                        testId={`pf-param-remove-${p.name}`}
+                        ariaLabel={t("python_function.params.remove")}
+                      >
+                        {t("python_function.params.remove")}
+                      </RowActionButton>
+                    }
+                  >
+                    {valueControl}
+                  </PropertyRow>
+                  {isX0 && (
+                    <PropertyHint
+                      labelWidth={LABEL_W}
+                      testId="pf-param-x0-hint"
+                      text={t("python_function.params.reserved_x0")}
+                    />
+                  )}
+                </Fragment>
               );
             })}
+          {spec !== null && (
+            <>
+              <SectionDivider label={t("python_function.params.new")} />
+              <PropertyRow
+                labelWidth={LABEL_W}
+                labelAlign="left"
+                label={t("python_function.params.name")}
+                labelControl={
+                  <TextInput
+                    value={addName}
+                    mono
+                    maxLength={64}
+                    disabled={rewriteBusy}
+                    placeholder={t("python_function.params.name")}
+                    testId="pf-param-add-name"
+                    ariaLabel={t("python_function.params.name")}
+                    widthClass="min-w-0 w-full"
+                    onChange={setAddName}
+                    onKeyDown={commitOnEnter(() => {
+                      if (canAddParam) commitParamAdd();
+                    })}
+                    onCompositionStart={() => {
+                      composingRef.current = true;
+                    }}
+                    onCompositionEnd={() => {
+                      composingRef.current = false;
+                    }}
+                  />
+                }
+                action={
+                  <RowActionButton
+                    disabled={!canAddParam}
+                    onClick={commitParamAdd}
+                    testId="pf-param-add-submit"
+                    ariaLabel={t("python_function.params.add")}
+                  >
+                    {t("python_function.params.add")}
+                  </RowActionButton>
+                }
+              >
+                <select
+                  data-testid="pf-param-add-type"
+                  aria-label={t("python_function.params.type")}
+                  value={addType}
+                  disabled={rewriteBusy}
+                  onChange={(e) => {
+                    const next = e.target.value as "float" | "int" | "bool" | "str";
+                    setAddType(next);
+                    setAddDefault(next === "bool" ? "false" : next === "str" ? "" : "0");
+                  }}
+                  className={`${SELECT_CLS} w-16 shrink-0`}
+                >
+                  <option value="float">float</option>
+                  <option value="int">int</option>
+                  <option value="bool">bool</option>
+                  <option value="str">str</option>
+                </select>
+                {addType === "bool" ? (
+                  <select
+                    data-testid="pf-param-add-default"
+                    aria-label={t("python_function.params.default")}
+                    value={addDefault}
+                    disabled={rewriteBusy}
+                    onChange={(e) => setAddDefault(e.target.value)}
+                    className={`${SELECT_CLS} ml-1 w-16 shrink-0`}
+                  >
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    inputMode={addType === "str" ? undefined : "decimal"}
+                    data-testid="pf-param-add-default"
+                    aria-label={t("python_function.params.default")}
+                    value={addDefault}
+                    disabled={rewriteBusy}
+                    onChange={(e) => setAddDefault(e.target.value)}
+                    className={`${INPUT_MONO_CLS} ml-1 min-w-0 flex-1 max-w-[90px]`}
+                  />
+                )}
+              </PropertyRow>
+              {paramLimitReached && (
+                <PropertyHint
+                  labelWidth={LABEL_W}
+                  testId="pf-param-limit-hint"
+                  text={t("python_function.params.limit_reached")}
+                />
+              )}
+            </>
+          )}
           {paramError !== null && (
             <div
               role="alert"
