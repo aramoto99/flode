@@ -29,6 +29,7 @@ import keyword
 import logging
 import math
 import re
+import symtable
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -44,6 +45,7 @@ from .pythonfunc_source import (
     _find_decorated_function,
     _is_block_decorator,
     analyze_source,
+    source_filename,
 )
 
 _logger = logging.getLogger("flode.blocks.pythonfunc_rewrite")
@@ -773,15 +775,18 @@ def _plan_param_edits(
     old_spec: SourceSpec,
     params: Sequence[ParamEdit] | None,
     block_id: str | None,
-) -> tuple[list[_Splice], tuple[tuple[str, object, object, bool], ...]]:
-    """パラメータ編集命令列 → (splice 列, E3 用の期待 ``params_spec``)。
+) -> tuple[list[_Splice], tuple[tuple[str, object, object, bool], ...], _RenamePlan | None]:
+    """パラメータ編集命令列 → (splice 列, E3 用の期待 ``params_spec``, rename 計画)。
 
     期待値は命令を順に適用した姿。検証 (P/N-USED) も命令適用後の状態に対して行う。
+    rename を含む場合は計画 (occurrence 集合) を返し、呼び出し側が書き換え後に
+    E4a / E4b (:func:`_verify_rename`) を必ず実行する。
     """
     if not params:
-        return [], old_spec.params_spec
+        return [], old_spec.params_spec, None
     editor = _SignatureEditor(source, func_def, block_id)
     expected: list[tuple[str, object, object, bool]] = list(old_spec.params_spec)
+    rename_plan: _RenamePlan | None = None
     for edit in params:
         if isinstance(edit, AddParam):
             if len(expected) >= MAX_PYTHON_FUNCTION_PARAMS:
@@ -823,21 +828,48 @@ def _plan_param_edits(
             editor.remove(edit.name)
             del expected[index]
         elif isinstance(edit, RenameParam):
-            # SPEC-0025 W4-E。スコープ解析 + E4a/E4b と一体で実装する (ADR-0075
-            # commit 2〜3)。それまでは保守的に拒否する
-            raise PythonFunctionRewriteError(
-                f"PythonFunction[{block_id}]: parameter rename is not supported yet.",
-                kind="unsupported",
-                reason="rewrite_rename_unsupported_construct",
+            # W4-E: 唯一の本体書き換え。呼び出し側 (rewrite_source) が「rename は
+            # 単独の編集」を保証済み (E4a を単純命題に保つ)
+            index = next((i for i, p in enumerate(expected) if p[0] == edit.old), None)
+            if index is None:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: no parameter named {edit.old!r}.",
+                    kind="unsupported",
+                    reason="rewrite_param_not_found",
+                    block_id=block_id,
+                )
+            if old_spec.n_states > 0 and edit.old == "x0":
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: `x0` binds the initial state and "
+                    f"cannot be renamed while states > 0.",
+                    kind="unsupported",
+                    reason="rewrite_param_name_conflict",
+                    block_id=block_id,
+                )
+            if edit.new == edit.old:
+                continue  # §3.4: from == to は完全 no-op (splice ゼロ)
+            occurrences = _plan_rename_occurrences(func_def, edit.old, block_id)
+            _validate_new_param_name(
+                edit.new,
+                spec_params=expected,
+                n_states=old_spec.n_states,
+                func_def=func_def,
+                tree=tree,
                 block_id=block_id,
             )
+            editor.splices.extend(
+                _rename_splices(source, occurrences, edit.old, edit.new, block_id)
+            )
+            entry = expected[index]
+            expected[index] = (edit.new, entry[1], entry[2], entry[3])
+            rename_plan = _RenamePlan(tuple(occurrences), edit.old, edit.new)
         else:  # 型上は到達しない (防御)
             raise PythonFunctionRewriteError(
                 f"PythonFunction[{block_id}]: unknown parameter edit {edit!r}.",
                 kind="unsupported",
                 block_id=block_id,
             )
-    return editor.splices, tuple(expected)
+    return editor.splices, tuple(expected), rename_plan
 
 
 # ---------------------------------------------------------------------------
@@ -1218,6 +1250,207 @@ def _plan_rename_occurrences(
 
 
 # ---------------------------------------------------------------------------
+# rename の splice と検証 E4a / E4b (SPEC-0025 §機能要件 4 / ADR-0075 §論点 2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _RenamePlan:
+    """計画済み rename: occurrence 集合 (``ast.Name`` / ``ast.arg``) と新旧名。"""
+
+    occurrences: tuple[ast.AST, ...]
+    old: str
+    new: str
+
+
+def _is_identifier_byte(b: bytes) -> bool:
+    """識別子構成バイトか (U8 の境界チェック)。非 ASCII (0x80 以上) も識別子に
+    なりうるため含める (対象名は ASCII 限定なので、隣接していたら別の識別子の一部)。
+    """
+    return len(b) == 1 and (b.isalnum() or b == b"_" or b[0] >= 0x80)
+
+
+def _rename_splices(
+    source: _SourceBytes,
+    occurrences: Sequence[ast.AST],
+    old: str,
+    new: str,
+    block_id: str | None,
+) -> list[_Splice]:
+    """occurrence ごとの識別子スパン置換 splice を作る。
+
+    置換スパンは ``[start, start + len(old))`` に限定する (``ast.arg`` の end は
+    注釈を含むため使わない。ADR-0075 V19)。U8: スパンのバイト列が旧名と一致し、
+    両隣が識別子構成バイトでないことを確認する (位置特定の失敗を最後に検出する
+    保険。外れたら実装バグの兆候として ERROR ログ + 拒否)。
+    """
+    old_bytes = old.encode("utf-8")
+    new_bytes = new.encode("utf-8")
+    splices: list[_Splice] = []
+    for node in occurrences:
+        start = source.offset(node.lineno, node.col_offset)  # type: ignore[attr-defined]
+        end = start + len(old_bytes)
+        before = source.data[start - 1 : start] if start > 0 else b""
+        after = source.data[end : end + 1]
+        if (
+            source.data[start:end] != old_bytes
+            or _is_identifier_byte(before)
+            or _is_identifier_byte(after)
+        ):
+            _logger.error(
+                "PythonFunction rename occurrence byte check (U8) failed for block %r: "
+                "%r at line %s col %s",
+                block_id,
+                old,
+                getattr(node, "lineno", None),
+                getattr(node, "col_offset", None),
+            )
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: cannot locate the identifier {old!r} at "
+                f"the planned position; the original code is unchanged.",
+                kind="unsupported",
+                reason="rewrite_rename_unsupported_construct",
+                lineno=getattr(node, "lineno", None),
+                block_id=block_id,
+            )
+        splices.append(_Splice(start, end, new_bytes))
+    return splices
+
+
+#: E4b で突合する ``Symbol`` の述語。その版に存在するものだけを ``getattr`` で使う。
+#: 版差 (3.12 の annotation scope / 3.13 の enum 化等) は**両辺に等しく現れる**ため、
+#: 比較ロジックは版を知らなくてよい (ADR-0075 V23)。
+_SYMBOL_FLAG_NAMES = (
+    "is_parameter",
+    "is_local",
+    "is_global",
+    "is_free",
+    "is_assigned",
+    "is_referenced",
+    "is_imported",
+    "is_declared_global",
+    "is_nonlocal",
+    "is_namespace",
+)
+
+
+def _symbol_flags(sym: symtable.Symbol) -> tuple[object, ...]:
+    flags: list[object] = []
+    for name in _SYMBOL_FLAG_NAMES:
+        fn = getattr(sym, name, None)
+        flags.append(bool(fn()) if callable(fn) else None)
+    return tuple(flags)
+
+
+def _assert_symtable_isomorphic(
+    old_table: symtable.SymbolTable,
+    new_table: symtable.SymbolTable,
+    plan: _RenamePlan,
+    old_code: str,
+    block_id: str | None,
+) -> None:
+    """E4b: 2 本のスコープ木を同時再帰し、束縛構造が rename の下で同型か検査する。"""
+
+    def fail(scope: symtable.SymbolTable, detail: str) -> None:
+        _logger.error(
+            "PythonFunction rename self-verification failed (E4b: binding structure) "
+            "for block %r renaming %r -> %r in scope %r: %s\n"
+            "--- original code (truncated) ---\n%s",
+            block_id,
+            plan.old,
+            plan.new,
+            scope.get_name(),
+            detail,
+            _code_for_log(old_code),
+        )
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: rename verification failed (binding structure "
+            f"changed); the original code is unchanged. This is a bug in the rename "
+            f"rules.",
+            kind="spec",
+            reason="rewrite_verify_rename_mismatch",
+            block_id=block_id,
+        )
+
+    def recurse(a: symtable.SymbolTable, b: symtable.SymbolTable) -> None:
+        if a.get_type() != b.get_type():
+            fail(a, f"scope type {a.get_type()!r} != {b.get_type()!r}")
+        a_name = plan.new if a.get_name() == plan.old else a.get_name()
+        if a_name != b.get_name():
+            fail(a, f"scope name {a.get_name()!r} != {b.get_name()!r}")
+        old_names = {s.get_name() for s in a.get_symbols()}
+        new_names = {s.get_name() for s in b.get_symbols()}
+        removed = old_names - new_names
+        added = new_names - old_names
+        if removed - {plan.old} or added - {plan.new} or len(removed) != len(added):
+            fail(a, f"symbol set diff removed={sorted(removed)} added={sorted(added)}")
+        for name in old_names & new_names:
+            if _symbol_flags(a.lookup(name)) != _symbol_flags(b.lookup(name)):
+                fail(a, f"flags changed for unrelated symbol {name!r}")
+        if removed and _symbol_flags(a.lookup(plan.old)) != _symbol_flags(b.lookup(plan.new)):
+            fail(a, f"flags changed across rename {plan.old!r} -> {plan.new!r}")
+        children_a = a.get_children()
+        children_b = b.get_children()
+        if len(children_a) != len(children_b):
+            fail(a, "child scope count changed")
+        for child_a, child_b in zip(children_a, children_b, strict=True):
+            recurse(child_a, child_b)
+
+    recurse(old_table, new_table)
+
+
+def _verify_rename(
+    old_tree: ast.Module,
+    plan: _RenamePlan,
+    old_code: str,
+    new_code: str,
+    block_id: str | None,
+) -> None:
+    """E4a (splice 忠実性) + E4b (束縛構造の同型性)。W4-E を許す唯一の正当化。
+
+    * **E4a**: 旧木に「計画した識別子変更**だけ**」を施し、``ast.dump`` (正準表現)
+      が新ソースの木と**完全一致**すること。文字列 / 属性名 / 呼び出しキーワード名 /
+      shadow された変数を 1 つでも巻き込めばここで落ちる。位置属性は比較しない
+      (最小 diff は splice エンジンが構造的に保証する別の性質)
+    * **E4b**: 旧 / 新コードの ``symtable`` を同時再帰し、束縛構造が rename の下で
+      同型であること。**planner を一切参照しない独立オラクル** — planner のスコープ
+      誤判定は計画と実差分が同じ誤りを含むため E4a を通過するが、こちらが捕まえる。
+      ``symtable`` はコードを実行しない (W1 維持、ADR-0075 V22)
+
+    検査しないこと (誠実な残余): 内側スコープの独立したローカル変数を一貫して丸ごと
+    改名するケースは両検査を通る (振る舞いは不変。防御は planner の S3 とそのテスト)。
+    """
+    for node in plan.occurrences:
+        if isinstance(node, ast.Name):
+            node.id = plan.new
+        elif isinstance(node, ast.arg):
+            node.arg = plan.new
+    expected_dump = ast.dump(old_tree)
+    actual_dump = ast.dump(ast.parse(new_code))
+    if expected_dump != actual_dump:
+        _logger.error(
+            "PythonFunction rename self-verification failed (E4a: AST diff beyond the "
+            "plan) for block %r renaming %r -> %r\n--- original code (truncated) ---\n%s",
+            block_id,
+            plan.old,
+            plan.new,
+            _code_for_log(old_code),
+        )
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: rename verification failed (the rewritten "
+            f"source differs from the plan); the original code is unchanged. This is a "
+            f"bug in the rename rules.",
+            kind="spec",
+            reason="rewrite_verify_rename_mismatch",
+            block_id=block_id,
+        )
+    filename = source_filename(block_id)
+    old_st = symtable.symtable(old_code, filename, "exec")
+    new_st = symtable.symtable(new_code, filename, "exec")
+    _assert_symtable_isomorphic(old_st, new_st, plan, old_code, block_id)
+
+
+# ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
 
@@ -1262,6 +1495,24 @@ def rewrite_source(
     """
     old_spec = analyze_source(code, block_id=block_id)
 
+    if params is not None and any(isinstance(e, RenameParam) for e in params):
+        # ADR-0075 §論点 2-D: rename は**単独の編集**でなければならない (E4a の証明を
+        # 「計画した識別子変更だけ」という単純命題に保つ)。UI / REST は 1 request
+        # 1 op なので実害はない
+        if (
+            len(params) != 1
+            or inputs is not None
+            or outputs is not None
+            or input_names is not None
+            or output_names is not None
+        ):
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{block_id}]: a parameter rename must be the only edit "
+                f"in a request.",
+                kind="unsupported",
+                block_id=block_id,
+            )
+
     target_inputs = _validated_count(inputs, "inputs", old_spec, block_id)
     target_outputs = _validated_count(outputs, "outputs", old_spec, block_id)
     final_inputs = target_inputs if target_inputs is not None else old_spec.n_inputs
@@ -1280,7 +1531,7 @@ def rewrite_source(
     deco = next(d for d in func_def.decorator_list if _is_block_decorator(d))
     editor = _DecoratorEditor(source, deco)
 
-    param_splices, expected_params = _plan_param_edits(
+    param_splices, expected_params, rename_plan = _plan_param_edits(
         source, tree, func_def, old_spec, params, block_id
     )
     splices: list[_Splice] = list(param_splices)
@@ -1382,6 +1633,10 @@ def rewrite_source(
             reason="rewrite_verify_mismatch",
             block_id=block_id,
         )
+    if rename_plan is not None:
+        # W4-E の検証 (E4a + E4b)。E1〜E3 (構造) が通っていても、本体の書き換えが
+        # 計画どおりか / 束縛構造が同型かはここでしか確認できない
+        _verify_rename(tree, rename_plan, code, new_code, block_id)
     return new_code
 
 

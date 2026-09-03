@@ -622,10 +622,18 @@ class TestParamMisc:
     def test_empty_param_list_is_noop(self) -> None:
         assert _rw(SCALAR_IN, params=[]) == SCALAR_IN
 
-    def test_rename_not_supported_yet(self) -> None:
-        # commit 2〜3 (スコープ解析 + E4a/E4b) で置き換える一時挙動
-        with pytest.raises(PythonFunctionRewriteError, match="rename"):
-            _rw(KW1, params=[RenameParam(old="kp", new="gain")])
+    def test_rename_must_be_sole_edit(self) -> None:
+        # ADR-0075 §論点 2-D: E4a の証明を単純命題に保つため、rename × 他編集は拒否
+        with pytest.raises(PythonFunctionRewriteError, match="only edit"):
+            _rw(KW1, inputs=2, params=[RenameParam(old="kp", new="gain")])
+        with pytest.raises(PythonFunctionRewriteError, match="only edit"):
+            _rw(
+                KW1,
+                params=[
+                    RenameParam(old="kp", new="gain"),
+                    AddParam(name="q", type="int", default=1),
+                ],
+            )
 
     def test_every_ast_node_type_is_classified(self) -> None:
         """規則 G の網羅性 guard: 新しい Python 版で AST ノードが増えたら CI で赤くする
@@ -752,3 +760,192 @@ class TestRenameRejections:
     def test_global_of_other_name_allowed(self) -> None:
         occ = _occurrences("global other\nreturn kp")
         assert len(occ) == 1 + 1
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0025 / ADR-0075: rename の splice と E4a / E4b
+# ---------------------------------------------------------------------------
+
+
+class TestParamRename:
+    def test_basic_rename_signature_and_body(self) -> None:
+        new = _rw(KW1, params=[RenameParam(old="kp", new="gain")])
+        assert "*, gain: float = 1.0" in new
+        assert "return u * gain" in new
+        assert "kp" not in new
+        s = _spec(new)
+        assert s.params_spec == (("gain", 1.0, float, False),)
+
+    def test_rename_preserves_default_type_required_and_order(self) -> None:
+        new = _rw(KW3, params=[RenameParam(old="b", new="count")])
+        assert [p[0] for p in _spec(new).params_spec] == ["a", "count", "c"]
+        assert _spec(new).params_spec[1] == ("count", 2, int, False)
+
+    def test_rename_closure_reference(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+            "    def inner():\n"
+            "        return kp * 2\n"
+            "    return inner() + u\n"
+        )
+        new = _rw(code, params=[RenameParam(old="kp", new="gain")])
+        assert "return gain * 2" in new
+
+    def test_rename_leaves_shadowed_strings_attributes_kwargs(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+            '    label = "kp stays"  # kp in comment stays\n'
+            "    g = lambda kp: kp + 1\n"
+            "    d = dict(kp=1)\n"
+            "    return u * kp + g(t) + d.get('kp', 0)\n"
+        )
+        new = _rw(code, params=[RenameParam(old="kp", new="gain")])
+        assert '"kp stays"' in new
+        assert "# kp in comment stays" in new
+        assert "lambda kp: kp + 1" in new
+        assert "dict(kp=1)" in new
+        assert "d.get('kp', 0)" in new
+        assert "return u * gain" in new
+        assert "*, gain: float = 1.0" in new
+
+    def test_rename_minimal_diff_japanese_and_crlf(self) -> None:
+        code = (
+            "@block\r\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\r\n"
+            "    # 日本語の説明 ★\r\n"
+            "    return u * kp\r\n"
+        )
+        new = _rw(code, params=[RenameParam(old="kp", new="gain")])
+        assert "# 日本語の説明 ★" in new
+        assert "\r\n" in new
+        assert "return u * gain" in new
+
+    def test_rename_noop_when_same_name(self) -> None:
+        assert _rw(KW1, params=[RenameParam(old="kp", new="kp")]) == KW1
+
+    def test_rename_missing_param_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="no parameter named"):
+            _rw(KW1, params=[RenameParam(old="nope", new="gain")])
+
+    def test_rename_x0_rejected_when_stateful(self) -> None:
+        code = (
+            "@block(states=1)\n"
+            "def f(t: float, x: np.ndarray, u: float, *, x0: float = 0.0) "
+            "-> tuple[float, np.ndarray]:\n"
+            "    return x[0], np.array([u])\n"
+        )
+        with pytest.raises(PythonFunctionRewriteError, match="x0"):
+            _rw(code, params=[RenameParam(old="x0", new="init")])
+
+    def test_rename_capture_rejected_by_n_used(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+            "    gain = 2.0\n"
+            "    return u * kp * gain\n"
+        )
+        with pytest.raises(PythonFunctionRewriteError, match="already used"):
+            _rw(code, params=[RenameParam(old="kp", new="gain")])
+
+
+class TestRenameSelfVerification:
+    """E4a / E4b: planner を壊しても壊れたコードは決して返らない (ADR-0075 §論点 2)。"""
+
+    def test_e4a_detects_extra_change_beyond_plan(self, monkeypatch) -> None:
+        """splice が計画外のバイト (文字列リテラル) まで書き換えたら E4a が落とす。"""
+        import flode.blocks.pythonfunc_rewrite as rw
+
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+            '    label = "kp"\n'
+            "    return u * kp\n"
+        )
+        original = rw._rename_splices
+
+        def broken(source, occurrences, old, new, block_id):
+            splices = original(source, occurrences, old, new, block_id)
+            # 文字列リテラル "kp" の中身も書き換える (構文は壊れない = E1〜E3 は通る)
+            pos = source.data.find(b'"kp"') + 1
+            splices.append(rw._Splice(pos, pos + 2, b"xx"))
+            return splices
+
+        monkeypatch.setattr(rw, "_rename_splices", broken)
+        with pytest.raises(PythonFunctionRewriteError, match="differs from the plan") as ei:
+            _rw(code, params=[RenameParam(old="kp", new="gain")])
+        assert ei.value.kind == "spec"
+        assert ei.value.reason == "rewrite_verify_rename_mismatch"
+
+    def test_e4b_detects_missed_closure_occurrence(self, monkeypatch) -> None:
+        """planner が閉包参照を取りこぼす = 計画と実差分が同じ誤りを含み E4a は通る。
+        E4b (symtable 同型性) だけがこれを捕まえる。"""
+        import flode.blocks.pythonfunc_rewrite as rw
+
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+            "    def inner():\n"
+            "        return kp * 2\n"
+            "    return inner() + u\n"
+        )
+        original = rw._plan_rename_occurrences
+
+        def forgetful(func_def, old, block_id):
+            occurrences = original(func_def, old, block_id)
+            # 閉包 (入れ子スコープ内) の Name を 1 つ落とす
+            kept = [n for n in occurrences if not (isinstance(n, ast.Name) and n.lineno >= 4)]
+            assert len(kept) < len(occurrences)
+            return kept
+
+        monkeypatch.setattr(rw, "_plan_rename_occurrences", forgetful)
+        with pytest.raises(PythonFunctionRewriteError, match="binding structure") as ei:
+            _rw(code, params=[RenameParam(old="kp", new="gain")])
+        assert ei.value.kind == "spec"
+        assert ei.value.reason == "rewrite_verify_rename_mismatch"
+
+
+class TestRenameGuardAssumptions:
+    """ADR-0075 §Confidence の未検証事項を固定する guard (G1 / G3)。"""
+
+    GUARD_SRC = (
+        "@block\n"
+        "def f(t: float, u: float, *, kp: float = 1.0) -> float:\n"
+        "    g1 = lambda a: a + kp\n"
+        "    g2 = lambda b: b - kp\n"
+        "    def inner():\n"
+        "        return kp\n"
+        "    vals = [kp * x for x in [u]]\n"
+        "    return g1(u) + g2(u) + inner() + vals[0]\n"
+    )
+
+    def test_g1_symtable_children_order_deterministic(self) -> None:
+        import symtable
+
+        def flatten(table):
+            out = [(str(table.get_type()), table.get_name(), table.get_lineno())]
+            for child in table.get_children():
+                out.extend(flatten(child))
+            return out
+
+        t1 = symtable.symtable(self.GUARD_SRC, "<g1>", "exec")
+        t2 = symtable.symtable(self.GUARD_SRC, "<g1>", "exec")
+        assert flatten(t1) == flatten(t2)
+        # rename 前後でもスコープ列 (type, name, lineno) が一致すること
+        renamed = self.GUARD_SRC.replace("kp", "gain")
+        t3 = symtable.symtable(renamed, "<g1>", "exec")
+        assert [(t, n) for t, n, _ in flatten(t1)] == [(t, n) for t, n, _ in flatten(t3)]
+
+    def test_g3_ast_dump_deterministic(self) -> None:
+        tree = ast.parse(self.GUARD_SRC)
+        assert ast.dump(tree) == ast.dump(ast.parse(self.GUARD_SRC))
+
+    def test_rename_via_engine_on_guard_source(self) -> None:
+        # 2 つの lambda (同名スコープ) + 入れ子 def + comprehension の複合形で
+        # E4b の同時再帰が偽陽性を出さないこと
+        new = _rw(self.GUARD_SRC, params=[RenameParam(old="kp", new="gain")])
+        assert "lambda a: a + gain" in new
+        assert "lambda b: b - gain" in new
+        assert "return gain" in new
+        assert "[gain * x for x in [u]]" in new
