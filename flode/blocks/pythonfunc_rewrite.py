@@ -841,6 +841,383 @@ def _plan_param_edits(
 
 
 # ---------------------------------------------------------------------------
+# rename のスコープ解析 (SPEC-0025 W4-E / ADR-0075 §論点 1・4)
+# ---------------------------------------------------------------------------
+
+#: 規則 G (fail-closed allowlist): rename の planner が走査してよい AST ノード型。
+#: ここに**無い**ノード型に出会ったら rename 全体を拒否する。新しい Python 版で
+#: ノードが増えたら ``test_every_ast_node_type_is_classified`` が CI で赤くなり、
+#: 「分類してから対応する」ことを強制する (ADR-0075 V24)。クラスではなく名前文字列で
+#: 持つのは、版によって存在しないクラスがあるため。
+_RENAME_ALLOWED_NODE_NAMES = frozenset(
+    {
+        # 文
+        "FunctionDef",
+        "AsyncFunctionDef",
+        "Return",
+        "Delete",
+        "Assign",
+        "AugAssign",
+        "AnnAssign",
+        "For",
+        "AsyncFor",
+        "While",
+        "If",
+        "With",
+        "AsyncWith",
+        "Raise",
+        "Try",
+        "TryStar",
+        "Assert",
+        "Import",
+        "ImportFrom",
+        "Global",
+        "Nonlocal",
+        "Expr",
+        "Pass",
+        "Break",
+        "Continue",
+        "Match",
+        # 式
+        "BoolOp",
+        "NamedExpr",
+        "BinOp",
+        "UnaryOp",
+        "Lambda",
+        "IfExp",
+        "Dict",
+        "Set",
+        "ListComp",
+        "SetComp",
+        "DictComp",
+        "GeneratorExp",
+        "Await",
+        "Yield",
+        "YieldFrom",
+        "Compare",
+        "Call",
+        "FormattedValue",
+        "JoinedStr",
+        "Constant",
+        "Attribute",
+        "Subscript",
+        "Starred",
+        "Name",
+        "List",
+        "Tuple",
+        "Slice",
+        # 補助ノード
+        "comprehension",
+        "arguments",
+        "arg",
+        "keyword",
+        "alias",
+        "withitem",
+        "ExceptHandler",
+        "match_case",
+        "MatchValue",
+        "MatchSingleton",
+        "MatchSequence",
+        "MatchMapping",
+        "MatchClass",
+        "MatchStar",
+        "MatchAs",
+        "MatchOr",
+        # 演算子 / context (identifier を持たない葉)
+        "And",
+        "Or",
+        "Add",
+        "Sub",
+        "Mult",
+        "MatMult",
+        "Div",
+        "Mod",
+        "Pow",
+        "LShift",
+        "RShift",
+        "BitOr",
+        "BitXor",
+        "BitAnd",
+        "FloorDiv",
+        "Invert",
+        "Not",
+        "UAdd",
+        "USub",
+        "Eq",
+        "NotEq",
+        "Lt",
+        "LtE",
+        "Gt",
+        "GtE",
+        "Is",
+        "IsNot",
+        "In",
+        "NotIn",
+        "Load",
+        "Store",
+        "Del",
+    }
+)
+
+#: 出会ったら**無条件で** rename を拒否するノード型。``ClassDef`` は U7 (class
+#: スコープの名前解決規則は関数と違う)。PEP 695 (3.12+) の type parameter 構文と
+#: t-string (3.14+) は規則 G-b / G-c (規則を持たないので保守的に拒否)。
+_RENAME_DENIED_NODE_NAMES = frozenset(
+    {
+        "ClassDef",
+        "TypeAlias",
+        "TypeVar",
+        "ParamSpec",
+        "TypeVarTuple",
+        "TemplateStr",
+        "Interpolation",
+    }
+)
+
+#: 分類ガードの対象外: 抽象基底 / module 専用 / ``ast.parse`` が生成しない
+#: 非推奨エイリアス。関数内の走査に現れることは無い。
+_RENAME_IGNORED_NODE_NAMES = frozenset(
+    {
+        "AST",
+        "mod",
+        "stmt",
+        "expr",
+        "expr_context",
+        "boolop",
+        "operator",
+        "unaryop",
+        "cmpop",
+        "excepthandler",
+        "pattern",
+        "type_param",
+        "type_ignore",
+        "Module",
+        "Interactive",
+        "Expression",
+        "FunctionType",
+        "TypeIgnore",
+        "Num",
+        "Str",
+        "Bytes",
+        "NameConstant",
+        "Ellipsis",
+        "Index",
+        "ExtSlice",
+        "AugLoad",
+        "AugStore",
+        "Param",
+        "Suite",
+        "slice",
+    }
+)
+
+#: U6: 名前による動的アクセス。これらが関数内で参照されていたら rename の意味が
+#: 静的に追えないため拒否する。
+_DYNAMIC_ACCESS_NAMES = frozenset({"locals", "globals", "vars", "eval", "exec"})
+
+
+def _reject_rename(message: str, node: ast.AST | None, block_id: str | None) -> None:
+    raise PythonFunctionRewriteError(
+        f"PythonFunction[{block_id}]: cannot rename the parameter from the UI: "
+        f"{message}. Edit the code directly.",
+        kind="unsupported",
+        reason="rewrite_rename_unsupported_construct",
+        lineno=getattr(node, "lineno", None),
+        block_id=block_id,
+    )
+
+
+def _guard_rename_constructs(func_def: ast.FunctionDef, target: str, block_id: str | None) -> None:
+    """規則 G + U1〜U7 + G-a: rename を拒否すべき構文を関数全体から検出する。
+
+    U8 (occurrence のバイト列照合) は splice 側 (:func:`_rename_splices`) で行う。
+    """
+    for node in ast.walk(func_def):
+        type_name = type(node).__name__
+        if type_name in _RENAME_DENIED_NODE_NAMES:
+            _reject_rename(f"the function contains a `{type_name}` construct", node, block_id)
+        if type_name not in _RENAME_ALLOWED_NODE_NAMES:
+            # 規則 G: 未分類ノード = 新しい / 未知の構文。fail closed
+            _reject_rename(f"unrecognised syntax node `{type_name}`", node, block_id)
+        if isinstance(node, ast.Global | ast.Nonlocal):
+            if target in node.names:  # U1
+                _reject_rename(f"`{target}` appears in a global/nonlocal statement", node, block_id)
+        elif isinstance(node, ast.alias):
+            if (node.asname or node.name).split(".")[0] == target:  # U2
+                _reject_rename(f"an import binds the name `{target}`", node, block_id)
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name == target:  # U3
+                _reject_rename(f"`except ... as {target}` binds the name", node, block_id)
+        elif isinstance(node, ast.MatchAs | ast.MatchStar):
+            if node.name == target:  # U4
+                _reject_rename(f"a match pattern captures `{target}`", node, block_id)
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest == target:  # U4
+                _reject_rename(f"a match pattern captures `{target}`", node, block_id)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            if node is not func_def and node.name == target:  # G-a
+                _reject_rename(f"a nested function is named `{target}`", node, block_id)
+        elif isinstance(node, ast.JoinedStr):
+            # U5: f-string 内ノードの位置情報は 3.11 で不正確 (PEP 701 は 3.12+)。
+            # 版依存挙動を作らないため、対象名を参照する f-string は一律拒否
+            if any(isinstance(n, ast.Name) and n.id == target for n in ast.walk(node)):
+                _reject_rename(f"an f-string references `{target}`", node, block_id)
+        elif isinstance(node, ast.Name):
+            if node.id in _DYNAMIC_ACCESS_NAMES:  # U6
+                _reject_rename(
+                    f"the function uses `{node.id}` (dynamic name access)", node, block_id
+                )
+
+
+class _ScopeAnalyzer:
+    """rename 対象を指す ``ast.Name`` を S1〜S10 で列挙する (ADR-0075 §論点 1)。
+
+    規則の根拠 (言語リファレンス / PEP):
+
+    * S3/S4 (shadowing / 閉包): 入れ子スコープが対象名を**束縛しない**ときだけ、
+      その中の参照は囲むスコープ (= パラメータ) を指す
+    * S5: 入れ子 def / lambda の default 式・デコレータ・注釈は**定義時に囲む
+      スコープで評価**される
+    * S6: comprehension の**最外の iter だけ**は囲むスコープで評価される
+    * S8 (PEP 572): comprehension 内の walrus は**囲むスコープに束縛**する
+
+    誤りは E4b (`symtable` 同型性検査) が捕まえるため、壊れたコードが返ることは
+    ない (「編集できない」形で表面化する。ADR-0075 §Consequences)。
+    """
+
+    def __init__(self, target: str) -> None:
+        self._target = target
+        self.occurrences: list[ast.Name] = []
+
+    # --- 束縛判定 -----------------------------------------------------------
+
+    def _function_binds(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> bool:
+        """入れ子の関数スコープが対象名を束縛するか (S3 の判定)。"""
+        a = node.args
+        all_args = [*a.posonlyargs, *a.args, *a.kwonlyargs]
+        if a.vararg is not None:
+            all_args.append(a.vararg)
+        if a.kwarg is not None:
+            all_args.append(a.kwarg)
+        if any(arg.arg == self._target for arg in all_args):
+            return True
+        body: list[ast.AST] = list(node.body) if isinstance(node.body, list) else [node.body]
+        return any(self._binds_in_block(n) for n in body)
+
+    def _binds_in_block(self, node: ast.AST) -> bool:
+        """このスコープ内で対象名が束縛されるか。入れ子スコープの内側には入らない
+        (ただし comprehension 内の walrus は PEP 572 によりこのスコープに束縛される)。
+
+        walrus をさらに内側の lambda が持つ形も「束縛あり」と過剰判定しうるが、
+        その場合は該当参照が rename されず E4b が拒否する = 安全側 (壊れない)。
+        """
+        if isinstance(node, ast.Name):
+            return isinstance(node.ctx, ast.Store | ast.Del) and node.id == self._target
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            return False
+        if isinstance(node, ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
+            return any(
+                isinstance(n, ast.NamedExpr)
+                and isinstance(n.target, ast.Name)
+                and n.target.id == self._target
+                for n in ast.walk(node)
+            )
+        return any(self._binds_in_block(c) for c in ast.iter_child_nodes(node))
+
+    # --- occurrence 収集 -----------------------------------------------------
+
+    def visit_in_scope(self, node: ast.AST, *, active: bool) -> None:
+        """``active`` = この位置の ``Name(target)`` が対象パラメータを指すか。"""
+        if isinstance(node, ast.Name):
+            if active and node.id == self._target:
+                self.occurrences.append(node)
+            return
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            # S5: デコレータ / 注釈 / default は囲むスコープで評価される
+            for deco in node.decorator_list:
+                self.visit_in_scope(deco, active=active)
+            a = node.args
+            annotated = [*a.posonlyargs, *a.args, *a.kwonlyargs]
+            if a.vararg is not None:
+                annotated.append(a.vararg)
+            if a.kwarg is not None:
+                annotated.append(a.kwarg)
+            for arg in annotated:
+                if arg.annotation is not None:
+                    self.visit_in_scope(arg.annotation, active=active)
+            if node.returns is not None:
+                self.visit_in_scope(node.returns, active=active)
+            for default in [*a.defaults, *[d for d in a.kw_defaults if d is not None]]:
+                self.visit_in_scope(default, active=active)
+            inner_active = active and not self._function_binds(node)  # S3 / S4
+            for stmt in node.body:
+                self.visit_in_scope(stmt, active=inner_active)
+            return
+        if isinstance(node, ast.Lambda):
+            a = node.args
+            for default in [*a.defaults, *[d for d in a.kw_defaults if d is not None]]:
+                self.visit_in_scope(default, active=active)  # S5
+            inner_active = active and not self._function_binds(node)
+            self.visit_in_scope(node.body, active=inner_active)
+            return
+        if isinstance(node, ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
+            self._visit_comprehension(node, active=active)
+            return
+        for child in ast.iter_child_nodes(node):
+            self.visit_in_scope(child, active=active)
+
+    def _visit_comprehension(
+        self,
+        node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        *,
+        active: bool,
+    ) -> None:
+        gens = node.generators
+        # S6: 最外の iter だけは囲むスコープで評価される
+        self.visit_in_scope(gens[0].iter, active=active)
+        # comp スコープが対象名を束縛するか = いずれかの for ターゲットに現れるか。
+        # (walrus で comp の iteration 変数を再束縛する形は SyntaxError なので考えない)
+        comp_binds = any(
+            isinstance(n, ast.Name) and n.id == self._target
+            for g in gens
+            for n in ast.walk(g.target)
+        )
+        inner_active = active and not comp_binds  # S7
+        for i, gen in enumerate(gens):
+            if i > 0:
+                self.visit_in_scope(gen.iter, active=inner_active)
+            self.visit_in_scope(gen.target, active=inner_active)
+            for cond in gen.ifs:
+                self.visit_in_scope(cond, active=inner_active)
+        if isinstance(node, ast.DictComp):
+            self.visit_in_scope(node.key, active=inner_active)
+            self.visit_in_scope(node.value, active=inner_active)
+        else:
+            self.visit_in_scope(node.elt, active=inner_active)
+
+
+def _plan_rename_occurrences(
+    func_def: ast.FunctionDef, old: str, block_id: str | None
+) -> list[ast.Name | ast.arg]:
+    """対象パラメータを指す occurrence (シグネチャの ``arg`` 1 個 + 本体の ``Name``)
+    を返す。規則 G / U1〜U7 に触れる構文があれば例外 (SPEC-0025 §機能要件 3)。
+    """
+    _guard_rename_constructs(func_def, old, block_id)
+    target_arg = next((a for a in func_def.args.kwonlyargs if a.arg == old), None)
+    if target_arg is None:
+        raise PythonFunctionRewriteError(
+            f"PythonFunction[{block_id}]: no keyword-only parameter named {old!r}.",
+            kind="unsupported",
+            reason="rewrite_param_not_found",
+            block_id=block_id,
+        )
+    analyzer = _ScopeAnalyzer(old)
+    for stmt in func_def.body:
+        analyzer.visit_in_scope(stmt, active=True)
+    return [target_arg, *analyzer.occurrences]
+
+
+# ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
 

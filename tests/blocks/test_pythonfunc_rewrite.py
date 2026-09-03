@@ -627,6 +627,23 @@ class TestParamMisc:
         with pytest.raises(PythonFunctionRewriteError, match="rename"):
             _rw(KW1, params=[RenameParam(old="kp", new="gain")])
 
+    def test_every_ast_node_type_is_classified(self) -> None:
+        """規則 G の網羅性 guard: 新しい Python 版で AST ノードが増えたら CI で赤くする
+        (ADR-0075 V24)。拒否側 (_RENAME_DENIED_NODE_NAMES) に分類するだけでも緑に戻せる。
+        """
+        import flode.blocks.pythonfunc_rewrite as rw
+
+        all_nodes = {
+            v.__name__ for v in vars(ast).values() if isinstance(v, type) and issubclass(v, ast.AST)
+        }
+        classified = (
+            rw._RENAME_ALLOWED_NODE_NAMES
+            | rw._RENAME_DENIED_NODE_NAMES
+            | rw._RENAME_IGNORED_NODE_NAMES
+        )
+        missing = all_nodes - classified
+        assert not missing, f"classify these AST nodes for rename (rule G): {sorted(missing)}"
+
     def test_minimal_diff_japanese_comment_preserved(self) -> None:
         code = (
             "@block\n"
@@ -638,3 +655,100 @@ class TestParamMisc:
         assert "# 日本語コメント" in new
         assert "# 本体の説明 ★" in new
         assert new.endswith("    return u\n")
+
+
+# ---------------------------------------------------------------------------
+# SPEC-0025 / ADR-0075: rename のスコープ解析 (S1〜S10、規則 G / U1〜U8)
+# ---------------------------------------------------------------------------
+
+
+def _kp_func(body: str) -> ast.FunctionDef:
+    indented = "\n".join("    " + line if line else "" for line in body.splitlines())
+    code = f"@block\ndef f(t: float, u: float, *, kp: float = 1.0) -> float:\n{indented}\n"
+    tree = ast.parse(code)
+    return next(n for n in tree.body if isinstance(n, ast.FunctionDef))
+
+
+def _occurrences(body: str, name: str = "kp"):
+    import flode.blocks.pythonfunc_rewrite as rw
+
+    return rw._plan_rename_occurrences(_kp_func(body), name, "pf")
+
+
+class TestRenameScopeRules:
+    """occurrence 数 = シグネチャの `arg` 1 個 + 本体で対象を指す `Name` の数。"""
+
+    def test_s1_load_store_del_all_counted(self) -> None:
+        occ = _occurrences("kp = kp + u\ndel kp\nreturn t")
+        assert len(occ) == 1 + 3  # arg + (Store, Load, Del)
+
+    def test_s2_for_and_with_targets(self) -> None:
+        occ = _occurrences("for kp in [u]:\n    pass\nreturn kp")
+        assert len(occ) == 1 + 2
+
+    def test_s3_lambda_shadow_untouched(self) -> None:
+        occ = _occurrences("g = lambda kp: kp + 1\nreturn g(u)")
+        assert len(occ) == 1  # arg のみ (lambda 内は shadow)
+
+    def test_s3_inner_def_shadow_untouched(self) -> None:
+        occ = _occurrences("def inner():\n    kp = 2.0\n    return kp\nreturn inner()")
+        assert len(occ) == 1
+
+    def test_s4_closure_counted(self) -> None:
+        occ = _occurrences("def inner():\n    return kp * 2\nreturn inner()")
+        assert len(occ) == 1 + 1
+
+    def test_s5_inner_default_evaluated_in_outer_scope(self) -> None:
+        # `def inner(kp=kp)` の default の kp は F のパラメータ。本体の kp は shadow
+        occ = _occurrences("def inner(kp=kp):\n    return kp\nreturn inner()")
+        assert len(occ) == 1 + 1
+
+    def test_s6_only_outermost_iter_counted(self) -> None:
+        occ = _occurrences("vals = [kp for kp in kp]\nreturn float(len(vals))")
+        assert len(occ) == 1 + 1  # 最外 iter の kp だけ
+
+    def test_s7_second_iter_in_comp_scope(self) -> None:
+        occ = _occurrences("vals = [y for kp in [u] for y in [kp]]\nreturn float(len(vals))")
+        assert len(occ) == 1  # comp が kp を束縛 → 2 番目の iter は shadow
+
+    def test_s8_comprehension_walrus_binds_outer(self) -> None:
+        occ = _occurrences("vals = [(kp := float(x)) for x in [u]]\nreturn kp")
+        assert len(occ) == 1 + 2  # walrus target + return の Load
+
+    def test_comp_without_binding_counts_references(self) -> None:
+        occ = _occurrences("vals = [kp * x for x in [u]]\nreturn vals[0]")
+        assert len(occ) == 1 + 1
+
+    def test_missing_param_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="no keyword-only"):
+            _occurrences("return u", name="nope")
+
+
+class TestRenameRejections:
+    @pytest.mark.parametrize(
+        ("label", "body"),
+        [
+            ("u1_global", "global kp\nreturn u"),
+            ("u1_nonlocal_inner", "def inner():\n    nonlocal kp\nreturn u"),
+            ("u2_import", "import os as kp\nreturn u"),
+            ("u3_except_as", "try:\n    pass\nexcept ValueError as kp:\n    pass\nreturn u"),
+            ("u4_match_capture", "match u:\n    case kp:\n        pass\nreturn kp"),
+            ("u5_fstring", 'msg = f"{kp}"\nreturn u'),
+            ("u6_locals", "d = locals()\nreturn kp"),
+            ("u6_eval", 'v = eval("kp")\nreturn u'),
+            ("u7_classdef", "class C:\n    pass\nreturn kp"),
+            ("g_a_nested_def_named_target", "def kp():\n    return 1.0\nreturn u"),
+        ],
+    )
+    def test_rejected_constructs(self, label: str, body: str) -> None:
+        with pytest.raises(PythonFunctionRewriteError) as ei:
+            _occurrences(body)
+        assert ei.value.kind == "unsupported"
+
+    def test_fstring_without_target_allowed(self) -> None:
+        occ = _occurrences('msg = f"{u}"\nreturn kp')
+        assert len(occ) == 1 + 1
+
+    def test_global_of_other_name_allowed(self) -> None:
+        occ = _occurrences("global other\nreturn kp")
+        assert len(occ) == 1 + 1
