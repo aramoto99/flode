@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.1] - 2026-09-04 — Cast の面表示を変換後の型名に
+
+### Changed
+
+- キャンバス上の `Cast` ブロックの面表示を、固定テキスト `cast` から
+  **変換後の型名** (`float` / `int` / `bool`) に変更。パレットのアイコンは
+  `cast` のまま (パレット = ブロックの正体、面 = 現在の設定)
+
 ## [0.53.0] - 2026-09-04 — Cast ブロックと Constant の出力型指定
 
 ### Added

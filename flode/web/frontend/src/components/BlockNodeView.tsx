@@ -783,6 +783,17 @@ function ShapeContent({
       </div>
     );
   }
+  // SPEC-0026 変更履歴 (3): Cast の面表示は**変換後の型名** (ユーザー要望 2026-09-04 で
+  // 固定テキスト `cast` から変更)。パレット glyph は `cast` のまま (ブロックの正体)。
+  if (typePath.endsWith(".Cast")) {
+    const ot = (paramsRaw as Record<string, unknown>).output_type;
+    const label = ot === "int" || ot === "bool" || ot === "float" ? String(ot) : "float";
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
+        <span>{label}</span>
+      </div>
+    );
+  }
   if (typePath.endsWith(".Integrator")) {
     return <TransferFunctionFraction num="1" den="s" />;
   }
