@@ -7,28 +7,44 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
+from .cast import OUTPUT_TYPES, apply_value_semantics
 
 
 class Constant(Block):
     """定数値ソース ``y(t) = value``。
 
     Args:
-        value: 出力する定数値。
+        value: 出力する定数値。**生値のまま保持**され、``output_type`` の変換は
+            出力時に適用される (型を ``"float"`` に戻すと元の値が復活する。
+            SPEC-0026 §確定事項 7)。
+        output_type: 出力の型意味論 (SPEC-0026)。``"float"`` (既定、恒等 = 現行挙動) /
+            ``"int"`` (最近接偶数丸め) / ``"bool"`` (``value != 0`` で 0/1)。
+
+    Raises:
+        BlockSpecError: ``output_type`` が許可値の外。
     """
+
+    _param_enums = {"output_type": OUTPUT_TYPES}
 
     def __init__(
         self,
         value: float = 1.0,
+        output_type: str = "float",
         *,
         id: str | None = None,
         name: str | None = None,
     ):
+        if output_type not in OUTPUT_TYPES:
+            raise BlockSpecError(
+                f"Constant: output_type must be one of {OUTPUT_TYPES}, got {output_type!r}"
+            )
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
         self.value = float(value)
-        self._params = {"value": self.value}
+        self.output_type = output_type
+        self._params = {"value": self.value, "output_type": self.output_type}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        return np.array([self.value])
+        return np.array([apply_value_semantics(self.value, self.output_type)])
 
 
 class Step(Block):

@@ -1,3 +1,4 @@
+from .cast import Cast
 from .continuous import (
     Derivative,
     Integrator,
@@ -48,6 +49,7 @@ from .userfunc import Fcn
 
 __all__ = [
     "Abs",
+    "Cast",
     "Clock",
     "CompareToConstant",
     "CompareToZero",

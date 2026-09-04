@@ -36,11 +36,13 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
     "flode.blocks.sources.Constant": {
         "en": {
             "display_name": "Constant",
-            "docstring_summary": "Constant value source y(t) = value.",
+            "docstring_summary": (
+                "Constant value source y(t) = value (output_type: float / int / bool)."
+            ),
         },
         "ja": {
             "display_name": "定数",
-            "docstring_summary": "定数値ソース y(t) = value。",
+            "docstring_summary": "定数値ソース y(t) = value (output_type で float / int / bool)。",
         },
     },
     "flode.blocks.sources.Step": {
@@ -262,6 +264,23 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "ja": {
             "display_name": "丸め",
             "docstring_summary": "整数化 floor / ceil / round / trunc (mode で選択)。",
+        },
+    },
+    # SPEC-0026 (v0.53.0): Cast — 値の意味論の型変換 (ADR-0076)
+    "flode.blocks.cast.Cast": {
+        "en": {
+            "display_name": "Cast",
+            "docstring_summary": (
+                "Convert output value semantics (float / int / bool; default float is "
+                "identity). Use Rounding when you need to choose the rounding mode."
+            ),
+        },
+        "ja": {
+            "display_name": "型変換",
+            "docstring_summary": (
+                "出力値の型意味論を変換 (float / int / bool、既定 float は恒等)。"
+                "丸め方式を選びたい場合は Rounding を使う。"
+            ),
         },
     },
     # ----- lookup (2) -----------------------------------------------------

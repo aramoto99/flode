@@ -155,6 +155,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     ),
     # SPEC-0013 / ADR-0059 (v5.6.0): Rounding (Wave 2 第 2 弾)
     "flode.blocks.rounding.Rounding": ("mathops", "Rounding", "math.rounding"),
+    # SPEC-0026 (v0.53.0): Cast — 値の意味論の型変換 (ADR-0076)
+    "flode.blocks.cast.Cast": ("mathops", "Cast", "math.cast"),
     # continuous
     "flode.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
     "flode.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),

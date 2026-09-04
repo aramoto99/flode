@@ -79,8 +79,15 @@ class TestBuildMetadataI18n:
             "en": "Constant",
             "ja": "定数",
         }
-        assert m.docstring_summary_i18n["en"] == "Constant value source y(t) = value."
-        assert m.docstring_summary_i18n["ja"] == "定数値ソース y(t) = value。"
+        # SPEC-0026 (v0.53.0): output_type 追加に伴い summary を更新
+        assert (
+            m.docstring_summary_i18n["en"]
+            == "Constant value source y(t) = value (output_type: float / int / bool)."
+        )
+        assert (
+            m.docstring_summary_i18n["ja"]
+            == "定数値ソース y(t) = value (output_type で float / int / bool)。"
+        )
 
     def test_legacy_field_consistency(self) -> None:
         """``display_name`` / ``docstring_summary`` は en コピーになっている。"""
@@ -96,7 +103,13 @@ class TestMetadataToDict:
         m = build_metadata(Constant)
         d = metadata_to_dict(m)
         assert d["display_name_i18n"] == {"en": "Constant", "ja": "定数"}
-        assert d["docstring_summary_i18n"]["ja"] == "定数値ソース y(t) = value。"
+        assert (
+            d["docstring_summary_i18n"]["ja"]
+            == "定数値ソース y(t) = value (output_type で float / int / bool)。"
+        )
         # 旧 frontend 互換: display_name / docstring_summary も同梱
         assert d["display_name"] == "Constant"
-        assert d["docstring_summary"] == "Constant value source y(t) = value."
+        assert (
+            d["docstring_summary"]
+            == "Constant value source y(t) = value (output_type: float / int / bool)."
+        )
