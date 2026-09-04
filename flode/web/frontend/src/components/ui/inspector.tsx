@@ -383,11 +383,33 @@ export function DangerButton({
  * 一回り小さく、``tone="danger"`` は**枠と文字だけ** rose (塗り潰さない = 行が
  * 並んでも騒がしくならない。塗り潰しの ``DangerButton`` は dialog footer 用として残す)。
  *
- * ``icon`` 指定時は正方形のグリフボタンになる (``"add"`` = ＋ / ``"remove"`` = ×。
- * GridEditor の行列削除 × / DialogShell の閉じる × と同じ SVG 流儀)。このとき
- * ``ariaLabel`` が a11y ラベルと hover tooltip (``title``) を兼ねるため必須相当。
+ * ``icon`` 指定時は 18×18px の正方形グリフボタンになる (``"add"`` = ＋ /
+ * ``"remove"`` = ×。同ファイル ``GridEditor`` の行列削除 × / ``DialogShell`` の
+ * 閉じる × と同じ SVG stroke 流儀。18px は ``PropertyRow`` の行高 22px に収まる
+ * 最大の正方形 = DialogShell の 20px より一回り小さい)。このとき ``ariaLabel``
+ * は a11y ラベルと hover tooltip (``title``) を兼ねるため**型レベルで必須**。
  * (ADR-0075 §Amendments: 当初のテキストラベルからユーザー要望でアイコン化)
  */
+type _RowActionButtonBase = {
+  onClick?: () => void;
+  disabled?: boolean;
+  tone?: "neutral" | "danger";
+  testId?: string;
+};
+
+type RowActionButtonProps =
+  | (_RowActionButtonBase & {
+      /** アイコンモード: ariaLabel 必須 (グリフだけでは操作対象が伝わらないため)。 */
+      icon: "add" | "remove";
+      ariaLabel: string;
+      children?: never;
+    })
+  | (_RowActionButtonBase & {
+      icon?: undefined;
+      ariaLabel?: string;
+      children: React.ReactNode;
+    });
+
 export function RowActionButton({
   children,
   icon,
@@ -396,15 +418,7 @@ export function RowActionButton({
   tone = "neutral",
   testId,
   ariaLabel,
-}: {
-  children?: React.ReactNode;
-  icon?: "add" | "remove";
-  onClick?: () => void;
-  disabled?: boolean;
-  tone?: "neutral" | "danger";
-  testId?: string;
-  ariaLabel?: string;
-}): JSX.Element {
+}: RowActionButtonProps): JSX.Element {
   const enabledCls =
     tone === "danger"
       ? "border-rose-400 bg-white text-rose-700 hover:bg-rose-50 active:bg-rose-100"
