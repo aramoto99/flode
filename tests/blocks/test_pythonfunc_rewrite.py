@@ -18,6 +18,7 @@ from flode.blocks.pythonfunc_rewrite import (
     AddParam,
     RemoveParam,
     RenameParam,
+    RetypeParam,
     _SourceBytes,
     rewrite_source,
 )
@@ -616,6 +617,92 @@ class TestParamDefaultLiterals:
     def test_unknown_type_rejected(self) -> None:
         with pytest.raises(PythonFunctionRewriteError, match="type must be one of"):
             _rw(SCALAR_IN, params=[AddParam(name="g", type="list", default=1.0)])
+
+
+class TestParamRetype:
+    """SPEC-0025 Amendment (2026-09-04): 型変更 = 注釈 + default の同時書き換え。
+    default / 設定値は「変換できれば引き継ぐ」(ユーザー確認)。"""
+
+    def test_float_to_int_truncates_default(self) -> None:
+        code = (
+            "@block\ndef f(t: float, u: float, *, kp: float = 1.5) -> float:\n    return u * kp\n"
+        )
+        new = _rw(code, params=[RetypeParam(name="kp", type="int")])
+        assert "kp: int = 1" in new
+        assert "return u * kp" in new  # 本体は不変
+        assert _spec(new).params_spec == (("kp", 1, int, False),)
+
+    def test_int_to_float(self) -> None:
+        code = "@block\ndef f(t: float, u: float, *, n: int = 3) -> float:\n    return u\n"
+        new = _rw(code, params=[RetypeParam(name="n", type="float")])
+        assert "n: float = 3.0" in new
+        assert _spec(new).params_spec == (("n", 3.0, float, False),)
+
+    def test_float_to_str_stringifies(self) -> None:
+        new = _rw(KW1, params=[RetypeParam(name="kp", type="str")])
+        assert 'kp: str = "1.0"' in new
+        assert _spec(new).params_spec == (("kp", "1.0", str, False),)
+
+    def test_str_to_float_parses(self) -> None:
+        code = '@block\ndef f(t: float, u: float, *, s: str = "2.5") -> float:\n    return u\n'
+        new = _rw(code, params=[RetypeParam(name="s", type="float")])
+        assert "s: float = 2.5" in new
+
+    def test_unconvertible_resets_to_standard(self) -> None:
+        code = '@block\ndef f(t: float, u: float, *, s: str = "abc") -> float:\n    return u\n'
+        new = _rw(code, params=[RetypeParam(name="s", type="float")])
+        assert "s: float = 0.0" in new
+        # bool へは他型から暗黙変換しない
+        new2 = _rw(KW1, params=[RetypeParam(name="kp", type="bool")])
+        assert "kp: bool = False" in new2
+
+    def test_unannotated_param_gets_annotation(self) -> None:
+        code = "@block\ndef f(t: float, u: float, *, k=1.0) -> float:\n    return u * k\n"
+        new = _rw(code, params=[RetypeParam(name="k", type="int")])
+        # 最小 diff: 元の `=` の詰め書きは保存される (注釈挿入 + default 置換のみ)
+        assert "k: int=1" in new
+        assert _spec(new).params_spec == (("k", 1, int, False),)
+
+    def test_required_param_changes_annotation_only(self) -> None:
+        code = "@block\ndef f(t: float, u: float, *, k: float) -> float:\n    return u * k\n"
+        new = _rw(code, params=[RetypeParam(name="k", type="str")])
+        assert "k: str)" in new
+        assert _spec(new).params_spec == (("k", None, str, True),)
+
+    def test_same_type_is_noop(self) -> None:
+        assert _rw(KW1, params=[RetypeParam(name="kp", type="float")]) == KW1
+
+    def test_x0_rejected_when_stateful(self) -> None:
+        code = (
+            "@block(states=1)\n"
+            "def f(t: float, x: np.ndarray, u: float, *, x0: float = 0.0) "
+            "-> tuple[float, np.ndarray]:\n"
+            "    return x[0], np.array([u])\n"
+        )
+        with pytest.raises(PythonFunctionRewriteError, match="x0"):
+            _rw(code, params=[RetypeParam(name="x0", type="int")])
+
+    def test_unknown_type_rejected(self) -> None:
+        with pytest.raises(PythonFunctionRewriteError, match="type must be one of"):
+            _rw(KW1, params=[RetypeParam(name="kp", type="list")])
+
+    def test_port_edit_combination_allowed(self) -> None:
+        # retype は本体に触れないので rename と違いポート編集と併用できる
+        new = _rw(KW1, inputs=2, params=[RetypeParam(name="kp", type="int")])
+        s = _spec(new)
+        assert s.n_inputs == 2
+        assert s.params_spec == (("kp", 1, int, False),)
+
+    def test_minimal_diff_japanese_comment(self) -> None:
+        code = (
+            "@block\n"
+            "def f(t: float, u: float, *, kp: float = 1.5) -> float:\n"
+            "    # 日本語コメント ★\n"
+            "    return u * kp\n"
+        )
+        new = _rw(code, params=[RetypeParam(name="kp", type="int")])
+        assert "# 日本語コメント ★" in new
+        assert new.endswith("    return u * kp\n")
 
 
 class TestParamMisc:

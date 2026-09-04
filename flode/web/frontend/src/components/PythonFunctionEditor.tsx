@@ -97,6 +97,39 @@ function _validParamName(name: string): boolean {
   );
 }
 
+type ParamTypeName = "float" | "int" | "bool" | "str";
+const PARAM_TYPE_OPTIONS: readonly ParamTypeName[] = ["float", "int", "bool", "str"];
+
+/** SPEC-0025 Amendment: 型変更時の設定値 (user_params) の変換。
+ *  サーバの `_convert_param_value` と同じ規則 (**変えるときは両方変える**)。
+ *  変換できなければ undefined = キーを落とし、新しいコード側 default に任せる。 */
+function _convertUserParamValue(v: unknown, target: ParamTypeName): unknown | undefined {
+  if (target === "bool") return typeof v === "boolean" ? v : undefined;
+  if (target === "float") {
+    if (typeof v === "boolean") return undefined;
+    if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+    if (typeof v === "string") {
+      const n = Number(v.trim() === "" ? NaN : v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
+  }
+  if (target === "int") {
+    if (typeof v === "boolean") return undefined;
+    let n: number | undefined;
+    if (typeof v === "number") n = v;
+    else if (typeof v === "string") n = Number(v.trim() === "" ? NaN : v);
+    if (n === undefined || !Number.isFinite(n)) return undefined;
+    const out = Math.trunc(n);
+    return String(Math.abs(out)).length <= 32 ? out : undefined;
+  }
+  // str
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v ? "True" : "False";
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : undefined;
+  return undefined;
+}
+
 export function PythonFunctionEditor({
   block,
   header,
@@ -258,6 +291,8 @@ export function PythonFunctionEditor({
       opts?: {
         /** rename 時の user_params key 追随 (pruning より前に差し替える)。 */
         renameParam?: { from: string; to: string };
+        /** retype 時の user_params 値の変換 (変換できなければキーを落とす)。 */
+        retypeParam?: { name: string; type: ParamTypeName };
         /** applied:true で commit した直後に呼ぶ (追加行のクリア等)。 */
         onApplied?: () => void;
       },
@@ -299,6 +334,16 @@ export function PythonFunctionEditor({
             if (rename.from in up) {
               const { [rename.from]: moved, ...rest } = up;
               override = { ...rest, [rename.to]: moved };
+            }
+          }
+          const retype = opts?.retypeParam;
+          if (retype !== undefined) {
+            const up = override ?? _userParams(block);
+            if (retype.name in up) {
+              const converted = _convertUserParamValue(up[retype.name], retype.type);
+              const { [retype.name]: _dropped, ...rest } = up;
+              override =
+                converted === undefined ? rest : { ...rest, [retype.name]: converted };
             }
           }
           putPythonSpec(resp.code, resp.spec);
@@ -390,6 +435,13 @@ export function PythonFunctionEditor({
   const commitParamRemove = useCallback(
     (name: string): void => {
       commitRewrite({ params: [{ op: "remove", name }] });
+    },
+    [commitRewrite],
+  );
+
+  const commitParamRetype = useCallback(
+    (name: string, type: ParamTypeName): void => {
+      commitRewrite({ params: [{ op: "retype", name, type }] }, { retypeParam: { name, type } });
     },
     [commitRewrite],
   );
@@ -691,6 +743,34 @@ export function PythonFunctionEditor({
                       />
                     }
                   >
+                    {(PARAM_TYPE_OPTIONS as readonly string[]).includes(p.type ?? "") &&
+                    !isX0 ? (
+                      <select
+                        data-testid={`pf-param-type-${p.name}`}
+                        aria-label={t("python_function.params.type")}
+                        value={p.type ?? ""}
+                        disabled={rewriteBusy}
+                        onChange={(e) =>
+                          commitParamRetype(p.name, e.target.value as ParamTypeName)
+                        }
+                        className={`${SELECT_CLS} mr-1 w-16 shrink-0`}
+                      >
+                        {PARAM_TYPE_OPTIONS.map((tn) => (
+                          <option key={tn} value={tn}>
+                            {tn}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      // 語彙外の型 (np.float64 等) / x0 は read-only 表示 (見える化のみ)
+                      <span
+                        data-testid={`pf-param-type-${p.name}`}
+                        title={p.type ?? ""}
+                        className="mr-1 w-16 shrink-0 truncate text-[10px] text-slate-500"
+                      >
+                        {p.type ?? "?"}
+                      </span>
+                    )}
                     {valueControl}
                   </PropertyRow>
                   {isX0 && (

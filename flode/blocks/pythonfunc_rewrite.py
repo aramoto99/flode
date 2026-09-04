@@ -148,10 +148,23 @@ class RenameParam:
     new: str
 
 
+@dataclass(frozen=True)
+class RetypeParam:
+    """パラメータの型を変える (SPEC-0025 Amendment、ユーザー要望 2026-09-04)。
+
+    型注釈と default リテラルを**同時に**書き換える (中間状態を作らない)。
+    default は :func:`_convert_param_value` の規則で「変換できれば引き継ぐ」、
+    変換不能なら新型の標準値にリセット。本体には触れない (W4 の内側)。
+    """
+
+    name: str
+    type: str
+
+
 #: パラメータ編集の命令。ポート編集 (宣言的な目標値) と違い**命令列**なのは、
 #: rename を remove + add と区別しないと ``user_params`` の値の引き継ぎが
 #: 表現できないため (ADR-0075 §論点 5)。
-ParamEdit = AddParam | RemoveParam | RenameParam
+ParamEdit = AddParam | RemoveParam | RenameParam | RetypeParam
 
 #: CPython の行区切り (``\r\n`` / ``\r`` / ``\n``)。``str.splitlines()`` は
 #: form feed / U+2028 等でも分割してしまい ``ast`` の行番号と食い違うため使わない。
@@ -666,6 +679,84 @@ def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, o
     )
 
 
+#: retype 時に変換不能だった場合の各型の標準 default (SPEC-0025 Amendment)。
+_STANDARD_PARAM_DEFAULTS: dict[str, float | int | bool | str] = {
+    "float": 0.0,
+    "int": 0,
+    "bool": False,
+    "str": "",
+}
+
+
+def _convert_param_value(value: object, target: str) -> float | int | bool | str | None:
+    """型変更時の default / 設定値の変換 (ユーザー確認 2026-09-04: 変換できれば引き継ぐ)。
+
+    規則 (frontend の ``_convertUserParamValue`` と同一。**変えるときは両方変える**):
+
+    * float⇄int は切り捨て、数値→str は決定的な文字列化、str→数値はパース成功時のみ
+    * bool は他型からの暗黙変換をしない (真偽値の数値化は驚きの温床)。
+      bool→str だけは ``"True"`` / ``"False"``
+    * 変換不能・上限超過は ``None`` (= 呼び出し側が標準 default にリセット)
+    """
+    if target == "bool":
+        return value if isinstance(value, bool) else None
+    if target == "float":
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int | float):
+            try:
+                f = float(value)
+            except (OverflowError, ValueError):
+                return None
+            return f if math.isfinite(f) else None
+        if isinstance(value, str):
+            try:
+                f = float(value)
+            except ValueError:
+                return None
+            return f if math.isfinite(f) else None
+        return None
+    if target == "int":
+        out: int | None = None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            out = value
+        elif isinstance(value, float):
+            out = math.trunc(value) if math.isfinite(value) else None
+        elif isinstance(value, str):
+            try:
+                out = int(value, 10)
+            except ValueError:
+                try:
+                    f = float(value)
+                except ValueError:
+                    return None
+                out = math.trunc(f) if math.isfinite(f) else None
+        if out is None:
+            return None
+        return out if len(str(abs(out))) <= MAX_PARAM_INT_DEFAULT_DIGITS else None
+    if target == "str":
+        if isinstance(value, str):
+            ok = len(value) <= MAX_PARAM_STR_DEFAULT_LENGTH and not any(
+                unicodedata.category(ch) in FORBIDDEN_DEFAULT_CATEGORIES for ch in value
+            )
+            return value if ok else None
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                return None
+            text = repr(value)
+            if "." not in text and "e" not in text and "E" not in text:
+                text += ".0"
+            return text
+        if isinstance(value, int):
+            return str(value)
+        return None
+    return None
+
+
 class _SignatureEditor:
     """関数シグネチャの kw-only 引数の追加 / 削除 → splice 列 (SPEC-0025 規則 AP / DP)。
 
@@ -789,6 +880,36 @@ class _SignatureEditor:
             start = _extend_back_over_separator(data, star)
             self.splices.append(_Splice(start, end, b""))
 
+    def retype(self, name: str, type_name: str, default_literal: str | None) -> None:
+        """型注釈の置換 (無ければ挿入) と default リテラルの置換 (SPEC-0025 Amendment)。
+
+        注釈スパンと default スパンは互いに素なので 1 バッチで共存できる。
+        ``default_literal`` は default を持つパラメータのときのみ渡される
+        (required パラメータは注釈だけ変わり required のまま)。
+        """
+        a = self._args
+        index = next((i for i, arg in enumerate(a.kwonlyargs) if arg.arg == name), None)
+        if index is None:
+            raise PythonFunctionRewriteError(
+                f"PythonFunction[{self._block_id}]: no keyword-only parameter named "
+                f"{name!r} to retype.",
+                kind="unsupported",
+                reason="rewrite_param_not_found",
+                block_id=self._block_id,
+            )
+        arg = a.kwonlyargs[index]
+        if arg.annotation is not None:
+            start, end = self._source.span(arg.annotation)
+            self.splices.append(_Splice(start, end, type_name.encode("utf-8")))
+        else:
+            # 注釈なし → 名前トークンの直後 (= 注釈なし arg の end は名前の end) に挿入
+            pos = self._source.span(arg)[1]
+            self.splices.append(_Splice(pos, pos, f": {type_name}".encode()))
+        default_node = a.kw_defaults[index]
+        if default_literal is not None and default_node is not None:
+            start, end = self._source.span(default_node)
+            self.splices.append(_Splice(start, end, default_literal.encode("utf-8")))
+
 
 def _plan_param_edits(
     source: _SourceBytes,
@@ -849,6 +970,46 @@ def _plan_param_edits(
                 )
             editor.remove(edit.name)
             del expected[index]
+        elif isinstance(edit, RetypeParam):
+            if edit.type not in _PARAM_PY_TYPES:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: parameter type must be one of "
+                    f"{', '.join(PARAM_TYPE_NAMES)}, got {edit.type!r}",
+                    kind="unsupported",
+                    block_id=block_id,
+                )
+            index = next((i for i, p in enumerate(expected) if p[0] == edit.name), None)
+            if index is None:
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: no parameter named {edit.name!r}.",
+                    kind="unsupported",
+                    reason="rewrite_param_not_found",
+                    block_id=block_id,
+                )
+            if old_spec.n_states > 0 and edit.name == "x0":
+                raise PythonFunctionRewriteError(
+                    f"PythonFunction[{block_id}]: `x0` binds the initial state and "
+                    f"cannot be retyped while states > 0.",
+                    kind="unsupported",
+                    reason="rewrite_param_name_conflict",
+                    block_id=block_id,
+                )
+            entry = expected[index]
+            target_type = _PARAM_PY_TYPES[edit.type]
+            if entry[2] is target_type:
+                continue  # 同型への retype は完全 no-op (splice ゼロ)
+            required = bool(entry[3])
+            default_literal: str | None = None
+            new_default: object = None
+            if not required:
+                converted = _convert_param_value(entry[1], edit.type)
+                if converted is None:
+                    converted = _STANDARD_PARAM_DEFAULTS[edit.type]
+                default_literal, new_default = _param_default_literal(
+                    AddParam(name=edit.name, type=edit.type, default=converted), block_id
+                )
+            editor.retype(edit.name, edit.type, default_literal)
+            expected[index] = (edit.name, new_default, target_type, entry[3])
         elif isinstance(edit, RenameParam):
             # W4-E: 唯一の本体書き換え。呼び出し側 (rewrite_source) が「rename は
             # 単独の編集」を保証済み (E4a を単純命題に保つ)

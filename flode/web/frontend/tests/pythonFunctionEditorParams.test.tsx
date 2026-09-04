@@ -245,6 +245,49 @@ describe("PythonFunctionEditor パラメータ構造編集 (SPEC-0025)", () => {
     expect(screen.getByTestId("pf-param-limit-hint")).toBeTruthy();
   });
 
+  it("型 select が現在型を表示し、変更で op:retype + user_params 値を変換する", async () => {
+    putPythonSpec(CODE, spec());
+    const retyped =
+      "@block\ndef f(t: float, u: float, *, k: int = 2) -> float:\n    return k * u\n";
+    rewriteMock.mockResolvedValue({
+      applied: true,
+      code: retyped,
+      spec: spec({ params_spec: [paramSpec("k", "int")] }),
+    });
+    renderEditor(CODE, { k: 5.5 });
+    const select = screen.getByTestId("pf-param-type-k") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(select.value).toBe("float");
+    fireEvent.change(select, { target: { value: "int" } });
+    await waitFor(() => expect(pfParams().code).toBe(retyped));
+    expect(rewriteMock).toHaveBeenCalledWith(CODE, {
+      params: [{ op: "retype", name: "k", type: "int" }],
+    });
+    // 変換規則: 5.5 → 5 (切り捨てで引き継ぐ)
+    expect(pfParams().user_params).toEqual({ k: 5 });
+  });
+
+  it("型変更で変換できない設定値はキーを落とす", async () => {
+    putPythonSpec(CODE, spec());
+    rewriteMock.mockResolvedValue({
+      applied: true,
+      code: NEW_CODE,
+      spec: spec({ params_spec: [paramSpec("k", "bool")] }),
+    });
+    renderEditor(CODE, { k: 5.5 });
+    fireEvent.change(screen.getByTestId("pf-param-type-k"), { target: { value: "bool" } });
+    await waitFor(() => expect(pfParams().code).toBe(NEW_CODE));
+    expect(pfParams().user_params).toEqual({}); // 数値→bool は暗黙変換しない
+  });
+
+  it("x0 行の型は read-only ラベル表示 (select ではない)", () => {
+    putPythonSpec(CODE, spec({ n_states: 1, params_spec: [paramSpec("x0"), paramSpec("k")] }));
+    renderEditor();
+    expect(screen.getByTestId("pf-param-type-x0").tagName).toBe("SPAN");
+    expect(screen.getByTestId("pf-param-type-x0").textContent).toBe("float");
+    expect((screen.getByTestId("pf-param-type-k") as HTMLSelectElement).tagName).toBe("SELECT");
+  });
+
   it("rename の applied:false (unsupported) はローカライズキー rename_unsupported で表示", async () => {
     putPythonSpec(CODE, spec());
     rewriteMock.mockResolvedValue({

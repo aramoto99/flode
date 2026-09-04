@@ -253,6 +253,7 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
         AddParam,
         RemoveParam,
         RenameParam,
+        RetypeParam,
     )
 
     v = edits.get("params")
@@ -355,6 +356,20 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
                 detail='edits.params[0] for "remove" must have exactly op/name',
             )
         return [RemoveParam(name=_checked_name("name"))]
+    if op == "retype":
+        if set(raw) != {"op", "name", "type"}:
+            raise HTTPException(
+                status_code=400,
+                detail='edits.params[0] for "retype" must have exactly op/name/type',
+            )
+        name = _checked_name("name")
+        ptype = raw.get("type")
+        if ptype not in PARAM_TYPE_NAMES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"edits.params[0].type must be one of {list(PARAM_TYPE_NAMES)}",
+            )
+        return [RetypeParam(name=name, type=ptype)]
     if op == "rename":
         if set(raw) != {"op", "from", "to"}:
             raise HTTPException(

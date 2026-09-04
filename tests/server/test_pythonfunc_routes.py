@@ -439,6 +439,31 @@ class TestRewriteParams:
         assert "*, gain: float = 2.0" in data["code"]
         assert "return gain * u" in data["code"]
 
+    def test_retype_applied(self, client: TestClient) -> None:
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": KWONLY_CODE,
+                "edits": {"params": [{"op": "retype", "name": "k", "type": "int"}]},
+            },
+        )
+        data = resp.json()
+        assert data["applied"] is True
+        assert "k: int = 2" in data["code"]
+        assert "return k * u" in data["code"]  # 本体は不変
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"op": "retype", "name": "k", "type": "list"},
+            {"op": "retype", "name": "k", "type": "int", "extra": 1},
+            {"op": "retype", "name": "1a", "type": "int"},
+        ],
+    )
+    def test_retype_static_violations_are_400(self, client: TestClient, bad: dict) -> None:
+        resp = client.post(_REWRITE, json={"code": KWONLY_CODE, "edits": {"params": [bad]}})
+        assert resp.status_code == 400
+
     def test_rename_with_port_edit_is_400(self, client: TestClient) -> None:
         resp = client.post(
             _REWRITE,

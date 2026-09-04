@@ -329,7 +329,8 @@ export interface PythonFunctionSpec {
 export type PythonFunctionParamEdit =
   | { op: "add"; name: string; type: "float" | "int" | "bool" | "str"; default: number | boolean | string }
   | { op: "remove"; name: string }
-  | { op: "rename"; from: string; to: string };
+  | { op: "rename"; from: string; to: string }
+  | { op: "retype"; name: string; type: "float" | "int" | "bool" | "str" };
 
 export type PythonFunctionRewriteResponse =
   | { applied: true; code: string; spec: PythonFunctionSpec }
