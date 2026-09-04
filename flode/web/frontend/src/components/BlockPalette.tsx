@@ -234,11 +234,6 @@ export function BlockPalette(): JSX.Element {
                           <div className="w-full truncate text-[10px] font-medium text-slate-700">
                             {dispName}
                           </div>
-                          {b.tags.includes("sm_b") && (
-                            <span className="rounded bg-cyan-100 px-1 text-[8px] uppercase tracking-wide text-cyan-700">
-                              SM-B
-                            </span>
-                          )}
                         </div>
                       );
                     })}
