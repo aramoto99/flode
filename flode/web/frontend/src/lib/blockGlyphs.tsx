@@ -881,26 +881,20 @@ const SwitchGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-// v0.15.0: 実機キャンバスは縦長 black bar (= width 6 px) なので、ライブラリ glyph
-// もそれに合わせて細い縦バー + 線で「Mux はバーに集約、Demux はバーから分配」を
-// 表現する。
+// v0.53.3 (ユーザー要望): パレット glyph をキャンバスの実物の**形状** (= 内部無地・
+// 配線なしのプレーンな塗り潰し縦バー) に一致させる。旧 glyph はバーに配線風の線を
+// 描き足しており「アイコンとブロックの見た目が違う」状態だった。縦横比は 24×24
+// viewBox 内の視認性のための近似 (実物は 6×56)。
+// 実ブロックも Mux / Demux は見た目同一 (配線の向きで区別) のため、glyph も同一。
 const MuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="11" y="3" width="2" height="18" fill="currentColor" stroke="none" />
-    <line x1="3" y1="7" x2="11" y2="9" />
-    <line x1="3" y1="12" x2="11" y2="12" />
-    <line x1="3" y1="17" x2="11" y2="15" />
-    <line x1="13" y1="12" x2="21" y2="12" />
+    <rect x="10.5" y="2" width="3" height="20" fill="currentColor" stroke="none" />
   </svg>
 );
 
 const DemuxGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <rect x="11" y="3" width="2" height="18" fill="currentColor" stroke="none" />
-    <line x1="3" y1="12" x2="11" y2="12" />
-    <line x1="13" y1="9" x2="21" y2="7" />
-    <line x1="13" y1="12" x2="21" y2="12" />
-    <line x1="13" y1="15" x2="21" y2="17" />
+    <rect x="10.5" y="2" width="3" height="20" fill="currentColor" stroke="none" />
   </svg>
 );
 
