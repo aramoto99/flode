@@ -167,3 +167,11 @@ Two rules are worth knowing:
   ``NameError`` reported with the block id and line number — fix the body
   yourself after removing a parameter, exactly like a port-count reduction
   leaving a stale ``u[2]`` behind.
+
+Since v0.52.0 each parameter row also shows the declared *type* and lets you
+change it (``float`` / ``int`` / ``bool`` / ``str``). Retyping rewrites the
+annotation and the default literal together; the default and any configured
+value are carried over when they convert cleanly (float⇄int truncates,
+numbers stringify, strings parse back into numbers when possible — ``bool``
+never converts implicitly), otherwise they reset to the new type's neutral
+default (``0.0`` / ``0`` / ``False`` / ``""``).

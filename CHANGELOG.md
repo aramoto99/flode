@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] - 2026-09-04 — パラメータの型を UI から表示・変更
+
+### Added
+
+- **PARAMETERS 節の各行に型 select を常設** (追加行と同じ float / int / bool / str)。
+  既存パラメータの型が見える + その場で変更できる。語彙外の型 (np.float64 等) と
+  `x0` は read-only の型ラベル表示
+- 型変更は `retype` op としてコード書き換え (注釈 + 既定値リテラルを同時置換、
+  本体には触れない)。**既定値と設定済みの値は「変換できれば引き継ぐ」**:
+  float⇄int は切り捨て、数値→str は文字列化、str→数値はパース成功時のみ。
+  bool は他型と暗黙変換しない。変換できなければ新型の標準値 (0.0 / 0 / False / "")
+  にリセット。同型への変更は no-op、required パラメータは注釈のみ変更
+
 ## [0.51.2] - 2026-09-04 — PythonFunction の既定テンプレートを簡素化
 
 ### Changed
