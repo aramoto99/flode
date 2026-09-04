@@ -773,7 +773,10 @@ function ShapeContent({
   //   - param がある (Step, Sine, ...) → 左 glyph 小 + 右 param
   //   - param がない (Abs, Sign, ...) → glyph 大、中央
   if (typePath.endsWith(".Constant")) {
-    const value = (paramsRaw as Record<string, unknown>).value;
+    const params = paramsRaw as Record<string, unknown>;
+    // SPEC-0026 §確定事項 7: canvas は**実効値** (output_type 適用後) を表示し、
+    // Inspector の生値 (value) との齟齬を可視化する
+    const value = applyConstantOutputType(params.value, params.output_type);
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold tabular-nums text-slate-800">
         <span className="truncate px-1">{formatNumber(value)}</span>
@@ -1364,6 +1367,24 @@ function outputHandlePosition(
 // ---------------------------------------------------------------------------
 // 主要 param サマリ (rect / triangle で使用)
 // ---------------------------------------------------------------------------
+
+/** SPEC-0026: `np.round` (最近接偶数丸め) の再現。
+ *  JS の `Math.round(2.5) === 3` と違い 2.5 → 2 / -2.5 → -2 (backend と表示を一致させる)。 */
+function bankersRound(v: number): number {
+  const floor = Math.floor(v);
+  const diff = v - floor;
+  if (diff > 0.5) return floor + 1;
+  if (diff < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/** SPEC-0026: Constant の canvas 表示用の実効値 (backend `apply_value_semantics` と同一規則)。 */
+function applyConstantOutputType(value: unknown, outputType: unknown): unknown {
+  if (typeof value !== "number") return value;
+  if (outputType === "int") return Number.isFinite(value) ? bankersRound(value) : value;
+  if (outputType === "bool") return value !== 0 ? 1 : 0;
+  return value;
+}
 
 function summarizePrimaryParam(data: BlockNodeData): string | null {
   // NOTE (v0.15.0 / code-reviewer SHOULD): v0.15.0 で ShapeContent は ``paramsRaw``

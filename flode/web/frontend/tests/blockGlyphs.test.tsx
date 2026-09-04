@@ -26,6 +26,7 @@ const KNOWN_TYPE_PATHS = [
   "flode.blocks.mathops.Sign",
   "flode.blocks.mathops.MinMax",
   "flode.blocks.mathops.Divide",
+  "flode.blocks.cast.Cast",
   "flode.blocks.continuous.Integrator",
   "flode.blocks.continuous.Derivative",
   "flode.blocks.continuous.TransferFunction",

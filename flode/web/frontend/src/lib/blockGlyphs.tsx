@@ -171,6 +171,26 @@ const SignGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0026 (v0.53.0): Cast。ADR-0070 優先度 2 (IEC 61131-3 FBD 流の
+// 「機能名テキスト in 矩形」) に準拠した固定テキスト表示。
+// IEC 60617-12 のコード変換器 `X/Y` 記法は SPEC-0026 §確定事項 4 で不採用
+// (ユーザー確認: 面に型を出さず `cast` とだけ書く)。
+const CastGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="9"
+      fontFamily="ui-monospace,monospace"
+      fill="currentColor"
+      stroke="none"
+    >
+      cast
+    </text>
+  </svg>
+);
+
 // v0.15.0: 実機キャンバスは ``min`` / ``max`` テキスト → glyph は ``min`` (default)
 // を表示しておく (ライブラリでは default state = ``min`` のため)。
 const MinMaxGlyph = ({ className }: GlyphProps): JSX.Element => (
@@ -1196,6 +1216,8 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "flode.blocks.mathops.CompareToZero": CompareToZeroGlyph,
   // SPEC-0013 / ADR-0059 (v5.6.0): Rounding
   "flode.blocks.rounding.Rounding": RoundingGlyph,
+  // SPEC-0026 (v0.53.0): Cast
+  "flode.blocks.cast.Cast": CastGlyph,
   // SPEC-0012 / ADR-0059 (v5.5.0): Discontinuities (Wave 2 第 1 弾)
   "flode.blocks.discontinuities.RateLimiter": RateLimiterGlyph,
   "flode.blocks.discontinuities.Relay": RelayGlyph,
