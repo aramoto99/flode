@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.2] - 2026-09-04 — PythonFunction の既定テンプレートを簡素化
+
+### Changed
+
+- パレットからドロップした直後の既定コードから `gain` パラメータを削除し、
+  1 入力 1 出力の素通し (`return u`) に簡素化。パラメータは v0.51.0 以降
+  Inspector の「新規」行から UI で追加できるため、テンプレートは最小形にした
+  (docstring に追加方法の案内を残置)
+
 ## [0.51.1] - 2026-09-04 — パラメータ行のボタンをアイコン化
 
 ### Changed

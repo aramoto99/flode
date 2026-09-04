@@ -406,7 +406,8 @@ class TestUserParams:
         pf = PythonFunction()
         assert pf.code == DEFAULT_CODE
         assert (pf.n_inputs, pf.n_outputs, pf.n_states) == (1, 1, 0)
-        assert pf.spec.params_spec == (("gain", 1.0, float, False),)
+        # v0.51.2: テンプレートは素通しの最小形 (パラメータは UI から追加する)
+        assert pf.spec.params_spec == ()
 
 
 # ---------------------------------------------------------------------------

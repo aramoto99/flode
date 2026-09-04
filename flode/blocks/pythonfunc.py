@@ -64,12 +64,14 @@ if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
 
 _logger = logging.getLogger("flode.blocks.pythonfunc")
 
-#: パレットからドロップした直後の既定ソース (1 入力 1 出力、ゲイン)。
+#: パレットからドロップした直後の既定ソース (1 入力 1 出力の素通し)。
+#: パラメータの例 (`*, gain: float = 1.0` 等) は入れない — v0.51.0 以降は
+#: Inspector の「新規」行から UI で追加できるため、テンプレートは最小形にする。
 DEFAULT_CODE = (
     "@block\n"
-    "def my_function(t: float, u: float, *, gain: float = 1.0) -> float:\n"
-    '    """1 入力 1 出力。u に gain を掛けて返す。"""\n'
-    "    return gain * u\n"
+    "def my_function(t: float, u: float) -> float:\n"
+    '    """1 入力 1 出力の素通し。パラメータは Inspector の「新規」行から追加できる。"""\n'
+    "    return u\n"
 )
 
 
@@ -337,7 +339,7 @@ class PythonFunction(Block):
 
     Example:
         >>> from flode.blocks import PythonFunction
-        >>> pf = PythonFunction(code=DEFAULT_CODE, user_params={"gain": 3.0})
+        >>> pf = PythonFunction(code=DEFAULT_CODE)
         >>> (pf.n_inputs, pf.n_outputs, pf.n_states)
         (1, 1, 0)
     """
