@@ -616,7 +616,7 @@ export function TextInput({
   maxLength?: number;
   /** SPEC-0024: in-flight 中の編集ロック等。 */
   disabled?: boolean;
-  /** SPEC-0024: 未設定時の placeholder (ポート名の「(無名)」等)。 */
+  /** 未設定時の placeholder。 */
   placeholder?: string;
 }): JSX.Element {
   return (

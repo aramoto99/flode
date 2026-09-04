@@ -567,7 +567,6 @@ export function PythonFunctionEditor({
         <TextInput
           value={name}
           disabled={rewriteBusy}
-          placeholder={t("python_function.port_names.unset")}
           testId={`pf-${role === "input_names" ? "in" : "out"}-name-${i}`}
           ariaLabel={label}
           widthClass="min-w-0 flex-1 max-w-[160px]"

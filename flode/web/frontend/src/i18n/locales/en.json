@@ -440,7 +440,6 @@
   "python_function.section.port_names": "Port names",
   "python_function.port_names.in": "In {{index}}",
   "python_function.port_names.out": "Out {{index}}",
-  "python_function.port_names.unset": "(unnamed)",
   "python_function.inputs_locked_no_u": "The function has no `u` parameter, so it has 0 inputs. Add a `u` parameter in the code to enable input editing.",
   "python_function.rewrite_failed": "Could not rewrite the code: {{message}}",
   "python_function.rewrite_network_error": "Rewrite request failed: {{message}}",

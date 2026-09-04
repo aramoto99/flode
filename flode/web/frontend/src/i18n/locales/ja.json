@@ -440,7 +440,6 @@
   "python_function.section.port_names": "ポート名",
   "python_function.port_names.in": "入力 {{index}}",
   "python_function.port_names.out": "出力 {{index}}",
-  "python_function.port_names.unset": "(無名)",
   "python_function.inputs_locked_no_u": "この関数には u 引数が無いため入力は 0 固定です。入力を編集するにはコードに u 引数を追加してください。",
   "python_function.rewrite_failed": "コードを書き換えられませんでした: {{message}}",
   "python_function.rewrite_network_error": "書き換え要求に失敗しました: {{message}}",
