@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0] - 2026-09-04 — Cast ブロックと Constant の出力型指定
+
+### Added
+
+- **`Cast` ブロック** (パレット「演算」、SPEC-0026 / ADR-0076)。信号の**値の意味論**を
+  変換する: `float` (既定、恒等) / `int` (最近接偶数丸め) / `bool` (`u≠0` で 0/1、
+  nan も 1.0)。flode の配線は全経路 float64 のため dtype は変えない (ADR-0076 に判断を記録)。
+  切り捨て等の丸め方式を選びたい場合は従来どおり `Rounding` を使う
+- **`Constant` に `output_type`** (float / int / bool)。値は生のまま保持し出力時に変換
+  (型を戻すと元の値が復活する可逆設計)。キャンバス面には実効値を表示
+  (`value=1.5, output_type="int"` なら `2`)
+
+### 注意
+
+- `output_type` を含む `.flw.json` は v0.52.x 以前の flode では開けない
+  (既存のパラメータ追加と同じ前方互換制約)
+
 ## [0.52.1] - 2026-09-04 — ポート名入力の「(無名)」placeholder を撤去
 
 ### Changed

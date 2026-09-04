@@ -81,7 +81,7 @@ scope.plot(show=True)
 | Sinks           | Scope, Terminator, Display, XYGraph                                       |
 | Continuous      | Integrator, StateSpace, TransferFunction, MimoTransferFunction, Derivative, TransportDelay |
 | Discrete        | UnitDelay, DiscreteIntegrator, ZeroOrderHoldDirect, DiscreteStateSpace, DiscreteTransferFunction, RateTransition |
-| Math            | Gain, Sum, Add, Product, Divide, Saturation, Abs, Sign, MinMax, MathFunction, TrigFunction, Rounding |
+| Math            | Gain, Sum, Add, Product, Divide, Saturation, Abs, Sign, MinMax, MathFunction, TrigFunction, Rounding, Cast |
 | Discontinuities | DeadZone, Relay, RateLimiter, CompareToConstant, CompareToZero            |
 | Lookup          | LookupTable1D, LookupTable2D, LookupTableND, Prelookup, InterpolationUsingPrelookup |
 | Logic           | RelationalOperator, LogicalOperator                                       |
