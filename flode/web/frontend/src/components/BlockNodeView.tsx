@@ -1374,6 +1374,7 @@ function bankersRound(v: number): number {
   const floor = Math.floor(v);
   const diff = v - floor;
   if (diff > 0.5) return floor + 1;
+  // diff === 0 (含む -0: floor(-0)=-0, diff=0) はこの分岐 → floor をそのまま返す
   if (diff < 0.5) return floor;
   return floor % 2 === 0 ? floor : floor + 1;
 }
