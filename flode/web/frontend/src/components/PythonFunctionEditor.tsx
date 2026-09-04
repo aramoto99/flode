@@ -683,13 +683,12 @@ export function PythonFunctionEditor({
                     action={
                       <RowActionButton
                         tone="danger"
+                        icon="remove"
                         disabled={rewriteBusy || isX0}
                         onClick={() => commitParamRemove(p.name)}
                         testId={`pf-param-remove-${p.name}`}
                         ariaLabel={t("python_function.params.remove")}
-                      >
-                        {t("python_function.params.remove")}
-                      </RowActionButton>
+                      />
                     }
                   >
                     {valueControl}
@@ -735,13 +734,12 @@ export function PythonFunctionEditor({
                 }
                 action={
                   <RowActionButton
+                    icon="add"
                     disabled={!canAddParam}
                     onClick={commitParamAdd}
                     testId="pf-param-add-submit"
                     ariaLabel={t("python_function.params.add")}
-                  >
-                    {t("python_function.params.add")}
-                  </RowActionButton>
+                  />
                 }
               >
                 <select

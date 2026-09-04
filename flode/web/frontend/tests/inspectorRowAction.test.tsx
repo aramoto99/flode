@@ -64,6 +64,29 @@ describe("RowActionButton", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("icon variant は正方形の SVG グリフ + title tooltip を描く", () => {
+    render(
+      <RowActionButton icon="remove" tone="danger" ariaLabel="削除" testId="btn" />,
+    );
+    const btn = screen.getByTestId("btn");
+    expect(btn.querySelector("svg")).toBeTruthy();
+    expect(btn.getAttribute("title")).toBe("削除");
+    expect(btn.getAttribute("aria-label")).toBe("削除");
+    expect(btn.className).toContain("w-[18px]");
+  });
+
+  it("icon=add は＋グリフ (縦横 2 line)、icon=remove は×グリフ", () => {
+    const { rerender } = render(<RowActionButton icon="add" testId="btn" ariaLabel="追加" />);
+    // ＋ は垂直線 (x1 === x2) を含む
+    const hasVertical = () =>
+      Array.from(screen.getByTestId("btn").querySelectorAll("line")).some(
+        (l) => l.getAttribute("x1") === l.getAttribute("x2"),
+      );
+    expect(hasVertical()).toBe(true);
+    rerender(<RowActionButton icon="remove" testId="btn" ariaLabel="削除" />);
+    expect(hasVertical()).toBe(false); // × は斜め線のみ
+  });
+
   it("tone=danger は枠と文字だけ rose (塗り潰さない)", () => {
     render(
       <RowActionButton tone="danger" testId="btn">

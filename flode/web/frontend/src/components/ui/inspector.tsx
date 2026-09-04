@@ -380,19 +380,25 @@ export function DangerButton({
  * 行内アクションボタン (SPEC-0025 / ADR-0075 §論点 7)。
  *
  * ``PropertyRow`` の ``action`` slot に置く小型ボタン。``SecondaryButton`` より
- * 一回り小さく (px-1.5 / text-[10px])、``tone="danger"`` は**枠と文字だけ** rose
- * (塗り潰さない = 行が並んでも騒がしくならない。塗り潰しの ``DangerButton`` は
- * dialog footer 用として残す)。ラベルはテキスト必須 (icon のみは使わない)。
+ * 一回り小さく、``tone="danger"`` は**枠と文字だけ** rose (塗り潰さない = 行が
+ * 並んでも騒がしくならない。塗り潰しの ``DangerButton`` は dialog footer 用として残す)。
+ *
+ * ``icon`` 指定時は正方形のグリフボタンになる (``"add"`` = ＋ / ``"remove"`` = ×。
+ * GridEditor の行列削除 × / DialogShell の閉じる × と同じ SVG 流儀)。このとき
+ * ``ariaLabel`` が a11y ラベルと hover tooltip (``title``) を兼ねるため必須相当。
+ * (ADR-0075 §Amendments: 当初のテキストラベルからユーザー要望でアイコン化)
  */
 export function RowActionButton({
   children,
+  icon,
   onClick,
   disabled,
   tone = "neutral",
   testId,
   ariaLabel,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  icon?: "add" | "remove";
   onClick?: () => void;
   disabled?: boolean;
   tone?: "neutral" | "danger";
@@ -403,6 +409,10 @@ export function RowActionButton({
     tone === "danger"
       ? "border-rose-400 bg-white text-rose-700 hover:bg-rose-50 active:bg-rose-100"
       : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-200";
+  const shapeCls =
+    icon !== undefined
+      ? "flex h-[18px] w-[18px] items-center justify-center"
+      : "px-1.5 py-0 text-[10px] leading-4";
   return (
     <button
       type="button"
@@ -410,13 +420,37 @@ export function RowActionButton({
       disabled={disabled}
       data-testid={testId}
       aria-label={ariaLabel}
-      className={`border px-1.5 py-0 text-[10px] leading-4 ${
+      title={ariaLabel}
+      className={`border ${shapeCls} ${
         disabled
           ? "cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400"
           : enabledCls
       }`}
     >
-      {children}
+      {icon !== undefined ? (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-3 w-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          aria-hidden="true"
+        >
+          {icon === "add" ? (
+            <>
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </>
+          ) : (
+            <>
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </>
+          )}
+        </svg>
+      ) : (
+        children
+      )}
     </button>
   );
 }
