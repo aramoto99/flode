@@ -280,6 +280,34 @@ describe("PythonFunctionEditor パラメータ構造編集 (SPEC-0025)", () => {
     expect(pfParams().user_params).toEqual({}); // 数値→bool は暗黙変換しない
   });
 
+  it("float→str は Python repr 相当の \"2.0\"、str の 16 進文字列は int へ引き継がない", async () => {
+    // float (整数値 2) → str: ".0" を付けて "2.0" (サーバ repr と一致)
+    putPythonSpec(CODE, spec());
+    rewriteMock.mockResolvedValue({
+      applied: true,
+      code: NEW_CODE,
+      spec: spec({ params_spec: [paramSpec("k", "str")] }),
+    });
+    renderEditor(CODE, { k: 2 });
+    fireEvent.change(screen.getByTestId("pf-param-type-k"), { target: { value: "str" } });
+    await waitFor(() => expect(pfParams().code).toBe(NEW_CODE));
+    expect(pfParams().user_params).toEqual({ k: "2.0" });
+    cleanup();
+    // str "0x10" → int: Python の受理文法 (0x 拒否) に合わせてキーを落とす
+    _resetPythonSpecCacheForTest();
+    rewriteMock.mockReset();
+    putPythonSpec(CODE, spec({ params_spec: [paramSpec("k", "str")] }));
+    rewriteMock.mockResolvedValue({
+      applied: true,
+      code: NEW_CODE,
+      spec: spec({ params_spec: [paramSpec("k", "int")] }),
+    });
+    renderEditor(CODE, { k: "0x10" });
+    fireEvent.change(screen.getByTestId("pf-param-type-k"), { target: { value: "int" } });
+    await waitFor(() => expect(pfParams().code).toBe(NEW_CODE));
+    expect(pfParams().user_params).toEqual({});
+  });
+
   it("x0 行の型は read-only ラベル表示 (select ではない)", () => {
     putPythonSpec(CODE, spec({ n_states: 1, params_spec: [paramSpec("x0"), paramSpec("k")] }));
     renderEditor();

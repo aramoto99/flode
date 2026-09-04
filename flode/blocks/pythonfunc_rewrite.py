@@ -612,7 +612,9 @@ def _param_default_literal(edit: AddParam, block_id: str | None) -> tuple[str, o
                 kind="unsupported",
                 block_id=block_id,
             )
-        if len(str(abs(v))) > MAX_PARAM_INT_DEFAULT_DIGITS:
+        if v.bit_length() > 4 * MAX_PARAM_INT_DEFAULT_DIGITS or (
+            len(str(abs(v))) > MAX_PARAM_INT_DEFAULT_DIGITS
+        ):
             raise PythonFunctionRewriteError(
                 f"PythonFunction[{block_id}]: int default must have at most "
                 f"{MAX_PARAM_INT_DEFAULT_DIGITS} digits",
@@ -691,7 +693,8 @@ _STANDARD_PARAM_DEFAULTS: dict[str, float | int | bool | str] = {
 def _convert_param_value(value: object, target: str) -> float | int | bool | str | None:
     """型変更時の default / 設定値の変換 (ユーザー確認 2026-09-04: 変換できれば引き継ぐ)。
 
-    規則 (frontend の ``_convertUserParamValue`` と同一。**変えるときは両方変える**):
+    規則 (frontend の ``_convertUserParamValue`` と意味的に同一 — **変えるときは両方
+    変える**。数値→str の表記 (``"1.0"`` vs ``"1"``) など表示上の軽微な差は許容):
 
     * float⇄int は切り捨て、数値→str は決定的な文字列化、str→数値はパース成功時のみ
     * bool は他型からの暗黙変換をしない (真偽値の数値化は驚きの温床)。
@@ -735,6 +738,11 @@ def _convert_param_value(value: object, target: str) -> float | int | bool | str
                 out = math.trunc(f) if math.isfinite(f) else None
         if out is None:
             return None
+        # security-reviewer MUST (v0.52.0): 16 進リテラルは compile の
+        # int_max_str_digits をバイパスするため、巨大 int がここに届きうる。
+        # str() を呼ぶ前に bit_length で弾く (10 進 1 桁 < 4 bit の過大評価で安全側)
+        if out.bit_length() > 4 * MAX_PARAM_INT_DEFAULT_DIGITS:
+            return None
         return out if len(str(abs(out))) <= MAX_PARAM_INT_DEFAULT_DIGITS else None
     if target == "str":
         if isinstance(value, str):
@@ -752,7 +760,13 @@ def _convert_param_value(value: object, target: str) -> float | int | bool | str
                 text += ".0"
             return text
         if isinstance(value, int):
-            return str(value)
+            # security-reviewer MUST (v0.52.0): (a) 巨大 int の str() は
+            # int_max_str_digits で ValueError になるため bit_length で先に弾き、
+            # (b) 結果にも str 上限を適用する (超過は None = 標準値へリセット)
+            if value.bit_length() > 4 * MAX_PARAM_STR_DEFAULT_LENGTH:
+                return None
+            text = str(value)
+            return text if len(text) <= MAX_PARAM_STR_DEFAULT_LENGTH else None
         return None
     return None
 

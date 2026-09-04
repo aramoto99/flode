@@ -310,7 +310,9 @@ def _validated_rewrite_params(edits: dict[str, Any]) -> list[Any] | None:
         elif ptype == "int":
             if isinstance(default, bool) or not isinstance(default, int):
                 raise bad_default
-            if len(str(abs(default))) > MAX_PARAM_INT_DEFAULT_DIGITS:
+            if default.bit_length() > 4 * MAX_PARAM_INT_DEFAULT_DIGITS or (
+                len(str(abs(default))) > MAX_PARAM_INT_DEFAULT_DIGITS
+            ):
                 raise HTTPException(
                     status_code=400,
                     detail=(

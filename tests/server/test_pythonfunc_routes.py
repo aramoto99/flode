@@ -464,6 +464,25 @@ class TestRewriteParams:
         resp = client.post(_REWRITE, json={"code": KWONLY_CODE, "edits": {"params": [bad]}})
         assert resp.status_code == 400
 
+    def test_retype_x0_is_applied_false(self, client: TestClient) -> None:
+        code = (
+            "@block(states=1)\n"
+            "def f(t: float, x: np.ndarray, u: float, *, x0: float = 0.0) "
+            "-> tuple[float, np.ndarray]:\n"
+            "    return x[0], np.array([u])\n"
+        )
+        resp = client.post(
+            _REWRITE,
+            json={
+                "code": code,
+                "edits": {"params": [{"op": "retype", "name": "x0", "type": "int"}]},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied"] is False
+        assert "code" not in data
+
     def test_rename_with_port_edit_is_400(self, client: TestClient) -> None:
         resp = client.post(
             _REWRITE,

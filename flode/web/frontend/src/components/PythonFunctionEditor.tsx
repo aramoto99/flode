@@ -99,34 +99,61 @@ function _validParamName(name: string): boolean {
 
 type ParamTypeName = "float" | "int" | "bool" | "str";
 const PARAM_TYPE_OPTIONS: readonly ParamTypeName[] = ["float", "int", "bool", "str"];
+/** サーバ `MAX_PARAM_INT_DEFAULT_DIGITS` の写し。 */
+const MAX_PARAM_INT_DIGITS = 32;
+
+/** str→数値のパースを Python (`int(v, 10)` / `float(v)`) の受理文法に寄せる
+ *  (code-reviewer SHOULD: `Number()` は 0x/0o/0b を受理し、PEP 515 の
+ *  アンダースコア区切りを拒否するため規則がずれる)。 */
+function _parseNumberLikePython(s: string): number | undefined {
+  const t = s.trim();
+  if (t === "") return undefined;
+  if (/^[+-]?0[xob]/i.test(t)) return undefined; // Python の float()/int(,10) は拒否
+  if (
+    t.includes("_") &&
+    !/^[+-]?\d(?:_?\d)*(?:\.\d(?:_?\d)*)?(?:[eE][+-]?\d(?:_?\d)*)?$/.test(t)
+  ) {
+    return undefined; // アンダースコアは数字の間のみ (PEP 515)
+  }
+  const n = Number(t.replace(/_/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+}
 
 /** SPEC-0025 Amendment: 型変更時の設定値 (user_params) の変換。
- *  サーバの `_convert_param_value` と同じ規則 (**変えるときは両方変える**)。
+ *  サーバの `_convert_param_value` と同一規則 (**変えるときは両方変える**)。
+ *  `source` は変換前の宣言型 (float→str の `.0` 付与 = Python repr の再現に使う)。
  *  変換できなければ undefined = キーを落とし、新しいコード側 default に任せる。 */
-function _convertUserParamValue(v: unknown, target: ParamTypeName): unknown | undefined {
+function _convertUserParamValue(
+  v: unknown,
+  target: ParamTypeName,
+  source: string | null,
+): unknown | undefined {
   if (target === "bool") return typeof v === "boolean" ? v : undefined;
   if (target === "float") {
     if (typeof v === "boolean") return undefined;
     if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
-    if (typeof v === "string") {
-      const n = Number(v.trim() === "" ? NaN : v);
-      return Number.isFinite(n) ? n : undefined;
-    }
+    if (typeof v === "string") return _parseNumberLikePython(v);
     return undefined;
   }
   if (target === "int") {
     if (typeof v === "boolean") return undefined;
     let n: number | undefined;
-    if (typeof v === "number") n = v;
-    else if (typeof v === "string") n = Number(v.trim() === "" ? NaN : v);
-    if (n === undefined || !Number.isFinite(n)) return undefined;
+    if (typeof v === "number") n = Number.isFinite(v) ? v : undefined;
+    else if (typeof v === "string") n = _parseNumberLikePython(v);
+    if (n === undefined) return undefined;
     const out = Math.trunc(n);
-    return String(Math.abs(out)).length <= 32 ? out : undefined;
+    return String(Math.abs(out)).length <= MAX_PARAM_INT_DIGITS ? out : undefined;
   }
   // str
   if (typeof v === "string") return v;
   if (typeof v === "boolean") return v ? "True" : "False";
-  if (typeof v === "number") return Number.isFinite(v) ? String(v) : undefined;
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return undefined;
+    let text = String(v);
+    // Python repr(float) の再現: 整数値の float は ".0" を付ける (source が float のとき)
+    if (source === "float" && !/[.eE]/.test(text)) text += ".0";
+    return text;
+  }
   return undefined;
 }
 
@@ -291,8 +318,9 @@ export function PythonFunctionEditor({
       opts?: {
         /** rename 時の user_params key 追随 (pruning より前に差し替える)。 */
         renameParam?: { from: string; to: string };
-        /** retype 時の user_params 値の変換 (変換できなければキーを落とす)。 */
-        retypeParam?: { name: string; type: ParamTypeName };
+        /** retype 時の user_params 値の変換 (変換できなければキーを落とす)。
+         *  `from` = 変換前の宣言型 (float→str の ".0" 再現に使う)。 */
+        retypeParam?: { name: string; type: ParamTypeName; from: string | null };
         /** applied:true で commit した直後に呼ぶ (追加行のクリア等)。 */
         onApplied?: () => void;
       },
@@ -340,7 +368,11 @@ export function PythonFunctionEditor({
           if (retype !== undefined) {
             const up = override ?? _userParams(block);
             if (retype.name in up) {
-              const converted = _convertUserParamValue(up[retype.name], retype.type);
+              const converted = _convertUserParamValue(
+                up[retype.name],
+                retype.type,
+                retype.from,
+              );
               const { [retype.name]: _dropped, ...rest } = up;
               override =
                 converted === undefined ? rest : { ...rest, [retype.name]: converted };
@@ -440,8 +472,11 @@ export function PythonFunctionEditor({
   );
 
   const commitParamRetype = useCallback(
-    (name: string, type: ParamTypeName): void => {
-      commitRewrite({ params: [{ op: "retype", name, type }] }, { retypeParam: { name, type } });
+    (name: string, type: ParamTypeName, from: string | null): void => {
+      commitRewrite(
+        { params: [{ op: "retype", name, type }] },
+        { retypeParam: { name, type, from } },
+      );
     },
     [commitRewrite],
   );
@@ -751,7 +786,11 @@ export function PythonFunctionEditor({
                         value={p.type ?? ""}
                         disabled={rewriteBusy}
                         onChange={(e) =>
-                          commitParamRetype(p.name, e.target.value as ParamTypeName)
+                          commitParamRetype(
+                            p.name,
+                            e.target.value as ParamTypeName,
+                            p.type ?? null,
+                          )
                         }
                         className={`${SELECT_CLS} mr-1 w-16 shrink-0`}
                       >

@@ -693,6 +693,18 @@ class TestParamRetype:
         assert s.n_inputs == 2
         assert s.params_spec == (("kp", 1, int, False),)
 
+    def test_huge_hex_int_default_resets_safely(self) -> None:
+        """security-reviewer MUST (v0.52.0): 16 進リテラルは compile の
+        int_max_str_digits をバイパスする。巨大 int default の retype が
+        500 (未処理 ValueError) にも applied:false にもならず、標準値へ
+        リセットされて成功すること。"""
+        big = "0x" + "f" * 4000
+        code = f"@block\ndef f(t: float, u: float, *, k: int = {big}) -> float:\n    return u\n"
+        new = _rw(code, params=[RetypeParam(name="k", type="str")])
+        assert 'k: str = ""' in new
+        new2 = _rw(code, params=[RetypeParam(name="k", type="float")])
+        assert "k: float = 0.0" in new2
+
     def test_minimal_diff_japanese_comment(self) -> None:
         code = (
             "@block\n"
