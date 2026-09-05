@@ -536,11 +536,13 @@ function ShapeOutline({
         />
       )}
       {kind === "tag-notch-l" && (
-        // 左辺が凹む五角形タグ (Goto。v0.53.5 実物画像準拠)。凹みは h/4 と浅めにする:
-        // Goto の入力配線の終点は bbox 左辺 (edgeRectIntersect) なので、深い凹みだと
-        // 矢印頭と輪郭の間に隙間が目立つ。
+        // 左辺が凹む五角形タグ (Goto)。v0.53.6: 凹みは From の尖りと対称の 45°
+        // (深さ h/2 相当)。h/4 の浅い凹みは実物ズーム画像 (2026-09-05) で
+        // 「ほぼ長方形に見える」と再指摘され、実物準拠で深くした。入力配線の
+        // 矢印頭は bbox 左辺 = 凹みの入口に刺さる (実物も同じ見え方。深化後の
+        // 実機スクリーンショットで矢印頭と輪郭の隙間が不自然でないことを確認済)。
         <polygon
-          points={`1,1 ${w - 1},1 ${w - 1},${h - 1} 1,${h - 1} ${h / 4 + 1},${h / 2}`}
+          points={`1,1 ${w - 1},1 ${w - 1},${h - 1} 1,${h - 1} ${h / 2},${h / 2}`}
           {...commonProps}
         />
       )}
@@ -842,7 +844,8 @@ function ShapeContent({
     const label = `[${tag}]`;
     const testId = isGoto ? "goto-label" : "from-label";
     // v0.53.5: 五角形タグの凹み (Goto 左辺) / 尖り (From 右辺) 分だけ内側に寄せる
-    const padCls = isGoto ? "pl-3 pr-1" : "pl-1 pr-3";
+    // v0.53.6: Goto の凹みを深さ h/2 (既定 14px) にしたため pl-4 (16px) に拡大
+    const padCls = isGoto ? "pl-4 pr-1" : "pl-1 pr-3";
     return (
       <div
         data-testid={testId}

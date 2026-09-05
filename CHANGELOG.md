@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.6] - 2026-09-05 — Goto の左辺凹みを実物準拠の深さに
+
+### Fixed
+
+- Goto の左辺凹みが浅すぎて (深さ h/4) ほぼ長方形に見えていた問題を修正:
+  From の右辺尖りと対称の **45° (深さ h/2)** に変更し、実物のはっきりした
+  切れ込みに一致させた。パレットアイコンも追随。ラベルの左 padding を
+  凹みと重ならないよう拡大
+
 ## [0.53.5] - 2026-09-05 — Goto / From の形状を実物準拠に確定 (v0.53.4 を訂正)
 
 ### Fixed

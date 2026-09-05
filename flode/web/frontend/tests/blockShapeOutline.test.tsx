@@ -96,7 +96,9 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     expect(pts).toHaveLength(5);
     const { width, height } = getBlockShape("flode.blocks.routing.Goto");
     const notch = pts[4]!;
-    expect(notch[0]).toBeGreaterThan(1); // 左辺 (x=1) より内側
+    // v0.53.6: 凹みは From の尖りと対称の 45° (深さ h/2)。h/4 では実物より浅く
+    // 「ほぼ長方形に見える」とユーザー再指摘 (2026-09-05 ズーム画像)。
+    expect(notch[0]).toBe(height / 2);
     expect(notch[0]).toBeLessThan(width / 2);
     expect(notch[1]).toBe(height / 2);
     // 右辺は垂直 (尖らない)

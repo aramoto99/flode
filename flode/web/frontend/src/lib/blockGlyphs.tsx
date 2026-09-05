@@ -938,7 +938,7 @@ const MergeGlyph = ({ className }: GlyphProps): JSX.Element => (
 // Goto: 左辺が凹む五角形 + tag。
 const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polygon points="3,7 21,7 21,17 3,17 7,12" />
+    <polygon points="3,7 21,7 21,17 3,17 8,12" />
     <text
       x="13"
       y="14"
