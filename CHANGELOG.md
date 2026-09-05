@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.7] - 2026-09-05 — Goto の切り込みの向きを左右反転 (実物準拠)
+
+### Fixed
+
+- Goto の左側の切り込みの向きが実物と**左右逆**だった問題を修正 (ユーザー指摘):
+  「左辺が内側に凹む」ではなく **「左辺が左向きに尖る」= From の左右鏡像**
+  (`⟨[tag]` / `[tag]▷`) が正しい。尖り頂点は左辺中央 = 入力配線の矢印頭が
+  ちょうど刺さる位置。パレットアイコンも追随。旧 `tag-notch-l` 形状は廃止し
+  `trapezoid-l` を新設
+
 ## [0.53.6] - 2026-09-05 — Goto の左辺凹みを実物準拠の深さに
 
 ### Fixed

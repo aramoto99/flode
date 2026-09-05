@@ -1,6 +1,6 @@
 // ADR-0019 §(2)(3) + 視覚化リファイン: リファレンスツール風にブロック外形を type ごとに変える。
 // - 三角 (Gain) / 円 (Sum, Product) / バー (Mux, Demux) / カプセル (Inport, Outport)
-//   / 五角形タグ (Goto = 左辺凹み, From = 右辺尖り。v0.53.5 にユーザー提供の実物画像で確定)
+//   / 五角形タグ (Goto = 左辺が左向きに尖る = From の左右鏡像, From = 右辺尖り。v0.53.7 にユーザー指摘で確定)
 // - その他は compact rectangle (~72×40px) に固有 SVG glyph
 // - 入力 = 左、出力 = 右 (リファレンスツール慣習)
 // - block id は外形の **下** に小さく出す (リファレンスツールもブロック名はノード下)
@@ -535,14 +535,13 @@ function ShapeOutline({
           {...commonProps}
         />
       )}
-      {kind === "tag-notch-l" && (
-        // 左辺が凹む五角形タグ (Goto)。v0.53.6: 凹みは From の尖りと対称の 45°
-        // (深さ h/2 相当)。h/4 の浅い凹みは実物ズーム画像 (2026-09-05) で
-        // 「ほぼ長方形に見える」と再指摘され、実物準拠で深くした。入力配線の
-        // 矢印頭は bbox 左辺 = 凹みの入口に刺さる (実物も同じ見え方。深化後の
-        // 実機スクリーンショットで矢印頭と輪郭の隙間が不自然でないことを確認済)。
+      {kind === "trapezoid-l" && (
+        // 左辺が左向きに尖る五角形タグ (Goto = From の左右鏡像)。
+        // v0.53.7: ユーザー指摘「gotoだけ切り込みの方向が左右逆」で確定。
+        // v0.53.5-6 の左辺凹み (tag-notch-l) は向きが実物と逆だった。
+        // 尖り頂点 = bbox 左辺中央 → 入力配線の矢印頭がちょうど頂点に刺さる。
         <polygon
-          points={`1,1 ${w - 1},1 ${w - 1},${h - 1} 1,${h - 1} ${h / 2},${h / 2}`}
+          points={`${h / 2 + 1},1 ${w - 1},1 ${w - 1},${h - 1} ${h / 2 + 1},${h - 1} 1,${h / 2}`}
           {...commonProps}
         />
       )}
@@ -833,7 +832,7 @@ function ShapeContent({
   }
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベルを表示し、
   // ラベルは両方 ``[tag]`` (v0.53.5: 実物画像準拠で From の ``>tag>`` を廃止)。
-  // 種別は外形 (Goto = 左辺凹み / From = 右辺尖り) で識別する。
+  // 種別は外形 (Goto = 左向き尖り (From の鏡像) / From = 右向き尖り) で識別する。
   // Goto/From 間に wire は描かない (= tag だけで対応を示す、SPEC §7)。
   // GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
   if (typePath.endsWith(".Goto") || typePath.endsWith(".From")) {
@@ -843,9 +842,9 @@ function ShapeContent({
     const isGoto = typePath.endsWith(".Goto");
     const label = `[${tag}]`;
     const testId = isGoto ? "goto-label" : "from-label";
-    // v0.53.5: 五角形タグの凹み (Goto 左辺) / 尖り (From 右辺) 分だけ内側に寄せる
-    // v0.53.6: Goto の凹みを深さ h/2 (既定 14px) にしたため pl-4 (16px) に拡大
-    const padCls = isGoto ? "pl-4 pr-1" : "pl-1 pr-3";
+    // 五角形タグの尖り (Goto 左辺 / From 右辺) 分だけラベルを内側に寄せる。
+    // v0.53.7: Goto は From の左右鏡像 (左辺尖り h/2) なので padding も鏡像
+    const padCls = isGoto ? "pl-3 pr-1" : "pl-1 pr-3";
     return (
       <div
         data-testid={testId}
@@ -1138,6 +1137,7 @@ function minWidthForKind(kind: BlockShape["kind"]): number {
       return 28;
     case "triangle-r":
       return 32;
+    case "trapezoid-l":
     case "trapezoid-r":
     case "stadium":
       return 36;
@@ -1155,7 +1155,7 @@ function minHeightForKind(kind: BlockShape["kind"]): number {
     case "circle":
       return 28;
     case "stadium":
-    case "tag-notch-l":
+    case "trapezoid-l":
     case "trapezoid-r":
       // v0.47.0: 境界 / タグ系は既定 26〜28 なので最小値も下げる。幅側
       // (minWidthForKind) は既存の 36 / 40 で既定幅 44 / 72 を下回るため変更なし

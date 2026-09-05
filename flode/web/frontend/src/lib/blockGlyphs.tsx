@@ -931,16 +931,17 @@ const MergeGlyph = ({ className }: GlyphProps): JSX.Element => (
 );
 
 // SPEC-0003 / ADR-0055: Goto/From は tag ベースの仮想配線。
-// v0.46.2: canvas の輪郭 (blockShapes: tag-notch-l / trapezoid-r) と同じ五角形
+// v0.46.2: canvas の輪郭 (blockShapes: trapezoid-l / trapezoid-r) と同じ五角形
 // タグに統一 (glyph = canvas 原則、ADR-0070 ④ de facto 形状)。
-// v0.53.5: **ユーザー提供の実物スクリーンショットで確定** — Goto = 左辺凹み /
-// From = 右辺尖り (v0.53.4 の入替は誤りで戻した)。推測で再変更しないこと。
-// Goto: 左辺が凹む五角形 + tag。
+// v0.53.7: **ユーザー指摘「gotoだけ切り込みの方向が左右逆」で確定** —
+// Goto = 左辺が左向きに尖る (From の左右鏡像) / From = 右辺尖り。
+// 推測で再変更しないこと。
+// Goto: 左辺が左向きに尖る五角形 + tag (FromGlyph の左右鏡像)。
 const GotoGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
-    <polygon points="3,7 21,7 21,17 3,17 8,12" />
+    <polygon points="8,7 21,7 21,17 8,17 3,12" />
     <text
-      x="13"
+      x="14"
       y="14"
       textAnchor="middle"
       fontSize="6"

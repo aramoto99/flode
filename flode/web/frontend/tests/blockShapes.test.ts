@@ -24,12 +24,12 @@ describe("blockShapes", () => {
     expect(getBlockShape("flode.blocks.routing.Demux").kind).toBe("bar");
   });
 
-  it("returns pentagon tags for Goto (notch-l) / From (trapezoid-r) (v0.53.5 実物画像で確定)", () => {
-    // v0.53.5: ユーザー提供の実物スクリーンショットで確定 — Goto = 左辺凹み、
-    // From = 右辺尖り (v0.53.4 の入替は誤りで戻した)
+  it("returns mirrored pentagon tags for Goto (trapezoid-l) / From (trapezoid-r)", () => {
+    // v0.53.7: ユーザー指摘「切り込みの方向が左右逆」で確定 — Goto = 左辺が
+    // 左向きに尖る (From の左右鏡像)、From = 右辺尖り
     const goto = getBlockShape("flode.blocks.routing.Goto");
     const from = getBlockShape("flode.blocks.routing.From");
-    expect(goto.kind).toBe("tag-notch-l");
+    expect(goto.kind).toBe("trapezoid-l");
     expect(from.kind).toBe("trapezoid-r");
     // 同じサイズ (= UI の統一感)、v0.47.0: タグ系は通常ブロックより一段小さい 72×28
     expect(goto.width).toBe(72);

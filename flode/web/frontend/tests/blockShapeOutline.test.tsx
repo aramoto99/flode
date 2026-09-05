@@ -1,7 +1,7 @@
 // v0.46.2 (ADR-0070 ④): Inport / Outport = 角丸カプセル、五角形タグの輪郭 SVG が
 // canvas に描かれることを検証する。
-// v0.53.5: ユーザー提供の実物スクリーンショットで確定 — Goto = 左辺凹み /
-// From = 右辺尖り、ラベルは両方 [tag] (v0.53.4 の入替は誤りで戻した)。
+// v0.53.7: ユーザー指摘で確定 — Goto = 左辺が左向きに尖る (From の左右鏡像) /
+// From = 右辺尖り、ラベルは両方 [tag]。
 // あわせて Inport のポート番号表示が shape 変更後も残ることを確認する。
 
 import { ReactFlowProvider } from "@xyflow/react";
@@ -86,7 +86,7 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     expect(getByText("1")).toBeTruthy();
   });
 
-  it("Goto は左辺が凹む五角形 (凹み頂点が左辺中央より内側)", () => {
+  it("Goto は左辺が左向きに尖る五角形 (From の左右鏡像、v0.53.7)", () => {
     const { container, getByTestId } = renderBlock("flode.blocks.routing.Goto", {
       tag: "A",
     });
@@ -95,12 +95,13 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     const pts = polygonPoints(poly!);
     expect(pts).toHaveLength(5);
     const { width, height } = getBlockShape("flode.blocks.routing.Goto");
-    const notch = pts[4]!;
-    // v0.53.6: 凹みは From の尖りと対称の 45° (深さ h/2)。h/4 では実物より浅く
-    // 「ほぼ長方形に見える」とユーザー再指摘 (2026-09-05 ズーム画像)。
-    expect(notch[0]).toBe(height / 2);
-    expect(notch[0]).toBeLessThan(width / 2);
-    expect(notch[1]).toBe(height / 2);
+    // v0.53.7: ユーザー指摘「切り込みの方向が左右逆」— 尖り頂点は左辺中央 (x=1)
+    const tip = pts[4]!;
+    expect(tip[0]).toBe(1);
+    expect(tip[1]).toBe(height / 2);
+    // 本体の左端は h/2+1 (尖りの深さ = From の尖りと同じ h/2 相当)
+    expect(pts[0]![0]).toBe(height / 2 + 1);
+    expect(pts[3]![0]).toBe(height / 2 + 1);
     // 右辺は垂直 (尖らない)
     expect(pts[1]![0]).toBe(width - 1);
     expect(pts[2]![0]).toBe(width - 1);

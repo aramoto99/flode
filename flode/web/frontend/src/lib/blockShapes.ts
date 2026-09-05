@@ -8,8 +8,8 @@ export type BlockShapeKind =
   | "triangle-r"     // 右向き三角形 (Gain)
   | "circle"         // 円 (Sum, Product, Divide)
   | "bar"            // 縦長バー (Mux, Demux)
-  | "trapezoid-r"    // 右辺が尖る五角形タグ (From: 矢印頭。v0.53.5 でユーザー提供の実物画像で確定)
-  | "tag-notch-l"    // 左辺が凹む五角形タグ (Goto: 左辺凹み)
+  | "trapezoid-r"    // 右辺が尖る五角形タグ (From: 矢印頭)
+  | "trapezoid-l"    // 左辺が左向きに尖る五角形タグ (Goto: From の左右鏡像。v0.53.7 で確定)
   | "stadium";       // 角丸カプセル (Inport / Outport、v0.46.2: de facto 形状)
 
 export interface BlockShape {
@@ -102,15 +102,15 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   // (= 両方 ``[tag]``、v0.53.5 で実物準拠に統一) を表示するため横長。
   // v0.46.2: 矩形 → 五角形タグ (リファレンスツールの de facto 形状、ADR-0070
   // 優先度 5 → 4 へ昇格)。
-  // v0.53.5: **ユーザー提供の実物スクリーンショット (2026-09-05) で確定**:
-  // Goto = 左辺が内側に凹む / From = 右辺が尖る (v0.46.2 の割当が正しく、
-  // v0.53.4 の入替は誤りだったため戻した)。この割当は本画像が根拠 —
-  // 推測で再変更しないこと。
+  // v0.53.7: **ユーザー指摘 (2026-09-05「gotoだけ切り込みの方向が左右逆」) で確定**:
+  // Goto = 左辺が左向きに尖る (From の左右鏡像 ⟨[tag] / [tag]▷) / From = 右辺尖り。
+  // v0.53.5-6 の「左辺凹み (tag-notch-l)」は切り込みの向きが実物と逆だった。
+  // 根拠はユーザーの実物照合 — 推測で再変更しないこと。
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
   // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
   // v0.47.0: 80×32 → 72×28 (タグ系は通常ブロックより一段小さく)
-  "flode.blocks.routing.Goto":               { kind: "tag-notch-l", width: 72, height: 28 },
+  "flode.blocks.routing.Goto":               { kind: "trapezoid-l", width: 72, height: 28 },
   "flode.blocks.routing.From":               { kind: "trapezoid-r", width: 72, height: 28 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
@@ -139,7 +139,7 @@ export function isKnownShapeKind(s: string): s is BlockShapeKind {
     "circle",
     "bar",
     "trapezoid-r",
-    "tag-notch-l",
+    "trapezoid-l",
     "stadium",
   ].includes(s);
 }
