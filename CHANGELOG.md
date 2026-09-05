@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.4] - 2026-09-05 — Goto / From の五角形タグの向きを修正
+
+### Fixed
+
+- v0.46.2 以降、Goto / From の五角形タグの形状割当が**逆**だった問題を修正:
+  正しくは **Goto = 右辺が尖る矢印頭** (信号がタグへ出て行く) /
+  **From = 左辺が凹むリボン尾** (矢印を受ける)。パレットアイコンも追随。
+  旧割当では装飾がちょうど配線の接続辺に来てしまっていた
+
 ## [0.53.3] - 2026-09-05 — Mux / Demux のパレットアイコンを実物に一致
 
 ### Changed

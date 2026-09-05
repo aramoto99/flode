@@ -1,6 +1,6 @@
 // ADR-0019 §(2)(3) + 視覚化リファイン: リファレンスツール風にブロック外形を type ごとに変える。
 // - 三角 (Gain) / 円 (Sum, Product) / バー (Mux, Demux) / カプセル (Inport, Outport)
-//   / 五角形タグ (Goto = 左辺凹み, From = 右辺尖り)
+//   / 五角形タグ (Goto = 右辺尖りの矢印頭, From = 左辺凹みのリボン尾。v0.53.4 で入替修正)
 // - その他は compact rectangle (~72×40px) に固有 SVG glyph
 // - 入力 = 左、出力 = 右 (リファレンスツール慣習)
 // - block id は外形の **下** に小さく出す (リファレンスツールもブロック名はノード下)
@@ -529,16 +529,15 @@ function ShapeOutline({
         />
       )}
       {kind === "trapezoid-r" && (
-        // 右辺が尖る五角形タグ (From: 矢印頭)
+        // 右辺が尖る五角形タグ (Goto: 矢印頭。出力配線は無いので尖りは配線と干渉しない)
         <polygon
           points={`1,1 ${w - h / 2 - 1},1 ${w - 1},${h / 2} ${w - h / 2 - 1},${h - 1} 1,${h - 1}`}
           {...commonProps}
         />
       )}
       {kind === "tag-notch-l" && (
-        // 左辺が凹む五角形タグ (Goto: リボン尾)。凹みは h/4 と浅めにする:
-        // 配線の終点は bbox 左辺 (edgeRectIntersect) なので、深い凹みだと矢印頭と
-        // 輪郭の間に隙間が目立つ。
+        // 左辺が凹む五角形タグ (From: リボン尾)。v0.53.4 の入替後、左辺に入力配線は
+        // 無い (From は source) ため配線干渉の懸念は消えたが、凹み h/4 の見た目は維持
         <polygon
           points={`1,1 ${w - 1},1 ${w - 1},${h - 1} 1,${h - 1} ${h / 4 + 1},${h / 2}`}
           {...commonProps}
@@ -840,8 +839,8 @@ function ShapeContent({
     const isGoto = typePath.endsWith(".Goto");
     const label = isGoto ? `[${tag}]` : `>${tag}>`;
     const testId = isGoto ? "goto-label" : "from-label";
-    // v0.46.2: 五角形タグの凹み (Goto 左辺) / 尖り (From 右辺) 分だけ内側に寄せる
-    const padCls = isGoto ? "pl-3 pr-1" : "pl-1 pr-3";
+    // v0.53.4: 五角形タグの尖り (Goto 右辺) / 凹み (From 左辺) 分だけ内側に寄せる
+    const padCls = isGoto ? "pl-1 pr-3" : "pl-3 pr-1";
     return (
       <div
         data-testid={testId}
