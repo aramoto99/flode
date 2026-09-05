@@ -8,8 +8,8 @@ export type BlockShapeKind =
   | "triangle-r"     // 右向き三角形 (Gain)
   | "circle"         // 円 (Sum, Product, Divide)
   | "bar"            // 縦長バー (Mux, Demux)
-  | "trapezoid-r"    // 右辺が尖る五角形タグ (Goto: 矢印頭。v0.53.4 で From と入替修正)
-  | "tag-notch-l"    // 左辺が凹む五角形タグ (From: リボン尾 = 矢印を受ける側)
+  | "trapezoid-r"    // 右辺が尖る五角形タグ (From: 矢印頭。v0.53.5 でユーザー提供の実物画像で確定)
+  | "tag-notch-l"    // 左辺が凹む五角形タグ (Goto: 左辺凹み)
   | "stadium";       // 角丸カプセル (Inport / Outport、v0.46.2: de facto 形状)
 
 export interface BlockShape {
@@ -99,19 +99,19 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.routing.Switch":                { kind: "rect", width: 64, height: 56 },
 
   // SPEC-0003 / ADR-0055: tag ベース仮想配線。中央に tag ラベル
-  // (= ``[tag]`` / ``>tag>``) を表示するため横長。
+  // (= 両方 ``[tag]``、v0.53.5 で実物準拠に統一) を表示するため横長。
   // v0.46.2: 矩形 → 五角形タグ (リファレンスツールの de facto 形状、ADR-0070
   // 優先度 5 → 4 へ昇格)。
-  // v0.53.4 (ユーザー指摘): v0.46.2 の割当が**逆**だったため入替。de facto は
-  // Goto = 右辺が尖る矢印頭 (信号がタグへ出て行く) / From = 左辺が凹むリボン尾
-  // (矢印を受ける)。旧割当は装飾がちょうど配線の接続辺 (Goto 左 = 入力、
-  // From 右 = 出力) に来てしまってもいた。
+  // v0.53.5: **ユーザー提供の実物スクリーンショット (2026-09-05) で確定**:
+  // Goto = 左辺が内側に凹む / From = 右辺が尖る (v0.46.2 の割当が正しく、
+  // v0.53.4 の入替は誤りだったため戻した)。この割当は本画像が根拠 —
+  // 推測で再変更しないこと。
   // tag 文字列の長さに応じて NodeResizer で手動伸縮可能 (= 既存ブロックと同じ
   // 振る舞い)。SPEC-0003 §5 の tag 名上限は 64 文字。
   // GotoTagVisibility は Amendment (2026-05-19) で Phase 2 送り。
   // v0.47.0: 80×32 → 72×28 (タグ系は通常ブロックより一段小さく)
-  "flode.blocks.routing.Goto":               { kind: "trapezoid-r", width: 72, height: 28 },
-  "flode.blocks.routing.From":               { kind: "tag-notch-l", width: 72, height: 28 },
+  "flode.blocks.routing.Goto":               { kind: "tag-notch-l", width: 72, height: 28 },
+  "flode.blocks.routing.From":               { kind: "trapezoid-r", width: 72, height: 28 },
 
   // 残り (Constant / Ramp / RateTransition) は default rect (72x40) のまま、
   // 値 / icon が横長を要求するため。

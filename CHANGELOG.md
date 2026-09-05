@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.5] - 2026-09-05 — Goto / From の形状を実物準拠に確定 (v0.53.4 を訂正)
+
+### Fixed
+
+- v0.53.4 の Goto / From 形状入替は**誤り**だったため元に戻した (参照ツールの
+  実物スクリーンショットで確定): **Goto = 左辺が凹む / From = 右辺が尖る**
+  (= v0.46.2 の割当が正しかった)
+- **From のラベルを `>tag>` から `[tag]` に統一** (実物準拠。Goto と同じ角括弧。
+  種別は外形で識別する)
+
 ## [0.53.4] - 2026-09-05 — Goto / From の五角形タグの向きを修正
 
 ### Fixed

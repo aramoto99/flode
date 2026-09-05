@@ -1,6 +1,7 @@
 // SPEC-0003 / ADR-0055: Goto / From のラベル render テスト。
 //
-// Canvas (BlockNodeView) で Goto は ``[tag]``、From は ``>tag>`` のラベルを
+// Canvas (BlockNodeView) で Goto / From は共に ``[tag]`` のラベルを
+// (v0.53.5: From の ``>tag>`` は実物画像準拠で廃止)
 // 表示することを検証する。enum select / tag 編集は ParameterPanel 側の
 // 既存パスで自動的に動くため別 test 不要。
 // GotoTagVisibility (Scoped 用) は Amendment (2026-05-19) で Phase 2 送り。
@@ -60,14 +61,14 @@ describe("BlockNodeView: Goto / From labels (SPEC-0003)", () => {
     expect(screen.getByText("[velocity]")).toBeTruthy();
   });
 
-  it("renders From as >tag>", () => {
+  it("renders From as [tag] (v0.53.5: 実物画像準拠で >tag> を廃止)", () => {
     renderBlockNode(
       "flode.blocks.routing.From",
       { tag: "velocity" },
       0,
       1,
     );
-    expect(screen.getByText(">velocity>")).toBeTruthy();
+    expect(screen.getByText("[velocity]")).toBeTruthy();
   });
 
   it("renders '?' as fallback when tag is missing or non-string", () => {

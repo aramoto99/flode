@@ -1,7 +1,7 @@
 // v0.46.2 (ADR-0070 ④): Inport / Outport = 角丸カプセル、五角形タグの輪郭 SVG が
 // canvas に描かれることを検証する。
-// v0.53.4 (ユーザー指摘): Goto/From の形状割当が逆だったため入替 —
-// Goto = 右辺尖りの矢印頭 / From = 左辺凹みのリボン尾。
+// v0.53.5: ユーザー提供の実物スクリーンショットで確定 — Goto = 左辺凹み /
+// From = 右辺尖り、ラベルは両方 [tag] (v0.53.4 の入替は誤りで戻した)。
 // あわせて Inport のポート番号表示が shape 変更後も残ることを確認する。
 
 import { ReactFlowProvider } from "@xyflow/react";
@@ -86,7 +86,7 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     expect(getByText("1")).toBeTruthy();
   });
 
-  it("Goto は右辺が尖る五角形 (頂点が右辺中央 = 矢印頭)", () => {
+  it("Goto は左辺が凹む五角形 (凹み頂点が左辺中央より内側)", () => {
     const { container, getByTestId } = renderBlock("flode.blocks.routing.Goto", {
       tag: "A",
     });
@@ -95,16 +95,17 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     const pts = polygonPoints(poly!);
     expect(pts).toHaveLength(5);
     const { width, height } = getBlockShape("flode.blocks.routing.Goto");
-    const tip = pts[2]!;
-    expect(tip[0]).toBe(width - 1);
-    expect(tip[1]).toBe(height / 2);
-    // 左辺 (入力配線側) は垂直 (凹まない)
-    expect(pts[0]![0]).toBe(1);
-    expect(pts[4]![0]).toBe(1);
+    const notch = pts[4]!;
+    expect(notch[0]).toBeGreaterThan(1); // 左辺 (x=1) より内側
+    expect(notch[0]).toBeLessThan(width / 2);
+    expect(notch[1]).toBe(height / 2);
+    // 右辺は垂直 (尖らない)
+    expect(pts[1]![0]).toBe(width - 1);
+    expect(pts[2]![0]).toBe(width - 1);
     expect(getByTestId("goto-label").textContent).toBe("[A]");
   });
 
-  it("From は左辺が凹む五角形 (凹み頂点が左辺中央より内側 = リボン尾)", () => {
+  it("From は右辺が尖る五角形 (頂点が右辺中央)、ラベルは [tag]", () => {
     const { container, getByTestId } = renderBlock("flode.blocks.routing.From", {
       tag: "A",
     });
@@ -113,13 +114,13 @@ describe("ブロック輪郭 (v0.46.2 de facto 形状)", () => {
     const pts = polygonPoints(poly!);
     expect(pts).toHaveLength(5);
     const { width, height } = getBlockShape("flode.blocks.routing.From");
-    const notch = pts[4]!;
-    expect(notch[0]).toBeGreaterThan(1); // 左辺 (x=1) より内側
-    expect(notch[0]).toBeLessThan(width / 2);
-    expect(notch[1]).toBe(height / 2);
-    // 右辺 (出力配線側) は垂直 (尖らない)
-    expect(pts[1]![0]).toBe(width - 1);
-    expect(pts[2]![0]).toBe(width - 1);
-    expect(getByTestId("from-label").textContent).toBe(">A>");
+    const tip = pts[2]!;
+    expect(tip[0]).toBe(width - 1);
+    expect(tip[1]).toBe(height / 2);
+    // 左辺は垂直 (凹まない)
+    expect(pts[0]![0]).toBe(1);
+    expect(pts[4]![0]).toBe(1);
+    // v0.53.5: ラベルは >A> ではなく [A] (実物画像準拠)
+    expect(getByTestId("from-label").textContent).toBe("[A]");
   });
 });
