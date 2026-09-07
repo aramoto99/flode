@@ -56,4 +56,21 @@ test.describe("ParameterPanel (v3.x auto-save)", () => {
       .find((b) => b.id === "g");
     expect(gain?.params.k).toBe(7.5);
   });
+
+  // SPEC-0027 (SM-D Stage 0): 影の型表示セクション。表示のみ・挙動不変。
+  test("shows the shadow signal dtype section for a selected block", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByText(FIXTURE_FILENAME).click({ timeout: 15_000 });
+    await page.locator('.react-flow__node[data-id="g"]').click();
+    await expect(page.getByTestId("parameter-panel")).toBeVisible();
+
+    // 300ms debounce 後に backend の resolve-dtypes 結果が描画される
+    await expect(page.getByTestId("dtype-out-0")).toHaveText("float64", {
+      timeout: 10_000,
+    });
+    // shadow_note は必須 (「型が見えるのに結果が変わらない」誤解の防止)
+    await expect(page.getByTestId("dtype-shadow-note")).toBeVisible();
+  });
 });

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.0] - 2026-09-08 — SM-D Stage 0: 影の型伝播 (表示のみ / 挙動不変)
+
+### Added
+
+- **影の型伝播 (shadow dtype propagation)**: 各ポートの numpy dtype
+  (`float64` / `int64` / `int32` / `uint8` / `bool`) を**静的に推論して表示**する
+  - `Simulator.resolve_dtypes()` (Python API) と
+    `POST /api/v1/models/resolve-dtypes` (REST) を新設
+  - Inspector に read-only「信号型 (shadow)」セクションを追加
+  - PythonFunction を含むモデルでは build を行わない static mode に縮退し、
+    **ユーザーコードを一切実行しない**
+- **注意: 表示のみで、シミュレーション結果には一切影響しない** (「dtype 対応」
+  ではない)。信号は従来どおりすべて倍精度で計算される。挙動不変性は
+  「run 結果の bit 一致 + `.flw.json` の byte 不変 + schema 据え置き」を
+  回帰テストで機械検証済み
+
 ## [0.53.7] - 2026-09-05 — Goto の切り込みの向きを左右反転 (実物準拠)
 
 ### Fixed

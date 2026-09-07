@@ -30,6 +30,7 @@ import {
 } from "../store/appStore";
 import type { BlockEntry, MaskParamSpec } from "../types/api";
 import { PythonFunctionEditor } from "./PythonFunctionEditor";
+import { SignalDtypeSection } from "./SignalDtypeSection";
 import {
   CHECKBOX_CLS,
   ExpressionEditor,
@@ -468,6 +469,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
               </details>
             </>
           )}
+
+          {/* SPEC-0027 (SM-D Stage 0): 影の型表示 (read-only、失敗時は非表示) */}
+          <SignalDtypeSection blockId={block.id} />
 
           {error && (
             <div

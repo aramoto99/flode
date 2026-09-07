@@ -7,6 +7,7 @@
 import type {
   BlockMetadata,
   BlockRegistryResponse,
+  DtypesResponse,
   FailurePayload,
   FlwModel,
   LibraryEntryDetail,
@@ -200,6 +201,27 @@ export async function resolvePortShapes(
   return _fetch<ResolvedPortShapes>("/blocks/resolve-port-shapes", {
     method: "POST",
     body: JSON.stringify({ type_path: typePath, params }),
+  });
+}
+
+/**
+ * SPEC-0027 (SM-D Stage 0): モデル全体の影の型解決。
+ *
+ * 表示専用の静的解析で、シミュレーションは実行されない (ユーザーコードも
+ * 実行されない)。frontend では dtype を再計算せず本レスポンスの表示のみ行う
+ * (ADR-0077 §データ整合性 1 の SSOT 制約)。
+ *
+ * @param model インライン model (= editingModel、未保存でよい)
+ * @param signal debounce 中の旧リクエスト破棄用 AbortSignal
+ */
+export async function resolveModelDtypes(
+  model: FlwModel,
+  signal?: AbortSignal,
+): Promise<DtypesResponse> {
+  return _fetch<DtypesResponse>("/models/resolve-dtypes", {
+    method: "POST",
+    body: JSON.stringify({ model }),
+    signal,
   });
 }
 

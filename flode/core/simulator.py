@@ -44,6 +44,7 @@ from .persistence import (
 
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
     from ..analysis.linearize import LinearSystem
+    from .dtypes import DTypeResolution
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
@@ -1274,6 +1275,28 @@ class Simulator:
         from ..analysis.linearize import linearize as _linearize
 
         return _linearize(self, t=t, x=x, u=u, method=method, epsilon=epsilon)
+
+    def resolve_dtypes(self) -> DTypeResolution:
+        """影の型解決を行う (SM-D Stage 0、SPEC-0027 / ADR-0077)。
+
+        ``flode.core.dtypes.resolve_dtypes(self)`` の薄いラッパ。実行はせず、
+        各ポートが「SM-D 完成時に流れているべき dtype」を静的推論する。
+        **シミュレーション結果には一切影響しない** (Stage 0 は表示・測定のみ)。
+        例外は送出せず、失敗は診断 (``dtype.build_failed`` 等) として返る。
+
+        Returns:
+            :class:`flode.core.dtypes.DTypeResolution`
+            (``ports`` / ``diagnostics`` / ``summary``)。
+
+        Example:
+            >>> res = sim.resolve_dtypes()  # doctest: +SKIP
+            >>> res.out_dtype("const-1", 0)  # doctest: +SKIP
+            'int64'
+        """
+        # 循環 import 回避のため遅延 import (linearize と同じ流儀)
+        from .dtypes import resolve_dtypes as _resolve_dtypes
+
+        return _resolve_dtypes(self)
 
     @property
     def is_stopped(self) -> bool:

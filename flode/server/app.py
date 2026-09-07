@@ -21,6 +21,7 @@ from .routes import (
     blocks_router,
     files_router,
     libraries_router,
+    models_router,
     simulations_router,
 )
 from .runtime import SimulationManager
@@ -128,6 +129,7 @@ def create_app(*, settings: Settings) -> FastAPI:
     app.include_router(blocks_router, prefix="/api/v1")
     app.include_router(libraries_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
+    app.include_router(models_router, prefix="/api/v1")
     register_error_handlers(app)
 
     # ADR-0012 §(6): frontend ビルド成果物を ``flode/server/static/`` から配信。

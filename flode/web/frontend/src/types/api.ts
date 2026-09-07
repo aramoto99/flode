@@ -290,6 +290,42 @@ export interface ResolvedPortShapes {
   port_shapes_out: number[][];
 }
 
+// SPEC-0027 (SM-D Stage 0): ``POST /api/v1/models/resolve-dtypes`` のレスポンス
+// (schema "dtypes.v1")。dtype は表示専用の派生情報で、モデル JSON には保存しない。
+export interface DtypesPortEntry {
+  block_id: string;
+  direction: "in" | "out";
+  port_index: number;
+  /** 語彙 5 種 ("bool"/"uint8"/"int32"/"int64"/"float64") または "unknown"。 */
+  dtype: string;
+}
+
+export interface DtypesDiagnostic {
+  severity: "error" | "warning" | "info";
+  code: string;
+  /** en 固定のフォールバック文。i18n は code をキーに frontend で行う。 */
+  message: string;
+  block_id: string | null;
+  direction: "in" | "out" | null;
+  port_index: number | null;
+  from_dtype: string | null;
+  to_dtype: string | null;
+}
+
+export interface DtypesSummary {
+  total_ports: number;
+  by_dtype: Record<string, number>;
+  unresolved: number;
+  non_float_ports: number;
+}
+
+export interface DtypesResponse {
+  schema_version: string;
+  ports: DtypesPortEntry[];
+  diagnostics: DtypesDiagnostic[];
+  summary: DtypesSummary;
+}
+
 // ADR-0056: シミュレーション失敗時の構造化エラー payload。
 // WS の ``failed`` メッセージにマージされる + REST start API の ``detail`` にも同じ
 // schema で入る。``category === "unknown"`` で fallback、frontend 未知の

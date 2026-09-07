@@ -123,6 +123,14 @@ def my_integrator(t, x, u):
 > `127.0.0.1` 以外に bind したサーバーでは `flode --allow-python-blocks` を付けない
 > 限り実行が拒否されます。式で書けるロジックには `Fcn` を使ってください。
 
+### 信号型の表示 (shadow、v0.54.0)
+
+Inspector の「信号型 (shadow)」セクションと `Simulator.resolve_dtypes()` は、
+各ポートの numpy dtype (`float64` / `int64` / `bool` など) を**静的に推論して
+表示**します。**現時点では参考情報であり、実行結果には一切影響しません**
+(信号は従来どおりすべて倍精度で計算されます)。将来の段階的な dtype 対応
+(SM-D) のための測定装置です。
+
 ## バージョニング
 
 [ZeroVer](https://0ver.org/) を採用しており `0.x` に留まり続けます。
