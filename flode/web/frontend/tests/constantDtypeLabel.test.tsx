@@ -66,26 +66,19 @@ describe("Constant / Cast canvas face with dtype (SPEC-0028 Q9)", () => {
     expect(getByTestId("constant-dtype-label").textContent).toBe("int32");
   });
 
-  it("Constant with output_type keeps the effective-value display", () => {
+  it("Constant without dtype (auto) shows the raw value only", () => {
     const { getByText, queryByTestId } = renderBlock(
       "flode.blocks.sources.Constant",
-      { value: 2.7, output_type: "int" },
+      { value: 2.7 },
     );
-    expect(getByText("3")).toBeTruthy();  // 最近接偶数丸めの実効値 (SPEC-0026)
+    expect(getByText("2.7")).toBeTruthy(); // 生値のまま (変換の再実装をしない)
     expect(queryByTestId("constant-dtype-label")).toBeNull();
   });
 
-  it("Cast with dtype shows the dtype name instead of output_type", () => {
+  it("Cast with dtype shows the dtype name", () => {
     const { getByText } = renderBlock("flode.blocks.cast.Cast", {
       dtype: "uint8",
     });
     expect(getByText("uint8")).toBeTruthy();
-  });
-
-  it("Cast without dtype keeps the output_type label", () => {
-    const { getByText } = renderBlock("flode.blocks.cast.Cast", {
-      output_type: "bool",
-    });
-    expect(getByText("bool")).toBeTruthy();
   });
 });

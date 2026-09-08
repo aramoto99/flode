@@ -1,5 +1,5 @@
-// SPEC-0026 変更履歴 (3): Cast の canvas 面表示は変換後の型名 (ユーザー要望で
-// 固定テキスト `cast` から変更。パレット glyph は `cast` のまま)。
+// Cast の canvas 面表示は変換後の型名 (パレット glyph は `cast` のまま)。
+// v0.56.0 (output_type 撤去): dtype 名を常時表示 (既定 float64)。
 
 import { ReactFlowProvider } from "@xyflow/react";
 import { cleanup, render } from "@testing-library/react";
@@ -59,15 +59,18 @@ function renderCast(params: Record<string, unknown>) {
   );
 }
 
-describe("Cast の面表示は変換後の型名 (SPEC-0026 変更履歴 (3))", () => {
-  it.each(["float", "int", "bool"] as const)("output_type=%s を表示", (ot) => {
-    const { container } = renderCast({ output_type: ot });
-    expect(container.textContent).toContain(ot);
-    expect(container.textContent).not.toContain("cast");
-  });
+describe("Cast の面表示は dtype 名 (v0.56.0 output_type 撤去後)", () => {
+  it.each(["float64", "int32", "int64", "uint8", "bool"] as const)(
+    "dtype=%s を表示",
+    (dt) => {
+      const { container } = renderCast({ dtype: dt });
+      expect(container.textContent).toContain(dt);
+      expect(container.textContent).not.toContain("cast");
+    },
+  );
 
-  it("params 欠落 (防御) は既定の float を表示", () => {
+  it("params 欠落 (防御) は既定の float64 を表示", () => {
     const { container } = renderCast({});
-    expect(container.textContent).toContain("float");
+    expect(container.textContent).toContain("float64");
   });
 });

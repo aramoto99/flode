@@ -47,7 +47,7 @@ def _model_dict(sim: Simulator, tmp: Path) -> dict[str, Any]:
 
 def _int_gain_model(tmp: Path) -> dict[str, Any]:
     sim = Simulator(t_end=0.1, dt=0.01)
-    c = sim.add(Constant(value=2.0, output_type="int", id="c"))
+    c = sim.add(Constant(value=2.0, dtype="int64", id="c"))
     g = sim.add(Gain(k=3.0, id="g"))
     sim.connect(c, g)
     return _model_dict(sim, tmp)
@@ -72,7 +72,7 @@ class TestResolveDtypesEndpoint:
 
     def test_model_path_resolves(self, client: TestClient, workspace: Path) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
-        sim.add(Constant(value=1.0, output_type="bool", id="c"))
+        sim.add(Constant(value=1.0, dtype="bool", id="c"))
         sim.save(workspace / "m.flw.json")
         resp = client.post(ENDPOINT, json={"model_path": "m.flw.json"})
         assert resp.status_code == 200
@@ -143,7 +143,7 @@ class TestResolveDtypesEndpoint:
             """
         )
         sim = Simulator(t_end=0.1, dt=0.01)
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         pf = sim.add(PythonFunction(code=code, id="pf"))
         sim.connect(c, pf)
         resp = client.post(ENDPOINT, json={"model": _model_dict(sim, tmp_path)})
@@ -217,7 +217,7 @@ class TestResolveDtypesEndpoint:
     ) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
         c = sim.add(Constant(value=2.7, id="c"))
-        cast = sim.add(Cast(output_type="int", id="cast"))
+        cast = sim.add(Cast(dtype="int64", id="cast"))
         sim.connect(c, cast)
         resp = client.post(ENDPOINT, json={"model": _model_dict(sim, tmp_path)})
         assert resp.status_code == 200

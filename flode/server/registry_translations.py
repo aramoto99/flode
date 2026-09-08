@@ -38,16 +38,16 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "display_name": "Constant",
             "docstring_summary": (
                 "Constant value source y(t) = value. 'dtype' emits a real numpy "
-                "dtype (int32/int64/uint8/bool); 'output_type' keeps float64 "
-                "value semantics. The two cannot be combined."
+                "dtype (float64/int32/int64/uint8/bool); the default 'auto' keeps "
+                "a plain float64 constant."
             ),
         },
         "ja": {
             "display_name": "定数",
             "docstring_summary": (
                 "定数値ソース y(t) = value。dtype は実 numpy 型 "
-                "(int32/int64/uint8/bool) で出力し、output_type は float64 の"
-                "値の意味論。両者は併用不可。"
+                "(float64/int32/int64/uint8/bool) で出力する。既定 auto は"
+                "ただの float64 定数。"
             ),
         },
     },
@@ -272,23 +272,21 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "整数化 floor / ceil / round / trunc (mode で選択)。",
         },
     },
-    # SPEC-0026 (v0.53.0): Cast — 値の意味論の型変換 (ADR-0076)
+    # SPEC-0028 (v0.56.0): Cast — 実 dtype 変換 (output_type は撤去済み)
     "flode.blocks.cast.Cast": {
         "en": {
             "display_name": "Cast",
             "docstring_summary": (
-                "Type cast. 'dtype' performs a real numpy conversion "
+                "Real numpy dtype conversion "
                 "(float64/int32/int64/uint8/bool; truncation toward zero). "
-                "'output_type' keeps float64 value semantics (default float is "
-                "identity). The two cannot be combined."
+                "Always converts — there is no identity mode."
             ),
         },
         "ja": {
             "display_name": "型変換",
             "docstring_summary": (
-                "型変換。dtype は実 numpy 変換 (float64/int32/int64/uint8/bool、"
-                "ゼロ方向切捨て)。output_type は float64 の値の意味論 (既定 float "
-                "は恒等)。両者は併用不可。"
+                "実 numpy dtype 変換 (float64/int32/int64/uint8/bool、"
+                "ゼロ方向切捨て)。常に変換する (恒等モードなし)。"
             ),
         },
     },

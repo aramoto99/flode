@@ -187,26 +187,26 @@ def test_migrate_to_current_sets_migrated_from() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.11"
+    assert out["schema_version"] == "0.12"
     assert out["_migrated_from"] == "0.8"
 
 
 def test_migrate_to_current_no_meta_when_already_current() -> None:
     """現バージョンでロードした場合は ``_migrated_from`` メタを付けない。"""
     data = {
-        "schema_version": "0.11",
+        "schema_version": "0.12",
         "simulator": {},
         "blocks": [],
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.11"
+    assert out["schema_version"] == "0.12"
     assert "_migrated_from" not in out
 
 
 def test_migrate_to_current_records_oldest_version() -> None:
     """連鎖 migration の場合、``_migrated_from`` には元の最古バージョンが入る。"""
-    # 0.7 → 0.8 → 0.9 → 0.10 → 0.11 と 4 段経由する
+    # 0.7 → 0.8 → 0.9 → 0.10 → 0.11 → 0.12 と 5 段経由する
     data = {
         "schema_version": "0.7",
         "simulator": {},
@@ -214,5 +214,5 @@ def test_migrate_to_current_records_oldest_version() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.11"
+    assert out["schema_version"] == "0.12"
     assert out["_migrated_from"] == "0.7"

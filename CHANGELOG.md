@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.0] - 2026-09-09 — output_type 撤去: 型概念を dtype に一本化
+
+### Removed (**破壊的変更**)
+
+- **`output_type` param を完全撤去** (`Cast` / `Constant`)。型概念は
+  `dtype` (v0.55.0、実 numpy dtype) の 1 系統のみになった
+  - `Cast` は `dtype` のみを持つ**常に変換するブロック**に (既定 `"float64"`、
+    恒等パススルーの `"auto"` は Cast から削除)。`Cast` を含むモデルは常に
+    dtype 宣言モデルとして実行される (全 float64 なら結果は bit 単位で同一)
+  - `Constant` は `dtype` のみ (既定 `"auto"` = 未宣言 = float64 定数)
+  - 旧 `output_type` の等価機能は既存ブロックで表現: 偶数丸め =
+    `Rounding(mode="round")`、0/1 化 = `CompareToZero(op="!=")`
+  - 背景: flode は未公開のため互換制約がなく、2 系統併存の負債をここで返済
+    (ADR-0077 D-5 撤回、オーナー決定 2026-09-09)
+
+### Changed
+
+- schema **0.12**: 旧ファイル (0.11 以前) はロード時に**数値等価な自動変換**
+  - `Constant(output_type=...)` → 実効値を `value` にベイク
+    (int = 偶数丸め / bool = 0 or 1)。ベイク不能な値 (mask placeholder /
+    float 化できない巨大整数) は生値のまま WARNING ログ
+  - `Cast(output_type="int")` → `Rounding(mode="round")`
+  - `Cast(output_type="bool")` → `CompareToZero(op="!=")`
+  - 恒等 `Cast(output_type="float")`: モデル内に `dtype` 宣言が 1 つでもあれば
+    **ブロック削除 + 上流下流の直結** (0.11 の dtype 素通しと完全等価 —
+    `Cast(dtype="float64")` 化すると宣言経路上で float64 強制点になり結果が
+    変わるため)。宣言ゼロなら `Cast(dtype="float64")` (bit-identical を
+    テストで固定)
+  - ネスト Subsystem 内も再帰変換 (connections / layout 含む)。変換後の
+    実行結果は旧経路と数値同一 (uint8 wrap 保存等をテストで固定)
+- `.flwlib.json` も **`libraries.v3`** へ bump: entry 内 Subsystem の
+  `output_type` を model 側と同じロジックで自動変換 (v0.55.0 でエクスポート
+  したライブラリが `TypeError` で壊れる問題の予防)。`std.flwlib.json` は
+  v3 で再生成
+- Subsystem 内部の `dtype` 宣言の拒否 (v0.55.0 security MUST-1) を
+  「**非 float64 のみ拒否**」に緩和: island 内部はもともと全経路 float64 の
+  ため `dtype="float64"` 宣言は予測とも実行値とも一致し無害。v0.56.0 の
+  Cast は常に宣言するため、この緩和がないと Subsystem 内に Cast を置けない
+- GUI: `Cast` の面表示は dtype 名を常時表示 (既定 `float64`)。`Constant` の
+  面表示は生値 (+ dtype 宣言時は dtype 名)。実効値の frontend 再計算
+  (`applyConstantOutputType`) は撤去され、値変換の実装は backend の 1 箇所のみに
+
 ## [0.55.0] - 2026-09-09 — SM-D Stage 1: 宣言した dtype で実際に計算される
 
 ### Added

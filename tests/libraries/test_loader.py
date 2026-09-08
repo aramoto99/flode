@@ -103,19 +103,79 @@ def test_validate_library_in_memory() -> None:
     assert lib.source_path is None
 
 
-def test_migration_registry_has_v1_to_v2() -> None:
-    """ADR-0039: ``libraries.v1`` → ``libraries.v2`` migration が登録されている。
+def test_migration_registry_chain() -> None:
+    """migration チェーンが登録されている。
 
-    `libraries.v2` は Subsystem の派生 property 化 (n_inputs/n_outputs/
-    port_shapes_*) に追従するため bump された。`libraries.v1` も migration 経由
-    で受け入れる (= 既存 .flwlib.json の互換性維持)。
+    `libraries.v2` は Subsystem の派生 property 化 (ADR-0039)、`libraries.v3`
+    は output_type 撤去 (v0.56.0) に追従するため bump された。旧バージョンも
+    migration 経由で受け入れる (= 既存 .flwlib.json の互換性維持)。
     """
     assert ("libraries.v1", "libraries.v2") in _LIBRARY_MIGRATIONS
-    assert CURRENT_LIBRARY_SCHEMA_VERSION == "libraries.v2"
-    # ADR-0039 code-reviewer SHOULD-3: v1 も SUPPORTED に含めて
+    assert ("libraries.v2", "libraries.v3") in _LIBRARY_MIGRATIONS
+    assert CURRENT_LIBRARY_SCHEMA_VERSION == "libraries.v3"
+    # ADR-0039 code-reviewer SHOULD-3: 旧バージョンも SUPPORTED に含めて
     # 「migration 経由で受け入れ可能」を明示 (= エラーメッセージの誤解防止)
+    assert "libraries.v3" in SUPPORTED_LIBRARY_SCHEMA_VERSIONS
     assert "libraries.v2" in SUPPORTED_LIBRARY_SCHEMA_VERSIONS
     assert "libraries.v1" in SUPPORTED_LIBRARY_SCHEMA_VERSIONS
+
+
+def test_v2_library_with_output_type_is_migrated(tmp_path: Path) -> None:
+    """v0.55.0 でエクスポートした Cast(output_type) 入りライブラリが読める
+    (security MUST-2 回帰テスト: 素の TypeError で壊れない)。"""
+    from flode.subsystems import Subsystem
+
+    lib = {
+        "schema_version": "libraries.v2",
+        "name": "legacy",
+        "entries": [
+            {
+                "id": "e1",
+                "display_name": "Legacy",
+                "subsystem": {
+                    "id": "sub",
+                    "type": "flode.subsystems.subsystem.Subsystem",
+                    "params": {
+                        "blocks": [
+                            {
+                                "id": "ip",
+                                "type": "flode.subsystems.ports.Inport",
+                                "params": {"port_idx": 0},
+                            },
+                            {
+                                "id": "k",
+                                "type": "flode.blocks.cast.Cast",
+                                "params": {"output_type": "int"},
+                            },
+                            {
+                                "id": "c",
+                                "type": "flode.blocks.sources.Constant",
+                                "params": {"value": 2.7, "output_type": "int"},
+                            },
+                            {
+                                "id": "op",
+                                "type": "flode.subsystems.ports.Outport",
+                                "params": {"port_idx": 0},
+                            },
+                        ],
+                        "connections": [
+                            {"src": "ip", "src_idx": 0, "dst": "k", "dst_idx": 0},
+                            {"src": "k", "src_idx": 0, "dst": "op", "dst_idx": 0},
+                        ],
+                    },
+                },
+            }
+        ],
+    }
+    result = validate_library(lib)
+    sub_dict = result.entries[0].subsystem
+    inner = {b["id"]: b for b in sub_dict["params"]["blocks"]}
+    assert inner["k"]["type"] == "flode.blocks.rounding.Rounding"
+    assert inner["k"]["params"] == {"mode": "round"}
+    assert inner["c"]["params"] == {"value": 3.0}
+    # migration 後の dict から実際に Subsystem を再構築できる (TypeError なし)
+    rebuilt = Subsystem._from_dict(**sub_dict["params"])
+    assert rebuilt is not None
 
 
 def test_load_std_bundle() -> None:

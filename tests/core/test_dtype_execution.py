@@ -364,6 +364,53 @@ class TestNestedDeclarationRejected:
         sim.run()
         assert float(np.asarray(sc.values)[0, 0]) == 6.0
 
+    def test_nested_float64_cast_is_allowed(self) -> None:
+        # v0.56.0: Cast は常に dtype を宣言する (既定 "float64") ため、
+        # float64 宣言まで拒否すると Subsystem 内に Cast を置けなくなる。
+        # island 内は全経路 float64 なので float64 宣言は乖離を生まない → 許可。
+        sub = Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="ip"),
+                Cast(id="inner_k"),  # dtype="float64" (既定)
+                Outport(port_idx=0, id="op"),
+            ],
+            connections=[
+                {"src": "ip", "src_port": 0, "dst": "inner_k", "dst_port": 0},
+                {"src": "inner_k", "src_port": 0, "dst": "op", "dst_port": 0},
+            ],
+            id="sub",
+        )
+        sim = _sim()
+        c = sim.add(Constant(value=1.5, id="c"))
+        sim.add(sub)
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(c, sub)
+        sim.connect(sub, sc)
+        sim.run()
+        assert float(np.asarray(sc.values)[0, 0]) == 1.5
+
+    def test_nested_float64_constant_is_allowed(self) -> None:
+        # 同上: Constant(dtype="float64") も island と完全一致するため許可
+        sub = Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="ip"),
+                Constant(value=2.0, dtype="float64", id="inner_c"),
+                Outport(port_idx=0, id="op"),
+            ],
+            connections=[
+                {"src": "inner_c", "src_port": 0, "dst": "op", "dst_port": 0},
+            ],
+            id="sub",
+        )
+        sim = _sim()
+        c = sim.add(Constant(value=1.0, id="c"))
+        sim.add(sub)
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(c, sub)
+        sim.connect(sub, sc)
+        sim.run()
+        assert float(np.asarray(sc.values)[0, 0]) == 2.0
+
 
 class TestTotalityAndEscalation:
     """AC-3 (全域性) と §3.5 のエラー昇格。"""

@@ -1,5 +1,5 @@
 {
-  "schema_version": "libraries.v2",
+  "schema_version": "libraries.v3",
   "name": "std",
   "display_name": "Standard Library",
   "description": "Built-in mask Subsystem templates shipped with flode.",

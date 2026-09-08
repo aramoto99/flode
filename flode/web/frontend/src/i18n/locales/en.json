@@ -348,7 +348,6 @@
   "inspector.dtype.declared": "declared",
   "inspector.dtype.island": "Subsystem / PythonFunction boundary is float64 in this release",
   "inspector.dtype.state_via_float64": "State is stored as float64 in this release",
-  "error.dtype.param_conflict": "'dtype' and 'output_type' cannot be combined",
   "inspector.mask.section_hint": "Mask parameters (declared on the Subsystem). Editing here updates the inner block placeholders on save.",
   "inspector.mask.autosave_hint": "Mask edits auto-save. Double-click the Subsystem to drill into its internal diagram.",
   "inspector.mask.suffix": "mask",

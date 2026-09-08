@@ -10,7 +10,6 @@ NOTE: fixture の ``pyflw.*`` FQN は schema <=0.9 ファイルの実際の内�
 from __future__ import annotations
 
 from flode.core.persistence import (
-    CURRENT_SCHEMA_VERSION,
     _builtin_migrate_0_9_to_0_10,
     migrate_to_current,
 )
@@ -20,9 +19,8 @@ from flode.core.persistence import (
 # ---------------------------------------------------------------------------
 
 
-def test_current_schema_version_is_0_11() -> None:
-    # SM-D Stage 1 (SPEC-0028) で 0.10 → 0.11 に bump (dtype param、no-op migration)
-    assert CURRENT_SCHEMA_VERSION == "0.11"
+# CURRENT_SCHEMA_VERSION の pin は最新の migration テストファイル
+# (test_persistence_migration_0_11_to_0_12.py) に集約
 
 
 def test_migrate_renames_top_level_block_types() -> None:
@@ -192,7 +190,7 @@ def test_chain_from_0_8_converts_triggered_subsystem_to_flode() -> None:
         "metadata": {"tool": "pyflw 0.37.0"},
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.11"
+    assert out["schema_version"] == "0.12"
     assert out["_migrated_from"] == "0.8"
     entry = out["blocks"][0]
     assert entry["type"] == "flode.subsystems.subsystem.Subsystem"
@@ -213,5 +211,5 @@ def test_chain_from_oldest_version_reaches_current() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.11"
+    assert out["schema_version"] == "0.12"
     assert out["_migrated_from"] == "0.1"

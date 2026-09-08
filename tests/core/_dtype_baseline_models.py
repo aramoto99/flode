@@ -31,10 +31,9 @@ import numpy as np
 import numpy.typing as npt
 
 from flode import Simulator
-from flode.blocks.cast import Cast
 from flode.blocks.continuous import Integrator
 from flode.blocks.discrete import UnitDelay
-from flode.blocks.mathops import CompareToConstant, Gain, Sum
+from flode.blocks.mathops import CompareToConstant, CompareToZero, Gain, Sum
 from flode.blocks.routing import Switch
 from flode.blocks.sinks import Scope
 from flode.blocks.sources import Clock, Constant
@@ -117,18 +116,24 @@ def build_discrete() -> tuple[Simulator, Scope]:
 
 
 def build_mixed() -> tuple[Simulator, Scope]:
-    """混在系: Constant(output_type="int") → Cast(bool) → 比較 → Switch。
+    """混在系: Constant → CompareToZero → 比較 → Switch。
 
-    SPEC-0026 の値の意味論 (output_type) と論理/比較/ルーティングを含み、
-    dtype 面では param_typed / bool_out / promote_except_control を代表する。
-    Clock を足して時間依存にし、bit 比較を意味のあるものにする。
+    論理/比較/ルーティングを含み、dtype 面では param_typed / bool_out /
+    promote_except_control を代表する。Clock を足して時間依存にし、
+    bit 比較を意味のあるものにする。
+
+    v0.56.0 (output_type 撤去) での等価置換 — **基準 npz は不変**:
+    ``Constant(value=2.7, output_type="int")`` (→ 3.0) は
+    ``Constant(value=3.0)`` に、``Cast(output_type="bool")`` (u != 0 → 1.0) は
+    ``CompareToZero(op="!=")`` に置換した。どちらも出力値が同一の float64 で、
+    dtype 宣言を含まないため SM-A 経路も維持される。
 
     Returns:
         (Simulator, Switch+Clock の和を記録する Scope)
     """
     sim = _new_simulator()
-    c_int = sim.add(Constant(value=2.7, output_type="int", id="c_int"))  # -> 3.0
-    cast_b = sim.add(Cast(output_type="bool", id="cast_b"))  # -> 1.0
+    c_int = sim.add(Constant(value=3.0, id="c_int"))  # -> 3.0
+    cast_b = sim.add(CompareToZero(op="!=", id="cast_b"))  # -> 1.0
     cmp = sim.add(CompareToConstant(op=">", const=0.5, id="cmp"))  # -> 1.0
     c_false = sim.add(Constant(value=-1.0, id="c_false"))
     sw = sim.add(Switch(threshold=0.5, criterion=">=", id="sw"))

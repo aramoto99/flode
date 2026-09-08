@@ -348,7 +348,6 @@
   "inspector.dtype.declared": "宣言",
   "inspector.dtype.island": "このリリースでは Subsystem / PythonFunction 境界は float64 です",
   "inspector.dtype.state_via_float64": "このリリースでは状態を float64 で保持します",
-  "error.dtype.param_conflict": "'dtype' と 'output_type' は併用できません",
   "inspector.mask.section_hint": "Subsystem に宣言されたマスクパラメータです。保存時に内部ブロックのプレースホルダに反映されます。",
   "inspector.mask.autosave_hint": "マスクの編集は自動保存されます。Subsystem をダブルクリックすると内部図に移動できます。",
   "inspector.mask.suffix": "マスク",

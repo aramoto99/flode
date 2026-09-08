@@ -55,6 +55,12 @@ DTYPE_VOCABULARY: Final[tuple[str, ...]] = ("bool", "uint8", "int32", "int64", "
 #: 収束後に float64 へ materialize され、実行時には残らない (全域性 AC-3)。
 UNKNOWN: Final[str] = "unknown"
 
+#: Subsystem / PythonFunction island の内部 dtype (SPEC-0028 Q6)。
+#: ``reject_nested_dtype_declarations`` の「island と一致する宣言は無害」判定は
+#: この値に依存する — island の dtype を変える時は必ずここを更新すること
+#: (リテラル直書きだと無言で fail-open になる、security NITS)。
+ISLAND_DTYPE: Final[str] = "float64"
+
 #: Stage 1 (SPEC-0028 Q1): ``dtype`` param の語彙。``"auto"`` = 宣言しない
 #: (従来どおり float64 経路)。``"auto"`` 以外は D-1 の語彙 5 種と 1:1。
 DTYPE_PARAM_VALUES: Final[tuple[str, ...]] = (
@@ -410,15 +416,6 @@ _CLASSIFICATION: Final[Mapping[str, Category]] = {
 #: promote_except_control の制御入力ポート index (出力 dtype に寄与しない)。
 _CONTROL_PORT_INDEX: Final[Mapping[str, int]] = {"Switch": 1, "MultiportSwitch": 0}
 
-#: SPEC-0026 の ``output_type`` (値の意味論) → shadow dtype の写像 (Q1:
-#: 実行意味を再解釈するのではなく推論のヒントとしてのみ参照)。
-_OUTPUT_TYPE_MAP: Final[Mapping[str, str]] = {
-    "float": "float64",
-    "int": "int64",
-    "bool": "bool",
-}
-
-
 def _block_id(block: Block) -> str:
     """突合キー用の block id (Simulator 登録済みなら必ず str)。"""
     bid = block.id
@@ -499,7 +496,8 @@ def has_declared_dtype(sim: Simulator) -> bool:
 
 
 def reject_nested_dtype_declarations(sim: Simulator) -> None:
-    """Subsystem 内部の ``dtype`` 宣言を fail-closed に拒否する (security MUST-1)。
+    """Subsystem 内部の**非 float64** ``dtype`` 宣言を fail-closed に拒否する
+    (security MUST-1)。
 
     Stage 1 の pre-filter (`has_declared_dtype`) は root のみを見るため、
     Subsystem 内部の宣言は解決器を通らない。一方でブロック自身の ``output()``
@@ -508,20 +506,28 @@ def reject_nested_dtype_declarations(sim: Simulator) -> None:
     Stage 1 では内部宣言そのものを未対応としてエラーにする
     (内部の型伝播は Stage 2、SPEC-0028 Q6)。
 
+    例外として ``dtype == "float64"`` は許す (v0.56.0): island 内はもともと
+    全経路 float64 なので、float64 宣言は予測とも実行値とも完全一致し乖離が
+    生じない。v0.56.0 の Cast は常に ``dtype`` を宣言する (既定 "float64")
+    ため、これを拒否すると Subsystem 内に Cast を置けなくなり、旧
+    ``Cast(output_type="float")`` を含むモデルの 0.12 migration も壊れる。
+
     Raises:
-        BlockSpecError: ネストしたブロックに ``dtype != "auto"`` がある。
+        BlockSpecError: ネストしたブロックに ``dtype`` が ``"auto"`` /
+            ``"float64"`` 以外で宣言されている。
     """
 
     def _scan(blocks: Iterable[Block], owner_id: str | None) -> None:
         for b in blocks:
-            if owner_id is not None and str(b._params.get("dtype", "auto")) != "auto":
+            declared = str(b._params.get("dtype", "auto"))
+            if owner_id is not None and declared not in ("auto", ISLAND_DTYPE):
                 raise BlockSpecError(
-                    f"dtype declaration on block {b.id!r} inside Subsystem "
-                    f"{owner_id!r} is not supported in this release: the "
-                    "Subsystem boundary is a float64 island (SPEC-0028 Q6) and "
-                    "inner declarations would silently diverge from the "
-                    "resolved dtypes. Move the Cast/Constant with dtype to the "
-                    "top level, or remove its dtype.",
+                    f"dtype declaration {declared!r} on block {b.id!r} inside "
+                    f"Subsystem {owner_id!r} is not supported in this release: "
+                    "the Subsystem boundary is a float64 island (SPEC-0028 Q6) "
+                    "and inner non-float64 declarations would silently diverge "
+                    "from the resolved dtypes. Move the Cast/Constant with "
+                    "dtype to the top level, or use dtype='float64'.",
                     block_id=b.id,
                 )
             inner = getattr(b, "_inner_blocks", None)
@@ -649,17 +655,12 @@ def _infer_outputs(
     if category == "float_out":
         return ["float64"] * n_out
     if category == "param_typed":
-        # Stage 1 (SPEC-0028 Q1): 新 param `dtype` が最優先。"auto" 以外は
-        # 宣言そのものが出力 dtype (実変換、恒等ではない)。
+        # v0.56.0 (output_type 撤去後): `dtype` のみが型宣言。Cast は常に宣言
+        # (auto なし)、Constant の "auto" = 未宣言 = float64 定数。
         declared = str(block._params.get("dtype", "auto"))
         if declared != "auto":
             return [declared] * n_out
-        output_type = block._params.get("output_type", "float")
-        mapped = _OUTPUT_TYPE_MAP.get(str(output_type), "float64")
-        if str(output_type) == "float" and block.n_inputs > 0:
-            # Cast("float") は恒等 (SPEC-0026 §確定事項 2) → 入力 pass-through
-            return [_promote_many(in_dtypes, sink, _block_id(block))] * n_out
-        return [mapped] * n_out
+        return ["float64"] * n_out
     if category == "promote_except_control":
         control = _control_port_index(block)
         data = [d for i, d in enumerate(in_dtypes) if i != control]

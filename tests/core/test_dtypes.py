@@ -132,42 +132,45 @@ class TestClassificationRules:
         assert res.out_dtype("cmp_z", 0) == "bool"
 
     @pytest.mark.parametrize(
-        ("output_type", "expected"),
-        [("float", "float64"), ("int", "int64"), ("bool", "bool")],
+        "declared", ["float64", "int64", "int32", "uint8", "bool"]
     )
-    def test_constant_output_type_maps_to_dtype(
-        self, output_type: str, expected: str
-    ) -> None:
+    def test_constant_declared_dtype_is_output_dtype(self, declared: str) -> None:
         sim = _sim()
-        sim.add(Constant(value=2.7, output_type=output_type, id="c"))
+        sim.add(Constant(value=2.7, dtype=declared, id="c"))
         res = resolve_dtypes(sim)
-        assert res.out_dtype("c", 0) == expected
+        assert res.out_dtype("c", 0) == declared
+
+    def test_constant_auto_is_float64(self) -> None:
+        sim = _sim()
+        sim.add(Constant(value=2.7, id="c"))
+        res = resolve_dtypes(sim)
+        assert res.out_dtype("c", 0) == "float64"
 
     @pytest.mark.parametrize(
-        ("output_type", "expected"), [("int", "int64"), ("bool", "bool")]
+        "declared", ["float64", "int64", "int32", "uint8", "bool"]
     )
-    def test_cast_maps_output_type(self, output_type: str, expected: str) -> None:
+    def test_cast_declared_dtype_is_output_dtype(self, declared: str) -> None:
         sim = _sim()
         c = sim.add(Constant(value=1.5, id="c"))
-        cast = sim.add(Cast(output_type=output_type, id="cast"))
+        cast = sim.add(Cast(dtype=declared, id="cast"))
         sim.connect(c, cast)
         res = resolve_dtypes(sim)
-        assert res.out_dtype("cast", 0) == expected
+        assert res.out_dtype("cast", 0) == declared
 
-    def test_cast_float_is_input_pass_through(self) -> None:
-        # Cast("float") は恒等 (SPEC-0026) → 入力の dtype をそのまま通す
+    def test_cast_float64_is_not_pass_through(self) -> None:
+        # v0.56.0: Cast は常に実変換 — int 入力でも出力は宣言どおり float64
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
-        cast = sim.add(Cast(output_type="float", id="cast"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
+        cast = sim.add(Cast(dtype="float64", id="cast"))
         sim.connect(c, cast)
         res = resolve_dtypes(sim)
-        assert res.out_dtype("cast", 0) == "int64"
+        assert res.out_dtype("cast", 0) == "float64"
 
     def test_cast_chain_int_then_bool(self) -> None:
         sim = _sim()
         c = sim.add(Constant(value=2.7, id="c"))
-        c_int = sim.add(Cast(output_type="int", id="c_int"))
-        c_bool = sim.add(Cast(output_type="bool", id="c_bool"))
+        c_int = sim.add(Cast(dtype="int64", id="c_int"))
+        c_bool = sim.add(Cast(dtype="bool", id="c_bool"))
         sim.connect(c, c_int)
         sim.connect(c_int, c_bool)
         res = resolve_dtypes(sim)
@@ -184,7 +187,7 @@ class TestClassificationRules:
 
     def test_float_out_blocks_emit_float64_regardless_of_input(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         g = sim.add(Gain(k=2.0, id="g"))
         sim.connect(c, g)
         res = resolve_dtypes(sim)
@@ -192,8 +195,8 @@ class TestClassificationRules:
 
     def test_promote_rule_takes_result_type_of_inputs(self) -> None:
         sim = _sim()
-        ci = sim.add(Constant(value=1.0, output_type="int", id="ci"))
-        cb = sim.add(Constant(value=1.0, output_type="bool", id="cb"))
+        ci = sim.add(Constant(value=1.0, dtype="int64", id="ci"))
+        cb = sim.add(Constant(value=1.0, dtype="bool", id="cb"))
         s = sim.add(Sum(signs="++", id="s"))
         sim.connect(ci, s, dst_idx=0)
         sim.connect(cb, s, dst_idx=1)
@@ -203,7 +206,7 @@ class TestClassificationRules:
 
     def test_abs_preserves_int_via_promote(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=-2.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=-2.0, dtype="int64", id="c"))
         a = sim.add(Abs(id="a"))
         sim.connect(c, a)
         res = resolve_dtypes(sim)
@@ -211,9 +214,9 @@ class TestClassificationRules:
 
     def test_switch_control_port_does_not_contribute(self) -> None:
         sim = _sim()
-        ci = sim.add(Constant(value=1.0, output_type="int", id="ci"))
-        cb = sim.add(Constant(value=1.0, output_type="bool", id="cb"))
-        ci2 = sim.add(Constant(value=2.0, output_type="int", id="ci2"))
+        ci = sim.add(Constant(value=1.0, dtype="int64", id="ci"))
+        cb = sim.add(Constant(value=1.0, dtype="bool", id="cb"))
+        ci2 = sim.add(Constant(value=2.0, dtype="int64", id="ci2"))
         sw = sim.add(Switch(threshold=0.5, id="sw"))
         sim.connect(ci, sw, dst_idx=0)
         sim.connect(cb, sw, dst_idx=1)  # control (u[1]) — 出力 dtype に寄与しない
@@ -223,8 +226,8 @@ class TestClassificationRules:
 
     def test_mux_promotes_and_demux_fans_out(self) -> None:
         sim = _sim()
-        ci = sim.add(Constant(value=1.0, output_type="int", id="ci"))
-        cb = sim.add(Constant(value=0.0, output_type="bool", id="cb"))
+        ci = sim.add(Constant(value=1.0, dtype="int64", id="ci"))
+        cb = sim.add(Constant(value=0.0, dtype="bool", id="cb"))
         mux = sim.add(Mux(n=2, id="mux"))
         demux = sim.add(Demux(n=2, id="demux"))
         sim.connect(ci, mux, dst_idx=0)
@@ -246,7 +249,7 @@ class TestClassificationRules:
 
     def test_goto_from_carries_dtype_through_the_tag(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=3.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=3.0, dtype="int64", id="c"))
         gt = sim.add(Goto(tag="a", id="gt"))
         fr = sim.add(From(tag="a", id="fr"))
         sc = sim.add(Scope(id="sc"))
@@ -278,10 +281,10 @@ class TestClassificationRules:
 
 
 class TestContinuousWidening:
-    @pytest.mark.parametrize("output_type", ["int", "bool"])
-    def test_integrator_widens_int_and_bool_inputs(self, output_type: str) -> None:
+    @pytest.mark.parametrize("declared", ["int64", "bool"])
+    def test_integrator_widens_int_and_bool_inputs(self, declared: str) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type=output_type, id="c"))
+        c = sim.add(Constant(value=1.0, dtype=declared, id="c"))
         integ = sim.add(Integrator(x0=0.0, id="integ"))
         sim.connect(c, integ)
         res = resolve_dtypes(sim)
@@ -290,7 +293,7 @@ class TestContinuousWidening:
         widening = _find(res, "dtype.implicit_widening")
         assert len(widening) == 1
         assert widening[0].block_id == "integ"
-        assert widening[0].from_dtype == ("int64" if output_type == "int" else "bool")
+        assert widening[0].from_dtype == declared
         assert widening[0].to_dtype == "float64"
 
     def test_unit_level_widening_for_uint8_and_int32(self) -> None:
@@ -306,7 +309,7 @@ class TestContinuousWidening:
 
     def test_discrete_lti_blocks_also_require_float64(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         di = sim.add(DiscreteIntegrator(sample_time=0.01, id="di"))
         sim.connect(c, di)
         res = resolve_dtypes(sim)
@@ -315,7 +318,7 @@ class TestContinuousWidening:
 
     def test_derivative_and_transfer_function_require_float64(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="bool", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="bool", id="c"))
         d = sim.add(Derivative(id="d"))
         tf = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="tf"))
         sim.connect(c, d)
@@ -344,7 +347,7 @@ class TestContinuousWidening:
 class TestFixedPoint:
     def _feedback_model(self) -> Simulator:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         s = sim.add(Sum(signs="++", id="s"))
         d = sim.add(UnitDelay(sample_time=0.01, x0=0.0, id="d"))
         sim.connect(c, s, dst_idx=0)
@@ -367,8 +370,8 @@ class TestFixedPoint:
     def test_monotone_growth_bool_into_int_loop(self) -> None:
         # bool 定数 + int 定数の合流ループ: unknown → bool → int64 と広がる方向のみ
         sim = _sim()
-        cb = sim.add(Constant(value=1.0, output_type="bool", id="cb"))
-        ci = sim.add(Constant(value=1.0, output_type="int", id="ci"))
+        cb = sim.add(Constant(value=1.0, dtype="bool", id="cb"))
+        ci = sim.add(Constant(value=1.0, dtype="int64", id="ci"))
         s = sim.add(Sum(signs="+++", id="s"))
         d = sim.add(UnitDelay(sample_time=0.01, x0=0.0, id="d"))
         sim.connect(cb, s, dst_idx=0)
@@ -460,7 +463,7 @@ class TestUnknownPropagation:
 
     def test_unknown_is_absorbed_by_a_concrete_sibling_input(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         s = sim.add(Sum(signs="++", id="s"))
         sim.connect(c, s, dst_idx=0)  # dst_idx=1 は未接続 (unknown)
         res = resolve_dtypes(sim)
@@ -486,7 +489,7 @@ class TestKeying:
     def _model(order_reversed: bool) -> Simulator:
         sim = _sim()
         blocks: list[Block] = [
-            Constant(value=1.0, output_type="int", id="c"),
+            Constant(value=1.0, dtype="int64", id="c"),
             Gain(k=2.0, id="g"),
             Scope(id="sc"),
         ]
@@ -524,7 +527,7 @@ class TestKeying:
 class TestDiagnostics:
     def test_non_float_signal_is_reported_per_output_port(self) -> None:
         sim = _sim()
-        sim.add(Constant(value=1.0, output_type="int", id="c"))
+        sim.add(Constant(value=1.0, dtype="int64", id="c"))
         res = resolve_dtypes(sim)
         diags = _find(res, "dtype.non_float_signal")
         assert len(diags) == 1
@@ -543,7 +546,7 @@ class TestDiagnostics:
 
     def test_rule_missing_falls_back_to_promote(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         w = sim.add(_UnclassifiedBlock(id="w"))
         sim.connect(c, w)
         res = resolve_dtypes(sim)
@@ -606,7 +609,7 @@ class TestDiagnostics:
 class TestSummary:
     def test_by_dtype_counts_all_ports_excluding_unknown(self) -> None:
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         g = sim.add(Gain(k=2.0, id="g"))
         sim.connect(c, g)
         res = resolve_dtypes(sim)
@@ -617,7 +620,7 @@ class TestSummary:
 
     def test_payload_shape_matches_spec(self) -> None:
         sim = _sim()
-        sim.add(Constant(value=1.0, output_type="bool", id="c"))
+        sim.add(Constant(value=1.0, dtype="bool", id="c"))
         payload = resolve_dtypes(sim).to_payload()
         assert payload["schema_version"] == "dtypes.v1"
         assert payload["ports"] == [
@@ -711,7 +714,7 @@ class TestStaticMode:
     ) -> None:
         marker = tmp_path / "executed.txt"
         sim = _sim()
-        c = sim.add(Constant(value=1.0, output_type="int", id="c"))
+        c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
         gt = sim.add(Goto(tag="a", id="gt"))
         fr = sim.add(From(tag="a", id="fr"))
         sc = sim.add(Scope(id="sc"))
@@ -750,8 +753,8 @@ class TestStaticMode:
     def test_other_blocks_still_resolve_in_static_mode(self, tmp_path: Path) -> None:
         marker = tmp_path / "executed.txt"
         sim = _sim()
-        c = sim.add(Constant(value=2.7, output_type="int", id="c"))
-        cast = sim.add(Cast(output_type="bool", id="cast"))
+        c = sim.add(Constant(value=2.7, dtype="int64", id="c"))
+        cast = sim.add(Cast(dtype="bool", id="cast"))
         sim.add(PythonFunction(code=self._pf_code(marker), id="pf"))
         sim.connect(c, cast)
         res = resolve_dtypes(sim)
@@ -861,7 +864,7 @@ class TestPerformance:
             """
         )
         sim = Simulator(t_end=0.1, dt=0.01)
-        chain: list[Block] = [Constant(value=1.0, output_type="int", id="c0")]
+        chain: list[Block] = [Constant(value=1.0, dtype="int64", id="c0")]
         for i in range(998):
             chain.append(Sum(signs="+", id=f"s{i}"))
         for b in reversed(chain):

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.11"
+CURRENT_SCHEMA_VERSION = "0.12"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -665,6 +665,319 @@ def _builtin_migrate_0_9_to_0_10(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# -- 0.11 → 0.12 (output_type 撤去、v0.56.0) ---------------------------------
+
+_CONSTANT_TYPE = "flode.blocks.sources.Constant"
+_CAST_TYPE = "flode.blocks.cast.Cast"
+_ROUNDING_TYPE = "flode.blocks.rounding.Rounding"
+_COMPARE_TO_ZERO_TYPE = "flode.blocks.mathops.CompareToZero"
+
+
+def _apply_legacy_value_semantics(value: float, output_type: str) -> float:
+    """旧 ``output_type`` (SPEC-0026 §1.1) の変換規則の **migration ローカル実装**。
+
+    本体からは v0.56.0 で ``apply_value_semantics`` が削除されたため、旧規則を
+    ここに凍結する (migration は過去仕様の再現が責務なので複製が正当):
+
+    * ``"int"``: ``np.round`` (最近接偶数丸め)。nan / ±inf は伝播
+    * ``"bool"``: ``value != 0`` で 1.0 / 0.0 (nan → 1.0)
+    * それ以外 (``"float"`` / 不正値): 恒等
+    """
+    if output_type == "int":
+        return float(np.round(value))
+    if output_type == "bool":
+        return 1.0 if value != 0.0 else 0.0
+    return float(value)
+
+
+_MIGRATE_0_12_LOGGER = "flode.persistence.migrate_0_11_to_0_12"
+
+
+def _contains_dtype_declaration_recursive(blocks: list[Any] | None) -> bool:
+    """0.11 データのどこか (ネスト含む) に ``dtype != "auto"`` 宣言があるか。
+
+    恒等 Cast の変換戦略の分岐条件 (:func:`_remove_output_type_recursive`)。
+    """
+    if not blocks:
+        return False
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        params = entry.get("params")
+        if not isinstance(params, dict):
+            continue
+        declared = params.get("dtype")
+        if isinstance(declared, str) and declared != "auto":
+            return True
+        inner = params.get("blocks")
+        if isinstance(inner, list) and _contains_dtype_declaration_recursive(inner):
+            return True
+    return False
+
+
+def _delete_identity_casts(
+    identity_ids: set[str],
+    blocks: list[Any],
+    connections: Any,
+    layout: Any,
+    waypoints: Any,
+    *,
+    parent_path: str,
+) -> None:
+    """恒等 Cast の entry を削除し、上流→下流を直結する (in-place)。
+
+    0.11 の恒等 Cast は値も dtype も素通しだったため、削除 + 直結が唯一の
+    完全等価変換 (Cast(dtype="float64") 化は dtype 宣言経路上で float64
+    強制点になり結果が変わる — security MUST-1)。恒等 Cast の連鎖は上流へ
+    透過的に解決し、上流を持たない恒等 Cast への接続は削除する
+    (未接続入力 = float64 の 0.0 で、0.11 の挙動と一致)。
+
+    NOTE: 0.11 の恒等 Cast は ``float()`` 経由で 2^53 超の int64 精度を
+    落としていたが、削除 + 直結ではその欠落が起きない (改善方向の差分)。
+    """
+    logger = logging.getLogger(_MIGRATE_0_12_LOGGER)
+
+    def _is_identity(x: Any) -> bool:
+        # identity_ids は str のみ。JSON は id / src / dst に unhashable な
+        # object / array も書けるため、set 参照の前に str を要求する
+        return isinstance(x, str) and x in identity_ids
+
+    inbound: dict[str, tuple[Any, Any]] = {}
+    if isinstance(connections, list):
+        for c in connections:
+            if isinstance(c, dict) and _is_identity(c.get("dst")):
+                inbound[c["dst"]] = (c.get("src"), c.get("src_idx"))
+
+    def _resolve(src: Any, src_idx: Any) -> tuple[Any, Any] | None:
+        seen: set[Any] = set()
+        while _is_identity(src):
+            if src in seen:  # 恒等 Cast 同士の循環 (壊れた入力) への防御
+                return None
+            seen.add(src)
+            nxt = inbound.get(src)
+            if nxt is None:
+                return None
+            src, src_idx = nxt
+        return (src, src_idx)
+
+    if isinstance(connections, list):
+        new_connections: list[Any] = []
+        for c in connections:
+            if not isinstance(c, dict):
+                new_connections.append(c)
+                continue
+            if _is_identity(c.get("dst")):
+                continue
+            if _is_identity(c.get("src")):
+                resolved = _resolve(c.get("src"), c.get("src_idx"))
+                if resolved is None:
+                    continue
+                c = {**c, "src": resolved[0]}
+                if resolved[1] is not None:
+                    c["src_idx"] = resolved[1]
+                else:
+                    # 元の結線に src_idx が無い壊れた入力: None を注入すると
+                    # load 側の必須キー検査をすり抜けて生 TypeError になる
+                    c.pop("src_idx", None)
+            new_connections.append(c)
+        connections[:] = new_connections
+    blocks[:] = [
+        b
+        for b in blocks
+        if not (isinstance(b, dict) and _is_identity(b.get("id")))
+    ]
+    if isinstance(layout, dict):
+        for bid in identity_ids:
+            layout.pop(bid, None)
+    if isinstance(waypoints, dict):
+        # branch_waypoints は "src_id:src_idx" キー。削除した Cast 発の
+        # waypoint は edge ごと消えるため掃除する (layout と同じ一貫性)
+        stale = [
+            k
+            for k in waypoints
+            if isinstance(k, str) and k.split(":", 1)[0] in identity_ids
+        ]
+        for k in stale:
+            waypoints.pop(k, None)
+    logger.debug(
+        "%r: removed identity Cast blocks %r (rewired to upstream sources)",
+        parent_path,
+        sorted(identity_ids),
+    )
+
+
+def _remove_output_type_recursive(
+    blocks: list[Any] | None,
+    connections: Any = None,
+    layout: Any = None,
+    waypoints: Any = None,
+    *,
+    delete_identity_casts: bool,
+    parent_path: str = "<root>",
+) -> None:
+    """0.11 → 0.12 用のヘルパ。``blocks`` を再帰的にたどり、``output_type`` を
+    **数値等価な新語彙へ in-place で変換する**。
+
+    * ``Constant``: 実効値を ``value`` にベイクし ``output_type`` キーを削除
+      (int = 偶数丸め / bool = 0 or 1。float は恒等なのでキー削除のみ)。
+      ベイク不能な値 (mask placeholder 等の非数値 / float 化できない巨大整数)
+      は生値のまま WARNING を出す (security SHOULD-1 / SHOULD-2)
+    * ``Cast(output_type="int")``: type を ``Rounding`` + ``{"mode": "round"}``
+      (偶数丸め・float64 パイプライン維持 = 完全等価)
+    * ``Cast(output_type="bool")``: type を ``CompareToZero`` + ``{"op": "!="}``
+      (``u != 0`` → 1.0 / 0.0、nan → 1.0 = 完全等価)
+    * 恒等 ``Cast`` (output_type="float"・キー無し、dtype 未宣言):
+      ``delete_identity_casts=True`` (モデル内に dtype 宣言あり) なら
+      **削除 + 直結** (0.11 の dtype 素通しと完全等価、security MUST-1)。
+      False (全経路 float64) なら ``{"dtype": "float64"}`` へ (bit-identical
+      はテストで固定済み)
+    * 旧 Q2 排他により ``dtype`` が既に宣言済みの Cast は、その宣言を維持
+
+    サードパーティ型・非 dict entry は変更しない。ネスト Subsystem は
+    ``params.blocks`` / ``params.connections`` / ``params.layout`` を再帰処理する。
+    """
+    logger = logging.getLogger(_MIGRATE_0_12_LOGGER)
+    if not blocks:
+        return
+    identity_cast_ids: set[str] = set()
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        block_type = entry.get("type")
+        params = entry.get("params")
+        params_dict = params if isinstance(params, dict) else None
+        if params_dict is not None and block_type == _CONSTANT_TYPE:
+            output_type = params_dict.pop("output_type", None)
+            raw_value = params_dict.get("value")
+            if isinstance(output_type, str) and isinstance(raw_value, (int, float)):
+                try:
+                    baked = _apply_legacy_value_semantics(float(raw_value), output_type)
+                except OverflowError:
+                    # JSON は任意精度整数を許すため float() が溢れうる。
+                    # 値は untrusted なので repr を丸めてログ増幅を避ける
+                    logger.warning(
+                        "Block %r/%r: value %s cannot be baked for legacy "
+                        "output_type=%r (overflow); keeping the raw value",
+                        parent_path,
+                        entry.get("id", "<no-id>"),
+                        repr(raw_value)[:80],
+                        output_type,
+                    )
+                else:
+                    if baked != raw_value:
+                        params_dict["value"] = baked
+                        logger.debug(
+                            "Block %r/%r: baked output_type=%r into value (%r -> %r)",
+                            parent_path,
+                            entry.get("id", "<no-id>"),
+                            output_type,
+                            raw_value,
+                            baked,
+                        )
+            elif output_type is not None:
+                # mask placeholder ("$Kp" 等) は数値化できないためベイク不能。
+                # 旧 int/bool 意味論が今後適用されないことを観測可能にする
+                logger.warning(
+                    "Block %r/%r: legacy output_type=%r removed without baking "
+                    "(non-numeric value %r, e.g. a mask placeholder); the old "
+                    "int/bool value semantics no longer apply to this Constant",
+                    parent_path,
+                    entry.get("id", "<no-id>"),
+                    output_type,
+                    params_dict.get("value"),
+                )
+        elif params_dict is not None and block_type == _CAST_TYPE:
+            output_type = params_dict.pop("output_type", None)
+            declared = params_dict.get("dtype")
+            if isinstance(declared, str) and declared != "auto":
+                # 旧 Q2 排他: dtype 宣言済み Cast の output_type は "float" のはず。
+                # 宣言をそのまま維持する (キー削除のみで完了)。
+                if isinstance(output_type, str) and output_type != "float":
+                    # 0.11 では load 時エラーだった組み合わせ (手書き/破損入力)。
+                    # dtype 側を採用したことを観測可能にする (security NITS-2)
+                    logger.warning(
+                        "Block %r/%r: dropping legacy output_type=%r in favor "
+                        "of the declared dtype %r (this combination was "
+                        "rejected in schema 0.11)",
+                        parent_path,
+                        entry.get("id", "<no-id>"),
+                        output_type,
+                        declared,
+                    )
+            elif output_type == "int":
+                entry["type"] = _ROUNDING_TYPE
+                entry["params"] = {"mode": "round"}
+                params_dict = entry["params"]
+            elif output_type == "bool":
+                entry["type"] = _COMPARE_TO_ZERO_TYPE
+                entry["params"] = {"op": "!="}
+                params_dict = entry["params"]
+            elif delete_identity_casts:
+                bid = entry.get("id")
+                if isinstance(bid, str):
+                    identity_cast_ids.add(bid)
+                else:  # id 不正 (壊れた入力) は結線を書けないので dtype 化に倒す
+                    params_dict["dtype"] = "float64"
+            else:
+                # "float" (既定・キー無し含む): 新 Cast の既定 dtype へ
+                params_dict["dtype"] = "float64"
+            if output_type is not None:
+                logger.debug(
+                    "Block %r/%r: migrated Cast output_type=%r -> type=%r params=%r",
+                    parent_path,
+                    entry.get("id", "<no-id>"),
+                    output_type,
+                    entry.get("type"),
+                    entry.get("params"),
+                )
+        if params_dict is not None:
+            inner_blocks = params_dict.get("blocks")
+            if isinstance(inner_blocks, list):
+                _remove_output_type_recursive(
+                    inner_blocks,
+                    params_dict.get("connections"),
+                    params_dict.get("layout"),
+                    params_dict.get("branch_waypoints"),
+                    delete_identity_casts=delete_identity_casts,
+                    parent_path=f"{parent_path}/{entry.get('id', '<no-id>')}",
+                )
+    if identity_cast_ids:
+        _delete_identity_casts(
+            identity_cast_ids,
+            blocks,
+            connections,
+            layout,
+            waypoints,
+            parent_path=parent_path,
+        )
+
+
+def _builtin_migrate_0_11_to_0_12(data: dict[str, Any]) -> dict[str, Any]:
+    """output_type 撤去 (v0.56.0、ADR-0077 D-5 撤回): 0.11 → 0.12。
+
+    ``Cast`` / ``Constant`` の ``output_type`` (値の意味論、旧 SPEC-0026) を
+    数値等価な新語彙へ自動変換する (:func:`_remove_output_type_recursive`)。
+    数値挙動への影響: なし (全変換が数値等価。恒等 Cast は、モデル内に dtype
+    宣言があれば削除 + 直結 (dtype 素通しの完全等価)、なければ
+    ``Cast(dtype="float64")`` (全 float64 で bit-identical))。ベイク不能な
+    Constant 値 (mask placeholder / 巨大整数) のみ WARNING を出して生値を残す。
+    """
+    out = dict(data)
+    blocks = out.get("blocks")
+    delete_identity = _contains_dtype_declaration_recursive(
+        blocks if isinstance(blocks, list) else None
+    )
+    _remove_output_type_recursive(
+        blocks if isinstance(blocks, list) else None,
+        out.get("connections"),
+        out.get("layout"),
+        out.get("branch_waypoints"),
+        delete_identity_casts=delete_identity,
+    )
+    out["schema_version"] = "0.12"
+    return out
+
+
 def _builtin_migrate_0_10_to_0_11(data: dict[str, Any]) -> dict[str, Any]:
     """SM-D Stage 1 (SPEC-0028 / ADR-0077): 0.10 → 0.11。
 
@@ -691,6 +1004,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.8", "0.9")] = _builtin_migrate_0_8_to_0_9
     _MIGRATIONS[("0.9", "0.10")] = _builtin_migrate_0_9_to_0_10
     _MIGRATIONS[("0.10", "0.11")] = _builtin_migrate_0_10_to_0_11
+    _MIGRATIONS[("0.11", "0.12")] = _builtin_migrate_0_11_to_0_12
 
 
 _register_builtin_migrations()

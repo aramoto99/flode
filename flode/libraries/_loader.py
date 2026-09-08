@@ -31,11 +31,12 @@ if TYPE_CHECKING:
 # Schema version
 # ----------------------------------------------------------------------------
 
-CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v2"
-# ADR-0039: ``libraries.v1`` も migration 経由で読み込める (= 自動で v2 に変換)。
-# ``_LIBRARY_MIGRATIONS[(libraries.v1, libraries.v2)]`` が登録済。
+CURRENT_LIBRARY_SCHEMA_VERSION = "libraries.v3"
+# ADR-0039: 旧バージョンも migration 経由で読み込める (= 自動で v3 に変換)。
+# v1 → v2 → v3 のチェーンが ``_LIBRARY_MIGRATIONS`` に登録済。
 SUPPORTED_LIBRARY_SCHEMA_VERSIONS: tuple[str, ...] = (
     CURRENT_LIBRARY_SCHEMA_VERSION,
+    "libraries.v2",
     "libraries.v1",
 )
 
@@ -70,11 +71,46 @@ def _migrate_libraries_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _migrate_libraries_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """v0.56.0 (output_type 撤去): ``libraries.v2`` → ``libraries.v3``。
+
+    各 entry の ``subsystem`` (= ``Subsystem.to_dict()`` 出力) に含まれる
+    ``Cast`` / ``Constant`` の旧 ``output_type`` param を、model 側の 0.11 → 0.12
+    migration と同じロジック (``_remove_output_type_recursive``) で数値等価な
+    新語彙へ変換する。v1 → v2 と同じく blocks=[subsystem] を一時的に作って
+    再帰ロジックに通す。
+    """
+    from ..core.persistence import (
+        _contains_dtype_declaration_recursive,
+        _remove_output_type_recursive,
+    )
+
+    out = dict(data)
+    entries = out.get("entries")
+    if isinstance(entries, list):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            subsystem = entry.get("subsystem")
+            if not isinstance(subsystem, dict):
+                continue
+            wrapper = [subsystem]
+            _remove_output_type_recursive(
+                wrapper,
+                delete_identity_casts=_contains_dtype_declaration_recursive(wrapper),
+                parent_path=f"library.entries[{entry.get('id', '?')}]",
+            )
+    out["schema_version"] = "libraries.v3"
+    return out
+
+
 # ADR-0029 §References + ADR-0039: 利用者ゼロ + PyPI 未公開のうちに `libraries.v2`
-# へ bump、Subsystem の派生 property 化に追従。`libraries.v1` は migration 経由で
-# 受け入れる (= 既存 std.flwlib.json を再生成しなくても CI を通せる buffer)。
+# へ bump、Subsystem の派生 property 化に追従。v0.56.0 (output_type 撤去) で
+# `libraries.v3` へ bump。旧バージョンは migration 経由で受け入れる
+# (= 既存 std.flwlib.json を再生成しなくても CI を通せる buffer)。
 _LIBRARY_MIGRATIONS: dict[tuple[str, str], Callable[[dict[str, Any]], dict[str, Any]]] = {
     ("libraries.v1", "libraries.v2"): _migrate_libraries_v1_to_v2,
+    ("libraries.v2", "libraries.v3"): _migrate_libraries_v2_to_v3,
 }
 
 

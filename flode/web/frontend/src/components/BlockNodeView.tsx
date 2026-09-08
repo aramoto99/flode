@@ -779,13 +779,12 @@ function ShapeContent({
     const dtypeParam = typeof params.dtype === "string" ? params.dtype : "auto";
     if (dtypeParam !== "auto") {
       // SPEC-0028 Q9 (SM-D Stage 1): 実 dtype 宣言時は**生値 + dtype 名**を表示。
-      // 変換値の計算は frontend で再実装しない (ADR-0077 §データ整合性 1)
-      const raw =
-        typeof params.value === "number" ? params.value : Number(params.value ?? 0);
+      // 変換値の計算は frontend で再実装しない (ADR-0077 §データ整合性 1)。
+      // formatNumber は文字列 (mask placeholder "$Kp" 等) を素通しする
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center font-mono text-slate-800">
           <span className="truncate px-1 text-[12px] font-semibold tabular-nums">
-            {formatNumber(raw)}
+            {formatNumber(params.value)}
           </span>
           <span
             data-testid="constant-dtype-label"
@@ -796,33 +795,23 @@ function ShapeContent({
         </div>
       );
     }
-    // SPEC-0026 §確定事項 7: canvas は**実効値** (output_type 適用後) を表示し、
-    // Inspector の生値 (value) との齟齬を可視化する
-    const value = applyConstantOutputType(params.value, params.output_type);
+    // v0.56.0 (output_type 撤去): 未宣言 (auto) は生値のみ表示
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold tabular-nums text-slate-800">
-        <span className="truncate px-1">{formatNumber(value)}</span>
+        <span className="truncate px-1">{formatNumber(params.value)}</span>
       </div>
     );
   }
-  // SPEC-0026 変更履歴 (3): Cast の面表示は**変換後の型名** (ユーザー要望 2026-09-04 で
-  // 固定テキスト `cast` から変更)。パレット glyph は `cast` のまま (ブロックの正体)。
+  // Cast の面表示は**変換後の型名** (ユーザー要望 2026-09-04 で固定テキスト `cast`
+  // から変更)。v0.56.0 (output_type 撤去): dtype 名を常時表示 (既定 float64)。
+  // パレット glyph は `cast` のまま (ブロックの正体)。
   if (typePath.endsWith(".Cast")) {
     const castParams = paramsRaw as Record<string, unknown>;
-    const dtypeParam =
-      typeof castParams.dtype === "string" ? castParams.dtype : "auto";
-    // SPEC-0028 (SM-D Stage 1): 実 dtype 宣言時は dtype 名 (int32 等) を表示。
-    // 未宣言時は従来どおり output_type 名 (float / int / bool)
-    const ot = castParams.output_type;
     const label =
-      dtypeParam !== "auto"
-        ? dtypeParam
-        : ot === "int" || ot === "bool" || ot === "float"
-          ? String(ot)
-          : "float";
+      typeof castParams.dtype === "string" ? castParams.dtype : "float64";
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
-        <span>{label}</span>
+        <span className="truncate px-1">{label}</span>
       </div>
     );
   }
@@ -1413,25 +1402,6 @@ function outputHandlePosition(
 // ---------------------------------------------------------------------------
 // 主要 param サマリ (rect / triangle で使用)
 // ---------------------------------------------------------------------------
-
-/** SPEC-0026: `np.round` (最近接偶数丸め) の再現。
- *  JS の `Math.round(2.5) === 3` と違い 2.5 → 2 / -2.5 → -2 (backend と表示を一致させる)。 */
-function bankersRound(v: number): number {
-  const floor = Math.floor(v);
-  const diff = v - floor;
-  if (diff > 0.5) return floor + 1;
-  // diff === 0 (含む -0: floor(-0)=-0, diff=0) はこの分岐 → floor をそのまま返す
-  if (diff < 0.5) return floor;
-  return floor % 2 === 0 ? floor : floor + 1;
-}
-
-/** SPEC-0026: Constant の canvas 表示用の実効値 (backend `apply_value_semantics` と同一規則)。 */
-function applyConstantOutputType(value: unknown, outputType: unknown): unknown {
-  if (typeof value !== "number") return value;
-  if (outputType === "int") return Number.isFinite(value) ? bankersRound(value) : value;
-  if (outputType === "bool") return value !== 0 ? 1 : 0;
-  return value;
-}
 
 function summarizePrimaryParam(data: BlockNodeData): string | null {
   // NOTE (v0.15.0 / code-reviewer SHOULD): v0.15.0 で ShapeContent は ``paramsRaw``

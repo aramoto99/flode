@@ -12,7 +12,7 @@ import type { FlwModel } from "../types/api";
  * エンジン側 `flode/core/persistence.py` の `CURRENT_SCHEMA_VERSION` と
  * 同期させること (ADR-0036 / ADR-0039 / ADR-0058)。
  */
-export const CURRENT_SCHEMA_VERSION = "0.11";
+export const CURRENT_SCHEMA_VERSION = "0.12";
 
 /**
  * 空の新規モデルを作る。solver 設定はエンジン `Simulator.__init__` の既定値

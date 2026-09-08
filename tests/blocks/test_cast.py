@@ -1,32 +1,37 @@
-"""SPEC-0026 / ADR-0076: Cast (値の意味論の型変換) の網羅テスト。"""
+"""SPEC-0028 / ADR-0077: Cast (実 dtype 変換) の網羅テスト。
+
+v0.56.0 で ``output_type`` (値の意味論、旧 SPEC-0026) は撤去され、Cast は
+``dtype`` のみを持つ「常に変換するブロック」になった。変換規則の SSOT は
+:func:`flode.core.dtypes.cast_value` (規則自体の網羅は ``test_dtypes.py``)。
+"""
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from flode import Simulator
-from flode.blocks import Cast, Rounding, Scope, Sine
-from flode.blocks.cast import OUTPUT_TYPES, apply_value_semantics
+from flode.blocks import Cast, Scope, Sine
+from flode.core.dtypes import DTYPE_VOCABULARY
 from flode.exceptions import BlockSpecError
 
 _EMPTY_X = np.array([])
 
 
-def _out(blk: Cast, u_val: float) -> float:
-    y = blk.output(0.0, _EMPTY_X, np.array([u_val]))
-    return float(y[0])
+def _out(blk: Cast, u_val: float) -> np.ndarray:
+    return blk.output(0.0, _EMPTY_X, np.array([u_val]))
 
 
 class TestCastConstruction:
-    def test_default_is_float_identity(self) -> None:
-        """受入基準 1 (§確定事項 2): 既定は "float" = 恒等。"""
+    def test_default_is_float64_real_conversion(self) -> None:
+        """既定は "float64" (恒等ではなく実変換)。恒等モード (auto) は存在しない。"""
         b = Cast()
-        assert b.output_type == "float"
-        assert _out(b, 2.7) == 2.7  # 置いただけでは何も変換しない
+        assert b.dtype == "float64"
+        y = _out(b, 2.7)
+        assert y.dtype == np.float64
+        assert float(y[0]) == 2.7
 
     def test_structure(self) -> None:
         b = Cast()
@@ -35,87 +40,78 @@ class TestCastConstruction:
         assert b.direct_feedthrough is True
         assert b.n_states == 0
 
-    def test_all_types_accepted(self) -> None:
-        for ot in OUTPUT_TYPES:
-            assert Cast(output_type=ot).output_type == ot
+    def test_all_vocabulary_accepted(self) -> None:
+        for dt in DTYPE_VOCABULARY:
+            assert Cast(dtype=dt).dtype == dt
 
-    def test_bad_type_raises(self) -> None:
-        with pytest.raises(BlockSpecError, match="output_type must be one of"):
-            Cast(output_type="int8")
+    def test_auto_rejected(self) -> None:
+        """Cast に "auto" はない — 置いたのに何も起きない Cast を許さない。"""
+        with pytest.raises(BlockSpecError, match="dtype must be one of"):
+            Cast(dtype="auto")
+
+    def test_bad_dtype_raises(self) -> None:
+        with pytest.raises(BlockSpecError, match="dtype must be one of"):
+            Cast(dtype="int8")
+
+    def test_output_type_removed(self) -> None:
+        """v0.56.0: output_type param は受け付けない (完全撤去)。"""
+        with pytest.raises(TypeError):
+            Cast(output_type="int")  # type: ignore[call-arg]
+
+    def test_dtype_always_in_params(self) -> None:
+        """Cast は常に宣言ブロック → dtype は保存 JSON に必ず出る。"""
+        assert Cast()._params == {"dtype": "float64"}
+        assert Cast(dtype="int32")._params == {"dtype": "int32"}
 
 
-class TestCastFloat:
-    @pytest.mark.parametrize("u", [2.7, -2.5, 0.0, 1e-300, 1e300])
-    def test_identity(self, u: float) -> None:
-        assert _out(Cast(output_type="float"), u) == u
+class TestCastOutputDtype:
+    @pytest.mark.parametrize("dt", DTYPE_VOCABULARY)
+    def test_output_has_declared_dtype(self, dt: str) -> None:
+        y = _out(Cast(dtype=dt), 1.0)
+        assert y.dtype == np.dtype(dt)
 
 
-class TestCastInt:
+class TestCastIntConversion:
     @pytest.mark.parametrize(
         "u, expected",
         [
-            (2.7, 3.0),
-            (2.5, 2.0),  # banker's: 最近接偶数
-            (3.5, 4.0),
-            (-2.5, -2.0),
-            (5.0, 5.0),  # 整数入力は不変
-            (1e300, 1e300),  # 固定幅を持たない帰結 (overflow しない)
+            (2.7, 2),  # ゼロ方向切り捨て (偶数丸めではない)
+            (-2.7, -2),
+            (2.5, 2),
+            (5.0, 5),
+            (float("nan"), 0),  # 決定的規則: nan → 0
         ],
     )
-    def test_round_half_even(self, u: float, expected: float) -> None:
-        assert _out(Cast(output_type="int"), u) == pytest.approx(expected)
+    def test_trunc_toward_zero(self, u: float, expected: int) -> None:
+        y = _out(Cast(dtype="int32"), u)
+        assert int(y[0]) == expected
 
-    def test_matches_rounding_round_mode(self) -> None:
-        """受入基準 4: Cast(int) ≡ Rounding(mode="round") (棲み分けの根拠)。"""
-        r = Rounding(mode="round")
-        c = Cast(output_type="int")
-        for u in (2.5, 3.5, -2.5, 2.7, -2.7, 0.0, 100.49):
-            assert _out(c, u) == float(r.output(0.0, _EMPTY_X, np.array([u]))[0])
+    def test_inf_saturates(self) -> None:
+        assert int(_out(Cast(dtype="int32"), float("inf"))[0]) == np.iinfo(np.int32).max
+        assert int(_out(Cast(dtype="int32"), float("-inf"))[0]) == np.iinfo(np.int32).min
+
+    def test_uint8_wraps(self) -> None:
+        assert int(_out(Cast(dtype="uint8"), 257.0)[0]) == 1
+        assert int(_out(Cast(dtype="uint8"), -1.0)[0]) == 255
 
 
-class TestCastBool:
+class TestCastBoolConversion:
     @pytest.mark.parametrize(
         "u, expected",
-        [
-            (3.2, 1.0),
-            (-3.2, 1.0),
-            (0.0, 0.0),
-            (-0.0, 0.0),
-            (1e-300, 1.0),  # 閾値は厳密に != 0
-            (1e300, 1.0),
-        ],
+        [(3.2, True), (-3.2, True), (0.0, False), (-0.0, False), (1e-300, True)],
     )
-    def test_zero_threshold(self, u: float, expected: float) -> None:
-        assert _out(Cast(output_type="bool"), u) == expected
+    def test_zero_threshold(self, u: float, expected: bool) -> None:
+        assert bool(_out(Cast(dtype="bool"), u)[0]) is expected
 
-
-class TestCastEdgeCases:
-    def test_nan_to_bool_is_one(self) -> None:
-        """受入基準 5 (§確定事項 3): nan != 0 は真 → 1.0。例外規則を作らない。"""
-        assert _out(Cast(output_type="bool"), float("nan")) == 1.0
-
-    def test_nan_propagates_for_float_and_int(self) -> None:
-        assert math.isnan(_out(Cast(output_type="float"), float("nan")))
-        assert math.isnan(_out(Cast(output_type="int"), float("nan")))
-
-    @pytest.mark.parametrize("ot", ["float", "int"])
-    def test_inf_propagates(self, ot: str) -> None:
-        assert _out(Cast(output_type=ot), float("inf")) == float("inf")
-        assert _out(Cast(output_type=ot), float("-inf")) == float("-inf")
-
-    def test_inf_to_bool_is_one(self) -> None:
-        assert _out(Cast(output_type="bool"), float("inf")) == 1.0
-        assert _out(Cast(output_type="bool"), float("-inf")) == 1.0
-
-    def test_int_input_handled(self) -> None:
-        y = Cast(output_type="bool").output(0.0, _EMPTY_X, np.array([3]))
-        assert float(y[0]) == 1.0
+    def test_nan_is_true(self) -> None:
+        """nan != 0 は真 → True。例外規則を作らない (cast_value SSOT)。"""
+        assert bool(_out(Cast(dtype="bool"), float("nan"))[0]) is True
 
 
 class TestCastStateless:
     def test_repeated_same_value(self) -> None:
-        b = Cast(output_type="int")
-        rs = [_out(b, 2.5) for _ in range(5)]
+        b = Cast(dtype="int32")
+        rs = [int(_out(b, 2.7)[0]) for _ in range(5)]
         assert all(r == rs[0] for r in rs)
 
 
@@ -140,7 +136,7 @@ class TestCastInModel:
     def test_sine_through_bool_cast(self, tmp_path: Path) -> None:
         sim = Simulator(t_end=1.0, dt=0.01)
         sim.add(Sine(amplitude=2.5, frequency=1.0, id="src"))
-        sim.add(Cast(output_type="bool", id="c"))
+        sim.add(Cast(dtype="bool", id="c"))
         sim.add(Scope(n_inputs=1, id="sc"))
         sim.connect("src", "c")
         sim.connect("c", "sc")
@@ -150,15 +146,8 @@ class TestCastInModel:
 
     def test_save_load_round_trip(self, tmp_path: Path) -> None:
         sim1 = Simulator(t_end=0.1, dt=0.01)
-        sim1.add(Cast(output_type="bool", id="c"))
+        sim1.add(Cast(dtype="bool", id="c"))
         path = tmp_path / "m.flw.json"
         sim1.save(path)
         sim2 = Simulator.load(path)
-        assert sim2.get_block("c").output_type == "bool"
-
-
-class TestApplyValueSemantics:
-    def test_shared_function_rules(self) -> None:
-        assert apply_value_semantics(2.5, "int") == 2.0
-        assert apply_value_semantics(-3.2, "bool") == 1.0
-        assert apply_value_semantics(1.5, "float") == 1.5
+        assert sim2.get_block("c").dtype == "bool"

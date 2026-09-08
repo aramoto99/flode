@@ -35,7 +35,6 @@ def _run_sum(
 class TestNativeSemantics:
     def test_bool_plus_bool_is_logical_or(self) -> None:
         # (F3): bool + bool == True (記録は float64 なので 1.0)。
-        # output_type="bool" 経路の 2.0 とは異なる — D-5 が別 param にした理由
         sim = Simulator(t_end=0.05, dt=0.01)
         c1 = sim.add(Constant(value=1.0, id="c1"))
         k1 = sim.add(Cast(dtype="bool", id="k1"))
@@ -52,19 +51,6 @@ class TestNativeSemantics:
         assert res.out_dtype("s", 0) == "bool"
         sim.run()
         assert float(np.asarray(sc.values)[0, 0]) == 1.0  # 2.0 ではない
-
-    def test_output_type_bool_still_gives_two(self) -> None:
-        # AC-5: 旧 output_type 経路は値の意味論のまま (1.0 + 1.0 = 2.0)
-        sim = Simulator(t_end=0.05, dt=0.01)
-        c1 = sim.add(Constant(value=1.0, output_type="bool", id="c1"))
-        c2 = sim.add(Constant(value=1.0, output_type="bool", id="c2"))
-        s = sim.add(Sum(signs="++", id="s"))
-        sc = sim.add(Scope(id="sc"))
-        sim.connect(c1, s, dst_idx=0)
-        sim.connect(c2, s, dst_idx=1)
-        sim.connect(s, sc)
-        sim.run()
-        assert float(np.asarray(sc.values)[0, 0]) == 2.0
 
     def test_int32_wrap_around(self) -> None:
         dtype, val = _run_sum(2**31 - 1, "int32", 1, "int32")

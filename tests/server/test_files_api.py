@@ -172,14 +172,14 @@ class TestGetContentMigration:
         r = client.get("/api/v1/files/content", params={"path": "legacy.flw.json"})
         assert r.status_code == 200
         content = r.json()["content"]
-        assert content["schema_version"] == "0.11"
+        assert content["schema_version"] == "0.12"
         assert content["_migrated_from"] == "0.9"
         assert content["blocks"][0]["type"] == "flode.blocks.sources.Sine"
         assert content["metadata"]["tool"] == "flode 0.42.0"
 
     def test_current_schema_model_untouched(self, client: TestClient, workspace: Path) -> None:
         model = {
-            "schema_version": "0.11",
+            "schema_version": "0.12",
             "blocks": [{"id": "src", "type": "flode.blocks.sources.Sine", "params": {}}],
             "connections": [],
         }
