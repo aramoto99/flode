@@ -57,8 +57,9 @@ test.describe("ParameterPanel (v3.x auto-save)", () => {
     expect(gain?.params.k).toBe(7.5);
   });
 
-  // SPEC-0027 (SM-D Stage 0): 影の型表示セクション。表示のみ・挙動不変。
-  test("shows the shadow signal dtype section for a selected block", async ({
+  // SPEC-0028 (SM-D Stage 1): 信号型セクション。shadow 表記は撤去され、
+  // dtype 未宣言モデルには auto_note が出る
+  test("shows the signal dtype section with the auto note for undeclared models", async ({
     page,
   }) => {
     await page.goto("/");
@@ -70,7 +71,29 @@ test.describe("ParameterPanel (v3.x auto-save)", () => {
     await expect(page.getByTestId("dtype-out-0")).toHaveText("float64", {
       timeout: 10_000,
     });
-    // shadow_note は必須 (「型が見えるのに結果が変わらない」誤解の防止)
-    await expect(page.getByTestId("dtype-shadow-note")).toBeVisible();
+    // AC-9: shadow_note は存在しない。未宣言モデルには auto_note
+    await expect(page.getByTestId("dtype-shadow-note")).toHaveCount(0);
+    await expect(page.getByTestId("dtype-auto-note")).toBeVisible();
+  });
+
+  // SPEC-0028: dtype 宣言モデル — Inspector の select と信号型表示
+  test("dtype select and resolved dtypes for a declared model", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByText("dtype_model.flw.json").click({ timeout: 15_000 });
+    await page.locator('.react-flow__node[data-id="c"]').click();
+    await expect(page.getByTestId("parameter-panel")).toBeVisible();
+
+    // dtype param が enum <select> として描かれ int32 が選択されている
+    const dtypeSelect = page.getByTestId("param-input-dtype");
+    await expect(dtypeSelect).toBeVisible();
+    await expect(dtypeSelect).toHaveValue("int32");
+
+    // 信号型セクション: out[0] = int32、auto_note なし
+    await expect(page.getByTestId("dtype-out-0")).toHaveText("int32", {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId("dtype-auto-note")).toHaveCount(0);
   });
 });

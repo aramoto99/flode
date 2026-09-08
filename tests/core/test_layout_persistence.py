@@ -48,10 +48,10 @@ def _build_simple_sim() -> Simulator:
 
 
 class TestSchemaVersion:
-    def test_current_is_0_10(self) -> None:
-        # プロジェクト名変更 (pyflw → flode): 0.9 → 0.10 bump (ブロック型 FQN の
-        # prefix と metadata.tool をロード時に自動変換)
-        assert CURRENT_SCHEMA_VERSION == "0.10"
+    def test_current_is_0_11(self) -> None:
+        # SM-D Stage 1 (SPEC-0028): dtype param 追加に伴う 0.10 → 0.11 bump
+        # (no-op migration。旧ファイルは dtype なし = "auto" = 従来挙動)
+        assert CURRENT_SCHEMA_VERSION == "0.11"
 
     def test_supported_includes_current(self) -> None:
         assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS

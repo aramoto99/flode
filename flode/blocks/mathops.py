@@ -55,9 +55,22 @@ class Sum(Block):
     ):
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
+        # SM-D Stage 1 (SPEC-0028 §3.6): 整数/bool 入力用の int64 符号。
+        # int64 で累積し、宣言 dtype への wrap は _step_vector の cast_value に
+        # 委ねる (mod 2^n は準同型なので結果は native 累積と一致。int8 符号だと
+        # bool 入力時に result_type が int8 になり極端な多入力で壊れる —
+        # security NIT-3 2026-09-08)。float 経路 (上の self.signs) には触れない。
+        self._signs_int = np.array(
+            [1 if s == "+" else -1 for s in signs], dtype=np.int64
+        )
         self._params = {"signs": signs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        if u.dtype.kind in "bui":
+            # SM-D Stage 1 (SPEC-0028 §3.6): 整数/bool は整数演算で累積する。
+            # 予測 dtype への wrap は _step_vector の cast_value が行う
+            # (uint8 は int16 で累積 → mod 256 wrap で準同型的に正しい)。
+            return np.array([np.dot(self._signs_int, u)])
         return np.array([float(np.dot(self.signs, u))])
 
 
@@ -95,9 +108,22 @@ class Add(Block):
             raise BlockSpecError(f"Add: signs must contain only '+'/'-', got {signs!r}")
         super().__init__(id=id, name=name, n_inputs=len(signs), n_outputs=1)
         self.signs = np.array([1.0 if s == "+" else -1.0 for s in signs])
+        # SM-D Stage 1 (SPEC-0028 §3.6): 整数/bool 入力用の int64 符号。
+        # int64 で累積し、宣言 dtype への wrap は _step_vector の cast_value に
+        # 委ねる (mod 2^n は準同型なので結果は native 累積と一致。int8 符号だと
+        # bool 入力時に result_type が int8 になり極端な多入力で壊れる —
+        # security NIT-3 2026-09-08)。float 経路 (上の self.signs) には触れない。
+        self._signs_int = np.array(
+            [1 if s == "+" else -1 for s in signs], dtype=np.int64
+        )
         self._params = {"signs": signs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        if u.dtype.kind in "bui":
+            # SM-D Stage 1 (SPEC-0028 §3.6): 整数/bool は整数演算で累積する。
+            # 予測 dtype への wrap は _step_vector の cast_value が行う
+            # (uint8 は int16 で累積 → mod 256 wrap で準同型的に正しい)。
+            return np.array([np.dot(self._signs_int, u)])
         return np.array([float(np.dot(self.signs, u))])
 
 
@@ -119,6 +145,10 @@ class Product(Block):
         self._params = {"n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        if u.dtype.kind in "bui":
+            # SM-D Stage 1: dtype=u.dtype 必須 — np.prod は既定で default int に
+            # 昇格し wrap 位置が変わるため (SPEC-0028 §3.6)
+            return np.array([np.prod(u, dtype=u.dtype)])
         return np.array([float(np.prod(u))])
 
 
@@ -213,6 +243,11 @@ class MinMax(Block):
         self._params = {"operator": operator, "n_inputs": int(n_inputs)}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        if u.dtype.kind in "bui":
+            # SM-D Stage 1: int64 > 2^53 の大小比較が float 経由で壊れるため
+            # 整数のまま比較する (SPEC-0028 §3.6)
+            v_int = np.min(u) if self.operator == "min" else np.max(u)
+            return np.array([v_int])
         v = float(np.min(u)) if self.operator == "min" else float(np.max(u))
         return np.array([v])
 

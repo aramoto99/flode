@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0] - 2026-09-09 — SM-D Stage 1: 宣言した dtype で実際に計算される
+
+### Added
+
+- **dtype の実適用**: `Cast` / `Constant` の新 param **`dtype`**
+  (`auto` / `float64` / `bool` / `int32` / `int64` / `uint8`) で宣言した型が
+  **実際に計算に効く** (Stage 0 の「表示のみ」注記は撤去)
+  - `Cast(dtype="float64")` は恒等ではなく**実変換**。float → 整数は
+    **ゼロ方向切り捨て** (`output_type="int"` の偶数丸めとは別規則)、
+    nan → 0 / ±inf → 飽和は決定的
+  - Inspector に `dtype` の select、`Display` は整数 dtype を小数点なし /
+    `bool` を `true`/`false` で表示、`Constant` の canvas は生値 + dtype 名
+  - 検証: 解決器の予測と実行時の実 dtype の全ポート一致を CI で機械検証
+- schema **0.11** (no-op migration。旧ファイルは dtype なし = 従来挙動で完全互換)
+
+### 重要な注意 (破壊的仕様の明示)
+
+- **`dtype` を宣言したモデルは numpy ネイティブ意味論に従う**: 整数の
+  オーバーフローは wrap (`int32` の 2147483647+1 = -2147483648)、
+  `bool + bool = True` (論理和)、整数 floor 除算の 0 割り = 0。
+  従来の `output_type` (値の意味論) 経路の挙動は一切変わらない
+- **影響はモデル単位**: どこか 1 箇所でも `dtype` を宣言すると、モデル全体が
+  dtype 実行になる。比較系 (`RelationalOperator` 等) や `Rounding` は自分が
+  宣言していなくても実 bool / int64 出力になり、**nan / inf は決定的に
+  変換される** (nan→0・±inf→飽和 / bool は nan→true)。nan/inf の伝播に
+  依存するモデルに `dtype` を足すときは注意
+- Subsystem **内部**の `dtype` 宣言は未対応でエラーになる (境界は float64。
+  内部の型伝播は Stage 2)。`Constant(dtype="int64")` の値は float64 で保持
+  されるため 2^53 を超える整数は正確に表せない (正確な巨大 int64 は
+  `Cast(dtype="int64")` を上流に置く)
+- `output_type` と `dtype` の併用はエラー。連続ブロック入力は float64 へ自動昇格、
+  Subsystem / PythonFunction 境界は float64 (island)、非 float64 モデルの
+  `linearize` / `bode` 等は明示拒否
+- dtype 未宣言モデルの実行結果は **bit 単位で不変** (回帰テストで機械検証済み)
+
 ## [0.54.1] - 2026-09-08 — save 時の PythonFunction 実行を修正
 
 ### Fixed

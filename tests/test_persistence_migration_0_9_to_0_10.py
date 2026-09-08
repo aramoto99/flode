@@ -20,8 +20,9 @@ from flode.core.persistence import (
 # ---------------------------------------------------------------------------
 
 
-def test_current_schema_version_is_0_10() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.10"
+def test_current_schema_version_is_0_11() -> None:
+    # SM-D Stage 1 (SPEC-0028) で 0.10 → 0.11 に bump (dtype param、no-op migration)
+    assert CURRENT_SCHEMA_VERSION == "0.11"
 
 
 def test_migrate_renames_top_level_block_types() -> None:
@@ -165,7 +166,7 @@ def test_migrate_does_not_mutate_input_top_level() -> None:
 
 
 def test_chain_from_0_8_converts_triggered_subsystem_to_flode() -> None:
-    """0.8 の TriggeredSubsystem 入りモデルが 0.8 → 0.9 → 0.10 のチェーンで
+    """0.8 の TriggeredSubsystem 入りモデルが 0.8 → 0.9 → 0.10 → 0.11 のチェーンで
     最終的に flode FQN の Subsystem + Trigger になる。"""
     data = {
         "schema_version": "0.8",
@@ -191,7 +192,7 @@ def test_chain_from_0_8_converts_triggered_subsystem_to_flode() -> None:
         "metadata": {"tool": "pyflw 0.37.0"},
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.10"
+    assert out["schema_version"] == "0.11"
     assert out["_migrated_from"] == "0.8"
     entry = out["blocks"][0]
     assert entry["type"] == "flode.subsystems.subsystem.Subsystem"
@@ -204,7 +205,7 @@ def test_chain_from_0_8_converts_triggered_subsystem_to_flode() -> None:
 
 
 def test_chain_from_oldest_version_reaches_current() -> None:
-    """最古の 0.1 からでも migration チェーンが 0.10 まで到達する。"""
+    """最古の 0.1 からでも migration チェーンが現行 (0.11) まで到達する。"""
     data = {
         "schema_version": "0.1",
         "simulator": {},
@@ -212,5 +213,5 @@ def test_chain_from_oldest_version_reaches_current() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.10"
+    assert out["schema_version"] == "0.11"
     assert out["_migrated_from"] == "0.1"

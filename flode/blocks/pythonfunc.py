@@ -173,6 +173,25 @@ def exec_block_source(
             (呼び出し側 :meth:`PythonFunction._build` が包み直す)。
     """
     # 呼び出し側の規約に依存せず、この関数自体が gate を通る (不変条件 (a) を構造で担保)。
+    # SM-D Stage 1 (SPEC-0028 §3.8 / AC-7): static mode の型解決中は exec 禁止。
+    # 「静的解決はユーザーコードを実行しない」(二経路設計) の実行時バックストップ
+    # — 呼び出し側の規律が将来破れても、ここで fail-closed になる。
+    from ..core.dtypes import in_static_dtype_resolution
+
+    if in_static_dtype_resolution():
+        # 多層防御の作動 = 不変条件違反の証拠。監査可能なよう WARNING で残す
+        # (security SHOULD-1 2026-09-08)
+        _logger.warning(
+            "PythonFunction[%s]: exec blocked during static dtype resolution "
+            "(SPEC-0028 §3.8 invariant violation)",
+            block_id,
+        )
+        raise BlockSpecError(
+            f"PythonFunction[{block_id}]: exec_block_source called during static "
+            "dtype resolution. This is an internal invariant violation "
+            "(SPEC-0028 §3.8) — static resolution must never execute user code.",
+            block_id=block_id,
+        )
     _require_execution_allowed(block_id)
     filename = filename if filename is not None else source_filename(block_id)
     linecache.cache[filename] = (len(code), None, code.splitlines(True), filename)
@@ -471,7 +490,24 @@ class PythonFunction(Block):
 
         ``FlodeError`` (= ``_pack_y`` 等の shape 不一致 ``BlockSpecError`` を含む) は
         そのまま伝播させる。
+
+        security SHOULD-2 (2026-09-08): static 型解決中はユーザー関数の呼び出し
+        自体も禁止する (exec ガードの適用範囲を module exec だけでなく
+        「ユーザーコード境界」全体へ広げる純粋な防御)。
         """
+        from ..core.dtypes import in_static_dtype_resolution
+
+        if in_static_dtype_resolution():
+            _logger.warning(
+                "PythonFunction[%s]: user-code call blocked during static dtype "
+                "resolution (SPEC-0028 §3.8 invariant violation)",
+                self.id,
+            )
+            raise BlockSpecError(
+                f"PythonFunction[{self.id}]: user code invoked during static "
+                "dtype resolution (SPEC-0028 §3.8 invariant violation).",
+                block_id=self.id,
+            )
         try:
             yield
         except FlodeError:

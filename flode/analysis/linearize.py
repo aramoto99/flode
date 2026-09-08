@@ -547,6 +547,36 @@ def linearize(
 
     # ----- Simulator setup (build / sample-time / state layout) -----
     order = simulator._execution_order()  # _build() を triggered
+
+    # SM-D Stage 1 (SPEC-0028 Q10 / AC-8): 非 float64 信号を含むモデルは明示拒否。
+    # 数値線形化の摂動 (sqrt(eps) ~ 1.5e-8) は整数ポートで切り捨てられ、
+    # Jacobian の列が黙って 0 になるため、誤った結果よりエラーが誠実。
+    from ..core.dtypes import (
+        has_declared_dtype,
+        reject_nested_dtype_declarations,
+        resolve_for_execution,
+    )
+
+    # security MUST-1: ネスト dtype 宣言は run と同様に fail-closed
+    reject_nested_dtype_declarations(simulator)
+
+    # Note (code-reviewer NIT 2026-09-08): linearize は `_dtype_plan` を構築しない。
+    # 下の拒否により「dtype 宣言モデルは non_float_ports == 0 のときだけ通る」
+    # という不変条件が成立し、その場合 plan なし (= 全ポート float64 強制) と
+    # 解決結果 (全ポート float64) は数値的に同一になるため。Q10 を緩和して
+    # 非 float64 モデルを通すようになったら、この省略は成立しなくなる。
+    if has_declared_dtype(simulator):
+        dtype_res = resolve_for_execution(simulator)
+        if dtype_res.summary.non_float_ports > 0:
+            raise BlockSpecError(
+                "linearize: model contains non-float64 signals (SM-D dtype). "
+                "Numerical linearisation requires float64 signals because the "
+                "perturbation (sqrt(eps) ~ 1.5e-8) is truncated on integer "
+                "ports, silently producing zero Jacobian columns. Remove the "
+                "dtype declarations or insert Cast(dtype='float64') before "
+                "the linearisation boundary."
+            )
+
     if simulator._is_sm_a_mode():
         sm_a_mode = True
     else:

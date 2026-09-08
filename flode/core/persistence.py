@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.10"
+CURRENT_SCHEMA_VERSION = "0.11"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -665,6 +665,20 @@ def _builtin_migrate_0_9_to_0_10(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_10_to_0_11(data: dict[str, Any]) -> dict[str, Any]:
+    """SM-D Stage 1 (SPEC-0028 / ADR-0077): 0.10 → 0.11。
+
+    `Cast` / `Constant` に実 dtype 宣言の param ``dtype`` が追加された。
+    旧ファイルは ``dtype`` キーを持たない = ``"auto"`` (宣言なし = 従来挙動) の
+    ため、**フィールド変換は不要 (no-op bump)**。バージョンを上げるのは、
+    ``dtype`` 入りの 0.11 ファイルを v0.54.x 以前が ``TypeError`` で silent に
+    壊すのを防ぎ、明示エラーにするため。数値挙動への影響: なし。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.11"
+    return out
+
+
 # Built-in migrations を _MIGRATIONS に登録する関数 (テストの reset 後に再登録可能)
 def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.1", "0.2")] = _builtin_migrate_0_1_to_0_2
@@ -676,6 +690,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.7", "0.8")] = _builtin_migrate_0_7_to_0_8
     _MIGRATIONS[("0.8", "0.9")] = _builtin_migrate_0_8_to_0_9
     _MIGRATIONS[("0.9", "0.10")] = _builtin_migrate_0_9_to_0_10
+    _MIGRATIONS[("0.10", "0.11")] = _builtin_migrate_0_10_to_0_11
 
 
 _register_builtin_migrations()

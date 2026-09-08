@@ -32,6 +32,7 @@ import {
   type BlockNode,
 } from "../lib/diagramConverter";
 import { collectPythonCodes, ensurePythonSpecs } from "../lib/pythonFunctionSpec";
+import { useDtypeResolutionFetcher } from "../lib/dtypeResolution";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { generateUniqueId } from "../lib/idGenerator";
 import {
@@ -133,6 +134,9 @@ export function DiagramCanvas({
   // (= cache 世代の更新) で再描画してポート数を確定値に置き換える。それまでの
   // 1 往復は registry default (1 in / 1 out) で描かれる (結線は壊れない、V10)。
   usePythonSpecVersion();
+  // SM-D Stage 1 (SPEC-0028 §5.5): dtype 解決結果のモデルレベル fetch。
+  // Inspector (SignalDtypeSection) と Display の表示整形が同じ store を読む
+  useDtypeResolutionFetcher();
   useEffect(() => {
     const codes = collectPythonCodes(editingModel);
     if (codes.length > 0) void ensurePythonSpecs(codes);

@@ -29,6 +29,7 @@ from ..exceptions import (
     UnknownBlockIdError,
 )
 from .block import Block
+from .dtypes import cast_value
 from .identifiers import fold_block_id, normalize_block_id, validate_block_id
 from .persistence import (
     CURRENT_SCHEMA_VERSION,
@@ -45,6 +46,29 @@ from .persistence import (
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
     from ..analysis.linearize import LinearSystem
     from .dtypes import DTypeResolution
+
+#: SM-D Stage 1 (SPEC-0028 §3.7): 実行順 (order) と並行に並べた
+#: ``(in_dtypes, out_dtypes)`` の列。hot loop で辞書引きしないための前処理形。
+DTypePlan = list[tuple[tuple[np.dtype[Any], ...], tuple[np.dtype[Any], ...]]]
+
+
+def _build_dtype_plan(order: list[Block], resolution: DTypeResolution) -> DTypePlan:
+    """解決結果を実行順並行の dtype plan へ前処理する (SPEC-0028 §3.7)。
+
+    materialize (Q5) 済みの full mode 結果を前提とするため、全ポートが
+    語彙 5 種のいずれかを持つ (unknown は来ない = 全域性 AC-3)。
+    """
+    plan: DTypePlan = []
+    for b in order:
+        bid = b.id if b.id is not None else "<unassigned>"
+        in_dts = tuple(
+            np.dtype(resolution.ports[(bid, "in", i)]) for i in range(b.n_inputs)
+        )
+        out_dts = tuple(
+            np.dtype(resolution.ports[(bid, "out", j)]) for j in range(b.n_outputs)
+        )
+        plan.append((in_dts, out_dts))
+    return plan
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
@@ -118,6 +142,9 @@ class Simulator:
         # する。run() が成功完了すれば ``None`` に戻る。例外が伝搬したときは最後に
         # set されたブロックが残り、サーバ層が構造化エラー payload に詰める。
         self._current_block: Block | None = None
+        # SM-D Stage 1 (SPEC-0028): run() が dtype 宣言モデルで設定する実行時
+        # dtype plan。None = 従来どおり float64 強制 (_step_vector が参照)。
+        self._dtype_plan: DTypePlan | None = None
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -626,6 +653,12 @@ class Simulator:
         (``float(u_external[port_idx])``) を経由する。従って SM-B 信号 (ndarray) は
         サイレントに切り捨てられる。`_step_inner_v` は Phase 4 で追加予定 (ADR-0018
         §(4.3))。
+
+        Note (SM-D Stage 1、SPEC-0028 Q6): **dtype 起因** で SM-B path に入った
+        scalar-port Subsystem は本チェックの対象外で正当に通る。その場合の
+        scalar coercion は「サイレント切り捨て」ではなく **意図した float64
+        island** である — 解決器が境界入力を float64 要求 + `_gather_inputs` の
+        in-plan cast で実際に float64 化してから渡すため、値は失われない。
         """
         # 遅延 import で循環回避
         from ..subsystems import Subsystem
@@ -884,6 +917,9 @@ class Simulator:
         cont_state = {b: x_cont[sl] for b, sl in layout}
         outputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
         inputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+        # SM-D Stage 1 (SPEC-0028 §3.7): run() が dtype 宣言モデルで設定する plan。
+        # None なら従来どおり float64 強制 (= shape 起因 SM-B の bit 不変を構造保証)。
+        plan = self._dtype_plan
 
         def state_for(b: Block) -> npt.NDArray[Any]:
             if b in cont_state:
@@ -892,25 +928,45 @@ class Simulator:
                 return discrete_state[b]
             return np.zeros(0)
 
-        def _zero_inputs(b: Block) -> tuple[npt.NDArray[Any], ...]:
-            return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
+        def _zero_inputs(
+            b: Block, in_dts: tuple[np.dtype[Any], ...] | None
+        ) -> tuple[npt.NDArray[Any], ...]:
+            if in_dts is None:
+                return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
+            return tuple(
+                np.zeros(shape, dtype=in_dts[i])
+                for i, shape in enumerate(b.port_shapes_in)
+            )
 
-        def _gather_inputs(b: Block) -> tuple[npt.NDArray[Any], ...]:
+        def _gather_inputs(
+            b: Block, in_dts: tuple[np.dtype[Any], ...] | None
+        ) -> tuple[npt.NDArray[Any], ...]:
             u_list: list[npt.NDArray[Any]] = []
             for i, src in enumerate(b.input_sources):
                 if src is None:
-                    u_list.append(np.zeros(b.port_shapes_in[i], dtype=float))
+                    u_list.append(
+                        np.zeros(
+                            b.port_shapes_in[i],
+                            dtype=float if in_dts is None else in_dts[i],
+                        )
+                    )
                 else:
                     sb, si = src
-                    u_list.append(outputs[sb][si])
+                    ui = outputs[sb][si]
+                    if in_dts is not None and ui.dtype != in_dts[i]:
+                        # D-4 自動昇格の実行時実体 (in-plan cast、SPEC-0028 §3.7)。
+                        # 例: int64 の上流 → Integrator の in は float64。
+                        ui = cast_value(ui, in_dts[i])
+                    u_list.append(ui)
             return tuple(u_list)
 
-        for b in order:
+        for idx, b in enumerate(order):
+            in_dts = plan[idx][0] if plan is not None else None
             if b.direct_feedthrough:
-                u = _gather_inputs(b)
+                u = _gather_inputs(b, in_dts)
                 inputs[b] = u
             else:
-                u = _zero_inputs(b)
+                u = _zero_inputs(b, in_dts)
             xb = state_for(b)
             y = b.output_v(t, xb, u)
             # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
@@ -923,10 +979,20 @@ class Simulator:
                     f"{type(b).__name__} {b.id!r}.output_v returned {len(y)} "
                     f"output(s), expected {b.n_outputs}"
                 )
-            outputs[b] = tuple(np.asarray(yi, dtype=float) for yi in y)
-        for b in order:
+            if plan is None:
+                outputs[b] = tuple(np.asarray(yi, dtype=float) for yi in y)
+            else:
+                # SPEC-0028 §3.6: 予測 dtype への強制 cast (SSOT の適用点は
+                # ここ 1 箇所。cast_value は dtype 一致時 no-op、nan/inf/域外も
+                # 決定的)。予測 == 実行 (AC-2) をこの行が保証する。
+                out_dts = plan[idx][1]
+                outputs[b] = tuple(
+                    cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y)
+                )
+        for idx, b in enumerate(order):
             if not b.direct_feedthrough:
-                inputs[b] = _gather_inputs(b)
+                in_dts = plan[idx][0] if plan is not None else None
+                inputs[b] = _gather_inputs(b, in_dts)
         return outputs, inputs
 
     def run(self) -> None:
@@ -967,13 +1033,39 @@ class Simulator:
         # で全ブロックの ``_build()`` (Subsystem の n_states 確定など) と port shape
         # check が完了したあと判定する。SM-A モード (全ポート shape == ()) なら既存の
         # 高速 _step パス、SM-B モード (任意 vector port あり) は _step_vector パスを使う。
-        sm_a_mode = self._is_sm_a_mode()
+        # SM-D Stage 1 (SPEC-0028 §3.1/§3.2): dtype 宣言の O(V) pre-filter。
+        # False なら解決器を一切呼ばず従来経路 (= AC-1 の構造的保証)。
+        # True なら full mode で解決し (error 級診断は BlockSpecError に昇格)、
+        # SM-B path + dtype plan で実行する (D-6)。
+        from .dtypes import (
+            has_declared_dtype,
+            reject_nested_dtype_declarations,
+            resolve_for_execution,
+        )
+
+        # security MUST-1 (2026-09-08): Subsystem 内部の dtype 宣言は root-only
+        # pre-filter をすり抜けて「予測と実行値の無警告乖離」を起こすため、
+        # 宣言の有無に関わらず全モデルで fail-closed に拒否する (O(全ブロック)
+        # の param 走査のみ — 数値挙動には一切影響しない)
+        reject_nested_dtype_declarations(self)
+
+        use_dtype = has_declared_dtype(self)
+        if use_dtype:
+            resolution = resolve_for_execution(self)
+            self._dtype_plan = _build_dtype_plan(order, resolution)
+        else:
+            self._dtype_plan = None
+
+        sm_a_mode = self._is_sm_a_mode() and not use_dtype
         if not sm_a_mode:
             # ADR-0018 §(3) S-A: Scope は SM-A only。SM-B 信号を Scope に直接繋ぐと
             # build 時に明示エラー (Demux 経由を誘導)。
+            # (dtype 起因の SM-B では全ポート scalar のため素通り = 無害)
             self._check_scope_inputs_are_scalar()
             # ADR-0018 §(4.3): SM-B Subsystem は Phase 4 まで run 不可。silent 破損
             # を避けるため build 時に明示拒否。
+            # (dtype 起因の scalar-port Subsystem は正当に通る — float64 island、
+            #  SPEC-0028 Q6。_check_subsystem_sm_b_unsupported の docstring 参照)
             self._check_subsystem_sm_b_unsupported()
         self._resolve_sample_times(order)
         dt_base = self._compute_dt_base()

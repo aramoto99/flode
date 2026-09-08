@@ -24,12 +24,15 @@ SPEC-0027 / ADR-0077 (D-1〜D-8)。モデルの各ポートが「SM-D 完成時�
 from __future__ import annotations
 
 import logging
+import math
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import numpy as np
+import numpy.typing as npt
 
 from ..exceptions import AlgebraicLoopError, BlockSpecError
 
@@ -47,9 +50,47 @@ logger = logging.getLogger(__name__)
 #: (5×5 総当たりテストで固定、SPEC-0027 §1)。
 DTYPE_VOCABULARY: Final[tuple[str, ...]] = ("bool", "uint8", "int32", "int64", "float64")
 
-#: 内部センチネル =「Stage 0 の規則では決められない」を表す格子の bottom。
-#: D-1 の語彙を拡張するものではない (Stage 1 で消える、SPEC-0027 Q4)。
+#: 内部センチネル =「静的規則では決められない」を表す格子の bottom。
+#: D-1 の語彙を拡張するものではない。Stage 1 (SPEC-0028 Q5) では full mode の
+#: 収束後に float64 へ materialize され、実行時には残らない (全域性 AC-3)。
 UNKNOWN: Final[str] = "unknown"
+
+#: Stage 1 (SPEC-0028 Q1): ``dtype`` param の語彙。``"auto"`` = 宣言しない
+#: (従来どおり float64 経路)。``"auto"`` 以外は D-1 の語彙 5 種と 1:1。
+DTYPE_PARAM_VALUES: Final[tuple[str, ...]] = (
+    "auto",
+    "float64",
+    "bool",
+    "int32",
+    "int64",
+    "uint8",
+)
+
+#: Q7: 状態を float64 で保持したまま出力のみ cast する状態持ちブロック
+#: (`dtype.state_via_float64` 診断の対象)。
+_STATE_VIA_FLOAT64: Final[frozenset[str]] = frozenset(
+    {"UnitDelay", "RateTransition", "ZeroOrderHoldDirect"}
+)
+
+#: SPEC-0028 §3.8: static mode の型解決中であることを示す ContextVar。
+#: ``exec_block_source`` (pythonfunc.py) がこのフラグを見て exec を拒否する
+#: (多層防御。呼び出し側の規律 = 二経路設計への構造的バックストップ)。
+_RESOLVING_WITHOUT_USER_CODE: ContextVar[bool] = ContextVar(
+    "flode_dtype_resolving_without_user_code", default=False
+)
+
+
+def in_static_dtype_resolution() -> bool:
+    """static mode の型解決区間内かどうか (exec / eval ガードが参照する)。
+
+    Note:
+        ContextVar のため **新規スレッドには継承されない** (asyncio task /
+        ``run_in_threadpool`` は Context コピーで継承される)。将来、解決処理を
+        素の ``ThreadPoolExecutor`` 等へ逃がすとガードは静かに fail-open に
+        なる — その場合は context を明示的に propagate すること
+        (security SHOULD-2 2026-09-08)。
+    """
+    return _RESOLVING_WITHOUT_USER_CODE.get()
 
 Direction = Literal["in", "out"]
 
@@ -83,6 +124,89 @@ def promote(a: str, b: str) -> str:
     return np.result_type(np.dtype(a), np.dtype(b)).name
 
 
+def _float_to_int_scalar(v: float, info: Any) -> int:
+    """float スカラーを決定的に整数へ写す (SPEC-0028 §2.2 / Q3)。
+
+    nan → 0 / +inf → max / -inf → min の決定的飽和、有限値は
+    「ゼロ方向切り捨て → Python int → モジュラ wrap」。numpy の生 ``astype`` は
+    nan / inf / 表現域外で C 未定義動作のため使わない (決定性要件)。
+    """
+    if math.isnan(v):
+        return 0
+    if v == math.inf:
+        return int(info.max)
+    if v == -math.inf:
+        return int(info.min)
+    truncated = int(v)  # Python の int() = ゼロ方向切り捨て
+    lo = int(info.min)
+    span = int(info.max) - lo + 1
+    return (truncated - lo) % span + lo
+
+
+def cast_value(value: Any, target: str | np.dtype[Any]) -> npt.NDArray[Any]:
+    """値を目標 dtype へ決定的に変換する (変換規則の SSOT、SPEC-0028 §2.2)。
+
+    ``Cast`` / ``Constant`` の実変換と ``_step_vector`` の強制 cast の両方が
+    これを呼ぶ (規則の二重実装を作らない — ``apply_value_semantics`` と同じ流儀)。
+
+    規則 (Q3):
+
+    - 任意 → float64: ``astype`` (拡大。int64 > 2^53 は numpy 準拠で精度を失う)
+    - float → 整数: ゼロ方向切り捨て + モジュラ wrap。nan → 0 /
+      +inf → ``iinfo.max`` / -inf → ``iinfo.min`` の決定的飽和
+    - 整数 → 整数: モジュラ wrap (numpy の同種 ``astype`` と一致)
+    - 任意 → bool: ``u != 0`` (nan も True。SPEC-0026 §確定事項 3 と同一規則)
+
+    Args:
+        value: スカラーまたは ndarray (**数値 dtype 前提**。object 配列は
+            サポート外 — 呼び出し面は信号値のみ。security NIT-4 2026-09-08)。
+        target: 目標 dtype (語彙 5 種のいずれか)。
+
+    Returns:
+        目標 dtype の ndarray (入力と同 shape)。
+    """
+    dt = np.dtype(target)
+    arr = np.asarray(value)
+    if arr.dtype == dt:
+        return arr
+    if dt.kind == "b":
+        # nan != 0 は True → nan → True (ADR-0053 / SPEC-0026 と整合)
+        return np.asarray(arr != 0)
+    if dt.kind in "iu":
+        if arr.dtype.kind == "f":
+            info = np.iinfo(dt)
+            lo = int(info.min)
+            span = int(info.max) - lo + 1
+            if span <= 2**53:
+                # ベクトル化経路 (uint8 / int32 等: span が float64 で正確)。
+                # np.mod (= C fmod + 符号調整) は「表現されている値」の正確な
+                # 剰余を返すため、per-element の Python int 経路と厳密同値
+                # (security SHOULD-3 2026-09-08: hot path の 2〜3 桁の定数倍を解消)
+                flat = np.ravel(arr).astype(np.float64, copy=False)
+                out_flat = np.empty(flat.shape, dtype=dt)
+                nan_m = np.isnan(flat)
+                pinf_m = np.isposinf(flat)
+                ninf_m = np.isneginf(flat)
+                finite_m = ~(nan_m | pinf_m | ninf_m)
+                t = np.trunc(flat[finite_m])
+                r = np.mod(t, float(span))  # exact、[0, span)
+                out_flat[finite_m] = np.where(r > info.max, r - span, r).astype(dt)
+                out_flat[nan_m] = 0
+                out_flat[pinf_m] = info.max
+                out_flat[ninf_m] = info.min
+                return out_flat.reshape(arr.shape)
+            # int64: span = 2^64 が float64 で表現できないため per-element
+            # (Python 任意精度 int) で決定的に wrap する
+            flat_list = [
+                _float_to_int_scalar(float(v), info) for v in np.ravel(arr)
+            ]
+            return np.asarray(flat_list, dtype=dt).reshape(arr.shape)
+        # 整数/bool → 整数: numpy の astype はビット切り出し = モジュラ wrap で決定的
+        return arr.astype(dt)
+    # float64 (拡大変換)
+    return arr.astype(dt)
+
+
 # ---------------------------------------------------------------------------
 # 診断 (SPEC-0027 §3.6 + 実装計画の dtype.static_fallback)
 # ---------------------------------------------------------------------------
@@ -100,6 +224,10 @@ _SEVERITY_BY_CODE: Final[Mapping[str, str]] = {
     "dtype.build_failed": "error",
     "dtype.internal_error": "error",
     "dtype.static_fallback": "info",
+    # -- Stage 1 (SPEC-0028) --
+    "dtype.opaque_float64_island": "info",
+    "dtype.defaulted_to_float64": "info",
+    "dtype.state_via_float64": "info",
 }
 
 
@@ -279,20 +407,6 @@ _CLASSIFICATION: Final[Mapping[str, Category]] = {
     "PythonFunction": "opaque",
 }
 
-#: D-4: 全入力ポートに float64 を要求するクラス (連続系 5 + 離散 LTI 3)。
-_FLOAT64_REQUIRED: Final[frozenset[str]] = frozenset(
-    {
-        "Integrator",
-        "StateSpace",
-        "TransferFunction",
-        "MimoTransferFunction",
-        "Derivative",
-        "DiscreteIntegrator",
-        "DiscreteStateSpace",
-        "DiscreteTransferFunction",
-    }
-)
-
 #: promote_except_control の制御入力ポート index (出力 dtype に寄与しない)。
 _CONTROL_PORT_INDEX: Final[Mapping[str, int]] = {"Switch": 1, "MultiportSwitch": 0}
 
@@ -325,11 +439,19 @@ def _classify(block: Block) -> tuple[Category, bool]:
     return "promote", True
 
 
-def _required_input_dtype(block: Block) -> str | None:
-    """D-4: ブロックが全入力ポートに要求する dtype (要求なしは None)。"""
-    for name in _mro_names(block):
-        if name in _FLOAT64_REQUIRED:
-            return "float64"
+def _required_input_dtype(block: Block, *, island: bool) -> str | None:
+    """D-4: ブロックが全入力ポートに要求する dtype (要求なしは None)。
+
+    要求の SSOT は Stage 1 (SPEC-0028 Q11) から **ブロッククラスの
+    ``required_input_dtype`` ClassVar** (連続系 5 + 離散 LTI 3 が
+    ``"float64"`` を宣言)。``island=True`` (full mode = Stage 1 意味論) では
+    opaque 分類 (Subsystem / PythonFunction) も境界で float64 を要求する (Q6)。
+    """
+    declared = getattr(type(block), "required_input_dtype", None)
+    if isinstance(declared, str):
+        return declared
+    if island and _classify(block)[0] == "opaque":
+        return "float64"
     return None
 
 
@@ -361,6 +483,52 @@ def _contains_python_function(blocks: Iterable[Block]) -> bool:
         if inner is not None and _contains_python_function(inner):
             return True
     return False
+
+
+def has_declared_dtype(sim: Simulator) -> bool:
+    """モデルが SM-D (実 dtype 実行) を使うか — D-6 振り分け判定の SSOT (SPEC-0028 §3.1)。
+
+    root スコープの ``_params["dtype"]`` を O(V) で走査するだけの pre-filter。
+    ``False`` なら ``run()`` は解決器を呼ばず従来経路へ落ちる (AC-1 の構造的保証)。
+    ネスト Subsystem 内部は見ない (Q6: island のため内部宣言は Stage 1 では効かない)。
+    """
+    for b in sim.blocks:
+        if str(b._params.get("dtype", "auto")) != "auto":
+            return True
+    return False
+
+
+def reject_nested_dtype_declarations(sim: Simulator) -> None:
+    """Subsystem 内部の ``dtype`` 宣言を fail-closed に拒否する (security MUST-1)。
+
+    Stage 1 の pre-filter (`has_declared_dtype`) は root のみを見るため、
+    Subsystem 内部の宣言は解決器を通らない。一方でブロック自身の ``output()``
+    は ``dtype`` を単体で適用するため、放置すると「予測 (float64 island) と
+    実行値 (内部で wrap 済み) が無警告で乖離」する — AC-2 の破れ。
+    Stage 1 では内部宣言そのものを未対応としてエラーにする
+    (内部の型伝播は Stage 2、SPEC-0028 Q6)。
+
+    Raises:
+        BlockSpecError: ネストしたブロックに ``dtype != "auto"`` がある。
+    """
+
+    def _scan(blocks: Iterable[Block], owner_id: str | None) -> None:
+        for b in blocks:
+            if owner_id is not None and str(b._params.get("dtype", "auto")) != "auto":
+                raise BlockSpecError(
+                    f"dtype declaration on block {b.id!r} inside Subsystem "
+                    f"{owner_id!r} is not supported in this release: the "
+                    "Subsystem boundary is a float64 island (SPEC-0028 Q6) and "
+                    "inner declarations would silently diverge from the "
+                    "resolved dtypes. Move the Cast/Constant with dtype to the "
+                    "top level, or remove its dtype.",
+                    block_id=b.id,
+                )
+            inner = getattr(b, "_inner_blocks", None)
+            if inner is not None:
+                _scan(inner, _block_id(b))
+
+    _scan(sim.blocks, None)
 
 
 def _static_order(blocks: Sequence[Block]) -> list[Block]:
@@ -469,8 +637,10 @@ def _infer_outputs(
     category: Category,
     in_dtypes: Sequence[str],
     sink: DiagSink | None,
+    *,
+    island: bool = False,
 ) -> list[str]:
-    """分類規則で出力 dtype を決める (SPEC-0027 §3.5)。"""
+    """分類規則で出力 dtype を決める (SPEC-0027 §3.5 + SPEC-0028 Q1/Q6)。"""
     n_out = block.n_outputs
     if category == "bool_out":
         return ["bool"] * n_out
@@ -479,6 +649,11 @@ def _infer_outputs(
     if category == "float_out":
         return ["float64"] * n_out
     if category == "param_typed":
+        # Stage 1 (SPEC-0028 Q1): 新 param `dtype` が最優先。"auto" 以外は
+        # 宣言そのものが出力 dtype (実変換、恒等ではない)。
+        declared = str(block._params.get("dtype", "auto"))
+        if declared != "auto":
+            return [declared] * n_out
         output_type = block._params.get("output_type", "float")
         mapped = _OUTPUT_TYPE_MAP.get(str(output_type), "float64")
         if str(output_type) == "float" and block.n_inputs > 0:
@@ -495,7 +670,9 @@ def _infer_outputs(
     if category == "sink":
         return [UNKNOWN] * n_out
     if category == "opaque":
-        return [UNKNOWN] * n_out
+        # Q6 (Stage 1): full mode では float64 island。static mode は Stage 0 の
+        # unknown を維持 (float64 と偽らない — 測定装置としての誠実さ)。
+        return (["float64"] if island else [UNKNOWN]) * n_out
     # promote (既定規則)
     return [_promote_many(in_dtypes, sink, _block_id(block))] * n_out
 
@@ -504,9 +681,10 @@ def _apply_input_requirement(
     block: Block,
     raw: Sequence[str],
     sink: DiagSink | None,
+    required: str | None,
 ) -> list[str]:
-    """D-4: 要求 dtype への自動昇格。縮小が必要なら診断のみ (実挙動は変えない)。"""
-    required = _required_input_dtype(block)
+    """D-4: 要求 dtype への自動昇格。縮小は error 診断を出す (Stage 1 の
+    実行経路では ``resolve_for_execution`` が ``BlockSpecError`` に昇格する)。"""
     if required is None:
         return list(raw)
     applied: list[str] = []
@@ -551,17 +729,58 @@ def _apply_input_requirement(
     return applied
 
 
-def _resolve_impl(sim: Simulator) -> DTypeResolution:
-    """二経路 + 不動点反復の本体 (例外は ``resolve_dtypes`` が診断化する)。"""
-    blocks = list(sim.blocks)
-    diagnostics: list[DTypeDiagnostic] = []
-    static_mode = _contains_python_function(blocks)
+ResolveMode = Literal["auto", "full", "static"]
 
-    if static_mode:
+
+def _resolve_impl(sim: Simulator, *, mode: ResolveMode = "auto") -> DTypeResolution:
+    """二経路の振り分け (例外の診断化は ``resolve_dtypes`` 側)。
+
+    - **full mode** = Stage 1 意味論 (SPEC-0028): opaque は float64 island (Q6)、
+      収束後の unknown は float64 へ materialize (Q5 = 全域性 AC-3)
+    - **static mode** = Stage 0 意味論を維持 (PythonFunction を含むモデルの
+      REST / GUI 経路。``_build()`` せず、island / materialize も行わない)。
+      解決中は exec ガード (SPEC-0028 §3.8) を立てる
+    """
+    blocks = list(sim.blocks)
+    if mode == "auto":
+        # NIT (security 2026-09-08): 検出自体も exec ガード区間で行う —
+        # _inner_blocks が将来遅延化されても検出時の exec を fail-closed にする
+        detect_token = _RESOLVING_WITHOUT_USER_CODE.set(True)
+        try:
+            static_mode = _contains_python_function(blocks)
+        finally:
+            _RESOLVING_WITHOUT_USER_CODE.reset(detect_token)
+    else:
+        static_mode = mode == "static"
+
+    if not static_mode:
+        # security MUST-1 (2026-09-08): ネスト dtype 宣言は fail-closed に拒否
+        # (REST 経路では resolve_dtypes の catch-all が dtype.build_failed に変換)
+        reject_nested_dtype_declarations(sim)
+        order = sim._execution_order()
+        return _resolve_graph(sim, blocks, order, island=True, static=False)
+
+    guard_token = _RESOLVING_WITHOUT_USER_CODE.set(True)
+    try:
         # static mode: _build() はユーザーコードを exec するため一切呼ばない。
-        # 順序は input_sources だけで作る擬似トポロジ順 (build 不要)。順序が
-        # 崩れていても格子の有界性 + 反復上限で収束・停止は保証される。
+        # 順序は input_sources だけで作る擬似トポロジ順 (build 不要)。
         order = _static_order(blocks)
+        return _resolve_graph(sim, blocks, order, island=False, static=True)
+    finally:
+        _RESOLVING_WITHOUT_USER_CODE.reset(guard_token)
+
+
+def _resolve_graph(
+    sim: Simulator,
+    blocks: list[Block],
+    order: list[Block],
+    *,
+    island: bool,
+    static: bool,
+) -> DTypeResolution:
+    """不動点反復 + 最終パスの本体。``island`` = Stage 1 意味論 (Q5/Q6/Q7)。"""
+    diagnostics: list[DTypeDiagnostic] = []
+    if static:
         diagnostics.append(
             _diag(
                 "dtype.static_fallback",
@@ -570,9 +789,7 @@ def _resolve_impl(sim: Simulator) -> DTypeResolution:
                 "algebraic loops are not detected in this mode.",
             )
         )
-        logger.debug("dtype.static_fallback: model contains PythonFunction")
-    else:
-        order = sim._execution_order()
+        logger.debug("dtype.static_fallback: static resolution")
 
     # --- 反復 (診断は収束後の最終パスでのみ収集し、重複を避ける) ---
     out_of: dict[PortKey, str] = {}
@@ -586,9 +803,12 @@ def _resolve_impl(sim: Simulator) -> DTypeResolution:
         changed = False
         for b in order:
             raw = _gather_raw_inputs(b, out_of)
-            in_dtypes = _apply_input_requirement(b, raw, None)
             category, _missing = _classify(b)
-            for j, d in enumerate(_infer_outputs(b, category, in_dtypes, None)):
+            required = _required_input_dtype(b, island=island)
+            in_dtypes = _apply_input_requirement(b, raw, None, required)
+            for j, d in enumerate(
+                _infer_outputs(b, category, in_dtypes, None, island=island)
+            ):
                 key = (_block_id(b), "out", j)
                 if out_of[key] != d:
                     out_of[key] = d
@@ -606,16 +826,34 @@ def _resolve_impl(sim: Simulator) -> DTypeResolution:
         )
         logger.debug("dtype.iteration_limit max_iterations=%d", max_iterations)
 
+    # --- Q5 materialize (full mode のみ): 収束後に残った unknown を float64 へ ---
+    if island:
+        for key in sorted(out_of):
+            if out_of[key] == UNKNOWN:
+                out_of[key] = "float64"
+                diagnostics.append(
+                    _diag(
+                        "dtype.defaulted_to_float64",
+                        f"Output {key[0]!r}.out[{key[2]}] could not be inferred; "
+                        "defaulted to float64 (totality, SPEC-0028 Q5).",
+                        block_id=key[0],
+                        direction="out",
+                        port_index=key[2],
+                        to_dtype="float64",
+                    )
+                )
+
     # --- 最終パス: in ポート確定 + 診断収集 ---
     sink: DiagSink = diagnostics.append
     ports: dict[PortKey, str] = dict(out_of)
     for b in order:
         raw = _gather_raw_inputs(b, out_of)
-        in_dtypes = _apply_input_requirement(b, raw, sink)
         category, rule_missing = _classify(b)
+        required = _required_input_dtype(b, island=island)
+        in_dtypes = _apply_input_requirement(b, raw, sink, required)
         # 仮想入力 (From の Goto 参照) は in ポートとして数えない
         for i in range(b.n_inputs):
-            ports[(_block_id(b), "in", i)] = in_dtypes[i]
+            d_in = in_dtypes[i]
             if b.input_sources[i] is None:
                 sink(
                     _diag(
@@ -627,6 +865,10 @@ def _resolve_impl(sim: Simulator) -> DTypeResolution:
                         port_index=i,
                     )
                 )
+                if island and d_in == UNKNOWN:
+                    # Q5: 未接続入力もゼロ埋め実行のため float64 (要求があれば要求)
+                    d_in = required if required is not None else "float64"
+            ports[(_block_id(b), "in", i)] = d_in
         if rule_missing:
             sink(
                 _diag(
@@ -637,16 +879,40 @@ def _resolve_impl(sim: Simulator) -> DTypeResolution:
                 )
             )
         if category == "opaque":
-            sink(
-                _diag(
-                    "dtype.unresolved",
-                    f"Block {b.id!r} ({type(b).__name__}) is not resolved in "
-                    "Stage 0; its outputs are reported as unknown.",
-                    block_id=b.id,
+            if island:
+                sink(
+                    _diag(
+                        "dtype.opaque_float64_island",
+                        f"Block {b.id!r} ({type(b).__name__}) is treated as a "
+                        "float64 island in this release (SPEC-0028 Q6); internal "
+                        "dtype propagation arrives in Stage 2.",
+                        block_id=b.id,
+                    )
                 )
-            )
+            else:
+                sink(
+                    _diag(
+                        "dtype.unresolved",
+                        f"Block {b.id!r} ({type(b).__name__}) is not resolved in "
+                        "static mode; its outputs are reported as unknown.",
+                        block_id=b.id,
+                    )
+                )
+        if island and type(b).__name__ in _STATE_VIA_FLOAT64 and b.n_outputs > 0:
+            out0 = out_of.get((_block_id(b), "out", 0), "float64")
+            if out0 not in ("float64", UNKNOWN):
+                sink(
+                    _diag(
+                        "dtype.state_via_float64",
+                        f"Block {b.id!r} stores its state as float64 in this "
+                        "release; int64 values beyond 2**53 lose precision "
+                        "(SPEC-0028 Q7).",
+                        block_id=b.id,
+                        to_dtype=out0,
+                    )
+                )
         # 語彙外の丸め診断は _promote_many 経由で出るため再推論する
-        _infer_outputs(b, category, in_dtypes, sink)
+        _infer_outputs(b, category, in_dtypes, sink, island=island)
 
     for key in sorted(ports):
         block_id, direction, port_index = key
@@ -696,8 +962,36 @@ def _empty_resolution(diagnostic: DTypeDiagnostic) -> DTypeResolution:
     )
 
 
-def resolve_dtypes(sim: Simulator) -> DTypeResolution:
-    """モデルの影の型解決を行う (Stage 0 の公開エントリ)。
+#: 実行不能を意味する診断 code (severity error に加えて実行時は致命扱い、SPEC-0028 §3.5)。
+_FATAL_EXECUTION_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "dtype.narrowing_required",
+        "dtype.out_of_vocabulary",
+        "dtype.iteration_limit",
+    }
+)
+
+
+def resolve_for_execution(sim: Simulator) -> DTypeResolution:
+    """実行用の型解決 (``run()`` 経路、SPEC-0028 §3.2 / §3.4)。
+
+    常に full mode で解決し、error 級または実行不能を意味する診断を
+    ``BlockSpecError`` (ADR-0056、``block_id`` 付き) に昇格する。build 例外
+    (代数ループ等) はそのまま伝播する — dtype 宣言モデルは型解決の成功が
+    実行の前提であり、Stage 0 の「例外を握り潰す」AC-5 は適用しない。
+    """
+    res = _resolve_impl(sim, mode="full")
+    for d in res.diagnostics:
+        if d.severity == "error" or d.code in _FATAL_EXECUTION_CODES:
+            raise BlockSpecError(
+                f"dtype resolution failed: [{d.code}] {d.message}",
+                block_id=d.block_id,
+            )
+    return res
+
+
+def resolve_dtypes(sim: Simulator, *, mode: ResolveMode = "auto") -> DTypeResolution:
+    """モデルの型解決を行う (公開エントリ。SPEC-0027 / SPEC-0028)。
 
     どんな入力でも例外を送出しない (SPEC-0027 AC-5):
 
@@ -710,11 +1004,15 @@ def resolve_dtypes(sim: Simulator) -> DTypeResolution:
             (mask 解決 / Goto-From 仮想エッジ確定 等) が起きる。この副作用は
             冪等で、run 結果は bit 単位で不変 (AC-3 テストで固定)。
 
+    Args (追加):
+        mode: ``"auto"`` (既定 — PythonFunction を含むモデルのみ static) /
+            ``"full"`` / ``"static"`` の強制指定 (SPEC-0028 §5.1)。
+
     Returns:
         ``DTypeResolution`` (ports / diagnostics / summary)。
     """
     try:
-        return _resolve_impl(sim)
+        return _resolve_impl(sim, mode=mode)
     except (AlgebraicLoopError, BlockSpecError) as exc:
         logger.debug("dtype.build_failed: %s", exc)
         return _empty_resolution(

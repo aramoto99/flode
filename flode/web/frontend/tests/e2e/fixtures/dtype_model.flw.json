@@ -1,0 +1,91 @@
+{
+  "schema_version": "0.11",
+  "metadata": {
+    "created_at": "2026-09-08T11:15:06Z",
+    "tool": "flode 0.54.1"
+  },
+  "simulator": {
+    "t_end": 1.0,
+    "dt": 0.01,
+    "solver": "RK45",
+    "rtol": 1e-06,
+    "atol": 1e-09,
+    "dt_base": null
+  },
+  "blocks": [
+    {
+      "id": "c",
+      "type": "flode.blocks.sources.Constant",
+      "params": {
+        "value": 3.0,
+        "output_type": "float",
+        "dtype": "int32"
+      }
+    },
+    {
+      "id": "c2",
+      "type": "flode.blocks.sources.Constant",
+      "params": {
+        "value": 4.0,
+        "output_type": "float",
+        "dtype": "int32"
+      }
+    },
+    {
+      "id": "s",
+      "type": "flode.blocks.mathops.Sum",
+      "params": {
+        "signs": "++"
+      }
+    },
+    {
+      "id": "disp",
+      "type": "flode.blocks.sinks.Display",
+      "params": {
+        "n_inputs": 1,
+        "decimals": 3,
+        "labels": [
+          "in0"
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "src": "c",
+      "src_idx": 0,
+      "dst": "s",
+      "dst_idx": 0
+    },
+    {
+      "src": "c2",
+      "src_idx": 0,
+      "dst": "s",
+      "dst_idx": 1
+    },
+    {
+      "src": "s",
+      "src_idx": 0,
+      "dst": "disp",
+      "dst_idx": 0
+    }
+  ],
+  "layout": {
+    "c": {
+      "x": 80.0,
+      "y": 100.0
+    },
+    "c2": {
+      "x": 80.0,
+      "y": 200.0
+    },
+    "s": {
+      "x": 240.0,
+      "y": 150.0
+    },
+    "disp": {
+      "x": 400.0,
+      "y": 150.0
+    }
+  }
+}

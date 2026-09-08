@@ -316,6 +316,17 @@ class Fcn(Block):
         self._params = {"expression": expression, "n_inputs": n_inputs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # security SHOULD-2 (2026-09-08): static 型解決中はユーザー式の eval も禁止
+        # (SPEC-0028 §3.8 の「ユーザーコード境界」防御。静的解決は output を呼ば
+        # ない設計なので、ここに到達した時点で不変条件違反 = fail-closed)
+        from ..core.dtypes import in_static_dtype_resolution
+
+        if in_static_dtype_resolution():
+            raise BlockSpecError(
+                f"Fcn[{self.id}]: user expression evaluated during static dtype "
+                "resolution (SPEC-0028 §3.8 invariant violation).",
+                block_id=self.id,
+            )
         namespace = self._base_namespace.copy()
         namespace["u"] = u
         namespace["t"] = float(t)

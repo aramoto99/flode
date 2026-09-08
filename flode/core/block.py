@@ -15,7 +15,7 @@ import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -178,6 +178,11 @@ class Block:
         SM-A (scalar-only) ブロックは default のままで動作 (``output`` のみ実装)。
     """
 
+    #: D-4 (ADR-0077 / SPEC-0028 Q11): 全入力ポートに要求する dtype。
+    #: ``None`` = 要求なし。連続系 / 離散 LTI ブロックが ``"float64"`` を宣言し、
+    #: 型解決器 (``flode.core.dtypes``) が MRO 経由で読む (要求宣言の SSOT)。
+    required_input_dtype: ClassVar[str | None] = None
+
     def __init__(
         self,
         *,
@@ -328,10 +333,16 @@ class Block:
             shape は ``port_shapes_out[i]``。
         """
         # SM-A wrapper: 全 port shape が () の場合のみ動作する。
-        # 各 u[i] は rank-0 ndarray (shape ()) なので float 化して 1D に集約。
-        u_flat = np.array([float(np.asarray(ui).item()) for ui in u], dtype=float)
-        x_arr = np.asarray(x, dtype=float)
-        y_flat = np.atleast_1d(np.asarray(self.output(t, x_arr, u_flat), dtype=float))
+        # SM-D Stage 1 (SPEC-0028): wrapper は dtype 保存パススルー — 入力は
+        # np.stack (= np.result_type で 1 本化。全 float64 なら従来と bit 同一)、
+        # 出力の float 強制も外す。予測 dtype への強制 cast は
+        # Simulator._step_vector 側の 1 箇所に集約する (SSOT)。
+        if len(u) > 0:
+            u_flat = np.stack([np.asarray(ui).reshape(()) for ui in u])
+        else:
+            u_flat = np.zeros(0)
+        x_arr = np.asarray(x, dtype=float)  # Q7: 状態は float64 固定
+        y_flat = np.atleast_1d(np.asarray(self.output(t, x_arr, u_flat)))
         # ADR-0017 §(8) U1: ユーザーカスタム SM-A ブロックの実装ミス (n_outputs と
         # output() 戻り値 shape の不一致) を sandbox 化する。SM-A hot path
         # (`Simulator._step` 直呼び) ではこの check は走らないため、SM-B モードでの
@@ -341,8 +352,8 @@ class Block:
                 f"{type(self).__name__}.output must return shape ({self.n_outputs},), "
                 f"got {y_flat.shape}"
             )
-        # 各出力 port を rank-0 ndarray として分解
-        return tuple(np.asarray(y_flat[i], dtype=float) for i in range(self.n_outputs))
+        # 各出力 port を rank-0 ndarray として分解 (dtype はパススルー)
+        return tuple(np.asarray(y_flat[i]) for i in range(self.n_outputs))
 
     def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """連続状態の時間微分 ``x_dot(t, x, u)`` を返す。

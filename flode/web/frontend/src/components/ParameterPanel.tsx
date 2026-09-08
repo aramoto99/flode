@@ -324,12 +324,25 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             const enumValues = blockMeta?.params_spec.find(
               (p) => p.name === k,
             )?.enum_values;
+            // SPEC-0028 Q6 (security MUST-1 対応): Subsystem 内部の dtype 宣言は
+            // 未対応 (float64 island、backend が build 時に拒否) — 非 root スコープ
+            // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
+            const dtypeDisabled = k === "dtype" && editingPath.length > 0;
             return (
               <PropertyRow key={k} labelWidth={88} labelAlign="left" label={k}>
                 {enumValues && enumValues.length > 0 ? (
                   <select
                     data-testid={`param-input-${k}`}
                     value={draft[k] ?? String(v)}
+                    disabled={dtypeDisabled}
+                    title={
+                      dtypeDisabled
+                        ? t(
+                            "inspector.dtype.island",
+                            "Subsystem / PythonFunction boundary is float64 in this release",
+                          )
+                        : undefined
+                    }
                     onChange={(e) => {
                       setDraft((prev) => ({ ...prev, [k]: e.target.value }));
                       commit(k, e.target.value, "string");

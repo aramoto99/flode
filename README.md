@@ -123,13 +123,29 @@ def my_integrator(t, x, u):
 > `127.0.0.1` 以外に bind したサーバーでは `flode --allow-python-blocks` を付けない
 > 限り実行が拒否されます。式で書けるロジックには `Fcn` を使ってください。
 
-### 信号型の表示 (shadow、v0.54.0)
+### 信号の dtype (SM-D、v0.55.0)
 
-Inspector の「信号型 (shadow)」セクションと `Simulator.resolve_dtypes()` は、
-各ポートの numpy dtype (`float64` / `int64` / `bool` など) を**静的に推論して
-表示**します。**現時点では参考情報であり、実行結果には一切影響しません**
-(信号は従来どおりすべて倍精度で計算されます)。将来の段階的な dtype 対応
-(SM-D) のための測定装置です。
+`Cast` / `Constant` の **`dtype`** param で numpy dtype
+(`float64` / `int32` / `int64` / `uint8` / `bool`) を宣言すると、
+下流の信号が**実際にその型として計算**されます (numpy ネイティブ意味論:
+整数のオーバーフローは wrap、`bool + bool` は論理和、整数の floor 除算 0 割りは
+`0`)。dtype を宣言していないモデルは従来どおり全経路 float64 で、結果は
+bit 単位で不変です。Inspector の「信号型」セクションに各ポートの解決結果が
+表示されます。
+
+**`output_type` と `dtype` の使い分け** (併用は不可):
+
+| | `output_type` (v0.53〜) | `dtype` (v0.55〜) |
+|---|---|---|
+| 実体 | 値の意味論 (信号は float64 のまま) | 実 numpy dtype |
+| `float` / `float64` | **恒等** (何もしない) | **実変換** (`astype`) |
+| int の丸め | 最近接偶数丸め | **ゼロ方向切り捨て** |
+| 1.0 + 1.0 (bool) | 2.0 | `True` (論理和) |
+| 用途 | 値の正規化・量子化の模擬 | 型そのものが要る計算 (wrap 等) |
+
+制約 (v0.55.0 時点): 連続ブロック (Integrator 等) の入力は float64 に自動昇格 /
+Subsystem・PythonFunction 境界は float64 / 状態持ちブロックの内部状態は
+float64 保持 / 非 float64 モデルは `linearize` 等の解析 API で明示拒否。
 
 ## バージョニング
 

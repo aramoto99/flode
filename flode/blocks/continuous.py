@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -28,6 +28,9 @@ class Integrator(Block):
     Args:
         x0: 初期状態 ``x(0)``。
     """
+
+    # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,
@@ -67,6 +70,9 @@ class StateSpace(Block):
         D: 直達行列 (shape ``(p, m)``)。``None`` のときゼロ行列。
         x0: 初期状態 (shape ``(n,)``)。``None`` のときゼロ。
     """
+
+    # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,
@@ -154,6 +160,9 @@ class TransferFunction(Block):
         denominator: 分母多項式の係数。
         x0: 初期状態 (shape ``(len(denominator)-1,)``)。
     """
+
+    # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,
@@ -275,6 +284,9 @@ class MimoTransferFunction(Block):
     Raises:
         BlockSpecError: 形状不正、空配列、improper system、零分母など。
     """
+
+    # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,
@@ -429,6 +441,9 @@ class Derivative(Block):
         N: フィルタ帯域 (rad/s)。default 1000.0。
         x0: 内部状態の初期値。default 0.0。
     """
+
+    # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,

@@ -298,7 +298,9 @@ class TestContinuousWidening:
         # D-4 の適用関数を直接検証する (SPEC-0027 §3.5)。
         integ = Integrator(x0=0.0, id="integ")
         diags: list[DTypeDiagnostic] = []
-        applied = dtypes._apply_input_requirement(integ, ["uint8", "int32"], diags.append)
+        applied = dtypes._apply_input_requirement(
+            integ, ["uint8", "int32"], diags.append, "float64"
+        )
         assert applied == ["float64", "float64"]
         assert [d.from_dtype for d in diags] == ["uint8", "int32"]
 
@@ -323,15 +325,12 @@ class TestContinuousWidening:
         assert res.in_dtype("tf", 0) == "float64"
 
     def test_narrowing_path_is_defensive_and_reports_error(self) -> None:
-        # Stage 0 語彙では縮小は発生しないため、要求 dtype を偽装して防御経路を固定する
+        # 現語彙では縮小は発生しないため、要求 dtype を直接与えて防御経路を固定する
         integ = Integrator(x0=0.0, id="integ")
         diags: list[DTypeDiagnostic] = []
-        original = dtypes._required_input_dtype
-        try:
-            dtypes.__dict__["_required_input_dtype"] = lambda _b: "int32"
-            applied = dtypes._apply_input_requirement(integ, ["float64"], diags.append)
-        finally:
-            dtypes.__dict__["_required_input_dtype"] = original
+        applied = dtypes._apply_input_requirement(
+            integ, ["float64"], diags.append, "int32"
+        )
         assert applied == ["float64"]  # 実際の縮小は行わない
         assert [d.code for d in diags] == ["dtype.narrowing_required"]
         assert diags[0].severity == "error"
@@ -391,12 +390,16 @@ class TestFixedPoint:
             category: str,
             in_dtypes: list[str],
             sink: Any,
+            *,
+            island: bool = False,
         ) -> list[str]:
             if block.id == "s":
                 nxt = "int64" if flip.get("s") == "float64" else "float64"
                 flip["s"] = nxt
                 return [nxt]
-            return original(block, category, in_dtypes, sink)  # type: ignore[arg-type]
+            return original(  # type: ignore[arg-type]
+                block, category, in_dtypes, sink, island=island
+            )
 
         monkeypatch.setattr(dtypes, "_infer_outputs", oscillating)
         res = resolve_dtypes(sim)
@@ -436,20 +439,24 @@ class TestUnknownPropagation:
         sim.connect(c, sub)
         sim.connect(sub, sc)
         res = resolve_dtypes(sim)
-        assert res.out_dtype("sub", 0) == UNKNOWN
+        # Stage 1 (SPEC-0028 Q6): full mode では Subsystem は float64 island
+        assert res.out_dtype("sub", 0) == "float64"
         assert any(
-            d.code == "dtype.unresolved" and d.block_id == "sub"
+            d.code == "dtype.opaque_float64_island" and d.block_id == "sub"
             for d in res.diagnostics
         )
 
-    def test_unconnected_input_is_unknown_with_diagnostic(self) -> None:
+    def test_unconnected_input_materializes_to_float64(self) -> None:
+        # Stage 1 (SPEC-0028 Q5): 未接続入力は unresolved 警告を残しつつ
+        # float64 へ materialize される (全域性 AC-3)
         sim = _sim()
         sim.add(Sum(signs="++", id="s"))
         res = resolve_dtypes(sim)
-        assert res.in_dtype("s", 0) == UNKNOWN
-        assert res.out_dtype("s", 0) == UNKNOWN
+        assert res.in_dtype("s", 0) == "float64"
+        assert res.out_dtype("s", 0) == "float64"
         unresolved = _find(res, "dtype.unresolved")
         assert {(d.direction, d.port_index) for d in unresolved} == {("in", 0), ("in", 1)}
+        assert _find(res, "dtype.defaulted_to_float64")  # out の materialize 記録
 
     def test_unknown_is_absorbed_by_a_concrete_sibling_input(self) -> None:
         sim = _sim()
@@ -459,13 +466,14 @@ class TestUnknownPropagation:
         res = resolve_dtypes(sim)
         assert res.out_dtype("s", 0) == "int64"
 
-    def test_summary_counts_unresolved_ports(self) -> None:
+    def test_summary_has_no_unresolved_after_materialize(self) -> None:
+        # Stage 1 (Q5): full mode では materialize により unresolved は常に 0
         sim = _sim()
         sim.add(Sum(signs="++", id="s"))
         res = resolve_dtypes(sim)
-        # in×2 + out×1 = 3 ポートすべて unknown
-        assert res.summary.unresolved == 3
+        assert res.summary.unresolved == 0
         assert res.summary.total_ports == 3
+        assert dict(res.summary.by_dtype) == {"float64": 3}
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +569,7 @@ class TestDiagnostics:
     def test_internal_error_is_converted_not_raised(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def boom(_sim: Simulator) -> DTypeResolution:
+        def boom(_sim: Simulator, **_kw: Any) -> DTypeResolution:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(dtypes, "_resolve_impl", boom)
@@ -582,6 +590,10 @@ class TestDiagnostics:
             "dtype.build_failed": "error",
             "dtype.internal_error": "error",
             "dtype.static_fallback": "info",
+            # Stage 1 (SPEC-0028)
+            "dtype.opaque_float64_island": "info",
+            "dtype.defaulted_to_float64": "info",
+            "dtype.state_via_float64": "info",
         }
         assert dict(dtypes._SEVERITY_BY_CODE) == expected
 

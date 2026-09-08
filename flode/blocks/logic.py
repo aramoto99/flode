@@ -43,7 +43,9 @@ class RelationalOperator(Block):
         self._params = {"operator": operator}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        a, b = float(u[0]), float(u[1])
+        # SM-D Stage 1 (SPEC-0028 §3.6): float() を外し int64 同士の厳密比較を
+        # 守る (float64 入力では比較結果不変 = 既存挙動に影響なし)
+        a, b = u[0], u[1]
         op = self.operator
         if op == "<":
             r = a < b

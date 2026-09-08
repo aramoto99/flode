@@ -37,12 +37,18 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "en": {
             "display_name": "Constant",
             "docstring_summary": (
-                "Constant value source y(t) = value (output_type: float / int / bool)."
+                "Constant value source y(t) = value. 'dtype' emits a real numpy "
+                "dtype (int32/int64/uint8/bool); 'output_type' keeps float64 "
+                "value semantics. The two cannot be combined."
             ),
         },
         "ja": {
             "display_name": "定数",
-            "docstring_summary": "定数値ソース y(t) = value (output_type で float / int / bool)。",
+            "docstring_summary": (
+                "定数値ソース y(t) = value。dtype は実 numpy 型 "
+                "(int32/int64/uint8/bool) で出力し、output_type は float64 の"
+                "値の意味論。両者は併用不可。"
+            ),
         },
     },
     "flode.blocks.sources.Step": {
@@ -271,15 +277,18 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
         "en": {
             "display_name": "Cast",
             "docstring_summary": (
-                "Convert output value semantics (float / int / bool; default float is "
-                "identity). Use Rounding when you need to choose the rounding mode."
+                "Type cast. 'dtype' performs a real numpy conversion "
+                "(float64/int32/int64/uint8/bool; truncation toward zero). "
+                "'output_type' keeps float64 value semantics (default float is "
+                "identity). The two cannot be combined."
             ),
         },
         "ja": {
             "display_name": "型変換",
             "docstring_summary": (
-                "出力値の型意味論を変換 (float / int / bool、既定 float は恒等)。"
-                "丸め方式を選びたい場合は Rounding を使う。"
+                "型変換。dtype は実 numpy 変換 (float64/int32/int64/uint8/bool、"
+                "ゼロ方向切捨て)。output_type は float64 の値の意味論 (既定 float "
+                "は恒等)。両者は併用不可。"
             ),
         },
     },

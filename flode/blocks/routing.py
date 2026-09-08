@@ -50,6 +50,9 @@ class Switch(Block):
     _ALLOWED_CRITERIA = (">=", ">", "!=")
     # ADR-0039 follow-up (v0.15.0): GUI ParameterPanel が enum select を出すヒント
     _param_enums = {"criterion": _ALLOWED_CRITERIA}
+    # SM-D Stage 1 (SPEC-0028 §3.6): 制御 port を昇格から守るため output_v も
+    # 実装する (Goto/From と同じ内部例外、ADR-0018 §(5))
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -68,15 +71,29 @@ class Switch(Block):
         self.criterion = criterion
         self._params = {"threshold": self.threshold, "criterion": criterion}
 
-    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        control = float(u[1])
+    def _select_true(self, control: float) -> bool:
+        """threshold 判定 (SM-A / SM-B 共有)。"""
         if self.criterion == ">=":
-            select_true = control >= self.threshold
-        elif self.criterion == ">":
-            select_true = control > self.threshold
-        else:  # "!="
-            select_true = control != self.threshold
+            return control >= self.threshold
+        if self.criterion == ">":
+            return control > self.threshold
+        return control != self.threshold  # "!="
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        select_true = self._select_true(float(u[1]))
         return np.array([float(u[0]) if select_true else float(u[2])])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # SM-D Stage 1 (SPEC-0028 §3.6): 制御 port (u[1]) は判定のみ、選択した
+        # データ port を dtype ごと素通しする (default wrapper の 1 本化だと
+        # データ dtype が制御 float64 と昇格してしまうため override)。
+        select_true = self._select_true(float(np.asarray(u[1]).item()))
+        return (np.asarray(u[0] if select_true else u[2]),)
 
 
 class Mux(Block):
@@ -130,8 +147,9 @@ class Mux(Block):
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> tuple[npt.NDArray[Any], ...]:
-        # 各 u[i] は rank-0 ndarray。float 化して 1D に concat。
-        vec = np.array([float(np.asarray(ui).item()) for ui in u], dtype=float)
+        # 各 u[i] は rank-0 ndarray。np.stack で 1D に集約 (SM-D Stage 1:
+        # dtype を保存 — 混在時は np.result_type で昇格、全 float64 なら従来同一)
+        vec = np.stack([np.asarray(ui).reshape(()) for ui in u])
         return (vec,)
 
 
@@ -185,9 +203,9 @@ class Demux(Block):
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> tuple[npt.NDArray[Any], ...]:
-        vec = np.asarray(u[0], dtype=float)
-        # 各 element を rank-0 ndarray として返す
-        return tuple(np.asarray(vec[i], dtype=float) for i in range(self.n))
+        vec = np.asarray(u[0])
+        # 各 element を rank-0 ndarray として返す (SM-D Stage 1: dtype 素通し)
+        return tuple(np.asarray(vec[i]) for i in range(self.n))
 
 
 # ---------------------------------------------------------------------------
@@ -314,8 +332,9 @@ class Goto(Block):
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> tuple[npt.NDArray[Any], ...]:
-        # SM-B path: u は tuple of 1 ndarray (任意 port shape)。値の shape を保持。
-        self._last_input = np.asarray(u[0], dtype=float).copy()
+        # SM-B path: u は tuple of 1 ndarray (任意 port shape)。値の shape と
+        # dtype を保持する (SM-D Stage 1: float 強制を外す)。
+        self._last_input = np.asarray(u[0]).copy()
         return ()
 
 
@@ -403,7 +422,8 @@ class From(Block):
         # SM-B path: 解決済み Goto の _last_input (= port_shape の ndarray) を
         # tuple of 1 ndarray にラップして copy 返却 (ADR-0055 §論点 6)。
         goto = self._ensure_resolved()
-        return (np.asarray(goto._last_input, dtype=float).copy(),)
+        # SM-D Stage 1: dtype 素通し (Goto が保存した dtype を保つ)
+        return (np.asarray(goto._last_input).copy(),)
 
 
 # GotoTagVisibility は SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。
@@ -439,6 +459,9 @@ class MultiportSwitch(Block):
         "index_base": _ALLOWED_INDEX_BASES,
         "out_of_range_mode": _ALLOWED_OOR_MODES,
     }
+    # SM-D Stage 1 (SPEC-0028 §3.6): selector port を昇格から守るため output_v も
+    # 実装する (Goto/From と同じ内部例外、ADR-0018 §(5))
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -475,11 +498,11 @@ class MultiportSwitch(Block):
             "out_of_range_mode": out_of_range_mode,
         }
 
-    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+    def _select_index(self, selector_raw: float) -> int:
+        """selector 実数値からデータ index を決める (SM-A / SM-B 共有)。"""
         # 遅延 import で循環回避
         from ..exceptions import BlockEvalError
 
-        selector_raw = float(u[0])
         offset = 0 if self.index_base == "zero" else 1
         # round で integer 化 (Python int round half-to-even)
         idx = int(round(selector_raw)) - offset
@@ -493,7 +516,24 @@ class MultiportSwitch(Block):
                 )
             # clip
             idx = max(0, min(self.n_choices - 1, idx))
+        return idx
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        idx = self._select_index(float(u[0]))
         return np.array([float(u[1 + idx])])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # SM-D Stage 1 (SPEC-0028 §3.6): 制御 port (u[0]) は判定のみ、選択した
+        # データ port の ndarray を dtype ごと素通しする。default wrapper の
+        # 1 本化を経由すると int64 が制御 port の float64 と昇格して精度を失う
+        # ため override する。SM-A の output() は不変。
+        idx = self._select_index(float(np.asarray(u[0]).item()))
+        return (np.asarray(u[1 + idx]),)
 
 
 class Merge(Block):
@@ -534,7 +574,9 @@ class Merge(Block):
         # u[i] != initial_value の最初の値を返す (float 比較は厳密一致でよい:
         # Triggered Subsystem は固定値を出すため境界揺らぎはない)
         for i in range(self.n_inputs):
-            val = float(u[i])
-            if val != self.initial_value:
+            val = u[i]
+            # SM-D Stage 1: 判定は従来どおり float 厳密一致、返す値は dtype を
+            # 保つ (int64 > 2^53 の精度、SPEC-0028 §3.6)
+            if float(val) != self.initial_value:
                 return np.array([val])
         return np.array([self.initial_value])

@@ -96,15 +96,19 @@ class TestMuxLargeN:
 class TestMuxInputTypeVariety:
     """Mux.output_v が多様な scalar 型入力を float64 に変換して concat する。"""
 
-    def test_python_int_input_converted_to_float(self) -> None:
-        """Python int を u[i] として渡しても float64 の出力になる。"""
+    def test_python_int_input_preserves_dtype(self) -> None:
+        """SM-D Stage 1 (SPEC-0028): ブロック単体は dtype を素通しする。
+
+        int 入力は int のまま集約される (float64 化はモデル実行時に
+        `_step_vector` が dtype plan / 従来強制で行う = 強制点の SSOT 一本化)。
+        """
         m = Mux(n=2)
         y = m.output_v(0.0, np.zeros(0), (np.array(3), np.array(7)))
-        assert y[0].dtype == np.float64
-        np.testing.assert_allclose(y[0], np.array([3.0, 7.0]))
+        assert y[0].dtype.kind == "i"
+        np.testing.assert_allclose(y[0], np.array([3, 7]))
 
-    def test_np_float32_input_converted_to_float64(self) -> None:
-        """np.float32 の rank-0 ndarray を渡すと出力は float64。"""
+    def test_np_float32_input_preserves_dtype(self) -> None:
+        """float32 の rank-0 入力は素通し (float64 化は _step_vector の責務)。"""
         m = Mux(n=3)
         u = (
             np.asarray(np.float32(1.5)),
@@ -112,7 +116,7 @@ class TestMuxInputTypeVariety:
             np.asarray(np.float32(3.5)),
         )
         y = m.output_v(0.0, np.zeros(0), u)
-        assert y[0].dtype == np.float64
+        assert y[0].dtype == np.float32
         np.testing.assert_allclose(y[0], np.array([1.5, 2.5, 3.5]))
 
     def test_np_float64_input_passes_through(self) -> None:
@@ -198,13 +202,13 @@ class TestDemuxOutputIndependence:
             assert isinstance(yi, np.ndarray)
             assert yi.shape == ()
 
-    def test_demux_output_dtype_is_float64(self) -> None:
-        """Demux 出力の dtype は float64 である。"""
+    def test_demux_output_preserves_dtype(self) -> None:
+        """SM-D Stage 1: Demux は入力 dtype を素通しする (fanout 分類)。"""
         d = Demux(n=2)
         vec = np.array([1.0, 2.0], dtype=np.float32)
         ys = d.output_v(0.0, np.zeros(0), (vec,))
         for yi in ys:
-            assert yi.dtype == np.float64
+            assert yi.dtype == np.float32
 
 
 # ---------------------------------------------------------------------------

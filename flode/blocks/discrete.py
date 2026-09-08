@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -106,6 +106,9 @@ class DiscreteIntegrator(Block):
         gain: 入力に掛けるゲイン (積分定数)。
         x0: 初期状態。内部では state[0]=state[1]=x0 に展開する。
     """
+
+    # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,
@@ -385,6 +388,9 @@ class DiscreteStateSpace(Block):
         x0: 初期状態 (shape ``(n,)``)。内部で ``[x0; x0]`` (shape ``(2n,)``) に展開。
     """
 
+    # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
+
     def __init__(
         self,
         A: npt.NDArray[Any],
@@ -500,6 +506,9 @@ class DiscreteTransferFunction(Block):
         sample_time: サンプル周期 [s]、``> 0`` 必須。
         x0: 初期状態 (shape ``(len(denominator)-1,)``)。内部で ``[x0; x0]`` に展開。
     """
+
+    # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
+    required_input_dtype: ClassVar[str | None] = "float64"
 
     def __init__(
         self,

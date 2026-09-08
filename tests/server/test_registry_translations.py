@@ -79,15 +79,13 @@ class TestBuildMetadataI18n:
             "en": "Constant",
             "ja": "定数",
         }
-        # SPEC-0026 (v0.53.0): output_type 追加に伴い summary を更新
-        assert (
-            m.docstring_summary_i18n["en"]
-            == "Constant value source y(t) = value (output_type: float / int / bool)."
+        # SPEC-0026 (v0.53.0) → SPEC-0028 (v0.55.0): dtype 追加に伴い summary を更新
+        assert m.docstring_summary_i18n["en"].startswith(
+            "Constant value source y(t) = value."
         )
-        assert (
-            m.docstring_summary_i18n["ja"]
-            == "定数値ソース y(t) = value (output_type で float / int / bool)。"
-        )
+        assert "dtype" in m.docstring_summary_i18n["en"]
+        assert m.docstring_summary_i18n["ja"].startswith("定数値ソース y(t) = value。")
+        assert "dtype" in m.docstring_summary_i18n["ja"]
 
     def test_legacy_field_consistency(self) -> None:
         """``display_name`` / ``docstring_summary`` は en コピーになっている。"""
@@ -103,13 +101,10 @@ class TestMetadataToDict:
         m = build_metadata(Constant)
         d = metadata_to_dict(m)
         assert d["display_name_i18n"] == {"en": "Constant", "ja": "定数"}
-        assert (
-            d["docstring_summary_i18n"]["ja"]
-            == "定数値ソース y(t) = value (output_type で float / int / bool)。"
-        )
+        # SPEC-0028 (v0.55.0): dtype 追加に伴い summary は文面更新される。
+        # 文言そのものではなく構造 (先頭 + dtype 言及) を pin する
+        assert d["docstring_summary_i18n"]["ja"].startswith("定数値ソース y(t) = value。")
+        assert "dtype" in d["docstring_summary_i18n"]["ja"]
         # 旧 frontend 互換: display_name / docstring_summary も同梱
         assert d["display_name"] == "Constant"
-        assert (
-            d["docstring_summary"]
-            == "Constant value source y(t) = value (output_type: float / int / bool)."
-        )
+        assert d["docstring_summary"].startswith("Constant value source y(t) = value.")

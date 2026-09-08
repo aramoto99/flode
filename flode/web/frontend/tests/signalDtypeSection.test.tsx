@@ -1,12 +1,13 @@
-// SPEC-0027 (SM-D Stage 0): SignalDtypeSection の vitest。
-// 行描画 / 失敗時非表示 / unknown 表示 / shadow_note / 300ms debounce + abort。
+// SPEC-0028 (SM-D Stage 1): SignalDtypeSection の vitest。
+// store ベース表示 / auto_note / island・state hint / unknown 温存 / 非表示条件。
+// (Stage 0 の fetch/debounce は lib/dtypeResolution.ts へ移動 — 同 fetcher の
+//  debounce/abort は dtypeResolutionFetcher.test.tsx が担当)
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as client from "../src/api/client";
 import { SignalDtypeSection } from "../src/components/SignalDtypeSection";
+import { _setDtypeResolutionForTest } from "../src/lib/dtypeResolution";
 import { useAppStore } from "../src/store/appStore";
 import type { DtypesResponse, FlwModel } from "../src/types/api";
 
@@ -26,54 +27,54 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("../src/api/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/api/client")>();
-  return { ...actual, resolveModelDtypes: vi.fn() };
-});
+const UNDECLARED_MODEL = {
+  blocks: [{ id: "integ", type: "flode.blocks.continuous.Integrator", params: {} }],
+  connections: [],
+} as unknown as FlwModel;
 
-const resolveModelDtypes = vi.mocked(client.resolveModelDtypes);
+const DECLARED_MODEL = {
+  blocks: [
+    { id: "c", type: "flode.blocks.sources.Constant", params: { dtype: "int32" } },
+    { id: "integ", type: "flode.blocks.continuous.Integrator", params: {} },
+  ],
+  connections: [],
+} as unknown as FlwModel;
 
-// react の act() を testing 環境として明示 (fake timers + act 併用時の警告抑止)
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const MODEL = { blocks: [], connections: [] } as unknown as FlwModel;
-
-function responseFor(entries: DtypesResponse["ports"], diagnostics: DtypesResponse["diagnostics"] = []): DtypesResponse {
+function responseFor(
+  entries: DtypesResponse["ports"],
+  diagnostics: DtypesResponse["diagnostics"] = [],
+): DtypesResponse {
   return {
     schema_version: "dtypes.v1",
     ports: entries,
     diagnostics,
-    summary: { total_ports: entries.length, by_dtype: {}, unresolved: 0, non_float_ports: 0 },
+    summary: {
+      total_ports: entries.length,
+      by_dtype: {},
+      unresolved: 0,
+      non_float_ports: 0,
+    },
   };
 }
 
-const DEBOUNCE_MS = 300;
-
 beforeEach(() => {
-  vi.useFakeTimers();
-  useAppStore.setState({ editingModel: MODEL, editingPath: [] });
+  useAppStore.setState({ editingModel: DECLARED_MODEL, editingPath: [] });
+  _setDtypeResolutionForTest(null);
 });
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
+  _setDtypeResolutionForTest(null);
   vi.clearAllMocks();
 });
 
-async function flushDebounce(ms: number = DEBOUNCE_MS): Promise<void> {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms);
-  });
-}
-
-describe("SignalDtypeSection (SPEC-0027 Stage 0)", () => {
-  it("renders per-port dtype rows, widened hint and the shadow note", async () => {
-    resolveModelDtypes.mockResolvedValue(
+describe("SignalDtypeSection (SPEC-0028 Stage 1)", () => {
+  it("renders rows, widened hint, and no shadow note (AC-9)", () => {
+    _setDtypeResolutionForTest(
       responseFor(
         [
           { block_id: "integ", direction: "in", port_index: 0, dtype: "float64" },
           { block_id: "integ", direction: "out", port_index: 0, dtype: "float64" },
-          { block_id: "other", direction: "out", port_index: 0, dtype: "int64" },
         ],
         [
           {
@@ -83,89 +84,83 @@ describe("SignalDtypeSection (SPEC-0027 Stage 0)", () => {
             block_id: "integ",
             direction: "in",
             port_index: 0,
-            from_dtype: "int64",
+            from_dtype: "int32",
             to_dtype: "float64",
           },
         ],
       ),
     );
     render(<SignalDtypeSection blockId="integ" />);
-    await flushDebounce();
-
     expect(screen.getByTestId("dtype-in-0").textContent).toBe("float64");
-    expect(screen.getByTestId("dtype-out-0").textContent).toBe("float64");
-    // 他ブロックの行は描画しない (選択中ブロックのみ)
-    expect(screen.queryByText("int64")).toBeNull();
-    // D-4 昇格の hint
     expect(screen.getByTestId("dtype-widened-0").textContent).toBe(
-      "Widened from int64 to float64",
+      "Widened from int32 to float64",
     );
-    // shadow_note は必須 (SPEC-0027 §5.3)
-    expect(screen.getByTestId("dtype-shadow-note").textContent).toBe(
-      "Display only — does not affect simulation results.",
-    );
-  });
-
-  it("hides the section silently when the request fails", async () => {
-    resolveModelDtypes.mockRejectedValue(new Error("boom"));
-    render(<SignalDtypeSection blockId="integ" />);
-    await flushDebounce();
+    // AC-9: shadow_note は存在しない
     expect(screen.queryByTestId("dtype-shadow-note")).toBeNull();
+    // dtype 宣言モデルなので auto_note も出ない
+    expect(screen.queryByTestId("dtype-auto-note")).toBeNull();
   });
 
-  it("renders unknown as a dash with an unresolved hint", async () => {
-    resolveModelDtypes.mockResolvedValue(
+  it("shows the auto note for models without any declared dtype", () => {
+    useAppStore.setState({ editingModel: UNDECLARED_MODEL });
+    _setDtypeResolutionForTest(
       responseFor([
-        { block_id: "sub", direction: "out", port_index: 0, dtype: "unknown" },
+        { block_id: "integ", direction: "out", port_index: 0, dtype: "float64" },
       ]),
     );
+    render(<SignalDtypeSection blockId="integ" />);
+    expect(screen.getByTestId("dtype-auto-note").textContent).toBe(
+      "No dtype declared — all signals run as float64.",
+    );
+  });
+
+  it("shows island and state hints from diagnostics", () => {
+    _setDtypeResolutionForTest(
+      responseFor(
+        [{ block_id: "sub", direction: "out", port_index: 0, dtype: "float64" }],
+        [
+          {
+            severity: "info",
+            code: "dtype.opaque_float64_island",
+            message: "island",
+            block_id: "sub",
+            direction: null,
+            port_index: null,
+            from_dtype: null,
+            to_dtype: null,
+          },
+        ],
+      ),
+    );
     render(<SignalDtypeSection blockId="sub" />);
-    await flushDebounce();
+    expect(screen.getByTestId("dtype-island-note")).toBeTruthy();
+    expect(screen.queryByTestId("dtype-state-note")).toBeNull();
+  });
+
+  it("keeps the unknown dash for static-mode results", () => {
+    _setDtypeResolutionForTest(
+      responseFor([
+        { block_id: "pf", direction: "out", port_index: 0, dtype: "unknown" },
+      ]),
+    );
+    render(<SignalDtypeSection blockId="pf" />);
     expect(screen.getByTestId("dtype-out-0").textContent).toBe("—");
-    expect(screen.getByTestId("dtype-unresolved-out-0").textContent).toBe(
-      "Not resolved in this release",
-    );
+    expect(screen.getByTestId("dtype-unresolved-out-0")).toBeTruthy();
   });
 
-  it("does not render while editing inside a subsystem (root scope only)", async () => {
+  it("hides when no resolution is available", () => {
+    render(<SignalDtypeSection blockId="integ" />);
+    expect(screen.queryByTestId("dtype-in-0")).toBeNull();
+  });
+
+  it("hides while editing inside a subsystem (root scope only)", () => {
     useAppStore.setState({ editingPath: ["sub1"] });
-    resolveModelDtypes.mockResolvedValue(responseFor([]));
-    render(<SignalDtypeSection blockId="integ" />);
-    await flushDebounce();
-    expect(resolveModelDtypes).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("dtype-shadow-note")).toBeNull();
-  });
-
-  it("debounces edits and aborts the in-flight request on model change", async () => {
-    resolveModelDtypes.mockImplementation(
-      () => new Promise<DtypesResponse>(() => undefined), // 永遠に pending
+    _setDtypeResolutionForTest(
+      responseFor([
+        { block_id: "integ", direction: "out", port_index: 0, dtype: "float64" },
+      ]),
     );
     render(<SignalDtypeSection blockId="integ" />);
-
-    // debounce 中 (300ms 未満) の編集は前の timer を潰す → fetch は 1 回も飛ばない
-    await flushDebounce(100);
-    act(() => {
-      useAppStore.setState({
-        editingModel: { ...(MODEL as object) } as unknown as FlwModel,
-      });
-    });
-    await flushDebounce(100);
-    expect(resolveModelDtypes).not.toHaveBeenCalled();
-
-    // debounce 経過で 1 回だけ飛ぶ
-    await flushDebounce();
-    expect(resolveModelDtypes).toHaveBeenCalledTimes(1);
-    const firstSignal = resolveModelDtypes.mock.calls[0]![1];
-    expect(firstSignal?.aborted).toBe(false);
-
-    // in-flight 中にさらに編集 → 旧リクエストは abort される
-    act(() => {
-      useAppStore.setState({
-        editingModel: { ...(MODEL as object) } as unknown as FlwModel,
-      });
-    });
-    expect(firstSignal?.aborted).toBe(true);
-    await flushDebounce();
-    expect(resolveModelDtypes).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("dtype-out-0")).toBeNull();
   });
 });

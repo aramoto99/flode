@@ -42,6 +42,7 @@ import {
   PYTHON_FUNCTION_TYPE,
   TRIGGER_TYPE,
 } from "../lib/blockTypes";
+import { dtypeForPort, useDtypeResolution } from "../lib/dtypeResolution";
 import { getCachedPythonSpec } from "../lib/pythonFunctionSpec";
 import type { BlockNodeData } from "../lib/diagramConverter";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
@@ -775,6 +776,26 @@ function ShapeContent({
   //   - param がない (Abs, Sign, ...) → glyph 大、中央
   if (typePath.endsWith(".Constant")) {
     const params = paramsRaw as Record<string, unknown>;
+    const dtypeParam = typeof params.dtype === "string" ? params.dtype : "auto";
+    if (dtypeParam !== "auto") {
+      // SPEC-0028 Q9 (SM-D Stage 1): 実 dtype 宣言時は**生値 + dtype 名**を表示。
+      // 変換値の計算は frontend で再実装しない (ADR-0077 §データ整合性 1)
+      const raw =
+        typeof params.value === "number" ? params.value : Number(params.value ?? 0);
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center font-mono text-slate-800">
+          <span className="truncate px-1 text-[12px] font-semibold tabular-nums">
+            {formatNumber(raw)}
+          </span>
+          <span
+            data-testid="constant-dtype-label"
+            className="text-[8px] leading-tight text-slate-500"
+          >
+            {dtypeParam}
+          </span>
+        </div>
+      );
+    }
     // SPEC-0026 §確定事項 7: canvas は**実効値** (output_type 適用後) を表示し、
     // Inspector の生値 (value) との齟齬を可視化する
     const value = applyConstantOutputType(params.value, params.output_type);
@@ -787,8 +808,18 @@ function ShapeContent({
   // SPEC-0026 変更履歴 (3): Cast の面表示は**変換後の型名** (ユーザー要望 2026-09-04 で
   // 固定テキスト `cast` から変更)。パレット glyph は `cast` のまま (ブロックの正体)。
   if (typePath.endsWith(".Cast")) {
-    const ot = (paramsRaw as Record<string, unknown>).output_type;
-    const label = ot === "int" || ot === "bool" || ot === "float" ? String(ot) : "float";
+    const castParams = paramsRaw as Record<string, unknown>;
+    const dtypeParam =
+      typeof castParams.dtype === "string" ? castParams.dtype : "auto";
+    // SPEC-0028 (SM-D Stage 1): 実 dtype 宣言時は dtype 名 (int32 等) を表示。
+    // 未宣言時は従来どおり output_type 名 (float / int / bool)
+    const ot = castParams.output_type;
+    const label =
+      dtypeParam !== "auto"
+        ? dtypeParam
+        : ot === "int" || ot === "bool" || ot === "float"
+          ? String(ot)
+          : "float";
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-medium text-slate-800">
         <span>{label}</span>
@@ -1476,6 +1507,10 @@ export function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element 
   // ADR-0023: scopes[blockId] は SoA ScopeBuffer (Float64Array 列指向)。
   // 最新サンプル (= 各信号の length-1 番目の要素) を集める。
   const buffer = useAppStore((s) => s.scopes[blockId]);
+  // SPEC-0028 Q8 (SM-D Stage 1): 記録値は float64 のまま、**表示整形だけ**
+  // 解決済み dtype に従う (整数 → 小数点なし、bool → true/false)。
+  // dtype は backend の resolve-dtypes 結果 (store) から取る — 再計算しない
+  useDtypeResolution();
   const latest =
     buffer && buffer.length > 0 && buffer.n_signals > 0
       ? buffer.values.map((col) => col[buffer.length - 1]!)
@@ -1501,15 +1536,19 @@ export function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element 
               : "text-[10px] leading-tight"
           }`}
         >
-          {formatDisplayValue(v)}
+          {formatDisplayValue(v, dtypeForPort(blockId, "in", i))}
         </span>
       ))}
     </div>
   );
 }
 
-/** @internal テスト用 export。 */
-export function formatDisplayValue(v: number): string {
+/** @internal テスト用 export。dtype は解決済みの表示整形ヒント (SPEC-0028 Q8)。 */
+export function formatDisplayValue(v: number, dtype?: string | null): string {
+  if (dtype === "bool") return v !== 0 ? "true" : "false";
+  if (dtype === "int32" || dtype === "int64" || dtype === "uint8") {
+    if (Number.isFinite(v)) return Math.round(v).toString();
+  }
   if (!Number.isFinite(v)) return String(v);
   if (Math.abs(v) >= 10000 || (Math.abs(v) < 0.001 && v !== 0)) {
     return v.toExponential(2);

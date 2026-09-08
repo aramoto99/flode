@@ -1,28 +1,22 @@
-// SPEC-0027 (SM-D Stage 0): Inspector の read-only「信号型 (shadow)」セクション。
+// SPEC-0028 (SM-D Stage 1): Inspector の「信号型」セクション。
 //
-// 選択中ブロックの各ポートについて、backend の影の型解決
-// (POST /api/v1/models/resolve-dtypes) の結果を表示する。
+// Stage 0 の「(shadow)」表記と shadow_note (「結果に影響しません」) は撤去された
+// (AC-9) — Stage 1 では宣言 dtype が**実際に計算に効く**ため。
+// dtype 未宣言モデルでは代わりに auto_note (すべて float64 で計算) を出す。
 //
-// 設計制約 (SPEC-0027 §5.3):
+// 設計制約:
 // - 表示のみ。frontend で dtype を再計算しない (ADR-0077 §データ整合性 1 SSOT)
-// - 編集後 + 選択変更後 300ms debounce で取得、旧リクエストは AbortController
-//   で破棄 (Q3)
-// - 未取得 / 取得失敗 → セクションごと非表示 (Toast なし、編集を妨げない)
-// - "unknown" は "—" + 補足 hint (Q4)
-// - 末尾の shadow_note は必須 (「型が見えるのに結果が変わらない」誤解の防止)
+// - データ取得はモデルレベル store (lib/dtypeResolution.ts、DiagramCanvas が
+//   300ms debounce で fetch) — Display の表示整形と同じ結果を共有する
+// - "unknown" 表示は static mode (PythonFunction 入り REST 解決) 用に温存
 // - Stage 0 は root スコープのみ対象 → Subsystem 内を編集中は表示しない
-// - 別ファイル化により ParameterPanel.tsx への diff を最小化 (AC-6 の可逆性)
 
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { resolveModelDtypes } from "../api/client";
+import { hasDeclaredDtype, useDtypeResolution } from "../lib/dtypeResolution";
 import { useAppStore } from "../store/appStore";
-import type { DtypesPortEntry, DtypesResponse } from "../types/api";
+import type { DtypesPortEntry } from "../types/api";
 import { PropertyHint, PropertyRow, SectionDivider } from "./ui/inspector";
-
-/** 編集 / 選択変更から取得までの debounce (SPEC-0027 Q3)。 */
-const RESOLVE_DEBOUNCE_MS = 300;
 
 /** Inspector 狭幅レイアウトのラベル幅 (ParameterPanel の既存行と揃える)。 */
 const LABEL_W = 88;
@@ -33,7 +27,7 @@ interface SignalDtypeSectionProps {
 }
 
 /**
- * 選択中ブロックの推論 dtype を表示する read-only セクション。
+ * 選択中ブロックの解決済み dtype を表示する read-only セクション。
  *
  * 取得失敗・未取得・root 以外のスコープ編集中は何も描画しない。
  */
@@ -41,33 +35,9 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
   const { t } = useTranslation();
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
-  const [data, setData] = useState<DtypesResponse | null>(null);
+  const data = useDtypeResolution();
 
   const isRootScope = editingPath.length === 0;
-
-  useEffect(() => {
-    if (!editingModel || !isRootScope) {
-      setData(null);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await resolveModelDtypes(editingModel, controller.signal);
-          if (!controller.signal.aborted) setData(res);
-        } catch {
-          // 失敗 / Abort はセクション非表示に落とすだけ (SPEC-0027 §5.3)。
-          if (!controller.signal.aborted) setData(null);
-        }
-      })();
-    }, RESOLVE_DEBOUNCE_MS);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [editingModel, isRootScope, blockId]);
-
   if (!data || !isRootScope) return null;
 
   const rows = data.ports
@@ -80,6 +50,8 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
           : 1,
     );
   if (rows.length === 0) return null;
+
+  const declared = hasDeclaredDtype(editingModel);
 
   const widenedHint = (p: DtypesPortEntry): string | null => {
     if (p.direction !== "in") return null;
@@ -98,11 +70,16 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
     });
   };
 
+  const islandHint = data.diagnostics.some(
+    (d) => d.code === "dtype.opaque_float64_island" && d.block_id === blockId,
+  );
+  const stateHint = data.diagnostics.some(
+    (d) => d.code === "dtype.state_via_float64" && d.block_id === blockId,
+  );
+
   return (
     <>
-      <SectionDivider
-        label={t("inspector.section.signal_dtype", "Signal dtype (shadow)")}
-      />
+      <SectionDivider label={t("inspector.section.signal_dtype", "Signal dtype")} />
       {rows.map((p) => {
         const hint = widenedHint(p);
         return (
@@ -136,14 +113,36 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
           </div>
         );
       })}
-      <PropertyHint
-        labelWidth={0}
-        text={t(
-          "inspector.dtype.shadow_note",
-          "Display only — does not affect simulation results.",
-        )}
-        testId="dtype-shadow-note"
-      />
+      {islandHint && (
+        <PropertyHint
+          labelWidth={0}
+          text={t(
+            "inspector.dtype.island",
+            "Subsystem / PythonFunction boundary is float64 in this release",
+          )}
+          testId="dtype-island-note"
+        />
+      )}
+      {stateHint && (
+        <PropertyHint
+          labelWidth={0}
+          text={t(
+            "inspector.dtype.state_via_float64",
+            "State is stored as float64 in this release",
+          )}
+          testId="dtype-state-note"
+        />
+      )}
+      {!declared && (
+        <PropertyHint
+          labelWidth={0}
+          text={t(
+            "inspector.dtype.auto_note",
+            "No dtype declared — all signals run as float64.",
+          )}
+          testId="dtype-auto-note"
+        />
+      )}
     </>
   );
 }

@@ -6,44 +6,54 @@ import numpy as np
 import numpy.typing as npt
 
 from ..core.block import Block
+from ..core.dtypes import DTYPE_PARAM_VALUES, cast_value
 from ..exceptions import BlockSpecError
-from .cast import OUTPUT_TYPES, apply_value_semantics
+from .cast import OUTPUT_TYPES, apply_value_semantics, validate_dtype_params
 
 
 class Constant(Block):
     """定数値ソース ``y(t) = value``。
 
     Args:
-        value: 出力する定数値。**生値のまま保持**され、``output_type`` の変換は
-            出力時に適用される (型を ``"float"`` に戻すと元の値が復活する。
-            SPEC-0026 §確定事項 7)。
-        output_type: 出力の型意味論 (SPEC-0026)。``"float"`` (既定、恒等 = 現行挙動) /
+        value: 出力する定数値。**生値のまま保持**され、``output_type`` / ``dtype``
+            の変換は出力時に適用される (型を戻すと元の値が復活する。
+            SPEC-0026 §確定事項 7)。float64 で保持するため、2^53 を超える整数を
+            正確に表現したい場合は上流での表現に注意 (SPEC-0028)。
+        output_type: 値の意味論 (SPEC-0026)。``"float"`` (既定、恒等 = 現行挙動) /
             ``"int"`` (最近接偶数丸め) / ``"bool"`` (``value != 0`` で 0/1)。
+        dtype: 実 dtype (SPEC-0028)。``"auto"`` (既定、宣言しない) 以外を選ぶと
+            出力が実際にその numpy dtype になる。float → 整数はゼロ方向切り捨て。
+            ``output_type`` とは併用不可 (Q2)。
 
     Raises:
-        BlockSpecError: ``output_type`` が許可値の外。
+        BlockSpecError: param が許可値の外、または ``output_type`` と ``dtype``
+            の併用。
     """
 
-    _param_enums = {"output_type": OUTPUT_TYPES}
+    _param_enums = {"output_type": OUTPUT_TYPES, "dtype": DTYPE_PARAM_VALUES}
 
     def __init__(
         self,
         value: float = 1.0,
         output_type: str = "float",
+        dtype: str = "auto",
         *,
         id: str | None = None,
         name: str | None = None,
     ):
-        if output_type not in OUTPUT_TYPES:
-            raise BlockSpecError(
-                f"Constant: output_type must be one of {OUTPUT_TYPES}, got {output_type!r}"
-            )
+        validate_dtype_params("Constant", output_type, dtype)
         super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
         self.value = float(value)
         self.output_type = output_type
+        self.dtype = dtype
         self._params = {"value": self.value, "output_type": self.output_type}
+        # Q1: "auto" は保存 JSON に出さない
+        if dtype != "auto":
+            self._params["dtype"] = dtype
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        if self.dtype != "auto":
+            return cast_value(np.asarray([self.value]), self.dtype)
         return np.array([apply_value_semantics(self.value, self.output_type)])
 
 
