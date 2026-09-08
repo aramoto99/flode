@@ -345,7 +345,7 @@ def _control_port_index(block: Block) -> int | None:
 def _contains_python_function(blocks: Iterable[Block]) -> bool:
     """PythonFunction を再帰的に検出する (Subsystem は ``_inner_blocks`` を duck-typing)。
 
-    この関数が **full mode (= exec を伴う ``_build()``) への唯一の門番**である
+    この関数が **full mode (= 実行時と同じ、exec しうる ``_build()``) への唯一の門番**である
     (security-reviewer 指摘)。前提: ``Subsystem.__init__`` / ``_from_dict`` は
     ``_inner_blocks`` を **eager に構築**する (遅延化されると検出漏れ = fail-open
     になる)。この前提は JSON roundtrip テストで不変条件として固定している。

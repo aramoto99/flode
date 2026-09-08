@@ -1335,31 +1335,39 @@ class Simulator:
             ModelLoadError: ``layout`` が ``LayoutDict`` 形式に正規化できない場合。
         """
         from .. import __version__ as _flode_version
+        from .block import serialization_build
 
         normalized_layout = normalize_layout(layout)
 
-        payload: dict[str, Any] = {
-            "schema_version": CURRENT_SCHEMA_VERSION,
-            "metadata": {
-                "created_at": datetime.datetime.now(datetime.UTC)
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z"),
-                "tool": f"flode {_flode_version}",
-            },
-            "simulator": {
-                # ADR-0042 §論点 4-A: ``math.inf`` のときは ``"inf"`` 文字列で
-                # 永続化 (= JSON RFC 8259 違反の `"Infinity"` を避ける)
-                "t_end": serialize_t_end(self.t_end),
-                "dt": float(self.dt),
-                "solver": str(self.solver),
-                "rtol": float(self.rtol),
-                "atol": float(self.atol),
-                "dt_base": (None if self.dt_base_hint is None else float(self.dt_base_hint)),
-            },
-            "blocks": [b.to_dict() for b in self.blocks],
-            "connections": serialize_connections(self.blocks),
-        }
+        # bug-fix (2026-09-08): ブロックのシリアライズ (to_dict 再帰) を
+        # serialization_build 区間で囲み、「save パス全体でユーザーコードを
+        # exec しない」を Subsystem 側の自己防衛に頼らず構造的に保証する
+        # (security-reviewer SHOULD-1)。
+        with serialization_build():
+            payload: dict[str, Any] = {
+                "schema_version": CURRENT_SCHEMA_VERSION,
+                "metadata": {
+                    "created_at": datetime.datetime.now(datetime.UTC)
+                    .replace(microsecond=0)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "tool": f"flode {_flode_version}",
+                },
+                "simulator": {
+                    # ADR-0042 §論点 4-A: ``math.inf`` のときは ``"inf"`` 文字列で
+                    # 永続化 (= JSON RFC 8259 違反の `"Infinity"` を避ける)
+                    "t_end": serialize_t_end(self.t_end),
+                    "dt": float(self.dt),
+                    "solver": str(self.solver),
+                    "rtol": float(self.rtol),
+                    "atol": float(self.atol),
+                    "dt_base": (
+                        None if self.dt_base_hint is None else float(self.dt_base_hint)
+                    ),
+                },
+                "blocks": [b.to_dict() for b in self.blocks],
+                "connections": serialize_connections(self.blocks),
+            }
         # ADR-0020 §Decision (1): キー順序 = blocks → connections → layout の末尾。
         if normalized_layout is not None:
             block_ids = {b.id for b in self.blocks}

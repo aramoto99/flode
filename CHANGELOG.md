@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.1] - 2026-09-08 — save 時の PythonFunction 実行を修正
+
+### Fixed
+
+- **`Simulator.save()` / `Subsystem.to_dict()` がネスト Subsystem 内の
+  PythonFunction のユーザーコードを実行してしまう問題を修正** (v0.53.7 以前から
+  存在)。シリアライズ目的の build ではコード実行だけを抑止し、整合性チェック
+  (不完全な Subsystem を保存させない) は従来どおり行う。save 後の実行 (run) は
+  従来どおり正常にコードを実行する。`load` / `from_dict` はもともと実行しない
+
 ## [0.54.0] - 2026-09-08 — SM-D Stage 0: 影の型伝播 (表示のみ / 挙動不変)
 
 ### Added

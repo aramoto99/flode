@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 
-from ..core.block import Block
+from ..core.block import Block, in_serialization_build
 from ..core.decorator import block
 from ..core.identifiers import normalize_block_id
 from ..exceptions import (
@@ -423,8 +423,22 @@ class PythonFunction(Block):
 
         ``exec`` はインスタンスあたり 1 回だけ (同一 ``Simulator`` を複数回 ``run()``
         しても module レベルの state は再初期化されない。開き直せばクリーンになる)。
+
+        例外: シリアライズ目的の build 区間 (``in_serialization_build()``) では
+        exec せず即 return する (gate 判定も不要 — bug-fix 2026-09-08、
+        save しただけでユーザーコードが走る問題の修正)。
         """
         if self._inner is None:
+            # bug-fix (2026-09-08): シリアライズ目的の build (Subsystem.to_dict →
+            # _build 連鎖) ではユーザーコードを exec しない。ポート数・状態数等の
+            # 構造は __init__ の静的解析で確定済みなので、serialize に exec は
+            # 不要。実行時 (run 経由) の build では従来どおり exec される
+            # (_inner を代入せず return するため、次回の build で自然に再試行)。
+            if in_serialization_build():
+                _logger.debug(
+                    "PythonFunction[%s]: skipping exec (serialization build)", self.id
+                )
+                return
             _require_execution_allowed(self.id)
             filename = self._source_filename
             try:

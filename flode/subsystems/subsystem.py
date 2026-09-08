@@ -23,7 +23,12 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from ..core.block import Block
+from ..core.block import (
+    Block,
+    in_serialization_build,
+    register_serialization_invalidation,
+    serialization_build,
+)
 from ..core.identifiers import fold_block_id
 from ..core.persistence import LayoutDict, normalize_layout
 from ..exceptions import AlgebraicLoopError, BlockSpecError
@@ -469,6 +474,18 @@ class Subsystem(Block):
 
         # トポロジカル順 (direct_feedthrough のみ依存辺)
         self._exec_order = self._compute_exec_order()
+        # bug-fix (2026-09-08): シリアライズ目的の build 区間では PythonFunction の
+        # exec が skip され「不完全な built 状態」になりうるため、build 済み
+        # キャッシュを次の実行時 build で完全再構築させる。無効化は最外区間の
+        # 終了時にまとめて行う (即時無効化はネスト時に build 回数が指数化 —
+        # code-reviewer MUST)。登録はキャッシュが立った**直後**に行う: この後の
+        # _build 処理 (例: _params 確定の to_dict) が例外で中断しても登録済みで
+        # あることを保証する (save 失敗後にモデルが実行不能で残る回帰の防止 —
+        # security-reviewer MUST-1)。
+        if in_serialization_build():
+            register_serialization_invalidation(
+                lambda: setattr(self, "_exec_order", None)
+            )
 
         # 状態 layout 計算
         offset = 0
@@ -979,43 +996,55 @@ class Subsystem(Block):
         再帰的に保存する。``self.layout is None`` または空のときは出力しない (=
         layout を持たない既存 Subsystem の JSON は完全互換)。stale id (= 削除済み
         block を参照) は drop。
+
+        Note (bug-fix 2026-09-08): 本メソッド全体を ``serialization_build()``
+        区間で囲み、ネスト PythonFunction のユーザーコード exec を抑止する
+        (save しただけでコードが走る問題の修正。整合性チェックは従来どおり)。
+        抑止 build 直後は ``x0`` / ``n_states`` 等の派生値が静的既定に落ちるが、
+        次の実行時 build で復元される (run の数値は不変)。
         """
         from ..core.persistence import block_type_path
 
-        # 内部 build を発火させ、内部構造の整合性チェック (BlockSpecError /
-        # AlgebraicLoopError) を save 時にも走らせる。不完全な Subsystem は
-        # 素直に保存できないので例外がそのまま伝播する設計。
-        self._build()
-        params: dict[str, Any] = {}
-        # ADR-0021 §(7): mask_params / mask_values を canonical 順序で出力
-        if self.mask_params:
-            params["mask_params"] = [dict(p) for p in self.mask_params]
-            # mask_values は declared 順で並べる (= diff の安定化)
-            params["mask_values"] = {
-                p["name"]: self.mask_values[p["name"]] for p in self.mask_params
+        # 区間はメソッド全体: _build だけでなく子の to_dict 再帰も含めて
+        # 「serialize パスで exec しない」を構造的に保証する (security-reviewer
+        # SHOULD-1)。ネストした子の to_dict の区間は素通しでコスト増なし。
+        with serialization_build():
+            # 内部 build を発火させ、内部構造の整合性チェック (BlockSpecError /
+            # AlgebraicLoopError) を save 時にも走らせる。不完全な Subsystem は
+            # 素直に保存できないので例外がそのまま伝播する設計。
+            self._build()
+            params: dict[str, Any] = {}
+            # ADR-0021 §(7): mask_params / mask_values を canonical 順序で出力
+            if self.mask_params:
+                params["mask_params"] = [dict(p) for p in self.mask_params]
+                # mask_values は declared 順で並べる (= diff の安定化)
+                params["mask_values"] = {
+                    p["name"]: self.mask_values[p["name"]] for p in self.mask_params
+                }
+            params["blocks"] = [b.to_dict() for b in self._inner_blocks]
+            params["connections"] = self._serialize_inner_connections()
+            if self.layout:
+                inner_ids = {b.id for b in self._inner_blocks}
+                ordered_layout: LayoutDict = {
+                    b.id: self.layout[b.id]
+                    for b in self._inner_blocks
+                    if b.id in self.layout
+                }
+                stale = [k for k in self.layout if k not in inner_ids]
+                for s in stale:
+                    _logger.warning(
+                        "Subsystem %r.to_dict: layout entry %r refers to unknown "
+                        "inner block id; dropping",
+                        self.id,
+                        s,
+                    )
+                if ordered_layout:
+                    params["layout"] = ordered_layout
+            return {
+                "id": self._id,
+                "type": block_type_path(self.__class__),
+                "params": params,
             }
-        params["blocks"] = [b.to_dict() for b in self._inner_blocks]
-        params["connections"] = self._serialize_inner_connections()
-        if self.layout:
-            inner_ids = {b.id for b in self._inner_blocks}
-            ordered_layout: LayoutDict = {
-                b.id: self.layout[b.id] for b in self._inner_blocks if b.id in self.layout
-            }
-            stale = [k for k in self.layout if k not in inner_ids]
-            for s in stale:
-                _logger.warning(
-                    "Subsystem %r.to_dict: layout entry %r refers to unknown inner "
-                    "block id; dropping",
-                    self.id,
-                    s,
-                )
-            if ordered_layout:
-                params["layout"] = ordered_layout
-        return {
-            "id": self._id,
-            "type": block_type_path(self.__class__),
-            "params": params,
-        }
 
     @classmethod
     def _from_dict(

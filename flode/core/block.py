@@ -11,6 +11,10 @@ SM-A (各ポート = 1 スカラー) は ``port_shapes = ()`` (rank-0) の特殊
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import numpy as np
@@ -21,6 +25,80 @@ from .identifiers import normalize_block_id, validate_block_id
 
 # ADR-0017 §(3): SM-A 互換 (rank-0 scalar) を表す port shape
 _SCALAR_SHAPE: tuple[int, ...] = ()
+
+_logger = logging.getLogger("flode.core.block")
+
+# ---------------------------------------------------------------------------
+# シリアライズ目的の build 区間 (bug-fix 2026-09-08)
+#
+# ``Subsystem.to_dict()`` は整合性チェックのため ``_build()`` を呼ぶが、
+# ``PythonFunction._build()`` はユーザーコードを exec する。「save しただけで
+# コードが実行される」のを防ぐため、シリアライズ区間を ContextVar で示し、
+# exec を伴う build だけが自発的に skip する (構造チェックは従来どおり走る)。
+# ContextVar のため新規スレッドには区間が漏れない。区間内で生成した asyncio
+# task / to_thread には Context コピーで継承されるが、抑止 (exec しない) 方向
+# なので安全側 (security-reviewer 実測 2026-09-08)。
+#
+# 区間中に (exec 抑止つきで) build された Subsystem は「不完全な built 状態」の
+# ため、次の実行時 build で完全再構築が必要 = キャッシュを無効化する。ただし
+# **無効化は最外区間の終了時にまとめて行う** (code-reviewer MUST 2026-09-08):
+# 区間中に即時無効化すると、to_dict が同一 Subsystem を複数回訪問する既存経路
+# (_build 内の _params 確定と to_dict 本体の両方が子の to_dict を呼ぶ) で
+# キャッシュが効かなくなり、ネスト深さに対して build 回数が指数化する。
+# 遅延方式なら区間内はキャッシュが従来どおり効き、build 回数は線形のまま。
+# ---------------------------------------------------------------------------
+_SERIALIZATION_STATE: ContextVar[list[Callable[[], None]] | None] = ContextVar(
+    "flode_serialization_build", default=None
+)
+
+
+@contextmanager
+def serialization_build() -> Iterator[None]:
+    """「シリアライズ目的の ``_build()``」区間を宣言する context manager。
+
+    区間内では ``in_serialization_build()`` が ``True`` を返し、ユーザーコードの
+    exec を伴うブロック (``PythonFunction``) は build を skip する。
+    区間中に ``register_serialization_invalidation`` で登録された無効化
+    callback は、**最外区間の終了時** (元例外があってもその伝播前、まだ区間内の
+    状態で) にまとめて実行される (ネストした区間は素通しで、登録は最外区間に
+    集約される)。
+
+    不変条件: callback は **副作用のない状態リセットに限る** (``_build()`` を
+    誘発してはならない)。callback は区間内で実行されるため、万一 build を
+    誘発しても exec は抑止されるが、設計としては禁止とする。callback の例外は
+    ログに記録した上で握りつぶし、**全件を必ず実行**して元の例外を維持する。
+    """
+    if _SERIALIZATION_STATE.get() is not None:
+        # 既に区間内 (ネスト): 新しい区間を張らず素通し
+        yield
+        return
+    pending: list[Callable[[], None]] = []
+    token = _SERIALIZATION_STATE.set(pending)
+    try:
+        yield
+    finally:
+        try:
+            for invalidate in pending:
+                try:
+                    invalidate()
+                except Exception:  # noqa: BLE001 - 全件実行し元の例外を維持する
+                    _logger.exception(
+                        "serialization invalidation callback failed (continuing)"
+                    )
+        finally:
+            _SERIALIZATION_STATE.reset(token)
+
+
+def in_serialization_build() -> bool:
+    """現在シリアライズ目的の build 区間内かどうか。"""
+    return _SERIALIZATION_STATE.get() is not None
+
+
+def register_serialization_invalidation(invalidate: Callable[[], None]) -> None:
+    """区間終了時に実行する無効化 callback を登録する (区間外では no-op)。"""
+    pending = _SERIALIZATION_STATE.get()
+    if pending is not None:
+        pending.append(invalidate)
 
 
 def _normalize_port_shapes(
