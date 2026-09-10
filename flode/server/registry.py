@@ -353,7 +353,9 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "denominator": [1.0, 1.0],
         "sample_time": 0.1,
     },
-    "flode.blocks.discrete.UnitDelay": {"sample_time": 0.1},
+    # v0.57.0 (ADR-0002 §(2) 改訂): 既定 -1 = 継承 (上流の離散レート、なければ dt)。
+    # 「置けば dt で回る」= 直感どおりの既定。他の離散ブロックは明示 0.1 を維持
+    "flode.blocks.discrete.UnitDelay": {"sample_time": -1.0},
     # SPEC-0015: delay_time / sample_time 共に required。palette drop 用 default
     "flode.blocks.transport_delay.TransportDelay": {
         "delay_time": 1.0,

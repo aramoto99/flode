@@ -728,59 +728,112 @@ class Simulator:
         return True
 
     def _resolve_sample_times(self, order: list[Block]) -> None:
-        """継承サンプル時間 (``sample_time = -1.0``) をトポロジカル順に解決する。
+        """継承サンプル時間 (``sample_time = -1.0``) を 2 相で解決する。
 
         各ブロックの ``_resolved_sample_time`` 属性に決定値を格納する。
         元の ``sample_time`` 属性は変更しない。
 
+        相 1: 順序に依存しない解決 (None/0 = 連続、> 0 = 明示値) を全ブロックで
+        先に確定する。相 2: ``-1`` (継承) ブロックを、上流に未解決の ``-1`` が
+        残っている間は先送りしながら固定点まで反復して解決する。
+
         Note:
-            ``order`` は ``_execution_order`` の戻り値 (direct_feedthrough=True
-            ブロックの依存に基づくトポロジカル順)。継承解決は ``input_sources`` を
-            遡るので、上流が先に解決済みであることが必要。direct_feedthrough=False
-            のブロック (Integrator/UnitDelay 等) は依存辺を持たないため
-            ``order`` の先頭側に来る傾向があり、それらが「上流」として参照される
-            ケースでも ADR-0002 §(2) の規則どおりに解決できる。
+            v0.57.0 code-reviewer MUST 対応: 旧実装は ``_execution_order`` の
+            1 パスだったが、direct_feedthrough=False のブロック同士は依存辺を
+            持たないため順序が ``sim.add()`` 順に依存し、非 feedthrough 連鎖
+            (例: UnitDelay(0.03) → UnitDelay(-1)) で上流の明示レートを読み損ねて
+            dt に誤フォールバックしていた。2 相 + 固定点反復は追加順に依存しない。
+            ``-1`` 同士の循環 (固定点で解決が進まない残り) は、循環内の上流を
+            「レートなし」とみなして解決する (決定的、旧挙動と同等)。
         """
+        pending: list[Block] = []
         for b in order:
             st = b.sample_time
             if st is None or st == 0.0:
                 b._resolved_sample_time = None
-                continue
-            if st > 0.0:
+            elif st > 0.0:
                 b._resolved_sample_time = float(st)
-                continue
-            if st == -1.0:
-                upstream: list[float | None] = [
-                    src[0]._resolved_sample_time for src in b.input_sources if src is not None
-                ]
-                if not upstream:
+            elif st == -1.0:
+                if not any(src is not None for src in b.input_sources):
                     raise BlockSpecError(
                         f"Block {b.id!r} has sample_time=-1.0 (inherited) but no inputs"
                     )
-                discrete = [t for t in upstream if t is not None and t > 0.0]
-                if not discrete:
-                    b._resolved_sample_time = None
+                pending.append(b)
+            else:
+                raise BlockSpecError(f"Block {b.id!r}: invalid sample_time={st}")
+
+        unresolved_ids = {id(b) for b in pending}
+
+        def _resolve_inherited(b: Block) -> None:
+            # 未解決の -1 上流は「レートなし」として読む (通常経路では未解決上流
+            # ゼロを呼び出し側が保証するため inert。循環解決時のみ実効する)
+            upstream: list[float | None] = [
+                (None if id(src[0]) in unresolved_ids else src[0]._resolved_sample_time)
+                for src in b.input_sources
+                if src is not None
+            ]
+            discrete = [t for t in upstream if t is not None and t > 0.0]
+            if not discrete:
+                if b.requires_discrete_rate:
+                    # ADR-0002 §(2) 改訂 (v0.57.0): 離散専用ブロックを連続扱いに
+                    # すると update() が呼ばれず x0 のまま無警告で凍結する
+                    # (仕様バグ、2026-09-09)。flode は常に固定 macro 格子を持つ
+                    # ため、格子 = dt にフォールバックする。
+                    b._resolved_sample_time = float(self.dt)
+                    _logger.warning(
+                        "Block %r: sample_time=-1.0 (inherited) found no discrete "
+                        "rate upstream; falling back to dt=%g. This block's rate "
+                        "now follows the model's dt setting — set an explicit "
+                        "sample_time to pin it.",
+                        b.id,
+                        self.dt,
+                    )
                 else:
-                    distinct = sorted(set(discrete))
-                    if len(distinct) > 1:
-                        _logger.warning(
-                            "Block %r has multiple upstream sample_times %s; inheriting min=%g",
-                            b.id,
-                            distinct,
-                            distinct[0],
-                        )
-                    has_continuous = any(t is None for t in upstream)
-                    if has_continuous:
-                        _logger.warning(
-                            "Block %r inherits sample_time from a mix of continuous "
-                            "and discrete upstream blocks; using discrete min=%g "
-                            "(no implicit ZOH inserted)",
-                            b.id,
-                            distinct[0],
-                        )
-                    b._resolved_sample_time = float(distinct[0])
-                continue
-            raise BlockSpecError(f"Block {b.id!r}: invalid sample_time={st}")
+                    b._resolved_sample_time = None
+            else:
+                distinct = sorted(set(discrete))
+                if len(distinct) > 1:
+                    _logger.warning(
+                        "Block %r has multiple upstream sample_times %s; inheriting min=%g",
+                        b.id,
+                        distinct,
+                        distinct[0],
+                    )
+                has_continuous = any(t is None for t in upstream)
+                if has_continuous:
+                    _logger.warning(
+                        "Block %r inherits sample_time from a mix of continuous "
+                        "and discrete upstream blocks; using discrete min=%g "
+                        "(no implicit ZOH inserted)",
+                        b.id,
+                        distinct[0],
+                    )
+                b._resolved_sample_time = float(distinct[0])
+
+        # 相 2: 上流の -1 が全て解決済みのブロックから順に解決 (固定点反復)
+        while pending:
+            deferred: list[Block] = []
+            resolved_now: list[Block] = []
+            for b in pending:
+                has_unresolved_upstream = any(
+                    src is not None and id(src[0]) in unresolved_ids
+                    for src in b.input_sources
+                )
+                if has_unresolved_upstream:
+                    deferred.append(b)
+                else:
+                    _resolve_inherited(b)
+                    resolved_now.append(b)
+            if not resolved_now:
+                # 進捗なし = -1 同士の循環。unresolved 集合を凍結したまま全員を
+                # 「循環内上流 = レートなし」で一括解決する (循環内の処理順に
+                # 結果が依存しないよう、解決済みへの昇格は行わない)
+                for b in deferred:
+                    _resolve_inherited(b)
+                break
+            for b in resolved_now:
+                unresolved_ids.discard(id(b))
+            pending = deferred
 
     def _compute_dt_base(self) -> float:
         """基本ステップ ``dt_base`` と各ブロックの ``_step_ratio`` を決定する。"""

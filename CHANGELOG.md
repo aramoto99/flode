@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0] - 2026-09-10 — sample_time 継承の無警告凍結を修正
+
+### Fixed
+
+- **`sample_time=-1` (継承) の無警告凍結**: 上流に離散レートを持たない
+  UnitDelay 等が連続扱いに解決され、`update()` が一度も呼ばれず x0 を
+  出し続けたまま正常完走していた (エラー・警告なし)。修正後、**離散専用
+  ブロック** (UnitDelay / DiscreteIntegrator / DiscreteStateSpace /
+  DiscreteTransferFunction / ZeroOrderHoldDirect) の `-1` は上流に離散
+  レートがなければ **dt にフォールバック**し、実行のたびに WARNING を出す
+  - flode は常に固定 macro 格子 (dt) を持つ構造のため、リファレンスツールの
+    固定ステップ時の「-1 → 基本ステップ」と同型の挙動
+  - `@block` デコレータ製ブロックの「-1 + 連続上流 → 連続として動く」
+    (意図された機能) と無状態ブロックの挙動は不変
+  - 注意: `-1` のブロックは **dt に追従**する (dt を変えるとティック数も
+    変わる)。dt 非依存にしたい場合は明示的な sample_time を設定
+- ZeroOrderHoldDirect の `-1` + 連続上流は「連続解決 (実質パススルー)」
+  から dt フォールバックに変更 (実際に hold する方が有用)
+
+### Changed
+
+- GUI パレットの UnitDelay 既定 sample_time: 0.1 → **-1 (継承)** —
+  「置けば dt で回る」が既定に
+- Inspector: sample_time 欄に実効周期ヒントを表示 (継承なら「上流の
+  離散レート、なければ dt に追従」/ 明示値なら「固定周期」)
+- モデル設定の dt ラベルを「基本ステップ dt (秒)」に変更し、説明を追加
+  (「イベント発火・記録の固定格子。積分刻みではない — 連続系の精度は
+  rtol/atol が制御」)
+
 ## [0.56.0] - 2026-09-09 — output_type 撤去: 型概念を dtype に一本化
 
 ### Removed (**破壊的変更**)

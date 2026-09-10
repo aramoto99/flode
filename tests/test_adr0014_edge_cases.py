@@ -223,11 +223,12 @@ def test_zero_order_hold_direct_inherits_sample_time_output_correct() -> None:
         assert arr[idx] == pytest.approx(expected, abs=1e-12)
 
 
-def test_zero_order_hold_direct_inherits_continuous_upstream_becomes_continuous() -> None:
-    """sample_time=-1.0 で上流が連続ブロック (Integrator) なら _resolved_sample_time=None になる。
+def test_zero_order_hold_direct_inherits_continuous_upstream_falls_back_to_dt() -> None:
+    """sample_time=-1.0 で上流が連続ブロック (Integrator) なら dt にフォールバックする。
 
-    ADR-0002 §(2): upstream が全て連続なら継承結果は None (= 連続扱い)。
-    これはエラーではなく仕様通りの動作。
+    ADR-0002 §(2) 改訂 (v0.57.0): 離散専用ブロック (requires_discrete_rate=True)
+    は上流に離散レートがないとき dt を採用する。旧仕様 (None = 連続扱いの実質
+    パススルー) から挙動変更 — dt 周期で実際に hold する方が有用なため。
     """
     from flode.blocks.continuous import Integrator
 
@@ -241,8 +242,8 @@ def test_zero_order_hold_direct_inherits_continuous_upstream_becomes_continuous(
     sim.connect(zohd, sc)
     sim.run()
 
-    # 上流が連続 → 継承結果は None (連続扱い)
-    assert zohd._resolved_sample_time is None
+    # 上流に離散レートなし → dt にフォールバック (連続扱いにしない)
+    assert zohd._resolved_sample_time == pytest.approx(0.01)
 
 
 # ---------------------------------------------------------------------------

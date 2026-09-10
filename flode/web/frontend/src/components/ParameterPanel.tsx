@@ -8,7 +8,7 @@
 // editingModel + editingPath が source of truth。useAutoSave がそれを PUT する。
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
@@ -39,6 +39,7 @@ import {
   GridEditor,
   JsonArrayEditor,
   PropertyGrid,
+  PropertyHint,
   PropertyRow,
   SectionDivider,
   SELECT_CLS,
@@ -328,8 +329,33 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             // 未対応 (float64 island、backend が build 時に拒否) — 非 root スコープ
             // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
             const dtypeDisabled = k === "dtype" && editingPath.length > 0;
+            // v0.57.0 (ADR-0002 §(2) 改訂): sample_time の実効周期ヒント。
+            // 規則の説明のみ表示し、解決値のグラフ再計算は frontend でしない
+            // (二重実装回避 — 権威ある解決値は実行時 WARNING が報告する)。
+            // NOTE: inherited_hint の「なければ dt」文言は「GUI で sample_time を
+            // 露出するブロックは全て requires_discrete_rate=True」という現状の
+            // 前提に依存する。前提が崩れる新規ブロックを足す場合は registry 経由で
+            // フラグを渡して文言を分岐させること (SPEC-0029 §4)
+            const sampleTimeNum =
+              k === "sample_time" && valueType === "number"
+                ? draft[k] !== undefined
+                  ? parseNumericInput(draft[k])
+                  : (v as number)
+                : null;
+            const modelDt = (
+              editingModel?.simulator as Record<string, unknown> | undefined
+            )?.dt;
+            const sampleTimeHint =
+              sampleTimeNum === null
+                ? null
+                : sampleTimeNum === -1
+                  ? t("inspector.sample_time.inherited_hint", {
+                      dt: typeof modelDt === "number" ? modelDt : "?",
+                    })
+                  : t("inspector.sample_time.fixed_hint");
             return (
-              <PropertyRow key={k} labelWidth={88} labelAlign="left" label={k}>
+              <Fragment key={k}>
+              <PropertyRow labelWidth={88} labelAlign="left" label={k}>
                 {enumValues && enumValues.length > 0 ? (
                   <select
                     data-testid={`param-input-${k}`}
@@ -462,6 +488,14 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   />
                 )}
               </PropertyRow>
+              {sampleTimeHint !== null && (
+                <PropertyHint
+                  testId="param-hint-sample-time"
+                  labelWidth={88}
+                  text={sampleTimeHint}
+                />
+              )}
+              </Fragment>
             );
           })}
 

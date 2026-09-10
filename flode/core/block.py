@@ -183,6 +183,15 @@ class Block:
     #: 型解決器 (``flode.core.dtypes``) が MRO 経由で読む (要求宣言の SSOT)。
     required_input_dtype: ClassVar[str | None] = None
 
+    #: ADR-0002 §(2) 改訂 (v0.57.0): ``sample_time=-1.0`` (継承) が上流に離散
+    #: レートを見つけられなかったときの解決先。``True`` = 連続として意味を
+    #: 持てない離散専用ブロック — ``Simulator.dt`` にフォールバックする
+    #: (連続扱いにすると ``update()`` が呼ばれず無警告で凍結するため)。
+    #: ``False`` (default) = 従来どおり連続 (None) に解決 — ``@block``
+    #: デコレータ製のポリモーフィックブロック (ADR-0003: -1 + 連続上流 →
+    #: 連続として動くのが意図された機能) と無状態ブロックはこちら。
+    requires_discrete_rate: ClassVar[bool] = False
+
     def __init__(
         self,
         *,

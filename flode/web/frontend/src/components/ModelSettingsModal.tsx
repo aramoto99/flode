@@ -214,6 +214,10 @@ export function ModelSettingsModal({
               className={`${INPUT_MONO_CLS} w-32`}
             />
           </PropertyRow>
+          <PropertyHint
+            testId="model-settings-dt-hint"
+            text={t("model_settings.dt_hint", "")}
+          />
           <PropertyRow
             label={t("model_settings.dt_base", "dt base")}
           >

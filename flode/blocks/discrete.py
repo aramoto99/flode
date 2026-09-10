@@ -58,6 +58,10 @@ class UnitDelay(Block):
         x0: 初期状態 (= t=0 での出力値)。内部では state[0]=state[1]=x0 に展開する。
     """
 
+    # ADR-0002 §(2) 改訂 (v0.57.0): 連続として動けない離散専用ブロック。
+    # -1 継承で上流に離散レートがなければ dt にフォールバックする (凍結防止)
+    requires_discrete_rate: ClassVar[bool] = True
+
     def __init__(
         self,
         *,
@@ -109,6 +113,8 @@ class DiscreteIntegrator(Block):
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
+    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -320,6 +326,10 @@ class ZeroOrderHoldDirect(Block):
             ``u(0)`` で上書きされるため、通常はテスト結果に影響しない。
     """
 
+    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    # (従来の「連続扱い = 実質パススルー」から挙動変更 — dt で実際に hold する)
+    requires_discrete_rate: ClassVar[bool] = True
+
     def __init__(
         self,
         *,
@@ -390,6 +400,8 @@ class DiscreteStateSpace(Block):
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
+    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -509,6 +521,8 @@ class DiscreteTransferFunction(Block):
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
+    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
