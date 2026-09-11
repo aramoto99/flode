@@ -190,7 +190,7 @@ def test_chain_from_0_8_converts_triggered_subsystem_to_flode() -> None:
         "metadata": {"tool": "pyflw 0.37.0"},
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.12"
+    assert out["schema_version"] == "0.13"
     assert out["_migrated_from"] == "0.8"
     entry = out["blocks"][0]
     assert entry["type"] == "flode.subsystems.subsystem.Subsystem"
@@ -211,5 +211,5 @@ def test_chain_from_oldest_version_reaches_current() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.12"
+    assert out["schema_version"] == "0.13"
     assert out["_migrated_from"] == "0.1"

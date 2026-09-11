@@ -444,3 +444,38 @@ class TestSubsystemSampleTimeInheritance:
         sim.add(sub)
         sim._execution_order()
         assert sub.sample_time is None
+
+    @pytest.mark.parametrize("synced", [-1.0, "dt"])
+    def test_inner_discrete_only_synced_sample_time_raises(self, synced):
+        """SPEC-0030 (v0.58.0): 内部の離散専用ブロックの -1 / "dt" は
+        fail-closed エラー (内部にはクロック解決が走らず無警告凍結するため)。"""
+        from flode.exceptions import BlockSpecError
+
+        with pytest.raises(BlockSpecError, match="inside a Subsystem"):
+            sub = Subsystem(id="sub")
+            sub.add(Inport(port_idx=0, id="in0"))
+            sub.add(UnitDelay(sample_time=synced, x0=0.0, id="ud"))
+            sub.add(Outport(port_idx=0, id="out0"))
+            sub.connect("in0", "ud")
+            sub.connect("ud", "out0")
+            sim = Simulator()
+            sim.add(sub)
+            sim._execution_order()
+
+    def test_inner_stateless_minus_one_is_still_allowed(self):
+        """無状態ブロック (requires_discrete_rate=False) の内部 -1 は従来どおり
+        許す (連続として動くのが正当な意味 — ルートレベルの線引きと同じ)。"""
+        from flode.blocks import Gain
+
+        sub = Subsystem(id="sub")
+        sub.add(Inport(port_idx=0, id="in0"))
+        g = Gain(k=2.0, id="g")
+        g.sample_time = -1.0
+        sub.add(g)
+        sub.add(Outport(port_idx=0, id="out0"))
+        sub.connect("in0", "g")
+        sub.connect("g", "out0")
+        sim = Simulator()
+        sim.add(sub)
+        sim._execution_order()  # エラーにならない
+        assert sub.sample_time is None

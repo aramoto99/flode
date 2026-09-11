@@ -94,7 +94,7 @@ class SourceSpec:
     n_outputs: int
     n_states: int
     direct_feedthrough: bool
-    sample_time: float | None
+    sample_time: float | str | None
     params_spec: tuple[tuple[str, Any, Any, bool], ...]
     lineno: int
     input_names: tuple[str, ...] = ()

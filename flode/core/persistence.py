@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.12"
+CURRENT_SCHEMA_VERSION = "0.13"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -665,6 +665,164 @@ def _builtin_migrate_0_9_to_0_10(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# -- 0.12 → 0.13 (sample_time クロック配線化、v0.58.0 / SPEC-0030) ------------
+
+#: -1 (上流に同期) が解決できないとエラーになる離散専用ブロックの FQN。
+#: これらの旧 -1 のうち上流に離散レートを持たないものだけを "dt" に書き換える
+#: (v0.57.0 の dt フォールバック実行挙動と数値同一)。無状態・デコレータ製の
+#: -1 は「上流連続 → 連続」が意図された機能のため書き換えない。
+_DISCRETE_ONLY_TYPES: frozenset[str] = frozenset(
+    {
+        "flode.blocks.discrete.UnitDelay",
+        "flode.blocks.discrete.DiscreteIntegrator",
+        "flode.blocks.discrete.DiscreteStateSpace",
+        "flode.blocks.discrete.DiscreteTransferFunction",
+        "flode.blocks.discrete.ZeroOrderHoldDirect",
+    }
+)
+
+#: SPEC-0030 の基準クロック同期を表す sample_time 文字列 (block.py の
+#: BASE_CLOCK_SAMPLE_TIME と同値。migration は過去/未来の語彙を自前で凍結する
+#: 流儀のためリテラルを持つ)。
+_BASE_CLOCK_LITERAL = "dt"
+
+
+def _params_carries_discrete_rate(params: Any) -> bool:
+    """entry の params が「離散レートの供給源」か (静的判定)。
+
+    数値 ``sample_time > 0``、``sample_time == "dt"`` (基準クロック同期 =
+    解決後は離散)、RateTransition の ``output_sample_time > 0``、または
+    ネスト Subsystem (``params.blocks``) の内部に上記を持つもの (Subsystem は
+    build 時に内部最小周期を派生 sample_time として外に見せるため) を
+    供給源とみなす。
+    """
+    def _direct(p: Any) -> bool:
+        if not isinstance(p, dict):
+            return False
+        st = p.get("sample_time")
+        if isinstance(st, (int, float)) and not isinstance(st, bool) and st > 0:
+            return True
+        if st == _BASE_CLOCK_LITERAL:
+            return True
+        ost = p.get("output_sample_time")
+        return isinstance(ost, (int, float)) and not isinstance(ost, bool) and ost > 0
+
+    # ネスト Subsystem は明示スタックで反復走査する (security SHOULD 2026-09-11:
+    # 再帰 + genexpr だと深いネストで json パーサ制限より先に RecursionError)
+    stack: list[Any] = [params]
+    while stack:
+        p = stack.pop()
+        if not isinstance(p, dict):
+            continue
+        if _direct(p):
+            return True
+        inner = p.get("blocks")
+        if isinstance(inner, list):
+            for e in inner:
+                if isinstance(e, dict):
+                    stack.append(e.get("params"))
+    return False
+
+
+def _rewire_unresolvable_inherited(
+    blocks: list[Any] | None,
+    connections: Any,
+) -> None:
+    """0.12 → 0.13 用: **トップレベル scope** の離散専用ブロックの
+    ``sample_time=-1`` のうち、上流を推移的に辿っても離散レートの供給源が
+    ないものを ``"dt"`` に in-place で書き換える。
+
+    グラフは connections の ``src``/``dst`` から静的に構築する (build なし)。
+    レート源集合からの下流 BFS 1 回で「レート源から到達可能な集合」を作り、
+    候補が未到達なら書き換える — 全体 O(V+E) (security MUST 2026-09-11:
+    候補ごとの上流 DFS 再実行は O(N²) で、モデルファイルによる CPU 増幅に
+    なっていた)。循環は visited 集合で停止 (循環内にレート源がなければ
+    書き換え対象、判定は書き換え前のスナップショットで決定的)。
+
+    ネスト Subsystem 内部には**再帰しない** (code-reviewer SHOULD 2026-09-11):
+    内部にはクロック解決が走らないため (ADR-0014 既知制限)、内部の -1 は
+    "dt" に書き換えても -1 のままでも v0.58.0 の build 時ガードでエラーに
+    なる。どちらでも結果が同じなら、元の値を保存したまま案内エラーに任せる
+    方が意図が明確 (書き換えは「動く状態を保つ」ときだけ行う)。
+    """
+    logger = logging.getLogger("flode.persistence.migrate_0_12_to_0_13")
+    if not blocks:
+        return
+    # レート源判定は entry ごとに 1 回だけ評価する (メモ不要の 1 パス)
+    rate_source_ids: set[str] = set()
+    for entry in blocks:
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("id"), str)
+            and _params_carries_discrete_rate(entry.get("params"))
+        ):
+            rate_source_ids.add(entry["id"])
+    downstream_ids: dict[str, list[str]] = {}
+    if isinstance(connections, list):
+        for c in connections:
+            if not isinstance(c, dict):
+                continue
+            src, dst = c.get("src"), c.get("dst")
+            if isinstance(src, str) and isinstance(dst, str):
+                downstream_ids.setdefault(src, []).append(dst)
+
+    # 多始点 BFS: レート源の下流に (中間ブロックの種別によらず) 到達できる集合
+    reached: set[str] = set()
+    frontier: list[str] = list(rate_source_ids)
+    while frontier:
+        bid = frontier.pop()
+        for nxt in downstream_ids.get(bid, []):
+            if nxt not in reached:
+                reached.add(nxt)
+                frontier.append(nxt)
+
+    to_rewrite: list[dict[str, Any]] = []
+    for entry in blocks:
+        if not isinstance(entry, dict):
+            continue
+        params = entry.get("params")
+        if not isinstance(params, dict):
+            continue
+        if (
+            entry.get("type") in _DISCRETE_ONLY_TYPES
+            and params.get("sample_time") == -1
+            and isinstance(entry.get("id"), str)
+            and entry["id"] not in reached
+        ):
+            to_rewrite.append(entry)
+    for entry in to_rewrite:
+        entry["params"]["sample_time"] = _BASE_CLOCK_LITERAL
+        logger.debug(
+            "Block %r: rewrote sample_time -1 -> %r (no upstream discrete "
+            "rate; matches v0.57.0 runtime behaviour)",
+            entry.get("id"),
+            _BASE_CLOCK_LITERAL,
+        )
+
+
+def _builtin_migrate_0_12_to_0_13(data: dict[str, Any]) -> dict[str, Any]:
+    """sample_time クロック配線化 (v0.58.0 / SPEC-0030): 0.12 → 0.13。
+
+    ``sample_time`` の語彙に ``"dt"`` (基準クロック同期) が追加され、``-1``
+    (上流に同期) は解決不能時にエラーへ変わった。**トップレベルの**離散専用
+    ブロックの旧 ``-1`` のうち上流に離散レート源がないものを ``"dt"`` に
+    書き換える — v0.57.0 の dt フォールバックの実行挙動と数値同一。上流に
+    離散レートを持つ ``-1`` と、無状態・デコレータ製の ``-1`` は不変。
+
+    注意 (code-reviewer SHOULD 2026-09-11): **Subsystem 内部**の離散専用
+    ``-1`` / ``"dt"`` は本 migration の対象外で、v0.58.0 の build 時ガード
+    (ADR-0014 既知制限の fail-closed 化) により load/run 時にエラーになる。
+    「migration すれば必ず動く」わけではない — 内部ブロックは明示周期への
+    手動修正が必要 (エラーメッセージが案内する)。トップレベルに関しては
+    数値挙動への影響なし (v0.56.0 以前の「無警告凍結」状態のモデルが動く
+    ようになる方向のみ)。
+    """
+    out = dict(data)
+    _rewire_unresolvable_inherited(out.get("blocks"), out.get("connections"))
+    out["schema_version"] = "0.13"
+    return out
+
+
 # -- 0.11 → 0.12 (output_type 撤去、v0.56.0) ---------------------------------
 
 _CONSTANT_TYPE = "flode.blocks.sources.Constant"
@@ -1005,6 +1163,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.9", "0.10")] = _builtin_migrate_0_9_to_0_10
     _MIGRATIONS[("0.10", "0.11")] = _builtin_migrate_0_10_to_0_11
     _MIGRATIONS[("0.11", "0.12")] = _builtin_migrate_0_11_to_0_12
+    _MIGRATIONS[("0.12", "0.13")] = _builtin_migrate_0_12_to_0_13
 
 
 _register_builtin_migrations()

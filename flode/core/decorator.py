@@ -33,7 +33,23 @@ import numpy as np
 import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
-from .block import Block
+from .block import BASE_CLOCK_SAMPLE_TIME, Block
+
+
+def _sample_time_is_statically_discrete(sample_time: float | str | None) -> bool:
+    """デコレータ呼び出し時に確定する「離散」判定 (SPEC-0030)。
+
+    ``"dt"`` (基準クロック同期) は周期の値こそ実行時 (Simulator.dt) だが、
+    離散であること自体は静的に確定する。``-1.0`` (上流に同期) はここでは
+    False (実行時の解決結果で分岐する、ADR-0003 Risk 4)。
+    """
+    if sample_time == BASE_CLOCK_SAMPLE_TIME:
+        return True
+    return (
+        isinstance(sample_time, (int, float))
+        and not isinstance(sample_time, bool)
+        and sample_time > 0.0
+    )
 
 _logger = logging.getLogger("flode.decorator")
 
@@ -56,7 +72,8 @@ class BlockStructure:
         n_outputs: 出力ポート数。
         n_states: 状態次元数。
         direct_feedthrough: 直達フラグ (推論または明示)。
-        sample_time: ``None`` / ``0.0`` (連続)、``> 0`` (離散)、``-1.0`` (継承)。
+        sample_time: ``None`` / ``0.0`` (連続)、``> 0`` (離散)、``-1.0``
+            (上流に同期)、``"dt"`` (基準クロックに同期、SPEC-0030)。
         input_names: 入力ポート名 (SPEC-0024 / ADR-0074)。空 tuple = 全ポート無名 (既定)。
             要素の空文字列は「そのポートだけ無名」。長さは 0 または ``n_inputs`` に一致。
         output_names: 出力ポート名。規則は ``input_names`` と同じ。
@@ -68,7 +85,7 @@ class BlockStructure:
     n_outputs: int
     n_states: int
     direct_feedthrough: bool
-    sample_time: float | None
+    sample_time: float | str | None
     input_names: tuple[str, ...] = ()
     output_names: tuple[str, ...] = ()
     has_u_arg: bool = True
@@ -82,7 +99,7 @@ def block(
     inputs: int | None = None,
     outputs: int | None = None,
     states: int = 0,
-    sample_time: float | None = None,
+    sample_time: float | str | None = None,
     direct_feedthrough: bool | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
@@ -103,7 +120,8 @@ def block(
         outputs: 出力ポート数の明示。省略時は戻り値の型注釈から推論。
         states: 状態次元数 (連続/離散共通)。0 で combinational。
         sample_time: ``None`` (default) または ``0.0`` で連続、``> 0`` で離散周期 [s]、
-            ``-1.0`` で上流から継承 (ADR-0002 §(1))。
+            ``-1.0`` で上流のレートに同期、``"dt"`` で基準クロック
+            (``Simulator.dt``) に同期 (ADR-0002 §(1) / SPEC-0030)。
         direct_feedthrough: ``None`` で自動推論 (``states == 0`` → ``True``、
             ``states > 0`` → ``False``)。明示 True/False で上書き。
         input_names: 入力ポート名の列 (SPEC-0024)。指定時は **長さがポート数と完全一致**
@@ -120,6 +138,14 @@ def block(
             失敗で ``inputs``/``outputs`` 未指定、class 版で ``output``/``derivative``
             等の必須メソッド欠落など)。
     """
+
+    # SPEC-0030: 文字列は "dt" (基準クロック同期) のみ。ここで早期検証しないと
+    # 後段の数値比較が生の TypeError になる (code-reviewer MUST 2026-09-11)
+    if isinstance(sample_time, str) and sample_time != BASE_CLOCK_SAMPLE_TIME:
+        raise BlockSpecError(
+            f"@block: sample_time={sample_time!r} is invalid. The only string "
+            f"value is {BASE_CLOCK_SAMPLE_TIME!r} (sync to the base clock dt)."
+        )
 
     def _decorate(target: Any) -> type[Block]:
         if isinstance(target, type):
@@ -160,7 +186,7 @@ def _build_class_from_function(
     inputs_override: int | None,
     outputs_override: int | None,
     n_states: int,
-    sample_time: float | None,
+    sample_time: float | str | None,
     direct_feedthrough_override: bool | None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
@@ -502,7 +528,7 @@ def _make_block_class(
     n_outputs: int,
     n_states: int,
     direct_feedthrough: bool,
-    sample_time: float | None,
+    sample_time: float | str | None,
     params_spec: list[tuple[str, Any, Any, bool]],
     u_arg_kind: str,
     y_arg_kind: str,
@@ -511,10 +537,11 @@ def _make_block_class(
     input_names: tuple[str, ...] = (),
     output_names: tuple[str, ...] = (),
 ) -> type[Block]:
-    # 連続/離散の確定判定。sample_time が確定値 (None / 0 / >0) なら
-    # デコレータ呼び出し時に決まる。``-1.0`` (継承) は ``Simulator`` がビルド時に
-    # 解決した ``_resolved_sample_time`` を見て実行時に分岐する (ADR-0003 Risk 4)。
-    static_is_discrete = sample_time is not None and sample_time > 0.0
+    # 連続/離散の確定判定。sample_time が確定値 (None / 0 / >0 / "dt") なら
+    # デコレータ呼び出し時に決まる。``-1.0`` (上流に同期) は ``Simulator`` が
+    # ビルド時に解決した ``_resolved_sample_time`` を見て実行時に分岐する
+    # (ADR-0003 Risk 4)。
+    static_is_discrete = _sample_time_is_statically_discrete(sample_time)
     is_inherited = sample_time == -1.0
 
     def _effective_is_discrete(instance: Block) -> bool:
@@ -739,7 +766,7 @@ def _build_class_from_class(
     inputs_override: int | None,
     outputs_override: int | None,
     n_states: int,
-    sample_time: float | None,
+    sample_time: float | str | None,
     direct_feedthrough_override: bool | None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
@@ -765,7 +792,7 @@ def _build_class_from_class(
     has_state = n_states > 0
     user_derivative = getattr(user_cls, "derivative", None) if has_state else None
     user_update = getattr(user_cls, "update", None) if has_state else None
-    is_discrete_static = sample_time is not None and sample_time > 0.0
+    is_discrete_static = _sample_time_is_statically_discrete(sample_time)
     is_inherited = sample_time == -1.0
 
     if has_state:
@@ -971,7 +998,7 @@ def _make_block_class_from_class(
     n_outputs: int,
     n_states: int,
     direct_feedthrough: bool,
-    sample_time: float | None,
+    sample_time: float | str | None,
     params_spec: list[tuple[str, Any, Any, bool]],
     u_arg_kind: str,
     y_arg_kind: str,

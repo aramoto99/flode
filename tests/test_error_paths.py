@@ -241,10 +241,15 @@ class TestUnitDelaySampleTimeBoundaryValues:
         b = UnitDelay(sample_time=1e-6)
         assert b.sample_time == pytest.approx(1e-6)
 
-    def test_block_sample_time_non_numeric_raises(self):
-        """sample_time が数値型でない場合は BlockSpecError。"""
+    def test_block_sample_time_unknown_string_raises(self):
+        """sample_time が "dt" 以外の文字列なら BlockSpecError (SPEC-0030)。"""
+        with pytest.raises(BlockSpecError, match="only string"):
+            UnitDelay(sample_time="0.01")
+
+    def test_block_sample_time_non_numeric_type_raises(self):
+        """sample_time が数値でも文字列でもない型なら BlockSpecError。"""
         with pytest.raises(BlockSpecError, match="must be a number"):
-            UnitDelay(sample_time="0.01")  # type: ignore[arg-type]
+            UnitDelay(sample_time=[0.01])  # type: ignore[arg-type]
 
 
 class TestMinimalSimulationOneStep:

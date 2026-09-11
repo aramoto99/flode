@@ -28,7 +28,7 @@ from ..exceptions import (
     SolverError,
     UnknownBlockIdError,
 )
-from .block import Block
+from .block import BASE_CLOCK_SAMPLE_TIME, Block
 from .dtypes import cast_value
 from .identifiers import fold_block_id, normalize_block_id, validate_block_id
 from .persistence import (
@@ -728,35 +728,50 @@ class Simulator:
         return True
 
     def _resolve_sample_times(self, order: list[Block]) -> None:
-        """継承サンプル時間 (``sample_time = -1.0``) を 2 相で解決する。
+        """サンプル時間のクロック解決 (SPEC-0030) を 2 相で行う。
 
         各ブロックの ``_resolved_sample_time`` 属性に決定値を格納する。
-        元の ``sample_time`` 属性は変更しない。
+        元の ``sample_time`` 属性は変更しない。語彙:
 
-        相 1: 順序に依存しない解決 (None/0 = 連続、> 0 = 明示値) を全ブロックで
-        先に確定する。相 2: ``-1`` (継承) ブロックを、上流に未解決の ``-1`` が
-        残っている間は先送りしながら固定点まで反復して解決する。
+        * ``None`` / ``0`` — 連続、``> 0`` — 明示周期 (系のクロック)
+        * ``"dt"`` — 基準クロック (``self.dt``) に同期 (常に解決可能)
+        * ``-1.0`` — 上流のレートに同期。上流に離散レートがなければ、
+          離散専用ブロック (``requires_discrete_rate=True``) は
+          ``BlockSpecError`` (fail-closed、"dt" と明示値を案内)。それ以外は
+          連続 (``@block`` デコレータ製の意図されたポリモーフィズム、ADR-0003)
 
-        Note:
-            v0.57.0 code-reviewer MUST 対応: 旧実装は ``_execution_order`` の
-            1 パスだったが、direct_feedthrough=False のブロック同士は依存辺を
-            持たないため順序が ``sim.add()`` 順に依存し、非 feedthrough 連鎖
-            (例: UnitDelay(0.03) → UnitDelay(-1)) で上流の明示レートを読み損ねて
-            dt に誤フォールバックしていた。2 相 + 固定点反復は追加順に依存しない。
-            ``-1`` 同士の循環 (固定点で解決が進まない残り) は、循環内の上流を
-            「レートなし」とみなして解決する (決定的、旧挙動と同等)。
+        相 1: 順序に依存しない解決 (連続 / 明示 / "dt") を全ブロックで先に確定。
+        相 2: ``-1`` ブロックを、上流に未解決の ``-1`` が残っている間は先送り
+        しながら固定点まで反復して解決する (v0.57.0 code-reviewer MUST 対応:
+        追加順に依存しない)。``-1`` 同士の循環は「循環内上流 = レートなし」で
+        一括判定する (決定的 — 離散専用ならエラー、それ以外は連続)。
         """
         pending: list[Block] = []
         for b in order:
             st = b.sample_time
-            if st is None or st == 0.0:
+            if st == BASE_CLOCK_SAMPLE_TIME:
+                # SPEC-0030: 基準クロックへの明示同期。宣言なので警告は出さない
+                b._resolved_sample_time = float(self.dt)
+            elif st is None or st == 0.0:
+                if b.requires_discrete_rate:
+                    # security MUST-2 (2026-09-11): 離散専用ブロックを連続扱いに
+                    # すると update() が呼ばれず x0 で無警告凍結する。-1 経路
+                    # だけでなく 0 / None の直接指定でも同じ穴が開くため
+                    # fail-closed に揃える
+                    raise BlockSpecError(
+                        f"Block {b.id!r}: sample_time={st!r} would make this "
+                        "discrete-only block continuous (it would never update). "
+                        f"Use a positive period, {BASE_CLOCK_SAMPLE_TIME!r} "
+                        "(base clock dt), or -1.0 (sync to upstream rate)."
+                    )
                 b._resolved_sample_time = None
-            elif st > 0.0:
+            elif isinstance(st, (int, float)) and st > 0.0:
                 b._resolved_sample_time = float(st)
             elif st == -1.0:
                 if not any(src is not None for src in b.input_sources):
                     raise BlockSpecError(
-                        f"Block {b.id!r} has sample_time=-1.0 (inherited) but no inputs"
+                        f"Block {b.id!r} has sample_time=-1.0 (sync to upstream) "
+                        "but no inputs"
                     )
                 pending.append(b)
             else:
@@ -775,21 +790,18 @@ class Simulator:
             discrete = [t for t in upstream if t is not None and t > 0.0]
             if not discrete:
                 if b.requires_discrete_rate:
-                    # ADR-0002 §(2) 改訂 (v0.57.0): 離散専用ブロックを連続扱いに
-                    # すると update() が呼ばれず x0 のまま無警告で凍結する
-                    # (仕様バグ、2026-09-09)。flode は常に固定 macro 格子を持つ
-                    # ため、格子 = dt にフォールバックする。
-                    b._resolved_sample_time = float(self.dt)
-                    _logger.warning(
-                        "Block %r: sample_time=-1.0 (inherited) found no discrete "
-                        "rate upstream; falling back to dt=%g. This block's rate "
-                        "now follows the model's dt setting — set an explicit "
-                        "sample_time to pin it.",
-                        b.id,
-                        self.dt,
+                    # SPEC-0030 (v0.58.0): 同期すべき上流レートが存在しない。
+                    # 連続扱いは無警告凍結 (v0.57.0 で修正したバグ)、暗黙の dt
+                    # フォールバックは 1 センチネル 2 意味の同居 (v0.57.0 案の
+                    # 欠点) — どちらも取らず、案内板型エラーで明示を求める
+                    raise BlockSpecError(
+                        f"Block {b.id!r}: sample_time=-1.0 (sync to upstream) but "
+                        "no upstream block carries a discrete rate. Use "
+                        f"sample_time={BASE_CLOCK_SAMPLE_TIME!r} to run on the "
+                        "base clock (dt), or set an explicit period for a device "
+                        "with its own clock."
                     )
-                else:
-                    b._resolved_sample_time = None
+                b._resolved_sample_time = None
             else:
                 distinct = sorted(set(discrete))
                 if len(distinct) > 1:

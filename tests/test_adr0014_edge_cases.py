@@ -223,12 +223,11 @@ def test_zero_order_hold_direct_inherits_sample_time_output_correct() -> None:
         assert arr[idx] == pytest.approx(expected, abs=1e-12)
 
 
-def test_zero_order_hold_direct_inherits_continuous_upstream_falls_back_to_dt() -> None:
-    """sample_time=-1.0 で上流が連続ブロック (Integrator) なら dt にフォールバックする。
+def test_zero_order_hold_direct_inherits_continuous_upstream_raises() -> None:
+    """sample_time=-1.0 で上流が連続ブロック (Integrator) のみならエラー (SPEC-0030)。
 
-    ADR-0002 §(2) 改訂 (v0.57.0): 離散専用ブロック (requires_discrete_rate=True)
-    は上流に離散レートがないとき dt を採用する。旧仕様 (None = 連続扱いの実質
-    パススルー) から挙動変更 — dt 周期で実際に hold する方が有用なため。
+    -1 (上流に同期) は同期先レートが存在しなければ fail-closed。基準クロックで
+    hold したい場合は sample_time="dt" を明示する (下のテスト)。
     """
     from flode.blocks.continuous import Integrator
 
@@ -240,9 +239,25 @@ def test_zero_order_hold_direct_inherits_continuous_upstream_falls_back_to_dt() 
     sim.connect(src, integ)
     sim.connect(integ, zohd)
     sim.connect(zohd, sc)
+
+    with pytest.raises(BlockSpecError, match="no upstream block carries a discrete rate"):
+        sim.run()
+
+
+def test_zero_order_hold_direct_base_clock_holds_at_dt() -> None:
+    """sample_time="dt" の ZOHDirect は基準クロック (dt) で実際に hold する。"""
+    from flode.blocks.continuous import Integrator
+
+    sim = Simulator(t_end=0.05, dt=0.01)
+    src = sim.add(Constant(value=1.0))
+    integ = sim.add(Integrator(x0=0.0))
+    zohd = sim.add(ZeroOrderHoldDirect(sample_time="dt", id="zohd"))
+    sc = sim.add(Scope(n_inputs=1))
+    sim.connect(src, integ)
+    sim.connect(integ, zohd)
+    sim.connect(zohd, sc)
     sim.run()
 
-    # 上流に離散レートなし → dt にフォールバック (連続扱いにしない)
     assert zohd._resolved_sample_time == pytest.approx(0.01)
 
 

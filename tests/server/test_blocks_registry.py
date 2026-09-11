@@ -443,16 +443,16 @@ class TestRegistryBuild:
                 f"{b['type_path']} has 'unknown' tag — _BUILTIN_DEFAULT_ARGS missing?"
             )
 
-    def test_unit_delay_palette_default_is_inherited(self) -> None:
-        """v0.57.0 (ADR-0002 §(2) 改訂): UnitDelay の palette drop 既定は -1 (継承)。
+    def test_unit_delay_palette_default_is_base_clock(self) -> None:
+        """v0.58.0 (SPEC-0030): UnitDelay の palette drop 既定は "dt" (基準クロック同期)。
 
-        「置けば dt で回る」を既定にする。他の離散ブロックはレート源 (ZOH 等)
-        または明示が適切なため 0.1 を維持する。
+        「置けば dt で回る」を暗黙フォールバックではなく明示宣言で実現する。
+        他の離散ブロックはレート源 (ZOH 等) または明示が適切なため 0.1 を維持。
         """
         from flode.server.registry import _BUILTIN_DEFAULT_ARGS
 
         assert _BUILTIN_DEFAULT_ARGS["flode.blocks.discrete.UnitDelay"] == {
-            "sample_time": -1.0
+            "sample_time": "dt"
         }
         assert _BUILTIN_DEFAULT_ARGS["flode.blocks.discrete.ZeroOrderHoldDirect"] == {
             "sample_time": 0.1

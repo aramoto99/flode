@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.58.0] - 2026-09-11 — sample_time のクロック配線化: "dt" 同期の新設と -1 の fail-closed 化
+
+### Changed (**破壊的変更** — v0.57.0 の暗黙フォールバックを 1 リリースで置き換え)
+
+- **`sample_time` の語彙を 1 意味 1 宣言に再設計** (SPEC-0030):
+  - **`"dt"` (文字列) を新設** — 基準クロック (Simulator.dt) に同期する明示宣言。
+    常に解決可能で、警告なしに dt で発火する。「観測・実験側の器具ブロック」の
+    正式な表現 (系のクロックは従来どおり明示値で)
+  - **`-1` は「上流のレートに同期」専用に** — 上流に離散レートがない場合、
+    離散専用ブロックは**エラー** (案内板型: "dt" と明示値の 2 択を提示)。
+    v0.57.0 の「暗黙で dt にフォールバック + 実行毎 WARNING」は廃止
+    (1 センチネルに 2 意味を同居させた補償としての警告だった)
+  - `@block` デコレータ製の「-1 + 連続上流 → 連続として動く」と無状態
+    ブロックの挙動は不変
+- **Subsystem 内部の `-1` / `"dt"` は明示エラーに** — 内部にはクロック解決が
+  走らないため (既知制限)、従来は無警告凍結だった。明示周期を要求する
+- schema **0.13**: 離散専用ブロックの旧 `-1` のうち上流に離散レート源が
+  ないものを `"dt"` に自動書き換え (v0.57.0 の実行挙動と数値同一)。
+  上流にレートを持つ `-1` は不変
+- GUI: Inspector の sample_time が **3 モード select** (基準クロック (dt) /
+  上流に同期 / 明示値) に。パレットの UnitDelay 既定は `"dt"`。
+  「継承」という呼称を「上流に同期」に変更
+- GUI 文言の再編: ダイアログ「モデル設定」→「**シミュレーション設定**」
+  (中身は solver/dt/許容誤差 = モデルの性質ではなく実行・観測の設定のため)、
+  セクション「ステップサイズ」→「サンプリング」、dt ラベル
+  「基本サンプル周期 dt (秒)」 — dt = 観測者のサンプリング周期という
+  意味論を UI 語彙に反映
+
+### Fixed (レビュー対応)
+
+- 離散専用ブロックの `sample_time=0` / `None` (連続扱い → update 不発火で
+  無警告凍結する別経路) も fail-closed エラーに (security MUST)
+- `@block` デコレータ / PythonFunction が `sample_time="dt"` を正式サポート
+  (従来は生の TypeError)。"dt" 以外の文字列は案内付きエラー
+- `sample_time` に bool (True = 黙って 1.0 秒) を拒否
+- migration のグラフ走査を O(V+E) に (レート源からの多始点 BFS。旧実装は
+  O(N²) で大きなモデルファイルが CPU 増幅になっていた — security MUST)。
+  深いネストでも RecursionError にならない反復走査に変更
+- `GET /files/content` は migration がどんな例外を出しても生データを返す
+  (非破壊 GET の契約維持)
+- GUI: 3 モード select は離散専用ブロック (registry が `requires_discrete_rate`
+  を配信、backend ClassVar が SSOT) にのみ表示。Subsystem スコープでは同期
+  モードを無効化し、パレット drop 時は既定 "dt" を現在の dt の数値に転記
+  (置いた瞬間に build 不能なモデルを作らない)
+
 ## [0.57.0] - 2026-09-10 — sample_time 継承の無警告凍結を修正
 
 ### Fixed

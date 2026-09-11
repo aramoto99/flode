@@ -212,6 +212,9 @@ export interface BlockMetadata {
   // ブロックは drop 時 / params 編集時に port 数を再計算する。
   n_inputs_resolver?: string;
   mask_capable: boolean;
+  // SPEC-0030 (v0.58.0): 離散専用ブロック = sample_time の同期モード
+  // (-1 / "dt") が有効。3 モード select の表示可否判定に使う (backend が SSOT)
+  requires_discrete_rate?: boolean;
 }
 
 // ADR-0021 §(5)(7): Subsystem mask param 宣言と現在値
@@ -339,7 +342,8 @@ export interface PythonFunctionSpec {
   n_outputs: number;
   n_states: number;
   direct_feedthrough: boolean;
-  sample_time: number | null;
+  // SPEC-0030: "dt" = 基準クロック同期 (文字列)。それ以外は数値または null
+  sample_time: number | string | null;
   params_spec: BlockParamSpec[];
   // SPEC-0024 (後方互換の純粋追加): ポート名と編集可否 (サーバ判定)
   input_names: string[];

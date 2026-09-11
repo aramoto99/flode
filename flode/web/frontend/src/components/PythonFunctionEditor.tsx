@@ -534,9 +534,11 @@ export function PythonFunctionEditor({
     commitParams({ user_params: { ...userParams, [p.name]: value } });
   };
 
-  const sampleTimeLabel = (st: number | null): string => {
+  const sampleTimeLabel = (st: number | string | null): string => {
     if (st === null || st === 0) return t("python_function.sample_time.continuous");
     if (st === -1) return t("python_function.sample_time.inherited");
+    // SPEC-0030: "dt" = 基準クロック同期
+    if (st === "dt") return t("inspector.sample_time.mode.base", "基準クロック (dt)");
     return String(st);
   };
 

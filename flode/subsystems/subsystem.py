@@ -24,6 +24,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..core.block import (
+    BASE_CLOCK_SAMPLE_TIME,
     Block,
     in_serialization_build,
     register_serialization_invalidation,
@@ -451,6 +452,33 @@ class Subsystem(Block):
             if callable(inner_build):
                 inner_build()
 
+        # SPEC-0030 (v0.58.0): Subsystem 内部の離散専用ブロック
+        # (requires_discrete_rate=True) の同期系 sample_time (-1 / "dt") は
+        # fail-closed に拒否する。内部にはクロック解決が走らないため (既知制限、
+        # ADR-0014)、これらは派生 sample_time 計算で連続と誤分類され、離散専用
+        # ブロックが無警告凍結する (v0.57.0 で修正したバグのネスト版)。
+        # requires_discrete_rate=False (無状態・デコレータ製ポリモーフィック) の
+        # -1 は「連続として動く」が正当な意味を持つため従来どおり許す (ルート
+        # レベルの解決規則と同じ線引き — code-reviewer SHOULD 2026-09-11)。
+        # なお無状態の "dt" は内部ではレート源にならない (解決が走らないため)
+        # 点だけルートと非対称だが、無害 (何も発火しない) なので拒否しない。
+        for b in self._inner_blocks:
+            st_inner = b.sample_time
+            if b.requires_discrete_rate and (
+                st_inner == BASE_CLOCK_SAMPLE_TIME
+                or st_inner == -1.0
+                # security MUST-2 (2026-09-11): 0 / None も連続誤分類 → 凍結経路
+                or st_inner is None
+                or st_inner == 0.0
+            ):
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: inner block {b.id!r} has "
+                    f"sample_time={st_inner!r}. Discrete-only blocks inside a "
+                    "Subsystem require an explicit positive period in this "
+                    f"release (synced values -1.0 / {BASE_CLOCK_SAMPLE_TIME!r} "
+                    "are unsupported here, and 0/None would silently freeze)."
+                )
+
         # Phase 2 では Subsystem 内部の連続+離散混在を拒否する
         # (code-reviewer MUST #1 修正: Phase 3 で外部スケジューラとの統合を再設計)。
         cont_states = [
@@ -461,7 +489,10 @@ class Subsystem(Block):
         disc_states = [
             b
             for b in self._inner_blocks
-            if b.n_states > 0 and b.sample_time is not None and b.sample_time > 0.0
+            # -1 / "dt" は上の拒否で除外済み → ここに来る非 None は数値のみ
+            if b.n_states > 0
+            and isinstance(b.sample_time, (int, float))
+            and b.sample_time > 0.0
         ]
         if cont_states and disc_states:
             raise BlockSpecError(
@@ -520,7 +551,7 @@ class Subsystem(Block):
         sample_times = [
             float(b.sample_time)
             for b in self._inner_blocks
-            if b.sample_time is not None and b.sample_time > 0.0
+            if isinstance(b.sample_time, (int, float)) and b.sample_time > 0.0
         ]
         if sample_times:
             self.sample_time = min(sample_times)

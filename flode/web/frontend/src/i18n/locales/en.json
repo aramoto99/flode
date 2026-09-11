@@ -26,7 +26,7 @@
   "menu.simulation": "Simulation",
   "menu.simulation.run": "Run",
   "menu.simulation.stop": "Stop",
-  "menu.simulation.model_settings": "Model Settings…",
+  "menu.simulation.model_settings": "Simulation Settings…",
   "menu.settings": "Settings",
   "menu.settings.language": "Language",
   "menu.settings.language.en": "English",
@@ -103,7 +103,6 @@
   "search.no_result": "No matches.",
   "search.truncated": "Showing first {{n}} results.",
   "menu.help.shortcuts": "Keyboard shortcuts",
-
   "toolbar.save": "Save (Ctrl+S)",
   "toolbar.undo": "Undo (Ctrl+Z)",
   "toolbar.redo": "Redo (Ctrl+Y)",
@@ -115,7 +114,6 @@
   "toolbar.stop_time": "Stop time",
   "toolbar.stop_time_tooltip": "Simulation stop time (s)",
   "simulation.stop_failed": "Stop request failed: {{message}}",
-
   "palette.search": "Search blocks…",
   "palette.loading": "Loading palette...",
   "palette.error": "Failed to load palette: {{message}}",
@@ -133,13 +131,11 @@
   "palette.category.userfunc": "User-Defined Functions",
   "palette.category.control": "Subsystem control",
   "palette.category.uncategorized": "Other",
-
   "quickadd.placeholder": "Search a block to insert…",
   "quickadd.loading": "Loading…",
   "quickadd.no_match": "No match.",
   "quickadd.footer_hint": "↑↓ Navigate · Enter Insert · Esc Cancel",
   "quickadd.aria": "Quick add block",
-
   "statusbar.idle": "Idle",
   "statusbar.running": "Running {{pct}}% (t={{t}})",
   "statusbar.running_unbounded": "Running t={{t}} (∞, press Stop)",
@@ -155,11 +151,9 @@
   "statusbar.label.t_end": "t_end:",
   "statusbar.label.dt": "dt:",
   "statusbar.unsaved_dot_title": "Unsaved (Ctrl+S)",
-
   "tabstrip.no_file": "No file",
   "tabstrip.unsaved_title": "Unsaved (Ctrl+S)",
   "tabstrip.close": "Close",
-
   "modal.close": "Close",
   "modal.button.cancel": "Cancel",
   "modal.button.save_as": "Save As",
@@ -167,18 +161,15 @@
   "modal.delete.title": "Delete Model",
   "modal.delete.message": "Permanently delete \"{{name}}.flw.json\"?",
   "modal.button.close": "Close",
-
   "modal.save_as.title": "Save As",
   "modal.save_as.label": "Workspace-relative path (POSIX, e.g. controllers/foo.flw.json):",
   "modal.save_as.invalid": "Path contains forbidden characters (backslash, control chars, leading slash).",
   "modal.save_as.conflict": "A file already exists at this path. Submitting will ask for overwrite confirmation.",
   "modal.save_as.overwrite_confirm": "Overwrite \"{{path}}\"?",
-
   "modal.dirty_confirm.title": "Unsaved changes",
   "modal.dirty_confirm.message": "You have unsaved changes in \"{{currentName}}\". Open \"{{nextName}}\" anyway?",
   "modal.dirty_confirm.discard": "Discard changes",
   "modal.dirty_confirm.save_and_open": "Save & Open",
-
   "modal.shortcuts.title": "Keyboard shortcuts",
   "modal.shortcuts.section.file": "File",
   "modal.shortcuts.section.edit": "Edit",
@@ -215,7 +206,6 @@
   "modal.shortcuts.desc.zen": "Toggle Zen mode (collapse side panels)",
   "modal.shortcuts.desc.run": "Run simulation",
   "modal.shortcuts.desc.stop": "Stop simulation",
-
   "filebrowser.title": "Workspace",
   "filebrowser.refresh": "Refresh",
   "filebrowser.collapse": "Collapse workspace",
@@ -245,17 +235,14 @@
   "filebrowser.breadcrumb.root": "Go to workspace root",
   "filebrowser.breadcrumb.up": "Go up one folder",
   "filebrowser.empty_folder": "(empty folder)",
-
   "panel.library": "Library",
   "panel.inspector": "Inspector",
   "panel.inspector.collapse": "Hide Inspector",
   "panel.inspector.expand": "Show Inspector",
-
   "activity.aria.tablist": "Sidebar mode",
   "activity.file": "Files",
   "activity.library": "Library",
   "activity.search": "Search",
-
   "command.palette.title": "Command Palette",
   "command.palette.placeholder": "Type a command (↑/↓ to navigate, Enter to run)",
   "command.palette.no_match": "No matching commands",
@@ -280,7 +267,6 @@
   "command.view.sidebar_search_path": "Search files by path",
   "command.view.sidebar_search_content": "Search files by content",
   "command.view.toggle_inspector": "Toggle inspector",
-
   "workspace.pane.title.diagram": "Diagram",
   "workspace.pane.title.scopes_stack": "Output",
   "workspace.pane.title.inspector": "Inspector",
@@ -306,15 +292,12 @@
   "workspace.split.disabled.all_separated": "All Scopes are already in separate panes",
   "workspace.scopes_stack.split_out_scope": "Move this Scope to its own pane",
   "workspace.scopes_stack.tablist": "Switch output tab",
-
   "app.empty.title": "No file open",
   "app.empty.hint_new": "File → New (Ctrl+N) to create a model",
   "app.scope.no_output": "No scope output. Run a simulation to plot data.",
   "app.inspector.locked": "Open a model to inspect block parameters.",
-
   "scopeview.no_data": "{{scope_id}}: (no data yet)",
   "xygraph.no_data": "(no data yet)",
-
   "inspector.empty": "Click a block in the diagram to edit its parameters.",
   "inspector.section.layout": "Layout",
   "inspector.section.parameters": "Parameters",
@@ -348,17 +331,14 @@
   "inspector.dtype.declared": "declared",
   "inspector.dtype.island": "Subsystem / PythonFunction boundary is float64 in this release",
   "inspector.dtype.state_via_float64": "State is stored as float64 in this release",
-  "inspector.sample_time.inherited_hint": "Inherited (-1): follows the upstream discrete rate; with no discrete upstream it runs at dt = {{dt}} s.",
-  "inspector.sample_time.fixed_hint": "Fixed period (does not follow dt). Use -1 to inherit.",
+  "inspector.sample_time.fixed_hint": "Fixed period (does not follow dt).",
   "inspector.mask.section_hint": "Mask parameters (declared on the Subsystem). Editing here updates the inner block placeholders on save.",
   "inspector.mask.autosave_hint": "Mask edits auto-save. Double-click the Subsystem to drill into its internal diagram.",
   "inspector.mask.suffix": "mask",
-
   "breadcrumb.aria": "Subsystem path",
   "breadcrumb.top": "Top",
   "breadcrumb.go_to": "go to {{id}}",
   "breadcrumb.current_scope": "current scope",
-
   "diagram.loading": "Loading model...",
   "diagram.load_failed": "Failed to load model: {{message}}",
   "diagram.no_model": "No model",
@@ -376,18 +356,15 @@
   "diagram.rename.not_normalized": "Name has an invalid normalization form (please re-enter)",
   "diagram.rename.duplicate": "A block with this name already exists: {{conflictId}}",
   "diagram.rename.confusable_duplicate": "A confusingly similar block name already exists (e.g. full-width vs half-width): {{conflictId}}",
-
   "palette.library_prefix": "Library",
-
   "toast.region": "Notifications",
   "toast.dismiss": "Dismiss notification",
-
-  "model_settings.title": "Model Settings",
+  "model_settings.title": "Simulation Settings",
   "model_settings.section.solver": "Solver",
-  "model_settings.section.step_size": "Step size",
+  "model_settings.section.step_size": "Sampling",
   "model_settings.section.tolerance": "Tolerance",
   "model_settings.dt_base_value": "Value",
-  "model_settings.description": "Solver and integration parameters. Stop time is on the toolbar.",
+  "model_settings.description": "How this model is executed and observed. Properties of the model itself live on block parameters. Stop time is edited in the toolbar.",
   "model_settings.solver": "Solver",
   "model_settings.solver_hint": "scipy solve_ivp method (RK45 = Dormand-Prince, default).",
   "model_settings.solver_desc.RK45": "Runge-Kutta method, orders 4-5 (default). General-purpose for non-stiff ODEs",
@@ -396,8 +373,8 @@
   "model_settings.solver_desc.Radau": "Implicit Runge-Kutta of order 5 (Radau IIA). For stiff problems",
   "model_settings.solver_desc.BDF": "Implicit multi-step backward differentiation (orders 1–5). For stiff problems",
   "model_settings.solver_desc.LSODA": "Adams ↔ BDF with automatic stiffness detection",
-  "model_settings.dt": "Base step dt (s)",
-  "model_settings.dt_hint": "Fixed grid for event firing and recording — not the integration step (continuous accuracy is governed by rtol/atol). Discrete blocks with sample_time=-1 follow this value.",
+  "model_settings.dt": "Base sample period dt (s)",
+  "model_settings.dt_hint": "Fixed grid for event firing and recording (the base clock) — not the integration step (continuous accuracy is governed by rtol/atol). Discrete blocks with sample_time=\"dt\" sync to this value.",
   "model_settings.rtol": "Relative tolerance",
   "model_settings.atol": "Absolute tolerance",
   "model_settings.dt_base": "dt_base override",
@@ -407,7 +384,6 @@
   "model_settings.invalid_number": "\"{{name}}\" must be a positive number.",
   "model_settings.button.save": "Save",
   "model_settings.button.cancel": "Cancel",
-
   "scope_tab.log": "Log",
   "log.empty": "No log entries yet",
   "error.prefix.start_failed": "Start failed: ",
@@ -466,5 +442,10 @@
   "python_function.params.reserved_x0": "x0 binds the initial state; it cannot be renamed or removed (its value is still editable).",
   "python_function.params.limit_reached": "At most 32 parameters.",
   "error.show_details": "Details (traceback)",
-  "error.copy": "Copy"
+  "error.copy": "Copy",
+  "inspector.sample_time.base_hint": "Synced to the base clock: fires at dt (currently {{dt}} s) and follows dt changes.",
+  "inspector.sample_time.upstream_hint": "Syncs to the upstream discrete rate. Errors if no upstream block carries a rate.",
+  "inspector.sample_time.mode.base": "Base clock (dt)",
+  "inspector.sample_time.mode.upstream": "Sync to upstream",
+  "inspector.sample_time.mode.explicit": "Explicit"
 }

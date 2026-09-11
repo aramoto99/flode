@@ -1525,6 +1525,28 @@ export function addBlockToEditing(
   const isOutport = block.type === OUTPORT_TYPE;
   const isPort = isInport || isOutport;
 
+  // SPEC-0030 (v0.58.0): Subsystem 内部では同期系 sample_time (-1 / "dt") が
+  // build 時に拒否されるため、非 root スコープへの新規配置ではパレット既定を
+  // 現在の dt の数値に転記する (置いた瞬間に build 不能なモデルを作らない —
+  // security SHOULD 2026-09-11)
+  if (path.length > 0) {
+    const st = (block.params as Record<string, unknown> | undefined)?.sample_time;
+    if (st === "dt" || st === -1) {
+      const dt = (
+        useAppStore.getState().editingModel?.simulator as
+          | Record<string, unknown>
+          | undefined
+      )?.dt;
+      block = {
+        ...block,
+        params: {
+          ...block.params,
+          sample_time: typeof dt === "number" ? dt : 0.1,
+        },
+      };
+    }
+  }
+
   useAppStore.getState().applyEditingModel((m) => {
     let updated = m;
 

@@ -26,6 +26,13 @@ from .identifiers import normalize_block_id, validate_block_id
 # ADR-0017 §(3): SM-A 互換 (rank-0 scalar) を表す port shape
 _SCALAR_SHAPE: tuple[int, ...] = ()
 
+#: SPEC-0030 (v0.58.0): ``sample_time`` の文字列値「基準クロック (Simulator.dt) に
+#: 同期」。系のクロック (明示値) とも上流同期 (-1) とも異なる第 3 の宣言で、
+#: 観測・実験側の器具ブロックが「シミュレーションの基準格子で動く」ことを
+#: 明示する (同期回路のクロック配線に相当)。常に解決可能 (基準クロックは
+#: 常に存在する)。文字列 param の先例は dtype="auto" (SPEC-0028)。
+BASE_CLOCK_SAMPLE_TIME: str = "dt"
+
 _logger = logging.getLogger("flode.core.block")
 
 # ---------------------------------------------------------------------------
@@ -165,7 +172,10 @@ class Block:
         direct_feedthrough: True なら入力 ``u`` が出力 ``y`` に直接影響する。
             False のブロック (Integrator, UnitDelay 等) が代数ループを切る。
         sample_time: ``None`` または ``0.0`` で連続、``> 0`` で離散周期 [s]、
-            ``-1.0`` で上流から継承 (Simulator がビルド時に解決)。
+            ``-1.0`` で上流のレートに同期 (ビルド時に解決。上流に離散レートが
+            なければ離散専用ブロックはエラー)、``"dt"``
+            (:data:`BASE_CLOCK_SAMPLE_TIME`) で基準クロック (Simulator.dt) に
+            同期 (SPEC-0030)。
         x0: 初期状態 (shape ``(n_states,)``)。
         input_sources: 各入力ポートの接続元 ``(Block, output_idx)``。``None`` は未接続。
         port_shapes_in: 各入力ポートの shape (``tuple[tuple[int, ...], ...]``)。
@@ -183,13 +193,14 @@ class Block:
     #: 型解決器 (``flode.core.dtypes``) が MRO 経由で読む (要求宣言の SSOT)。
     required_input_dtype: ClassVar[str | None] = None
 
-    #: ADR-0002 §(2) 改訂 (v0.57.0): ``sample_time=-1.0`` (継承) が上流に離散
-    #: レートを見つけられなかったときの解決先。``True`` = 連続として意味を
-    #: 持てない離散専用ブロック — ``Simulator.dt`` にフォールバックする
-    #: (連続扱いにすると ``update()`` が呼ばれず無警告で凍結するため)。
-    #: ``False`` (default) = 従来どおり連続 (None) に解決 — ``@block``
-    #: デコレータ製のポリモーフィックブロック (ADR-0003: -1 + 連続上流 →
-    #: 連続として動くのが意図された機能) と無状態ブロックはこちら。
+    #: ADR-0002 §(2) 改訂 (v0.57.0→v0.58.0): ``sample_time=-1.0`` (上流に同期) が
+    #: 上流に離散レートを見つけられなかったときの扱い。``True`` = 連続として
+    #: 意味を持てない離散専用ブロック — **BlockSpecError** にする (連続扱いだと
+    #: ``update()`` が呼ばれず無警告で凍結するため fail-closed。基準クロックで
+    #: 動かしたい場合は ``sample_time="dt"`` を明示する)。``False`` (default) =
+    #: 従来どおり連続 (None) に解決 — ``@block`` デコレータ製のポリモーフィック
+    #: ブロック (ADR-0003: -1 + 連続上流 → 連続として動くのが意図された機能) と
+    #: 無状態ブロックはこちら。
     requires_discrete_rate: ClassVar[bool] = False
 
     def __init__(
@@ -201,7 +212,7 @@ class Block:
         n_outputs: int = 1,
         n_states: int = 0,
         direct_feedthrough: bool = True,
-        sample_time: float | None = None,
+        sample_time: float | str | None = None,
         port_shapes_in: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
         port_shapes_out: tuple[tuple[int, ...], ...] | list[tuple[int, ...]] | None = None,
     ) -> None:
@@ -216,23 +227,40 @@ class Block:
         self._id: str | None = resolved_id
 
         if sample_time is not None:
-            if not isinstance(sample_time, (int, float)):
+            if isinstance(sample_time, str):
+                # SPEC-0030 (v0.58.0): "dt" = 基準クロック (Simulator.dt) に同期
+                if sample_time != BASE_CLOCK_SAMPLE_TIME:
+                    raise BlockSpecError(
+                        f"sample_time={sample_time!r} is invalid. The only string "
+                        f"value is {BASE_CLOCK_SAMPLE_TIME!r} (sync to the base "
+                        "clock dt). Numbers: None, 0.0 (continuous), >0 (discrete "
+                        "period), -1.0 (sync to upstream rate)."
+                    )
+            elif not isinstance(sample_time, (int, float)) or isinstance(
+                sample_time, bool
+            ):
+                # bool は int のサブクラスだが、True が黙って 1.0 秒周期になると
+                # migration の静的判定 (bool 除外) と実行時が乖離する
+                # (security SHOULD 2026-09-11)
                 raise BlockSpecError(
-                    f"sample_time must be a number or None, got {type(sample_time).__name__}"
+                    f"sample_time must be a number, {BASE_CLOCK_SAMPLE_TIME!r} or "
+                    f"None, got {type(sample_time).__name__}"
                 )
-            st = float(sample_time)
-            if st < 0.0 and st != -1.0:
-                raise BlockSpecError(
-                    f"sample_time={st} is invalid. Allowed: None, 0.0 (continuous), "
-                    f">0 (discrete period), or -1.0 (inherited)."
-                )
-            sample_time = st
+            else:
+                st = float(sample_time)
+                if st < 0.0 and st != -1.0:
+                    raise BlockSpecError(
+                        f"sample_time={st} is invalid. Allowed: None, 0.0 (continuous), "
+                        f">0 (discrete period), -1.0 (sync to upstream rate), or "
+                        f"{BASE_CLOCK_SAMPLE_TIME!r} (sync to the base clock dt)."
+                    )
+                sample_time = st
 
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
         self.n_states = n_states
         self.direct_feedthrough = direct_feedthrough
-        self.sample_time: float | None = sample_time
+        self.sample_time: float | str | None = sample_time
         self.x0: npt.NDArray[Any] = np.zeros(n_states)
         self.input_sources: list[tuple[Block, int] | None] = [None] * n_inputs
 

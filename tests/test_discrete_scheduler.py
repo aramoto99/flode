@@ -86,21 +86,20 @@ def test_inherited_sample_time_from_discrete_upstream():
     assert g._resolved_sample_time == 0.05
 
 
-def test_unit_delay_inherited_without_upstream_rate_falls_back_to_dt(caplog):
-    """バグ再現 (2026-09-09 オーナー報告): 上流に離散レートがない UnitDelay(-1) が
-    連続扱いに解決され、update が一度も呼ばれず x0 で無警告凍結していた。
+def test_base_clock_sample_time_runs_on_dt_without_warning(caplog):
+    """SPEC-0030: sample_time="dt" は基準クロック (dt) に同期して動く。
 
-    修正後: 離散専用ブロックの -1 は dt にフォールバックし、WARNING を出す。
-    Constant(1.0) → Add ← UnitDelay(-1) の加算ループが dt=0.01 で t_end=0.05 まで
-    に 6 tick (t=0..0.05) 進む。UnitDelay は 2-state augmentation (ADR-0015) の
-    ため feedback ループでは 2 fire で 1 増える系列 (1,2,2,3,3,4) になる。
+    明示宣言なので WARNING は出ない (v0.57.0 の暗黙フォールバック + WARNING は
+    廃止)。Constant(1.0) → Add ← UnitDelay("dt") の加算ループが dt=0.01 で
+    t_end=0.05 までに 6 tick 進む。UnitDelay は 2-state augmentation (ADR-0015)
+    のため feedback ループでは 2 fire で 1 増える系列 (1,2,2,3,3,4) になる。
     """
     from flode.blocks.mathops import Add
 
     sim = Simulator(t_end=0.05, dt=0.01)
     src = sim.add(Constant(value=1.0, id="src"))
     add = sim.add(Add(signs="++", id="add"))
-    delay = sim.add(UnitDelay(sample_time=-1.0, x0=0.0, id="delay"))
+    delay = sim.add(UnitDelay(sample_time="dt", x0=0.0, id="delay"))
     scope = sim.add(Scope(n_inputs=1, id="scope"))
     sim.connect(src, add, dst_idx=0)
     sim.connect(delay, add, dst_idx=1)
@@ -109,38 +108,133 @@ def test_unit_delay_inherited_without_upstream_rate_falls_back_to_dt(caplog):
     with caplog.at_level(logging.WARNING, logger="flode"):
         sim.run()
 
-    assert delay._resolved_sample_time == pytest.approx(0.01)  # dt にフォールバック
+    assert delay._resolved_sample_time == pytest.approx(0.01)
     values = scope.values[:, 0]
     assert values.tolist() == pytest.approx([1.0, 2.0, 2.0, 3.0, 3.0, 4.0])
-    assert values[-1] > values[0]  # 凍結していれば 1.0 のまま増えない
-    assert any(
-        "delay" in r.message and "dt" in r.message
-        for r in caplog.records
-        if r.levelno >= logging.WARNING
-    ), "フォールバックの WARNING が出ていない"
+    assert not any(
+        "delay" in r.message for r in caplog.records if r.levelno >= logging.WARNING
+    ), "明示宣言なのに WARNING が出ている"
 
 
-def test_discrete_integrator_inherited_without_upstream_rate_falls_back_to_dt():
-    """同型バグの横展開: DiscreteIntegrator(-1) も離散専用なので dt に落ちる。"""
+def test_inherited_without_upstream_rate_raises_with_guidance():
+    """SPEC-0030: 離散専用ブロックの -1 (上流に同期) は、上流に離散レートが
+    なければ fail-closed エラー。エラーは "dt" と明示値の 2 択を案内する。
+
+    v0.56.0 以前 = 無警告凍結 (バグ) / v0.57.0 = 暗黙 dt フォールバック + WARNING
+    (1 センチネル 2 意味の同居) を経て、1 意味 1 宣言に分割した最終形。
+    """
+    sim = Simulator(t_end=0.05, dt=0.01)
+    src = sim.add(Constant(value=1.0, id="src"))
+    delay = sim.add(UnitDelay(sample_time=-1.0, x0=0.0, id="delay"))
+    sim.connect(src, delay)
+
+    with pytest.raises(BlockSpecError, match="'dt'") as exc_info:
+        sim.run()
+    assert "no upstream block carries a discrete rate" in str(exc_info.value)
+
+
+def test_discrete_integrator_base_clock_runs_on_dt():
+    """DiscreteIntegrator("dt") も基準クロックで動く (前進 Euler、T=dt)。"""
     from flode.blocks.discrete import DiscreteIntegrator
 
     sim = Simulator(t_end=0.05, dt=0.01)
     src = sim.add(Constant(value=1.0, id="src"))
-    di = sim.add(DiscreteIntegrator(sample_time=-1.0, id="di"))
+    di = sim.add(DiscreteIntegrator(sample_time="dt", id="di"))
     scope = sim.add(Scope(n_inputs=1, id="scope"))
     sim.connect(src, di)
     sim.connect(di, scope)
     sim.run()
 
     assert di._resolved_sample_time == pytest.approx(0.01)
-    # 前進 Euler: t=0.05 で x ≈ 0.05 (凍結していれば 0.0 のまま)
     assert scope.values[-1, 0] == pytest.approx(0.05, abs=1e-12)
+
+
+def test_base_clock_is_inheritable_by_downstream_minus_one():
+    """"dt" ブロックは解決後に離散レート源になる → 下流の -1 が継承できる。"""
+    sim = Simulator(t_end=0.05, dt=0.01)
+    src = sim.add(Constant(value=1.0, id="src"))
+    d1 = sim.add(UnitDelay(sample_time="dt", x0=0.0, id="d1"))
+    d2 = sim.add(UnitDelay(sample_time=-1.0, x0=0.0, id="d2"))
+    sim.connect(src, d1)
+    sim.connect(d1, d2)
+    sim.run()
+
+    assert d2._resolved_sample_time == pytest.approx(0.01)
+
+
+def test_discrete_only_zero_sample_time_raises():
+    """security MUST-2 (2026-09-11): 離散専用ブロックの sample_time=0 (連続扱い)
+    は update が呼ばれず無警告凍結するため fail-closed エラー。"""
+    sim = Simulator(t_end=0.05, dt=0.01)
+    src = sim.add(Constant(value=1.0, id="src"))
+    delay = sim.add(UnitDelay(sample_time=0.0, x0=0.0, id="delay"))
+    sim.connect(src, delay)
+
+    with pytest.raises(BlockSpecError, match="would make this discrete-only block"):
+        sim.run()
+
+
+def test_sample_time_bool_is_rejected():
+    """security SHOULD (2026-09-11): bool は int のサブクラスだが黙って 1.0 秒
+    周期になると migration の静的判定 (bool 除外) と実行時が乖離するため拒否。"""
+    with pytest.raises(BlockSpecError, match="must be a number"):
+        UnitDelay(sample_time=True)  # type: ignore[arg-type]
+
+
+def test_registry_exposes_requires_discrete_rate():
+    """SPEC-0030: registry が requires_discrete_rate を配信する (GUI の 3 モード
+    select 表示可否の SSOT を backend ClassVar に置く)。"""
+    from flode.server.registry import build_block_registry, metadata_to_dict
+
+    entries = {m.type_path: m for m in build_block_registry()}
+    assert entries["flode.blocks.discrete.UnitDelay"].requires_discrete_rate is True
+    assert entries["flode.blocks.mathops.Gain"].requires_discrete_rate is False
+    assert (
+        metadata_to_dict(entries["flode.blocks.discrete.UnitDelay"])[
+            "requires_discrete_rate"
+        ]
+        is True
+    )
+
+
+def test_decorator_block_accepts_base_clock_sample_time():
+    """code-reviewer MUST (2026-09-11): @block(sample_time="dt") が生 TypeError
+    にならず、基準クロックで離散動作する。"""
+    from flode.core.decorator import block
+
+    @block(states=1, sample_time="dt", direct_feedthrough=False)
+    def dt_counter(
+        t: float, x: np.ndarray, u: float, *, x0: float = 0.0
+    ) -> tuple[float, np.ndarray]:
+        return x[0], np.array([x[0] + u])
+
+    sim = Simulator(t_end=0.05, dt=0.01)
+    src = sim.add(Constant(value=1.0, id="src"))
+    counter = sim.add(dt_counter(x0=0.0, id="counter"))
+    scope = sim.add(Scope(n_inputs=1, id="scope"))
+    sim.connect(src, counter)
+    sim.connect(counter, scope)
+    sim.run()
+
+    assert counter._resolved_sample_time == pytest.approx(0.01)
+    assert scope.values[-1, 0] > 0.0  # 発火して加算されている
+
+
+def test_decorator_block_rejects_unknown_string_sample_time():
+    """@block の sample_time は "dt" 以外の文字列を BlockSpecError で早期拒否。"""
+    from flode.core.decorator import block
+
+    with pytest.raises(BlockSpecError, match="only string"):
+
+        @block(sample_time="fast")
+        def bad(t: float, u: float) -> float:
+            return u
 
 
 def test_stateless_inherited_without_upstream_rate_stays_continuous():
     """無状態ブロック (Gain) の -1 + 連続上流は従来どおり連続 (None) のまま。
 
-    dt フォールバックは離散専用ブロック限定 — デコレータ製ポリモーフィック
+    -1 のエラー化は離散専用ブロック限定 — デコレータ製ポリモーフィック
     ブロックの「-1 → 連続」機能 (ADR-0003) と無状態ブロックの従来挙動を壊さない。
     """
     sim = Simulator(t_end=0.05, dt=0.01)
@@ -192,17 +286,17 @@ def test_inherited_chain_of_minus_one_resolves_transitively():
     assert d3._resolved_sample_time == pytest.approx(0.03)
 
 
-def test_inherited_cycle_of_minus_one_falls_back_deterministically():
-    """-1 同士の循環は「循環内上流 = レートなし」で一括解決 → 両方 dt に落ちる。"""
+def test_inherited_cycle_of_minus_one_raises_deterministically():
+    """-1 同士の循環は「循環内上流 = レートなし」の一括判定 → 離散専用なので
+    エラー (SPEC-0030: 同期すべきレート源が循環内に存在しない)。"""
     sim = Simulator(t_end=0.03, dt=0.01)
     a = sim.add(UnitDelay(sample_time=-1.0, x0=1.0, id="a"))
     b = sim.add(UnitDelay(sample_time=-1.0, x0=2.0, id="b"))
     sim.connect(a, b)
     sim.connect(b, a)
-    sim.run()
 
-    assert a._resolved_sample_time == pytest.approx(0.01)
-    assert b._resolved_sample_time == pytest.approx(0.01)
+    with pytest.raises(BlockSpecError, match="no upstream block carries a discrete rate"):
+        sim.run()
 
 
 def test_discrete_only_builtins_declare_requires_discrete_rate():
@@ -264,7 +358,7 @@ def test_inherited_with_no_inputs_raises():
     src = sim.add(Constant(value=1.0, id="src"))
     src.sample_time = -1.0  # invalid for 0-input block
 
-    with pytest.raises(BlockSpecError, match="inherited"):
+    with pytest.raises(BlockSpecError, match="sync to upstream"):
         sim.run()
 
 

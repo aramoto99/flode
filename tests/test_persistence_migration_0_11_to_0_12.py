@@ -21,14 +21,12 @@ import pytest
 
 from flode import Simulator
 from flode.core.persistence import (
-    CURRENT_SCHEMA_VERSION,
     _builtin_migrate_0_11_to_0_12,
     migrate_to_current,
 )
 
-
-def test_current_schema_version_is_0_12() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.12"
+# CURRENT_SCHEMA_VERSION の pin は最新の migration テストファイル
+# (test_persistence_migration_0_12_to_0_13.py) に集約
 
 
 def _model_0_11(blocks: list[dict[str, Any]], connections: list[Any] | None = None) -> dict[str, Any]:
@@ -491,7 +489,7 @@ class TestChainAndEquivalence:
     def test_chain_from_0_11_reaches_current(self) -> None:
         data = _model_0_11([])
         out = migrate_to_current(data)
-        assert out["schema_version"] == "0.12"
+        assert out["schema_version"] == "0.13"
         assert out["_migrated_from"] == "0.11"
 
     def test_migrated_model_runs_with_identical_values(self, tmp_path: Path) -> None:

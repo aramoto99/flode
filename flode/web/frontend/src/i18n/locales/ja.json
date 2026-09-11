@@ -26,7 +26,7 @@
   "menu.simulation": "シミュレーション",
   "menu.simulation.run": "実行",
   "menu.simulation.stop": "停止",
-  "menu.simulation.model_settings": "モデル設定…",
+  "menu.simulation.model_settings": "シミュレーション設定…",
   "menu.settings": "設定",
   "menu.settings.language": "言語",
   "menu.settings.language.en": "English",
@@ -103,7 +103,6 @@
   "search.no_result": "一致なし。",
   "search.truncated": "最初の {{n}} 件のみ表示。",
   "menu.help.shortcuts": "キーボードショートカット",
-
   "toolbar.save": "保存 (Ctrl+S)",
   "toolbar.undo": "元に戻す (Ctrl+Z)",
   "toolbar.redo": "やり直し (Ctrl+Y)",
@@ -115,7 +114,6 @@
   "toolbar.stop_time": "終了時刻",
   "toolbar.stop_time_tooltip": "シミュレーション終了時刻 (秒)",
   "simulation.stop_failed": "停止要求が失敗しました: {{message}}",
-
   "palette.search": "ブロックを検索…",
   "palette.loading": "パレットを読み込み中...",
   "palette.error": "パレットの読み込みに失敗: {{message}}",
@@ -133,13 +131,11 @@
   "palette.category.userfunc": "ユーザー定義関数",
   "palette.category.control": "Subsystem 制御",
   "palette.category.uncategorized": "その他",
-
   "quickadd.placeholder": "挿入するブロックを検索…",
   "quickadd.loading": "読み込み中…",
   "quickadd.no_match": "該当なし。",
   "quickadd.footer_hint": "↑↓ 移動 · Enter 挿入 · Esc キャンセル",
   "quickadd.aria": "クイック追加",
-
   "statusbar.idle": "待機中",
   "statusbar.running": "実行中 {{pct}}% (t={{t}})",
   "statusbar.running_unbounded": "実行中 t={{t}} (∞、停止ボタンで終了)",
@@ -155,11 +151,9 @@
   "statusbar.label.t_end": "t_end:",
   "statusbar.label.dt": "dt:",
   "statusbar.unsaved_dot_title": "未保存 (Ctrl+S)",
-
   "tabstrip.no_file": "ファイルなし",
   "tabstrip.unsaved_title": "未保存 (Ctrl+S)",
   "tabstrip.close": "閉じる",
-
   "modal.close": "閉じる",
   "modal.button.cancel": "キャンセル",
   "modal.button.save_as": "名前を付けて保存",
@@ -167,18 +161,15 @@
   "modal.delete.title": "モデルを削除",
   "modal.delete.message": "「{{name}}.flw.json」を完全に削除しますか?",
   "modal.button.close": "閉じる",
-
   "modal.save_as.title": "名前を付けて保存",
   "modal.save_as.label": "ワークスペース相対パス (POSIX 形式、例: controllers/foo.flw.json):",
   "modal.save_as.invalid": "使用できない文字が含まれています (バックスラッシュ / 制御文字 / 先頭スラッシュ)。",
   "modal.save_as.conflict": "同名のファイルが既に存在します。決定時に上書き確認します。",
   "modal.save_as.overwrite_confirm": "「{{path}}」を上書きしますか?",
-
   "modal.dirty_confirm.title": "未保存の変更",
   "modal.dirty_confirm.message": "「{{currentName}}」に未保存の変更があります。「{{nextName}}」を開きますか?",
   "modal.dirty_confirm.discard": "変更を破棄",
   "modal.dirty_confirm.save_and_open": "保存して開く",
-
   "modal.shortcuts.title": "キーボードショートカット",
   "modal.shortcuts.section.file": "ファイル",
   "modal.shortcuts.section.edit": "編集",
@@ -215,7 +206,6 @@
   "modal.shortcuts.desc.zen": "Zen モード切替 (両サイドパネルを折りたたみ)",
   "modal.shortcuts.desc.run": "シミュレーション実行",
   "modal.shortcuts.desc.stop": "シミュレーション停止",
-
   "filebrowser.title": "ワークスペース",
   "filebrowser.refresh": "更新",
   "filebrowser.collapse": "ワークスペースを折りたたむ",
@@ -245,17 +235,14 @@
   "filebrowser.breadcrumb.root": "ワークスペースのルートへ",
   "filebrowser.breadcrumb.up": "上のフォルダへ",
   "filebrowser.empty_folder": "(空のフォルダ)",
-
   "panel.library": "ライブラリ",
   "panel.inspector": "インスペクタ",
   "panel.inspector.collapse": "インスペクタを隠す",
   "panel.inspector.expand": "インスペクタを表示",
-
   "activity.aria.tablist": "サイドバーモード切替",
   "activity.file": "ファイル",
   "activity.library": "ライブラリ",
   "activity.search": "検索",
-
   "command.palette.title": "コマンドパレット",
   "command.palette.placeholder": "コマンドを入力 (上下キーで選択、Enter で実行)",
   "command.palette.no_match": "該当するコマンドがありません",
@@ -280,7 +267,6 @@
   "command.view.sidebar_search_path": "サイドバー: 検索 (パス)",
   "command.view.sidebar_search_content": "サイドバー: 検索 (内容)",
   "command.view.toggle_inspector": "インスペクタの表示切替",
-
   "workspace.pane.title.diagram": "ダイアグラム",
   "workspace.pane.title.scopes_stack": "出力",
   "workspace.pane.title.inspector": "インスペクタ",
@@ -306,15 +292,12 @@
   "workspace.split.disabled.all_separated": "すべての Scope が既に別ペインに分離されています",
   "workspace.scopes_stack.split_out_scope": "この Scope を個別ペインに分離",
   "workspace.scopes_stack.tablist": "出力タブ切替",
-
   "app.empty.title": "ファイルが開かれていません",
   "app.empty.hint_new": "ファイル → 新規 (Ctrl+N) でモデルを作成",
   "app.scope.no_output": "Scope 出力なし。シミュレーションを実行するとデータが描画されます。",
   "app.inspector.locked": "モデルを開くとブロックのパラメータを編集できます。",
-
   "scopeview.no_data": "{{scope_id}}: (データ未受信)",
   "xygraph.no_data": "(データ未受信)",
-
   "inspector.empty": "ブロックをクリックするとパラメータを編集できます。",
   "inspector.section.layout": "レイアウト",
   "inspector.section.parameters": "パラメータ",
@@ -348,17 +331,14 @@
   "inspector.dtype.declared": "宣言",
   "inspector.dtype.island": "このリリースでは Subsystem / PythonFunction 境界は float64 です",
   "inspector.dtype.state_via_float64": "このリリースでは状態を float64 で保持します",
-  "inspector.sample_time.inherited_hint": "継承 (-1): 上流の離散レートに追従。上流に離散がなければ dt = {{dt}} s で動作します。",
-  "inspector.sample_time.fixed_hint": "固定周期 (dt を変えても追従しません)。-1 で継承。",
+  "inspector.sample_time.fixed_hint": "固定周期 (dt を変えても追従しません)。",
   "inspector.mask.section_hint": "Subsystem に宣言されたマスクパラメータです。保存時に内部ブロックのプレースホルダに反映されます。",
   "inspector.mask.autosave_hint": "マスクの編集は自動保存されます。Subsystem をダブルクリックすると内部図に移動できます。",
   "inspector.mask.suffix": "マスク",
-
   "breadcrumb.aria": "Subsystem パス",
   "breadcrumb.top": "トップ",
   "breadcrumb.go_to": "{{id}} に戻る",
   "breadcrumb.current_scope": "現在のスコープ",
-
   "diagram.loading": "モデルを読み込み中...",
   "diagram.load_failed": "モデルの読み込みに失敗: {{message}}",
   "diagram.no_model": "モデルなし",
@@ -376,18 +356,15 @@
   "diagram.rename.not_normalized": "名前の正規化形式が不正です (もう一度入力してください)",
   "diagram.rename.duplicate": "同じ名前のブロックが既にあります: {{conflictId}}",
   "diagram.rename.confusable_duplicate": "見た目が似た名前のブロックが既にあります (全角/半角違いなど): {{conflictId}}",
-
   "palette.library_prefix": "ライブラリ",
-
   "toast.region": "通知",
   "toast.dismiss": "通知を閉じる",
-
-  "model_settings.title": "モデル設定",
+  "model_settings.title": "シミュレーション設定",
   "model_settings.section.solver": "ソルバ",
-  "model_settings.section.step_size": "ステップサイズ",
+  "model_settings.section.step_size": "サンプリング",
   "model_settings.section.tolerance": "許容誤差",
   "model_settings.dt_base_value": "値",
-  "model_settings.description": "ソルバと積分のパラメータ。「終了時刻」はツールバー側で編集します。",
+  "model_settings.description": "このモデルをどう実行・観測するかの設定。モデル自体の性質はブロックのパラメータで設定します。「終了時刻」はツールバー側で編集します。",
   "model_settings.solver": "ソルバ",
   "model_settings.solver_hint": "scipy solve_ivp の method (RK45 = Dormand-Prince、既定)。",
   "model_settings.solver_desc.RK45": "4-5 次の Runge-Kutta 法（既定）。非剛性 ODE 向けの汎用ソルバ",
@@ -396,8 +373,8 @@
   "model_settings.solver_desc.Radau": "5 次の陰的 Runge-Kutta 法（Radau IIA）。剛性問題向け",
   "model_settings.solver_desc.BDF": "後退差分による陰的多段法（1〜5 次）。剛性問題向け",
   "model_settings.solver_desc.LSODA": "Adams 法 ↔ BDF を剛性検出で自動切替",
-  "model_settings.dt": "基本ステップ dt (秒)",
-  "model_settings.dt_hint": "イベント発火・記録の固定格子。積分刻みではありません (連続系の精度は許容誤差 rtol/atol が制御)。sample_time=-1 の離散ブロックはこの値に追従します。",
+  "model_settings.dt": "基本サンプル周期 dt (秒)",
+  "model_settings.dt_hint": "イベント発火・記録の固定格子 (基準クロック)。積分刻みではありません (連続系の精度は許容誤差 rtol/atol が制御)。sample_time=\"dt\" の離散ブロックはこの値に同期します。",
   "model_settings.rtol": "相対許容誤差",
   "model_settings.atol": "絶対許容誤差",
   "model_settings.dt_base": "dt_base 明示指定",
@@ -407,7 +384,6 @@
   "model_settings.invalid_number": "「{{name}}」は正の数値で入力してください。",
   "model_settings.button.save": "保存",
   "model_settings.button.cancel": "キャンセル",
-
   "scope_tab.log": "ログ",
   "log.empty": "ログはまだありません",
   "error.prefix.start_failed": "起動失敗: ",
@@ -430,7 +406,7 @@
   "python_function.states": "状態",
   "python_function.sample_time": "サンプル時間",
   "python_function.sample_time.continuous": "連続",
-  "python_function.sample_time.inherited": "継承",
+  "python_function.sample_time.inherited": "上流に同期",
   "python_function.feedthrough": "直達",
   "python_function.analysing": "解析中...",
   "python_function.analysis_failed": "解析できません",
@@ -466,5 +442,10 @@
   "python_function.params.reserved_x0": "x0 は状態の初期値の束縛のため、名前の変更と削除はできません (値は編集できます)。",
   "python_function.params.limit_reached": "パラメータは最大 32 個です。",
   "error.show_details": "詳細 (traceback)",
-  "error.copy": "コピー"
+  "error.copy": "コピー",
+  "inspector.sample_time.base_hint": "基準クロックに同期: dt (現在 {{dt}} s) で発火します。dt を変えると追従します。",
+  "inspector.sample_time.upstream_hint": "上流の離散レートに同期します。上流にレートを持つブロックがない場合はエラーになります。",
+  "inspector.sample_time.mode.base": "基準クロック (dt)",
+  "inspector.sample_time.mode.upstream": "上流に同期",
+  "inspector.sample_time.mode.explicit": "明示値"
 }

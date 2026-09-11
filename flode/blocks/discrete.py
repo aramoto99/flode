@@ -54,18 +54,19 @@ class UnitDelay(Block):
     ``direct_feedthrough=False`` なので閉ループ内で代数ループを切る用途にも使える。
 
     Args:
-        sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
+        sample_time: サンプル周期 [s]。``> 0`` = 明示周期 / ``-1.0`` = 上流の
+            レートに同期 / ``"dt"`` = 基準クロック (Simulator.dt) に同期 (SPEC-0030)。
         x0: 初期状態 (= t=0 での出力値)。内部では state[0]=state[1]=x0 に展開する。
     """
 
-    # ADR-0002 §(2) 改訂 (v0.57.0): 連続として動けない離散専用ブロック。
-    # -1 継承で上流に離散レートがなければ dt にフォールバックする (凍結防止)
+    # SPEC-0030: 連続として動けない離散専用ブロック。-1 (上流に同期) が
+    # 解決できなければエラーにする (凍結防止の fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
         *,
-        sample_time: float,
+        sample_time: float | str,
         x0: float = 0.0,
         id: str | None = None,
         name: str | None = None,
@@ -84,7 +85,7 @@ class UnitDelay(Block):
         # 境界で fire するまで buffer も x0)。
         self.x0 = np.array([float(x0), float(x0)])
         # JSON serialize 時は scalar の ``x0`` を保持 (ADR-0015 §(4))。
-        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
+        self._params = {"sample_time": self.sample_time, "x0": float(x0)}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
@@ -106,20 +107,21 @@ class DiscreteIntegrator(Block):
     閉ループ内の代数ループ切断にも使える。
 
     Args:
-        sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
+        sample_time: サンプル周期 [s]。``> 0`` = 明示周期 / ``-1.0`` = 上流の
+            レートに同期 / ``"dt"`` = 基準クロック (Simulator.dt) に同期 (SPEC-0030)。
         gain: 入力に掛けるゲイン (積分定数)。
         x0: 初期状態。内部では state[0]=state[1]=x0 に展開する。
     """
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
-    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    # SPEC-0030: 離散専用 — -1 (上流に同期) が解決できなければエラー (fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
         *,
-        sample_time: float,
+        sample_time: float | str,
         gain: float = 1.0,
         x0: float = 0.0,
         id: str | None = None,
@@ -139,7 +141,7 @@ class DiscreteIntegrator(Block):
         self.x0 = np.array([float(x0), float(x0)])
         # JSON serialize 時は scalar の x0 を維持 (ADR-0015 §(4))
         self._params = {
-            "sample_time": float(sample_time),
+            "sample_time": self.sample_time,
             "gain": self.gain,
             "x0": float(x0),
         }
@@ -321,19 +323,20 @@ class ZeroOrderHoldDirect(Block):
     1 サンプル遅延する (``y(t_0) = x0``、``y(t_{k+1}) = u(t_k)``)。
 
     Args:
-        sample_time: サンプル周期 [s]。``> 0`` 必須 (継承 ``-1.0`` も可)。
+        sample_time: サンプル周期 [s]。``> 0`` = 明示周期 / ``-1.0`` = 上流の
+            レートに同期 / ``"dt"`` = 基準クロック (Simulator.dt) に同期 (SPEC-0030)。
         x0: 初回サンプル前のフォールバック値。t=0 がサンプル時刻なら直ちに
             ``u(0)`` で上書きされるため、通常はテスト結果に影響しない。
     """
 
-    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
-    # (従来の「連続扱い = 実質パススルー」から挙動変更 — dt で実際に hold する)
+    # SPEC-0030: 離散専用 — -1 (上流に同期) が解決できなければエラー (fail-closed)。
+    # 基準クロックで hold したい場合は sample_time="dt" を明示する
     requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
         self,
         *,
-        sample_time: float,
+        sample_time: float | str,
         x0: float = 0.0,
         id: str | None = None,
         name: str | None = None,
@@ -348,7 +351,7 @@ class ZeroOrderHoldDirect(Block):
             sample_time=sample_time,
         )
         self.x0 = np.array([float(x0)])
-        self._params = {"sample_time": float(sample_time), "x0": float(x0)}
+        self._params = {"sample_time": self.sample_time, "x0": float(x0)}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         ts = self._resolved_sample_time
@@ -400,7 +403,7 @@ class DiscreteStateSpace(Block):
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
-    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    # SPEC-0030: 離散専用 — -1 (上流に同期) が解決できなければエラー (fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
@@ -411,7 +414,7 @@ class DiscreteStateSpace(Block):
         D: npt.NDArray[Any] | None = None,
         x0: npt.NDArray[Any] | None = None,
         *,
-        sample_time: float,
+        sample_time: float | str,
         id: str | None = None,
         name: str | None = None,
     ):
@@ -481,7 +484,7 @@ class DiscreteStateSpace(Block):
             "C": C_arr,
             "D": D_arr,
             "x0": x0_user,
-            "sample_time": float(sample_time),
+            "sample_time": self.sample_time,
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -521,7 +524,7 @@ class DiscreteTransferFunction(Block):
 
     # D-4 (SPEC-0028 Q11): 離散 LTI ブロックは入力に float64 を要求する
     required_input_dtype: ClassVar[str | None] = "float64"
-    # ADR-0002 §(2) 改訂 (v0.57.0): -1 継承で離散レートがなければ dt にフォールバック
+    # SPEC-0030: 離散専用 — -1 (上流に同期) が解決できなければエラー (fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
 
     def __init__(
@@ -530,7 +533,7 @@ class DiscreteTransferFunction(Block):
         denominator: npt.NDArray[Any] | list[float],
         x0: npt.NDArray[Any] | None = None,
         *,
-        sample_time: float,
+        sample_time: float | str,
         id: str | None = None,
         name: str | None = None,
     ):
@@ -593,7 +596,7 @@ class DiscreteTransferFunction(Block):
             "numerator": num,
             "denominator": den,
             "x0": x0_user,
-            "sample_time": float(sample_time),
+            "sample_time": self.sample_time,
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:

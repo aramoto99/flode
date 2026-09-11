@@ -340,6 +340,15 @@ def get_content(request: Request, path: str, response: Response) -> dict[str, An
             content = migrate_to_current(content)
         except (SchemaVersionError, ModelLoadError) as e:
             _logger.warning("Model %s left unmigrated: %s", path, e)
+        except Exception:  # noqa: BLE001 - GET は非破壊: どんな入力でも生データを返す
+            # 敵対的/壊れた JSON (深いネストの RecursionError、非 list の blocks の
+            # TypeError 等) で 500 を返すと「生のまま返す」契約が破れる
+            # (security SHOULD 2026-09-11)。正式なエラー報告は Simulator.load 側
+            _logger.warning(
+                "Model %s left unmigrated (unexpected migration failure)",
+                path,
+                exc_info=True,
+            )
     response.headers["ETag"] = etag
     return {
         "path": path,

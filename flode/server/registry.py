@@ -95,6 +95,10 @@ class BlockMetadata:
     # ADR-0021 §(5): GUI ドリルダウン / マスクパラメータ可否のヒント
     is_container: bool = False
     mask_capable: bool = False
+    # SPEC-0030 (v0.58.0): 離散専用ブロック (= sample_time の同期モード -1/"dt"
+    # が有効なブロック)。frontend の 3 モード select の表示可否判定に使う
+    # (Python 側 ClassVar が SSOT、二重実装しない)
+    requires_discrete_rate: bool = False
     # ADR-0028: locale → field → str の翻訳テーブル。``_BLOCK_TRANSLATIONS`` 未登録の
     # type_path では空 dict (= 旧 ``display_name`` / ``docstring_summary`` のみ提供)。
     display_name_i18n: dict[str, str] = field(default_factory=dict)
@@ -353,9 +357,9 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "denominator": [1.0, 1.0],
         "sample_time": 0.1,
     },
-    # v0.57.0 (ADR-0002 §(2) 改訂): 既定 -1 = 継承 (上流の離散レート、なければ dt)。
-    # 「置けば dt で回る」= 直感どおりの既定。他の離散ブロックは明示 0.1 を維持
-    "flode.blocks.discrete.UnitDelay": {"sample_time": -1.0},
+    # v0.58.0 (SPEC-0030): 既定 "dt" = 基準クロックに同期。「置けば dt で回る」を
+    # 暗黙のフォールバックではなく明示宣言で実現する。他の離散ブロックは明示 0.1
+    "flode.blocks.discrete.UnitDelay": {"sample_time": "dt"},
     # SPEC-0015: delay_time / sample_time 共に required。palette drop 用 default
     "flode.blocks.transport_delay.TransportDelay": {
         "delay_time": 1.0,
@@ -793,6 +797,7 @@ def build_metadata(cls: type) -> BlockMetadata:
         search_keywords=_resolve_search_keywords(cls),
         is_container=is_container,
         mask_capable=is_container,  # Phase 3 では Subsystem のみ mask 宣言可
+        requires_discrete_rate=bool(getattr(cls, "requires_discrete_rate", False)),
         # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver
         n_inputs_resolver=_BUILTIN_DYNAMIC_PORTS.get(type_path),
         display_name_i18n=display_name_i18n,
@@ -891,6 +896,8 @@ def metadata_to_dict(
         "search_keywords": meta.search_keywords,
         "is_container": meta.is_container,
         "mask_capable": meta.mask_capable,
+        # SPEC-0030: sample_time の同期モード (-1/"dt") が有効なブロックか
+        "requires_discrete_rate": meta.requires_discrete_rate,
     }
     # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver (optional)。
     # ``None`` のとき payload に乗せない (= 既存 builtin の後方互換)。

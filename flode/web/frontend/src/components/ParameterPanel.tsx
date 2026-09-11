@@ -329,34 +329,99 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             // 未対応 (float64 island、backend が build 時に拒否) — 非 root スコープ
             // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
             const dtypeDisabled = k === "dtype" && editingPath.length > 0;
-            // v0.57.0 (ADR-0002 §(2) 改訂): sample_time の実効周期ヒント。
-            // 規則の説明のみ表示し、解決値のグラフ再計算は frontend でしない
-            // (二重実装回避 — 権威ある解決値は実行時 WARNING が報告する)。
-            // NOTE: inherited_hint の「なければ dt」文言は「GUI で sample_time を
-            // 露出するブロックは全て requires_discrete_rate=True」という現状の
-            // 前提に依存する。前提が崩れる新規ブロックを足す場合は registry 経由で
-            // フラグを渡して文言を分岐させること (SPEC-0029 §4)
-            const sampleTimeNum =
-              k === "sample_time" && valueType === "number"
-                ? draft[k] !== undefined
-                  ? parseNumericInput(draft[k])
-                  : (v as number)
-                : null;
+            // SPEC-0030 (v0.58.0): sample_time は 3 モード select
+            // (基準クロック "dt" / 上流に同期 -1 / 明示値)。ヒントは規則の説明の
+            // み表示し、解決値のグラフ再計算は frontend でしない (二重実装回避)。
+            // NOTE: 文言は「GUI で sample_time を露出するブロックは全て
+            // requires_discrete_rate=True」という現状の前提に依存する。前提が
+            // 崩れる新規ブロックを足す場合は registry 経由でフラグを渡して
+            // 文言を分岐させること (SPEC-0030 §4)
+            // 3 モード select は離散専用ブロック (registry の
+            // requires_discrete_rate、backend ClassVar が SSOT) にのみ出す。
+            // RandomSource 等 (>0 のみ受理) は従来の数値入力のまま —
+            // 選ぶだけで不正値が commit される UI を作らない
+            // (security SHOULD 2026-09-11)
+            const sampleTimeMode =
+              k !== "sample_time" || blockMeta?.requires_discrete_rate !== true
+                ? null
+                : v === "dt"
+                  ? ("base" as const)
+                  : valueType === "number"
+                    ? v === -1
+                      ? ("upstream" as const)
+                      : ("explicit" as const)
+                    : null;
+            // Subsystem 内部では同期モードが build 拒否されるため option を
+            // 無効化する (dtype select と同じ扱い)
+            const syncedModesDisabled = editingPath.length > 0;
             const modelDt = (
               editingModel?.simulator as Record<string, unknown> | undefined
             )?.dt;
+            const dtLabel = typeof modelDt === "number" ? modelDt : "?";
             const sampleTimeHint =
-              sampleTimeNum === null
+              sampleTimeMode === null
                 ? null
-                : sampleTimeNum === -1
-                  ? t("inspector.sample_time.inherited_hint", {
-                      dt: typeof modelDt === "number" ? modelDt : "?",
-                    })
-                  : t("inspector.sample_time.fixed_hint");
+                : sampleTimeMode === "base"
+                  ? t("inspector.sample_time.base_hint", { dt: dtLabel })
+                  : sampleTimeMode === "upstream"
+                    ? t("inspector.sample_time.upstream_hint")
+                    : t("inspector.sample_time.fixed_hint");
             return (
               <Fragment key={k}>
               <PropertyRow labelWidth={88} labelAlign="left" label={k}>
-                {enumValues && enumValues.length > 0 ? (
+                {sampleTimeMode !== null ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <select
+                      data-testid="param-sample-time-mode"
+                      value={sampleTimeMode}
+                      onChange={(e) => {
+                        const mode = e.target.value;
+                        if (mode === "base") {
+                          setDraft((prev) => ({ ...prev, [k]: "dt" }));
+                          commit(k, "dt", "string");
+                        } else if (mode === "upstream") {
+                          setDraft((prev) => ({ ...prev, [k]: "-1" }));
+                          commit(k, "-1", "number");
+                        } else {
+                          // 明示値へ切替: 現在の dt を初期値に転記 (値のコピー)
+                          const seed = String(
+                            typeof modelDt === "number" ? modelDt : 0.1,
+                          );
+                          setDraft((prev) => ({ ...prev, [k]: seed }));
+                          commit(k, seed, "number");
+                        }
+                      }}
+                      className={`${SELECT_CLS} min-w-0 w-[130px]`}
+                    >
+                      <option value="base" disabled={syncedModesDisabled}>
+                        {t("inspector.sample_time.mode.base", "基準クロック (dt)")}
+                      </option>
+                      <option value="upstream" disabled={syncedModesDisabled}>
+                        {t("inspector.sample_time.mode.upstream", "上流に同期")}
+                      </option>
+                      <option value="explicit">
+                        {t("inspector.sample_time.mode.explicit", "明示値")}
+                      </option>
+                    </select>
+                    {sampleTimeMode === "explicit" && (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        data-testid={`param-input-${k}`}
+                        value={draft[k] ?? String(v)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDraft((prev) => ({ ...prev, [k]: val }));
+                          if (val !== "" && parseNumericInput(val) !== null) {
+                            commit(k, val, "number");
+                          }
+                        }}
+                        onBlur={(e) => commit(k, e.target.value, "number")}
+                        className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[80px]`}
+                      />
+                    )}
+                  </div>
+                ) : enumValues && enumValues.length > 0 ? (
                   <select
                     data-testid={`param-input-${k}`}
                     value={draft[k] ?? String(v)}
