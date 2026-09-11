@@ -357,9 +357,10 @@ _BUILTIN_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
         "denominator": [1.0, 1.0],
         "sample_time": 0.1,
     },
-    # v0.58.0 (SPEC-0030): 既定 "dt" = 基準クロックに同期。「置けば dt で回る」を
-    # 暗黙のフォールバックではなく明示宣言で実現する。他の離散ブロックは明示 0.1
-    "flode.blocks.discrete.UnitDelay": {"sample_time": "dt"},
+    # v0.60.0 (オーナー選好 2026-09-12): 既定 -1 = 継承 (リファレンスツールの
+    # 既定と同じ)。上流にレートがなければ案内板型エラーが "dt" / 明示値へ導く
+    # (fail-closed 既定)。他の離散ブロックは明示 0.1 を維持
+    "flode.blocks.discrete.UnitDelay": {"sample_time": -1.0},
     # SPEC-0015: delay_time / sample_time 共に required。palette drop 用 default
     "flode.blocks.transport_delay.TransportDelay": {
         "delay_time": 1.0,

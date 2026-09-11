@@ -444,8 +444,8 @@
   "error.show_details": "Details (traceback)",
   "error.copy": "Copy",
   "inspector.sample_time.base_hint": "Synced to the base clock: fires at dt (currently {{dt}} s) and follows dt changes.",
-  "inspector.sample_time.upstream_hint": "Syncs to the upstream discrete rate. Errors if no upstream block carries a rate.",
+  "inspector.sample_time.upstream_hint": "Inherited (-1): inherits the upstream discrete rate; errors if no upstream block carries one (choose \"Base clock (dt)\" to run on dt).",
   "inspector.sample_time.mode.base": "Base clock (dt)",
-  "inspector.sample_time.mode.upstream": "Sync to upstream",
+  "inspector.sample_time.mode.upstream": "Inherited",
   "inspector.sample_time.mode.explicit": "Explicit"
 }

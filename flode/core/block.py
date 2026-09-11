@@ -234,7 +234,7 @@ class Block:
                         f"sample_time={sample_time!r} is invalid. The only string "
                         f"value is {BASE_CLOCK_SAMPLE_TIME!r} (sync to the base "
                         "clock dt). Numbers: None, 0.0 (continuous), >0 (discrete "
-                        "period), -1.0 (sync to upstream rate)."
+                        "period), -1.0 (inherited from upstream)."
                     )
             elif not isinstance(sample_time, (int, float)) or isinstance(
                 sample_time, bool
@@ -251,7 +251,7 @@ class Block:
                 if st < 0.0 and st != -1.0:
                     raise BlockSpecError(
                         f"sample_time={st} is invalid. Allowed: None, 0.0 (continuous), "
-                        f">0 (discrete period), -1.0 (sync to upstream rate), or "
+                        f">0 (discrete period), -1.0 (inherited from upstream), or "
                         f"{BASE_CLOCK_SAMPLE_TIME!r} (sync to the base clock dt)."
                     )
                 sample_time = st

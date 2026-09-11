@@ -330,7 +330,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
             const dtypeDisabled = k === "dtype" && editingPath.length > 0;
             // SPEC-0030 (v0.58.0): sample_time は 3 モード select
-            // (基準クロック "dt" / 上流に同期 -1 / 明示値)。ヒントは規則の説明の
+            // (基準クロック "dt" / 継承 -1 / 明示値)。ヒントは規則の説明の
             // み表示し、解決値のグラフ再計算は frontend でしない (二重実装回避)。
             // NOTE: 文言は「GUI で sample_time を露出するブロックは全て
             // requires_discrete_rate=True」という現状の前提に依存する。前提が
@@ -397,7 +397,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                         {t("inspector.sample_time.mode.base", "基準クロック (dt)")}
                       </option>
                       <option value="upstream" disabled={syncedModesDisabled}>
-                        {t("inspector.sample_time.mode.upstream", "上流に同期")}
+                        {t("inspector.sample_time.mode.upstream", "継承")}
                       </option>
                       <option value="explicit">
                         {t("inspector.sample_time.mode.explicit", "明示値")}

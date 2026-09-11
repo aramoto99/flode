@@ -762,7 +762,7 @@ class Simulator:
                         f"Block {b.id!r}: sample_time={st!r} would make this "
                         "discrete-only block continuous (it would never update). "
                         f"Use a positive period, {BASE_CLOCK_SAMPLE_TIME!r} "
-                        "(base clock dt), or -1.0 (sync to upstream rate)."
+                        "(base clock dt), or -1.0 (inherited from upstream)."
                     )
                 b._resolved_sample_time = None
             elif isinstance(st, (int, float)) and st > 0.0:
@@ -770,7 +770,7 @@ class Simulator:
             elif st == -1.0:
                 if not any(src is not None for src in b.input_sources):
                     raise BlockSpecError(
-                        f"Block {b.id!r} has sample_time=-1.0 (sync to upstream) "
+                        f"Block {b.id!r} has sample_time=-1.0 (inherited) "
                         "but no inputs"
                     )
                 pending.append(b)
@@ -795,7 +795,7 @@ class Simulator:
                     # フォールバックは 1 センチネル 2 意味の同居 (v0.57.0 案の
                     # 欠点) — どちらも取らず、案内板型エラーで明示を求める
                     raise BlockSpecError(
-                        f"Block {b.id!r}: sample_time=-1.0 (sync to upstream) but "
+                        f"Block {b.id!r}: sample_time=-1.0 (inherited) but "
                         "no upstream block carries a discrete rate. Use "
                         f"sample_time={BASE_CLOCK_SAMPLE_TIME!r} to run on the "
                         "base clock (dt), or set an explicit period for a device "

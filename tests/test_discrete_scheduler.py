@@ -358,7 +358,7 @@ def test_inherited_with_no_inputs_raises():
     src = sim.add(Constant(value=1.0, id="src"))
     src.sample_time = -1.0  # invalid for 0-input block
 
-    with pytest.raises(BlockSpecError, match="sync to upstream"):
+    with pytest.raises(BlockSpecError, match="inherited"):
         sim.run()
 
 
