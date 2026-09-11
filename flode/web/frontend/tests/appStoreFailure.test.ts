@@ -156,3 +156,109 @@ describe("appStore focusBlock", () => {
     expect(n2).toBe(n1 + 1);
   });
 });
+
+// SPEC-0005 F2 拡張 (2026-09-11): 失敗時にエラーブロックへ自動フォーカス。
+// ``block_id`` があれば focusBlock 相当 (階層移動 + 選択 + pan 要求) を
+// 失敗記録と同時に行う。代数ループは backend が block_id にループ先頭を入れる。
+describe("appStore failure auto-focus", () => {
+  function _setNestedModel(): void {
+    useAppStore.setState({
+      editingModel: {
+        schema_version: "1.0",
+        blocks: [
+          { id: "g", type: "flode.blocks.mathops.Gain", params: {} },
+          {
+            id: "sub",
+            type: "flode.subsystems.Subsystem",
+            params: {
+              blocks: [
+                { id: "div_1", type: "flode.blocks.mathops.Divide", params: {} },
+              ],
+            },
+          },
+        ],
+        connections: [],
+        config: { t_end: 1.0, dt: 0.01, solver: "RK45" },
+      } as unknown as FlwModel,
+      editingPath: [],
+      selectedNodeIds: [],
+      selectedNodeId: null,
+      focusBlockRequest: null,
+    });
+  }
+
+  it("setLastFailure(runtime) with block_id drills into nested path + selects + requests pan", () => {
+    _setNestedModel();
+    useAppStore.getState().setLastFailure(_PAYLOAD, "runtime");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.selectedNodeIds).toEqual(["div_1"]);
+    expect(s.focusBlockRequest?.blockId).toBe("div_1");
+    expect(s.lastFailure).toEqual(_PAYLOAD);
+    expect(s.activeErrorTab).toBe(true);
+  });
+
+  it("setLastFailure(start) also auto-focuses", () => {
+    _setNestedModel();
+    useAppStore.getState().setLastFailure(_PAYLOAD, "start");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.focusBlockRequest?.blockId).toBe("div_1");
+  });
+
+  it("handleStreamMessage(failed) auto-focuses the block_id", () => {
+    _setNestedModel();
+    const msg: StreamMessage = {
+      type: "failed",
+      duration_sec: 0.5,
+      category: _PAYLOAD.category,
+      template_key: _PAYLOAD.template_key,
+      template_args: _PAYLOAD.template_args,
+      block_id: _PAYLOAD.block_id,
+      block_ids: _PAYLOAD.block_ids,
+      block_type: _PAYLOAD.block_type,
+      block_label: _PAYLOAD.block_label,
+      t: _PAYLOAD.t,
+      raw_message: _PAYLOAD.raw_message,
+      raw_traceback: _PAYLOAD.raw_traceback,
+    };
+    useAppStore.getState().handleStreamMessage(msg);
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.selectedNodeIds).toEqual(["div_1"]);
+    expect(s.focusBlockRequest?.blockId).toBe("div_1");
+  });
+
+  it("failure without block_id leaves editingPath / selection untouched", () => {
+    _setNestedModel();
+    useAppStore.setState({ editingPath: ["sub"], selectedNodeIds: ["div_1"] });
+    useAppStore
+      .getState()
+      .setLastFailure({ ..._PAYLOAD, block_id: null, block_ids: [] }, "runtime");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.selectedNodeIds).toEqual(["div_1"]);
+    expect(s.focusBlockRequest).toBeNull();
+    expect(s.lastFailure?.block_id).toBeNull();
+  });
+
+  it("failure whose block_id is not in the model still records failure (focus no-op)", () => {
+    _setNestedModel();
+    useAppStore
+      .getState()
+      .setLastFailure({ ..._PAYLOAD, block_id: "ghost", block_ids: ["ghost"] }, "runtime");
+    const s = useAppStore.getState();
+    expect(s.focusBlockRequest).toBeNull();
+    expect(s.lastFailure?.block_id).toBe("ghost");
+    expect(s.status).toBe("failed");
+  });
+
+  it("setLastFailure(null) does not touch focus state", () => {
+    _setNestedModel();
+    useAppStore.getState().setLastFailure(_PAYLOAD, "runtime");
+    useAppStore.getState().setLastFailure(null, "runtime");
+    const s = useAppStore.getState();
+    expect(s.editingPath).toEqual(["sub"]);
+    expect(s.lastFailure).toBeNull();
+  });
+});

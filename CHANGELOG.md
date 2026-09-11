@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.59.0] - 2026-09-11 — 失敗時にエラーブロックへ自動フォーカス
+
+### Added
+
+- **GUI: シミュレーション失敗時、原因ブロックへ自動でジャンプする**。
+  ブロックが Subsystem の何階層下にあっても、その階層へ移動 → 選択 → 画面中央へ
+  pan する (ログタブの「Diagram で表示」ボタンと同じ動作を失敗と同時に自動実行)。
+  実行中の失敗 (WebSocket `failed`) と開始時の失敗 (start API エラー) の両方が対象。
+  代数ループなど複数ブロックが関与する失敗はループ先頭のブロックへ飛び、
+  残りはログタブの一覧から個別に飛べる。原因ブロックが特定できない失敗
+  (ソルバー全体の失敗など) では現在の表示を変えない
+
 ## [0.58.1] - 2026-09-11 — Scope 無しモデルで失敗時にログタブが開けない問題を修正
 
 ### Fixed

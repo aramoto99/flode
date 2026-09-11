@@ -534,6 +534,25 @@ function makeTabSnapshot(state: AppState): TabSnapshot | null {
   };
 }
 
+/** SPEC-0005 F2 拡張 (2026-09-11): 失敗時にエラーブロックへ自動フォーカスする。
+ *
+ * ``payload.block_id`` があれば既存の ``focusBlock`` action (= 階層探索 →
+ * editingPath 切替 → 選択 → DiagramCanvas の pan 要求) をそのまま呼ぶ。
+ * 代数ループなど複数ブロックが紐付く失敗は backend が ``block_id`` に先頭を
+ * 入れているため、ここでは ``block_id`` 1 個だけを見る。現モデルに存在しない
+ * block (= 別モデルに切替後など) は ``focusBlock`` 側で no-op になる。
+ *
+ * @param get store の現在状態を返す getter (= ``create`` のクロージャ ``get``)。
+ * @param payload 記録済みの失敗詳細。
+ */
+function autoFocusFailedBlock(
+  get: () => AppState,
+  payload: FailurePayload,
+): void {
+  if (payload.block_id === null) return;
+  get().focusBlock(payload.block_id);
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   selectedFilePath: null,
   tabs: [],
@@ -1258,7 +1277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastFailure: null,
   lastFailureSource: null,
   activeErrorTab: false,
-  setLastFailure: (payload, source) =>
+  setLastFailure: (payload, source) => {
     // code-reviewer MUST-1: null クリア時は status を触らない (= failed 遷移のみ責務)。
     // クリアパスで status="idle" に上書きすると、実行中エラーをクリアしようとした際に
     // running→idle の意図しない遷移を引き起こす。
@@ -1275,7 +1294,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             activeErrorTab: true,
             status: "failed",
           },
-    ),
+    );
+    if (payload !== null) autoFocusFailedBlock(get, payload);
+  },
   setActiveErrorTab: (value) => set({ activeErrorTab: value }),
   focusBlockRequest: null,
   focusBlock: (blockId) => {
@@ -1378,6 +1399,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             lastFailureSource: "runtime",
             activeErrorTab: true,
           });
+          autoFocusFailedBlock(get, payload);
         } else {
           set({ status: "failed" });
         }
