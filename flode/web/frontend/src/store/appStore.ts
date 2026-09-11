@@ -574,7 +574,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   normalizeScopesStackPresence: (hasScopeBlocks) =>
     set((state) => {
       const has = findLeaf(state.workspaceLayout, "scopes-stack");
-      if (hasScopeBlocks && !has) {
+      // 2026-09-11 bug-fix: 出力エリアの presence は「表示すべき中身がある」に
+      // 追従する。Scope ブロックが無くても失敗詳細 (= ログタブ、ADR-0056) が
+      // あれば pane を出す。失敗がクリアされ Scope も無ければ従来通り撤去。
+      const wantStack = hasScopeBlocks || state.lastFailure !== null;
+      if (wantStack && !has) {
         const next = insertSplit(
           state.workspaceLayout,
           "diagram",
@@ -585,7 +589,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (next === state.workspaceLayout) return state;
         return { workspaceLayout: next };
       }
-      if (!hasScopeBlocks && has) {
+      if (!wantStack && has) {
         const removed = removeLeaf(state.workspaceLayout, "scopes-stack");
         if (removed === null || removed === state.workspaceLayout) return state;
         return { workspaceLayout: removed };

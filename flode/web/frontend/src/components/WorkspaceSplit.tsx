@@ -108,9 +108,17 @@ export function WorkspaceSplit({
   const normalizeScopesStackPresence = useAppStore(
     (s) => s.normalizeScopesStackPresence,
   );
+  // 2026-09-11 bug-fix: 失敗詳細 (ログタブ) も出力エリアの presence 根拠なので、
+  // 失敗の発生 / クリアでも再評価する (判定自体は store 側)。
+  const hasFailure = useAppStore((s) => s.lastFailure !== null);
   useEffect(() => {
     normalizeScopesStackPresence(hasScopeBlocks);
-  }, [hasScopeBlocks, hasScopesStackLeaf, normalizeScopesStackPresence]);
+  }, [
+    hasScopeBlocks,
+    hasFailure,
+    hasScopesStackLeaf,
+    normalizeScopesStackPresence,
+  ]);
 
   // v0.27.1 UX-1: 空 scopes-stack pane の表示文言を出し分けるための判定情報。
   // - splitOutAnyScope=true → 「全分離済」(= 個別 pane に分離 + stack は空)

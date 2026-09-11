@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.58.1] - 2026-09-11 — Scope 無しモデルで失敗時にログタブが開けない問題を修正
+
+### Fixed
+
+- **GUI: Scope / XYGraph ブロックを含まないモデルでシミュレーションが失敗すると、
+  ログタブ (失敗詳細) を載せる出力エリアが表示されず失敗内容を確認できなかった**。
+  v0.42.x で出力エリアの表示を「Scope ブロックがある間だけ」に変えた際、
+  失敗表示 (ログタブ) の描画先も一緒に消えていた。出力エリアの表示条件を
+  「Scope あり **または** 失敗あり」に拡張。失敗がクリアされ (= 次の実行開始)
+  Scope も無ければ従来どおり出力エリアは引っ込む
+
 ## [0.58.0] - 2026-09-11 — sample_time のクロック配線化: "dt" 同期の新設と -1 の fail-closed 化
 
 ### Changed (**破壊的変更** — v0.57.0 の暗黙フォールバックを 1 リリースで置き換え)
