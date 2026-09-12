@@ -12,6 +12,10 @@
 - 解析機能 (線形化、Bode / Nyquist、安定判別、根軌跡)
 - モデルはプレーン JSON (`.flw.json`)
 
+![flode Web GUI — PI 制御ループを実行した画面](docs/images/readme_gui.png)
+
+上の画面のモデルは `examples/pi_control_demo.flw.json` (Step → Sum → PI 制御器 → プラント → Scope のフィードバックループ)。
+
 ## インストール
 
 前提: **Python 3.11+**。ソースから入れる場合は **Node.js 20+** も必要。

@@ -1,0 +1,141 @@
+{
+  "schema_version": "0.13",
+  "metadata": {
+    "created_at": "2026-09-12T00:17:06Z",
+    "tool": "flode 0.60.2"
+  },
+  "simulator": {
+    "t_end": 10,
+    "dt": 0.01,
+    "solver": "RK45",
+    "rtol": 1e-06,
+    "atol": 1e-09,
+    "dt_base": null
+  },
+  "blocks": [
+    {
+      "id": "reference",
+      "type": "flode.blocks.sources.Step",
+      "params": {
+        "step_time": 1,
+        "initial_value": 0,
+        "final_value": 1
+      }
+    },
+    {
+      "id": "error",
+      "type": "flode.blocks.mathops.Sum",
+      "params": {
+        "signs": "+-"
+      }
+    },
+    {
+      "id": "pi_controller",
+      "type": "flode.blocks.continuous.TransferFunction",
+      "params": {
+        "numerator": [
+          2,
+          1.5
+        ],
+        "denominator": [
+          1,
+          0
+        ],
+        "x0": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "plant",
+      "type": "flode.blocks.continuous.TransferFunction",
+      "params": {
+        "numerator": [
+          1
+        ],
+        "denominator": [
+          1,
+          2,
+          1
+        ],
+        "x0": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "scope",
+      "type": "flode.blocks.sinks.Scope",
+      "params": {
+        "n_inputs": 2,
+        "labels": [
+          "reference",
+          "output"
+        ],
+        "buffer_mode": "ring",
+        "buffer_capacity": 100000
+      }
+    }
+  ],
+  "connections": [
+    {
+      "src": "reference",
+      "src_idx": 0,
+      "dst": "error",
+      "dst_idx": 0
+    },
+    {
+      "src": "plant",
+      "src_idx": 0,
+      "dst": "error",
+      "dst_idx": 1
+    },
+    {
+      "src": "error",
+      "src_idx": 0,
+      "dst": "pi_controller",
+      "dst_idx": 0
+    },
+    {
+      "src": "pi_controller",
+      "src_idx": 0,
+      "dst": "plant",
+      "dst_idx": 0
+    },
+    {
+      "src": "reference",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 0
+    },
+    {
+      "src": "plant",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 1
+    }
+  ],
+  "layout": {
+    "reference": {
+      "x": 60,
+      "y": 140
+    },
+    "error": {
+      "x": 220,
+      "y": 140
+    },
+    "pi_controller": {
+      "x": 360,
+      "y": 140
+    },
+    "plant": {
+      "x": 540,
+      "y": 140
+    },
+    "scope": {
+      "x": 720,
+      "y": 140
+    }
+  }
+}
