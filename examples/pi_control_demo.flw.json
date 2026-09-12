@@ -76,6 +76,13 @@
         "buffer_mode": "ring",
         "buffer_capacity": 100000
       }
+    },
+    {
+      "id": "sensor",
+      "type": "flode.blocks.mathops.Gain",
+      "params": {
+        "k": 1
+      }
     }
   ],
   "connections": [
@@ -84,12 +91,6 @@
       "src_idx": 0,
       "dst": "error",
       "dst_idx": 0
-    },
-    {
-      "src": "plant",
-      "src_idx": 0,
-      "dst": "error",
-      "dst_idx": 1
     },
     {
       "src": "error",
@@ -104,22 +105,38 @@
       "dst_idx": 0
     },
     {
-      "src": "reference",
-      "src_idx": 0,
-      "dst": "scope",
-      "dst_idx": 0
-    },
-    {
       "src": "plant",
       "src_idx": 0,
       "dst": "scope",
       "dst_idx": 1
+    },
+    {
+      "src": "plant",
+      "src_idx": 0,
+      "dst": "sensor",
+      "dst_idx": 0
+    },
+    {
+      "src": "sensor",
+      "src_idx": 0,
+      "dst": "error",
+      "dst_idx": 1
+    },
+    {
+      "src": "reference",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 0
     }
   ],
   "layout": {
     "reference": {
       "x": 60,
-      "y": 140
+      "y": 40
+    },
+    "scope": {
+      "x": 760,
+      "y": 48
     },
     "error": {
       "x": 220,
@@ -133,9 +150,10 @@
       "x": 540,
       "y": 140
     },
-    "scope": {
-      "x": 720,
-      "y": 140
+    "sensor": {
+      "x": 420,
+      "y": 250,
+      "flipped": true
     }
   }
 }
