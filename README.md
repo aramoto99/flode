@@ -6,8 +6,6 @@
 
 ![flode Web GUI — PI 制御ループを実行した画面](docs/images/readme_gui_pi_loop.png)
 
-上の画面のモデルは `examples/pi_control_demo.flw.json` (Step → Sum → PI 制御器 → プラント → Scope、単位フィードバック付き)。
-
 ## インストール
 
 前提: **Python 3.11+**。ソースから入れる場合は **Node.js 20+** も必要。
