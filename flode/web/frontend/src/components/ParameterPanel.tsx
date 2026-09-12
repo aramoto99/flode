@@ -330,7 +330,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
             const dtypeDisabled = k === "dtype" && editingPath.length > 0;
             // SPEC-0030 (v0.58.0): sample_time は 3 モード select
-            // (基準クロック "dt" / 継承 -1 / 明示値)。ヒントは規則の説明の
+            // (基準クロック "dt" / 継承 -1 / 指定)。ヒントは規則の説明の
             // み表示し、解決値のグラフ再計算は frontend でしない (二重実装回避)。
             // NOTE: 文言は「GUI で sample_time を露出するブロックは全て
             // requires_discrete_rate=True」という現状の前提に依存する。前提が
@@ -370,57 +370,38 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
               <Fragment key={k}>
               <PropertyRow labelWidth={88} labelAlign="left" label={k}>
                 {sampleTimeMode !== null ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
-                    <select
-                      data-testid="param-sample-time-mode"
-                      value={sampleTimeMode}
-                      onChange={(e) => {
-                        const mode = e.target.value;
-                        if (mode === "base") {
-                          setDraft((prev) => ({ ...prev, [k]: "dt" }));
-                          commit(k, "dt", "string");
-                        } else if (mode === "upstream") {
-                          setDraft((prev) => ({ ...prev, [k]: "-1" }));
-                          commit(k, "-1", "number");
-                        } else {
-                          // 明示値へ切替: 現在の dt を初期値に転記 (値のコピー)
-                          const seed = String(
-                            typeof modelDt === "number" ? modelDt : 0.1,
-                          );
-                          setDraft((prev) => ({ ...prev, [k]: seed }));
-                          commit(k, seed, "number");
-                        }
-                      }}
-                      className={`${SELECT_CLS} min-w-0 w-[130px]`}
-                    >
-                      <option value="base" disabled={syncedModesDisabled}>
-                        {t("inspector.sample_time.mode.base", "基準クロック (dt)")}
-                      </option>
-                      <option value="upstream" disabled={syncedModesDisabled}>
-                        {t("inspector.sample_time.mode.upstream", "継承")}
-                      </option>
-                      <option value="explicit">
-                        {t("inspector.sample_time.mode.explicit", "明示値")}
-                      </option>
-                    </select>
-                    {sampleTimeMode === "explicit" && (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        data-testid={`param-input-${k}`}
-                        value={draft[k] ?? String(v)}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setDraft((prev) => ({ ...prev, [k]: val }));
-                          if (val !== "" && parseNumericInput(val) !== null) {
-                            commit(k, val, "number");
-                          }
-                        }}
-                        onBlur={(e) => commit(k, e.target.value, "number")}
-                        className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[80px]`}
-                      />
-                    )}
-                  </div>
+                  <select
+                    data-testid="param-sample-time-mode"
+                    value={sampleTimeMode}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      if (mode === "base") {
+                        setDraft((prev) => ({ ...prev, [k]: "dt" }));
+                        commit(k, "dt", "string");
+                      } else if (mode === "upstream") {
+                        setDraft((prev) => ({ ...prev, [k]: "-1" }));
+                        commit(k, "-1", "number");
+                      } else {
+                        // 指定へ切替: 現在の dt を初期値に転記 (値のコピー)
+                        const seed = String(
+                          typeof modelDt === "number" ? modelDt : 0.1,
+                        );
+                        setDraft((prev) => ({ ...prev, [k]: seed }));
+                        commit(k, seed, "number");
+                      }
+                    }}
+                    className={`${SELECT_CLS} min-w-0 flex-1 max-w-[140px]`}
+                  >
+                    <option value="base" disabled={syncedModesDisabled}>
+                      {t("inspector.sample_time.mode.base", "基準クロック (dt)")}
+                    </option>
+                    <option value="upstream" disabled={syncedModesDisabled}>
+                      {t("inspector.sample_time.mode.upstream", "継承")}
+                    </option>
+                    <option value="explicit">
+                      {t("inspector.sample_time.mode.explicit", "指定")}
+                    </option>
+                  </select>
                 ) : enumValues && enumValues.length > 0 ? (
                   <select
                     data-testid={`param-input-${k}`}
@@ -553,6 +534,32 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   />
                 )}
               </PropertyRow>
+              {sampleTimeMode === "explicit" && (
+                // 「指定」時の周期入力は横並びではなく下のインデント行に出す
+                // (dt_base 明示指定 → 値 の既存パターン、オーナー指摘 2026-09-12)
+                <PropertyRow
+                  indent
+                  labelWidth={88}
+                  labelAlign="left"
+                  label={t("inspector.sample_time.period_label", "周期 (秒)")}
+                >
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    data-testid={`param-input-${k}`}
+                    value={draft[k] ?? String(v)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDraft((prev) => ({ ...prev, [k]: val }));
+                      if (val !== "" && parseNumericInput(val) !== null) {
+                        commit(k, val, "number");
+                      }
+                    }}
+                    onBlur={(e) => commit(k, e.target.value, "number")}
+                    className={`${INPUT_MONO_CLS} min-w-0 flex-1 max-w-[140px]`}
+                  />
+                </PropertyRow>
+              )}
               {sampleTimeHint !== null && (
                 <PropertyHint
                   testId="param-hint-sample-time"

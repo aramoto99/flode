@@ -331,7 +331,7 @@
   "inspector.dtype.declared": "declared",
   "inspector.dtype.island": "Subsystem / PythonFunction boundary is float64 in this release",
   "inspector.dtype.state_via_float64": "State is stored as float64 in this release",
-  "inspector.sample_time.fixed_hint": "Fixed period (does not follow dt).",
+  "inspector.sample_time.fixed_hint": "Runs at the specified period (does not follow dt).",
   "inspector.mask.section_hint": "Mask parameters (declared on the Subsystem). Editing here updates the inner block placeholders on save.",
   "inspector.mask.autosave_hint": "Mask edits auto-save. Double-click the Subsystem to drill into its internal diagram.",
   "inspector.mask.suffix": "mask",
@@ -447,5 +447,6 @@
   "inspector.sample_time.upstream_hint": "Inherited (-1): inherits the upstream discrete rate; errors if no upstream block carries one (choose \"Base clock (dt)\" to run on dt).",
   "inspector.sample_time.mode.base": "Base clock (dt)",
   "inspector.sample_time.mode.upstream": "Inherited",
-  "inspector.sample_time.mode.explicit": "Explicit"
+  "inspector.sample_time.mode.explicit": "Specified",
+  "inspector.sample_time.period_label": "Period (s)"
 }

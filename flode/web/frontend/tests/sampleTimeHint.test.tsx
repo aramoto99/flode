@@ -1,5 +1,5 @@
 // SPEC-0030 (v0.58.0): Inspector の sample_time 3 モード UI。
-// select (基準クロック "dt" / 継承 -1 / 明示値) + モード別ヒント。
+// select (基準クロック "dt" / 継承 -1 / 指定) + モード別ヒント。
 // 解決値のグラフ再計算は frontend でしない (規則の説明のみ) — 二重実装回避。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -92,7 +92,7 @@ describe("ParameterPanel: sample_time three-mode UI (SPEC-0030)", () => {
     expect(
       screen.getByTestId("param-hint-sample-time").textContent,
     ).toContain("inspector.sample_time.base_hint");
-    // 明示値入力は隠れる
+    // 指定の周期入力行は出ない
     expect(screen.queryByTestId("param-input-sample_time")).toBeNull();
   });
 
