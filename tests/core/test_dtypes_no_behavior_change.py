@@ -3,9 +3,12 @@
 SM-D Stage 0 の鉄則「計算結果を 1 bit も変えない」を、
 
 1. 同一プロセス比較 (``run()`` のみ vs ``resolve_dtypes()`` を挟んだ ``run()``) —
-   主防衛線、環境非依存で常に厳密
-2. v0.53.7 時点で採取した基準 npz との ``np.array_equal`` 比較 —
-   クロスバージョン保証の追加層
+   主防衛線、環境非依存で常に厳密 (bit 一致)
+2. v0.53.7 時点で採取した基準 npz との比較 — クロスバージョン保証の追加層。
+   基準は特定環境 (Windows / numpy 2.5.1 / scipy 1.18.0) で採取したもので、
+   別プラットフォーム・別ビルドの numpy/scipy は ODE 積分に ULP レベルの差を
+   生むため、values は bit 一致ではなく極小許容誤差で比較する
+   (CI ubuntu 3.11/3.12 で実際に最終 bit のみ不一致になった実績あり)
 
 の 2 層で固定する。基準モデルは `_dtype_baseline_models.py` (同ディレクトリ) を共有。
 """
@@ -21,6 +24,13 @@ from flode import Simulator
 from flode.core import dtypes
 from flode.core.persistence import CURRENT_SCHEMA_VERSION
 from tests.core import _dtype_baseline_models as baseline
+
+# npz 基準比較 (クロス環境層) で ODE 積分を含む continuous 系列にのみ適用する
+# 許容誤差。観測された環境差は最終 bit (相対 ~1e-16) のみで、ソルバ自身の精度
+# (RTOL=1e-6 / ATOL=1e-9、_dtype_baseline_models.py) より 3 桁厳しい値に設定する
+# = ソルバ精度未満のビルド差ノイズだけを許容し、それ以上の差は全て退行として検出。
+_CROSS_ENV_VALUES_RTOL = 1e-9
+_CROSS_ENV_VALUES_ATOL = 1e-12
 
 
 class TestBehaviorInvariance:
@@ -87,7 +97,14 @@ class TestBehaviorInvariance:
         assert CURRENT_SCHEMA_VERSION == "0.13"
 
     def test_baseline_arrays_match_v0_53_7(self) -> None:
-        # AC-3: v0.53.7 で採取した基準配列との厳密一致 (クロスバージョン層)
+        # AC-3: v0.53.7 で採取した基準配列との一致 (クロスバージョン層)。
+        # times はサンプリング格子の決定的算術なので全系列で厳密一致を要求する。
+        # values は ODE 積分 (solve_ivp) を含む continuous のみ、numpy/scipy の
+        # ビルド差 (プラットフォーム・Python バージョンごとの wheel) で最終 bit が
+        # 揺れるため _CROSS_ENV_VALUES_* の許容誤差で比較する (選定根拠は定数定義
+        # のコメント参照)。加算・比較のみの discrete / mixed は bit 一致を維持。
+        # bit 一致そのものの保証は同一プロセス比較
+        # (test_run_results_bit_identical_with_and_without_resolve) が担う。
         assert baseline.BASELINE_NPZ.exists(), (
             f"基準 npz が無い: {baseline.BASELINE_NPZ} — "
             "`python src/tests/core/_dtype_baseline_models.py` で採取する"
@@ -104,8 +121,27 @@ class TestBehaviorInvariance:
                     f"(基準採取環境: numpy {npz['numpy_version']}, "
                     f"scipy {npz['scipy_version']})"
                 )
-                assert np.array_equal(npz[f"{name}_values"], values), (
-                    f"{name}: values が v0.53.7 基準と不一致 "
-                    f"(基準採取環境: numpy {npz['numpy_version']}, "
-                    f"scipy {npz['scipy_version']})"
+                ref_values = npz[f"{name}_values"]
+                assert ref_values.shape == values.shape, (
+                    f"{name}: values の形状が v0.53.7 基準と不一致 "
+                    f"({ref_values.shape} != {values.shape})"
                 )
+                if name == "continuous":
+                    # ODE 積分 (solve_ivp) を含む系列のみ、ビルド差の ULP 揺れを許容
+                    assert np.allclose(
+                        ref_values,
+                        values,
+                        rtol=_CROSS_ENV_VALUES_RTOL,
+                        atol=_CROSS_ENV_VALUES_ATOL,
+                    ), (
+                        f"{name}: values が v0.53.7 基準と許容誤差を超えて不一致 "
+                        f"(基準採取環境: numpy {npz['numpy_version']}, "
+                        f"scipy {npz['scipy_version']})"
+                    )
+                else:
+                    # 純粋な加算・比較のみの系列は環境間でも決定的 = bit 一致を維持
+                    assert np.array_equal(ref_values, values), (
+                        f"{name}: values が v0.53.7 基準と不一致 "
+                        f"(基準採取環境: numpy {npz['numpy_version']}, "
+                        f"scipy {npz['scipy_version']})"
+                    )
