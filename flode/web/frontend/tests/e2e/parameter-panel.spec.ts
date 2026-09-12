@@ -11,7 +11,9 @@ import { expect, test } from "@playwright/test";
 
 const FIXTURE_FILENAME = "minimal_model.flw.json";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PATH = path.join(__dirname, "fixtures", FIXTURE_FILENAME);
+// backend の workspace は fixtures/ の使い捨てコピー .workspace/
+// (global-setup.ts 参照)。永続化の fs 検証・復元もコピー側に対して行う。
+const FIXTURE_PATH = path.join(__dirname, ".workspace", FIXTURE_FILENAME);
 const AUTOSAVE_DEBOUNCE_MS = 500;
 
 let fixtureSnapshot: string;
@@ -21,8 +23,11 @@ test.describe("ParameterPanel (v3.x auto-save)", () => {
     fixtureSnapshot = readFileSync(FIXTURE_PATH, "utf-8");
   });
 
-  test.afterEach(() => {
-    // 各テストで fs ベースに fixture を復元 (= 次テスト・次 CI run の独立性)
+  test.afterEach(async ({ page }) => {
+    // 先にページを閉じて pending の auto-save (debounce 済み PUT) を止めてから
+    // fixture を fs ベースで復元する (= 次テスト・次 CI run の独立性)。
+    // 復元 → 遅延 PUT 着弾の順になると migration 済み内容で再汚染されるため。
+    await page.close();
     writeFileSync(FIXTURE_PATH, fixtureSnapshot, "utf-8");
   });
 

@@ -81,6 +81,8 @@ playwright-report/
 flode/web/frontend/test-results/
 flode/web/frontend/playwright-report/
 flode/web/frontend/playwright/.cache/
+# E2E backend の workspace (fixtures の使い捨てコピー、global-setup.ts が生成)
+flode/web/frontend/tests/e2e/.workspace/
 
 # Claude Code config / docs — local-only, not tracked (public 化しても非公開)
 .claude/

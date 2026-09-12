@@ -1,7 +1,10 @@
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig, devices } from "@playwright/test";
+
+import { readPortEnv } from "./tests/e2e/ports";
 
 // E2E テスト構成 (ADR-0012 §(7) Vite dev server + ADR-0011 FastAPI backend)。
 // Backend (flode) と Vite dev server を webServer で並列に起動する。
@@ -18,13 +21,27 @@ import { defineConfig, devices } from "@playwright/test";
 // 起動された場合でも壊れないように絶対パスで指定する。
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FIXTURES_DIR = path.join("flode", "web", "frontend", "tests", "e2e", "fixtures");
+// backend に渡す workspace は git 管理の fixtures/ そのものではなく、
+// globalSetup (tests/e2e/global-setup.ts) が毎回作り直す使い捨てコピー
+// .workspace/ (gitignore 済み)。GUI が legacy モデルを開くと migration 済み
+// 内容を auto-save するため、直接 fixtures/ を配信すると git が汚れる。
+const WORKSPACE_DIR = path.join(
+  "flode", "web", "frontend", "tests", "e2e", ".workspace",
+);
+// Playwright は webServer を globalSetup より先に起動するため、backend の
+// --workspace 検証が通るようディレクトリ自体はここで確保しておく
+// (mkdirSync recursive は既存なら no-op なので worker の config 再評価でも安全)。
+// fixtures の複製・入れ替えは globalSetup が行う (テスト開始前に完了する)。
+mkdirSync(path.join(REPO_ROOT, WORKSPACE_DIR), { recursive: true });
 
-const E2E_BACKEND_PORT = 8770;
-const E2E_FRONTEND_PORT = 5173;
+// 環境変数で上書き可 (vite.config.ts の proxy 先と連動)。開発用サーバーが
+// 8770 を占有していてもローカル E2E を別ポートで実行できる
+const E2E_BACKEND_PORT = readPortEnv("E2E_BACKEND_PORT", 8770);
+const E2E_FRONTEND_PORT = readPortEnv("E2E_FRONTEND_PORT", 5173);
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   testMatch: /.*\.spec\.ts$/,
   // E2E は per-spec で隔離するため並列度を抑える (1 backend instance を共有)
   fullyParallel: false,
@@ -50,7 +67,7 @@ export default defineConfig({
       // v0.21.0 (ADR-0041 §論点 4-A): ``--model-dir`` 廃止 → ``--workspace``。
       // health check URL も legacy ``/api/v1/models`` から
       // ``/api/v1/files/workspace_info`` (= ADR-0043 §論点 1-A) に切替。
-      command: `python -m flode.server.cli --workspace ${FIXTURES_DIR} --port ${E2E_BACKEND_PORT}`,
+      command: `python -m flode.server.cli --workspace ${WORKSPACE_DIR} --port ${E2E_BACKEND_PORT}`,
       cwd: REPO_ROOT,
       url: `http://127.0.0.1:${E2E_BACKEND_PORT}/api/v1/files/workspace_info`,
       reuseExistingServer: !process.env.CI,
