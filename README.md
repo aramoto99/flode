@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
-![flode Web GUI — PI 制御ループを実行した画面](docs/images/readme_gui.png)
+![flode Web GUI — PI 制御ループを実行した画面](docs/images/readme_gui_pi_loop.png)
 
 上の画面のモデルは `examples/pi_control_demo.flw.json` (Step → Sum → PI 制御器 → プラント → Scope、単位フィードバック付き)。
 
