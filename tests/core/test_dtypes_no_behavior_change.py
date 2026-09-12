@@ -55,9 +55,7 @@ class TestBehaviorInvariance:
         assert dict(first_res.ports) == dict(second_res.ports)
         assert np.array_equal(first_values, second_values)
 
-    def test_engine_exception_does_not_break_run(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_engine_exception_does_not_break_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # AC-5: エンジンがどんなに壊れていても run は成功する (構造的独立の固定)
         def boom(_sim: Simulator) -> dtypes.DTypeResolution:
             raise RuntimeError("engine is broken")

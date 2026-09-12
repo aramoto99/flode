@@ -15,7 +15,9 @@ from flode.exceptions import BlockSpecError
 def _feedback_model(*, declare_int: bool, declare_float: bool = False) -> Simulator:
     """1 次系 x' = -x + u の閉ループ (linearize 可能な連続状態つき)。"""
     sim = Simulator(t_end=1.0, dt=0.01)
-    c = sim.add(Constant(value=1.0, dtype="int32", id="c") if declare_int else Constant(value=1.0, id="c"))
+    c = sim.add(
+        Constant(value=1.0, dtype="int32", id="c") if declare_int else Constant(value=1.0, id="c")
+    )
     s = sim.add(Sum(signs="+-", id="s"))
     integ = sim.add(Integrator(x0=0.0, id="integ"))
     g = sim.add(Gain(k=1.0, id="g"))

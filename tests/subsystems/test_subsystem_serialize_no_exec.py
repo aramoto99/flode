@@ -67,9 +67,7 @@ def _wrap_in_subsystem(inner: Subsystem, wrapper_id: str) -> Subsystem:
 
 
 class TestSaveDoesNotExecutePythonFunction:
-    def test_save_does_not_execute_nested_python_function(
-        self, tmp_path: Path
-    ) -> None:
+    def test_save_does_not_execute_nested_python_function(self, tmp_path: Path) -> None:
         # 再現テスト: save しただけで module レベルのコードが exec されてはならない
         marker = tmp_path / "executed.txt"
         sim = Simulator(t_end=0.1, dt=0.01)
@@ -86,9 +84,7 @@ class TestSaveDoesNotExecutePythonFunction:
         import flode.blocks.pythonfunc as pf_mod
 
         calls: list[object] = []
-        monkeypatch.setattr(
-            pf_mod, "exec_block_source", lambda *a, **k: calls.append((a, k))
-        )
+        monkeypatch.setattr(pf_mod, "exec_block_source", lambda *a, **k: calls.append((a, k)))
         marker = tmp_path / "executed.txt"
         sub = _nested_pf_subsystem(marker)
         data = sub.to_dict()
@@ -171,9 +167,7 @@ class TestNestedDepth:
         sim.save(tmp_path / "m.flw.json")
         assert not marker.exists()
 
-    def test_deeply_nested_run_after_save_executes_normally(
-        self, tmp_path: Path
-    ) -> None:
+    def test_deeply_nested_run_after_save_executes_normally(self, tmp_path: Path) -> None:
         # 遅延無効化がネスト全段に効き、save 後の run で exec 込みの完全再構築が走る
         marker = tmp_path / "executed.txt"
         sub = _wrap_in_subsystem(_nested_pf_subsystem(marker), "wrap0")
@@ -187,9 +181,7 @@ class TestNestedDepth:
         assert marker.exists()
 
     @staticmethod
-    def _count_builds_for_depth(
-        depth: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> int:
+    def _count_builds_for_depth(depth: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
         calls: list[str | None] = []
         original_build = Subsystem._build
 

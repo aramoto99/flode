@@ -216,8 +216,7 @@ class TestStatefulBlocks:
         res = sim.resolve_dtypes()
         assert res.out_dtype("d", 0) == "int32"
         assert any(
-            di.code == "dtype.state_via_float64" and di.block_id == "d"
-            for di in res.diagnostics
+            di.code == "dtype.state_via_float64" and di.block_id == "d" for di in res.diagnostics
         )
         assert_dtype_prediction_matches_execution(sim)
         # 累積カウンタとして正しく動く (1, 2, 3, ...)
@@ -259,9 +258,7 @@ class TestFloat64Island:
         res = sim.resolve_dtypes()
         assert res.in_dtype("sub", 0) == "float64"  # D-4 昇格 (island 境界)
         assert res.out_dtype("sub", 0) == "float64"
-        assert any(
-            d.code == "dtype.opaque_float64_island" for d in res.diagnostics
-        )
+        assert any(d.code == "dtype.opaque_float64_island" for d in res.diagnostics)
         assert_dtype_prediction_matches_execution(sim)
         assert float(np.asarray(sc.values)[0, 0]) == 6.0
 
@@ -451,9 +448,7 @@ class TestTotalityAndEscalation:
         with pytest.raises(BlockSpecError, match="dtype.iteration_limit"):
             sim.run()
 
-    def test_narrowing_escalates_to_block_spec_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_narrowing_escalates_to_block_spec_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sim = _sim()
         c = sim.add(Constant(value=1.0, dtype="float64", id="c"))
         integ = sim.add(Integrator(x0=0.0, id="integ"))
@@ -469,9 +464,7 @@ class TestTotalityAndEscalation:
         with pytest.raises(BlockSpecError, match="dtype.narrowing_required"):
             sim.run()
 
-    def test_run_of_undeclared_model_never_resolves(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_run_of_undeclared_model_never_resolves(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # AC-1 の構造保証: dtype 未宣言なら resolve_for_execution は呼ばれない
         def forbidden(_sim: Simulator) -> Any:
             raise AssertionError("resolve_for_execution must not be called")

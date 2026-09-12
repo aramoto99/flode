@@ -80,9 +80,7 @@ class TestBuildMetadataI18n:
             "ja": "定数",
         }
         # SPEC-0026 (v0.53.0) → SPEC-0028 (v0.55.0): dtype 追加に伴い summary を更新
-        assert m.docstring_summary_i18n["en"].startswith(
-            "Constant value source y(t) = value."
-        )
+        assert m.docstring_summary_i18n["en"].startswith("Constant value source y(t) = value.")
         assert "dtype" in m.docstring_summary_i18n["en"]
         assert m.docstring_summary_i18n["ja"].startswith("定数値ソース y(t) = value。")
         assert "dtype" in m.docstring_summary_i18n["ja"]

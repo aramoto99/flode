@@ -68,9 +68,7 @@ class TestExecGuard:
         sim.run()
         assert float(np.asarray(sc.values)[0, 0]) == 2.0
 
-    def test_guard_propagates_through_threadpool_endpoint(
-        self, tmp_path: Path
-    ) -> None:
+    def test_guard_propagates_through_threadpool_endpoint(self, tmp_path: Path) -> None:
         # REST 経由 (run_in_threadpool の worker thread) でも ContextVar が伝播し、
         # static 解決中に exec が呼ばれれば拒否される — が、そもそも呼ばれない
         # (marker 検証)。両方を 1 テストで固定
@@ -99,9 +97,7 @@ class TestExecGuard:
         settings = Settings(workspace_root=tmp_path)
         app = create_app(settings=settings)
         with TestClient(app) as client:
-            resp = client.post(
-                "/api/v1/models/resolve-dtypes", json={"model": model}
-            )
+            resp = client.post("/api/v1/models/resolve-dtypes", json={"model": model})
         assert resp.status_code == 200
         assert not marker.exists()
         codes = [d["code"] for d in resp.json()["diagnostics"]]

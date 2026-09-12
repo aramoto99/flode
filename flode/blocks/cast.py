@@ -55,9 +55,7 @@ class Cast(Block):
         name: str | None = None,
     ) -> None:
         if dtype not in DTYPE_VOCABULARY:
-            raise BlockSpecError(
-                f"Cast: dtype must be one of {DTYPE_VOCABULARY}, got {dtype!r}"
-            )
+            raise BlockSpecError(f"Cast: dtype must be one of {DTYPE_VOCABULARY}, got {dtype!r}")
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
         self.dtype = dtype
         self._params = {"dtype": dtype}

@@ -29,7 +29,9 @@ from flode.core.persistence import (
 # (test_persistence_migration_0_12_to_0_13.py) に集約
 
 
-def _model_0_11(blocks: list[dict[str, Any]], connections: list[Any] | None = None) -> dict[str, Any]:
+def _model_0_11(
+    blocks: list[dict[str, Any]], connections: list[Any] | None = None
+) -> dict[str, Any]:
     return {
         "schema_version": "0.11",
         "simulator": {
@@ -132,9 +134,7 @@ class TestCastConversion:
         assert b["params"] == {"dtype": "float64"}
 
     def test_cast_without_output_type_key_gets_default_dtype(self) -> None:
-        data = _model_0_11(
-            [{"id": "k", "type": "flode.blocks.cast.Cast", "params": {}}]
-        )
+        data = _model_0_11([{"id": "k", "type": "flode.blocks.cast.Cast", "params": {}}])
         b = _migrated_block(data, "k")
         assert b["params"] == {"dtype": "float64"}
 
@@ -261,9 +261,7 @@ class TestIdentityCastDeletion:
         """security MUST-1 の実測ケース: 0.11 (dtype 素通し) では uint8 の
         200+200 = 144 (wrap)。migration 後も 400 ではなく 144 のまま。"""
         path = tmp_path / "old.flw.json"
-        path.write_text(
-            json.dumps(self._declared_model_with_identity_cast()), encoding="utf-8"
-        )
+        path.write_text(json.dumps(self._declared_model_with_identity_cast()), encoding="utf-8")
         sim = Simulator.load(path)
         sim.run()
         vals = np.asarray(sim.get_block("sc").values)[:, 0]
@@ -413,9 +411,7 @@ class TestUnbakeableConstants:
         assert b["params"] == {"value": "$Kp"}
         assert any("without baking" in r.message for r in caplog.records)
 
-    def test_huge_integer_value_does_not_crash(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_huge_integer_value_does_not_crash(self, caplog: pytest.LogCaptureFixture) -> None:
         # JSON は任意精度整数を許す → float() の OverflowError を握って生値温存
         huge = int("9" * 400)
         data = _model_0_11(

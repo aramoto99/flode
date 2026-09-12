@@ -15,9 +15,7 @@ from flode.blocks.sinks import Scope
 from flode.blocks.sources import Constant
 
 
-def _run_sum(
-    a_value: float, a_dtype: str, b_value: float, b_dtype: str
-) -> tuple[str, float]:
+def _run_sum(a_value: float, a_dtype: str, b_value: float, b_dtype: str) -> tuple[str, float]:
     """2 定数を Sum した (予測 dtype, 記録値) を返すヘルパ。"""
     sim = Simulator(t_end=0.05, dt=0.01)
     a = sim.add(Constant(value=a_value, dtype=a_dtype, id="a"))

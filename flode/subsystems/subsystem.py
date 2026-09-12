@@ -490,9 +490,7 @@ class Subsystem(Block):
             b
             for b in self._inner_blocks
             # -1 / "dt" は上の拒否で除外済み → ここに来る非 None は数値のみ
-            if b.n_states > 0
-            and isinstance(b.sample_time, (int, float))
-            and b.sample_time > 0.0
+            if b.n_states > 0 and isinstance(b.sample_time, (int, float)) and b.sample_time > 0.0
         ]
         if cont_states and disc_states:
             raise BlockSpecError(
@@ -514,9 +512,7 @@ class Subsystem(Block):
         # あることを保証する (save 失敗後にモデルが実行不能で残る回帰の防止 —
         # security-reviewer MUST-1)。
         if in_serialization_build():
-            register_serialization_invalidation(
-                lambda: setattr(self, "_exec_order", None)
-            )
+            register_serialization_invalidation(lambda: setattr(self, "_exec_order", None))
 
         # 状態 layout 計算
         offset = 0
@@ -1057,9 +1053,7 @@ class Subsystem(Block):
             if self.layout:
                 inner_ids = {b.id for b in self._inner_blocks}
                 ordered_layout: LayoutDict = {
-                    b.id: self.layout[b.id]
-                    for b in self._inner_blocks
-                    if b.id in self.layout
+                    b.id: self.layout[b.id] for b in self._inner_blocks if b.id in self.layout
                 }
                 stale = [k for k in self.layout if k not in inner_ids]
                 for s in stale:

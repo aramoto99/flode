@@ -63,8 +63,7 @@ class TestResolveDtypesEndpoint:
         body = resp.json()
         assert body["schema_version"] == "dtypes.v1"
         ports = {
-            (p["block_id"], p["direction"], p["port_index"]): p["dtype"]
-            for p in body["ports"]
+            (p["block_id"], p["direction"], p["port_index"]): p["dtype"] for p in body["ports"]
         }
         assert ports[("c", "out", 0)] == "int64"
         assert ports[("g", "in", 0)] == "int64"
@@ -153,8 +152,7 @@ class TestResolveDtypesEndpoint:
         codes = [d["code"] for d in body["diagnostics"]]
         assert "dtype.static_fallback" in codes
         ports = {
-            (p["block_id"], p["direction"], p["port_index"]): p["dtype"]
-            for p in body["ports"]
+            (p["block_id"], p["direction"], p["port_index"]): p["dtype"] for p in body["ports"]
         }
         assert ports[("pf", "out", 0)] == "unknown"
         assert ports[("c", "out", 0)] == "int64"  # static mode でも他は解決される
@@ -212,9 +210,7 @@ class TestResolveDtypesEndpoint:
         )
         assert resp.status_code == 400
 
-    def test_summary_fields_are_present(
-        self, client: TestClient, tmp_path: Path
-    ) -> None:
+    def test_summary_fields_are_present(self, client: TestClient, tmp_path: Path) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
         c = sim.add(Constant(value=2.7, id="c"))
         cast = sim.add(Cast(dtype="int64", id="cast"))

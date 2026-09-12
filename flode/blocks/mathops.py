@@ -60,9 +60,7 @@ class Sum(Block):
         # 委ねる (mod 2^n は準同型なので結果は native 累積と一致。int8 符号だと
         # bool 入力時に result_type が int8 になり極端な多入力で壊れる —
         # security NIT-3 2026-09-08)。float 経路 (上の self.signs) には触れない。
-        self._signs_int = np.array(
-            [1 if s == "+" else -1 for s in signs], dtype=np.int64
-        )
+        self._signs_int = np.array([1 if s == "+" else -1 for s in signs], dtype=np.int64)
         self._params = {"signs": signs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -113,9 +111,7 @@ class Add(Block):
         # 委ねる (mod 2^n は準同型なので結果は native 累積と一致。int8 符号だと
         # bool 入力時に result_type が int8 になり極端な多入力で壊れる —
         # security NIT-3 2026-09-08)。float 経路 (上の self.signs) には触れない。
-        self._signs_int = np.array(
-            [1 if s == "+" else -1 for s in signs], dtype=np.int64
-        )
+        self._signs_int = np.array([1 if s == "+" else -1 for s in signs], dtype=np.int64)
         self._params = {"signs": signs}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:

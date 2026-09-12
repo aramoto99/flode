@@ -111,9 +111,9 @@ def test_base_clock_sample_time_runs_on_dt_without_warning(caplog):
     assert delay._resolved_sample_time == pytest.approx(0.01)
     values = scope.values[:, 0]
     assert values.tolist() == pytest.approx([1.0, 2.0, 2.0, 3.0, 3.0, 4.0])
-    assert not any(
-        "delay" in r.message for r in caplog.records if r.levelno >= logging.WARNING
-    ), "明示宣言なのに WARNING が出ている"
+    assert not any("delay" in r.message for r in caplog.records if r.levelno >= logging.WARNING), (
+        "明示宣言なのに WARNING が出ている"
+    )
 
 
 def test_inherited_without_upstream_rate_raises_with_guidance():
@@ -150,7 +150,7 @@ def test_discrete_integrator_base_clock_runs_on_dt():
 
 
 def test_base_clock_is_inheritable_by_downstream_minus_one():
-    """"dt" ブロックは解決後に離散レート源になる → 下流の -1 が継承できる。"""
+    """ "dt" ブロックは解決後に離散レート源になる → 下流の -1 が継承できる。"""
     sim = Simulator(t_end=0.05, dt=0.01)
     src = sim.add(Constant(value=1.0, id="src"))
     d1 = sim.add(UnitDelay(sample_time="dt", x0=0.0, id="d1"))
@@ -190,9 +190,7 @@ def test_registry_exposes_requires_discrete_rate():
     assert entries["flode.blocks.discrete.UnitDelay"].requires_discrete_rate is True
     assert entries["flode.blocks.mathops.Gain"].requires_discrete_rate is False
     assert (
-        metadata_to_dict(entries["flode.blocks.discrete.UnitDelay"])[
-            "requires_discrete_rate"
-        ]
+        metadata_to_dict(entries["flode.blocks.discrete.UnitDelay"])["requires_discrete_rate"]
         is True
     )
 
@@ -333,9 +331,7 @@ def test_discrete_only_builtins_declare_requires_discrete_rate():
         mod = importlib.import_module(modinfo.name)
         for cls in vars(mod).values():
             if not (
-                isinstance(cls, type)
-                and issubclass(cls, Block)
-                and cls.__module__ == mod.__name__
+                isinstance(cls, type) and issubclass(cls, Block) and cls.__module__ == mod.__name__
             ):
                 continue
             overrides_update = cls.update is not Block.update
@@ -347,9 +343,7 @@ def test_discrete_only_builtins_declare_requires_discrete_rate():
                 and not cls.requires_discrete_rate
             ):
                 offenders.append(f"{cls.__module__}.{cls.__name__}")
-    assert not offenders, (
-        f"離散専用ブロックが requires_discrete_rate を宣言していない: {offenders}"
-    )
+    assert not offenders, f"離散専用ブロックが requires_discrete_rate を宣言していない: {offenders}"
 
 
 def test_inherited_with_no_inputs_raises():

@@ -452,9 +452,7 @@ class TestRegistryBuild:
         """
         from flode.server.registry import _BUILTIN_DEFAULT_ARGS
 
-        assert _BUILTIN_DEFAULT_ARGS["flode.blocks.discrete.UnitDelay"] == {
-            "sample_time": -1.0
-        }
+        assert _BUILTIN_DEFAULT_ARGS["flode.blocks.discrete.UnitDelay"] == {"sample_time": -1.0}
         assert _BUILTIN_DEFAULT_ARGS["flode.blocks.discrete.ZeroOrderHoldDirect"] == {
             "sample_time": 0.1
         }

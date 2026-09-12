@@ -187,9 +187,7 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
         except PathTraversalError as e:
             # _resolve_simulator は models route とも共有のため、監査ログには
             # 実際の endpoint パスを記録する (security-reviewer SHOULD-3)
-            _logger.warning(
-                "Path traversal rejected in %s: %s", request.url.path, e
-            )
+            _logger.warning("Path traversal rejected in %s: %s", request.url.path, e)
             raise HTTPException(
                 status_code=403,
                 detail=_start_validation_detail(

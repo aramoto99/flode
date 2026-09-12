@@ -454,9 +454,7 @@ class PythonFunction(Block):
             # 不要。実行時 (run 経由) の build では従来どおり exec される
             # (_inner を代入せず return するため、次回の build で自然に再試行)。
             if in_serialization_build():
-                _logger.debug(
-                    "PythonFunction[%s]: skipping exec (serialization build)", self.id
-                )
+                _logger.debug("PythonFunction[%s]: skipping exec (serialization build)", self.id)
                 return
             _require_execution_allowed(self.id)
             filename = self._source_filename

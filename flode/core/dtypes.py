@@ -98,6 +98,7 @@ def in_static_dtype_resolution() -> bool:
     """
     return _RESOLVING_WITHOUT_USER_CODE.get()
 
+
 Direction = Literal["in", "out"]
 
 #: 解決結果の突合キー (ADR-0077 §データ整合性 2: index 突合はブロック追加順で壊れる)。
@@ -203,9 +204,7 @@ def cast_value(value: Any, target: str | np.dtype[Any]) -> npt.NDArray[Any]:
                 return out_flat.reshape(arr.shape)
             # int64: span = 2^64 が float64 で表現できないため per-element
             # (Python 任意精度 int) で決定的に wrap する
-            flat_list = [
-                _float_to_int_scalar(float(v), info) for v in np.ravel(arr)
-            ]
+            flat_list = [_float_to_int_scalar(float(v), info) for v in np.ravel(arr)]
             return np.asarray(flat_list, dtype=dt).reshape(arr.shape)
         # 整数/bool → 整数: numpy の astype はビット切り出し = モジュラ wrap で決定的
         return arr.astype(dt)
@@ -416,6 +415,7 @@ _CLASSIFICATION: Final[Mapping[str, Category]] = {
 #: promote_except_control の制御入力ポート index (出力 dtype に寄与しない)。
 _CONTROL_PORT_INDEX: Final[Mapping[str, int]] = {"Switch": 1, "MultiportSwitch": 0}
 
+
 def _block_id(block: Block) -> str:
     """突合キー用の block id (Simulator 登録済みなら必ず str)。"""
     bid = block.id
@@ -580,9 +580,7 @@ DiagSink = Callable[[DTypeDiagnostic], None]
 
 def _diag(code: str, message: str, **kwargs: Any) -> DTypeDiagnostic:
     """severity を code から引いて診断を組み立てる。"""
-    return DTypeDiagnostic(
-        severity=_SEVERITY_BY_CODE[code], code=code, message=message, **kwargs
-    )
+    return DTypeDiagnostic(severity=_SEVERITY_BY_CODE[code], code=code, message=message, **kwargs)
 
 
 def _promote_many(dtypes: Sequence[str], sink: DiagSink | None, block_id: str) -> str:
@@ -632,9 +630,7 @@ def _gather_raw_inputs(block: Block, out_of: Mapping[PortKey, str]) -> list[str]
         if goto_src is None:
             raw.append(UNKNOWN)
         else:
-            raw.append(
-                out_of.get((_block_id(goto_src[0]), "out", goto_src[1]), UNKNOWN)
-            )
+            raw.append(out_of.get((_block_id(goto_src[0]), "out", goto_src[1]), UNKNOWN))
     return raw
 
 
@@ -807,9 +803,7 @@ def _resolve_graph(
             category, _missing = _classify(b)
             required = _required_input_dtype(b, island=island)
             in_dtypes = _apply_input_requirement(b, raw, None, required)
-            for j, d in enumerate(
-                _infer_outputs(b, category, in_dtypes, None, island=island)
-            ):
+            for j, d in enumerate(_infer_outputs(b, category, in_dtypes, None, island=island)):
                 key = (_block_id(b), "out", j)
                 if out_of[key] != d:
                     out_of[key] = d
@@ -859,8 +853,7 @@ def _resolve_graph(
                 sink(
                     _diag(
                         "dtype.unresolved",
-                        f"Input {_block_id(b)!r}.in[{i}] is unconnected; "
-                        "its dtype is unknown.",
+                        f"Input {_block_id(b)!r}.in[{i}] is unconnected; its dtype is unknown.",
                         block_id=_block_id(b),
                         direction="in",
                         port_index=i,
@@ -947,9 +940,7 @@ def _resolve_graph(
         unresolved=unresolved,
         non_float_ports=non_float,
     )
-    return DTypeResolution(
-        ports=ports, diagnostics=tuple(diagnostics), summary=summary
-    )
+    return DTypeResolution(ports=ports, diagnostics=tuple(diagnostics), summary=summary)
 
 
 def _empty_resolution(diagnostic: DTypeDiagnostic) -> DTypeResolution:
@@ -957,9 +948,7 @@ def _empty_resolution(diagnostic: DTypeDiagnostic) -> DTypeResolution:
     return DTypeResolution(
         ports={},
         diagnostics=(diagnostic,),
-        summary=DTypeSummary(
-            total_ports=0, by_dtype={}, unresolved=0, non_float_ports=0
-        ),
+        summary=DTypeSummary(total_ports=0, by_dtype={}, unresolved=0, non_float_ports=0),
     )
 
 
@@ -1024,9 +1013,7 @@ def resolve_dtypes(sim: Simulator, *, mode: ResolveMode = "auto") -> DTypeResolu
             )
         )
     except Exception as exc:  # noqa: BLE001 - AC-5 の受け皿 (SPEC-0027 §3.6)
-        logger.warning(
-            "dtype.internal_error block_id=None code=dtype.internal_error: %r", exc
-        )
+        logger.warning("dtype.internal_error block_id=None code=dtype.internal_error: %r", exc)
         # 例外本文はクライアントに返さない (任意例外の受け皿のため、将来
         # OSError 等でサーバ内部パスが混入しうる)。詳細はサーバログのみ。
         # 一方 build_failed (AlgebraicLoopError / BlockSpecError) はモデル由来の
@@ -1034,7 +1021,6 @@ def resolve_dtypes(sim: Simulator, *, mode: ResolveMode = "auto") -> DTypeResolu
         return _empty_resolution(
             _diag(
                 "dtype.internal_error",
-                f"Unexpected engine error ({type(exc).__name__}); "
-                "details in the server log.",
+                f"Unexpected engine error ({type(exc).__name__}); details in the server log.",
             )
         )

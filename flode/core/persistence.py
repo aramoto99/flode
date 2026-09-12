@@ -696,6 +696,7 @@ def _params_carries_discrete_rate(params: Any) -> bool:
     build 時に内部最小周期を派生 sample_time として外に見せるため) を
     供給源とみなす。
     """
+
     def _direct(p: Any) -> bool:
         if not isinstance(p, dict):
             return False
@@ -939,22 +940,14 @@ def _delete_identity_casts(
                     c.pop("src_idx", None)
             new_connections.append(c)
         connections[:] = new_connections
-    blocks[:] = [
-        b
-        for b in blocks
-        if not (isinstance(b, dict) and _is_identity(b.get("id")))
-    ]
+    blocks[:] = [b for b in blocks if not (isinstance(b, dict) and _is_identity(b.get("id")))]
     if isinstance(layout, dict):
         for bid in identity_ids:
             layout.pop(bid, None)
     if isinstance(waypoints, dict):
         # branch_waypoints は "src_id:src_idx" キー。削除した Cast 発の
         # waypoint は edge ごと消えるため掃除する (layout と同じ一貫性)
-        stale = [
-            k
-            for k in waypoints
-            if isinstance(k, str) and k.split(":", 1)[0] in identity_ids
-        ]
+        stale = [k for k in waypoints if isinstance(k, str) and k.split(":", 1)[0] in identity_ids]
         for k in stale:
             waypoints.pop(k, None)
     logger.debug(

@@ -89,9 +89,7 @@ def serialization_build() -> Iterator[None]:
                 try:
                     invalidate()
                 except Exception:  # noqa: BLE001 - 全件実行し元の例外を維持する
-                    _logger.exception(
-                        "serialization invalidation callback failed (continuing)"
-                    )
+                    _logger.exception("serialization invalidation callback failed (continuing)")
         finally:
             _SERIALIZATION_STATE.reset(token)
 
@@ -236,9 +234,7 @@ class Block:
                         "clock dt). Numbers: None, 0.0 (continuous), >0 (discrete "
                         "period), -1.0 (inherited from upstream)."
                     )
-            elif not isinstance(sample_time, (int, float)) or isinstance(
-                sample_time, bool
-            ):
+            elif not isinstance(sample_time, (int, float)) or isinstance(sample_time, bool):
                 # bool は int のサブクラスだが、True が黙って 1.0 秒周期になると
                 # migration の静的判定 (bool 除外) と実行時が乖離する
                 # (security SHOULD 2026-09-11)

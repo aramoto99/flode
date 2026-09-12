@@ -131,9 +131,7 @@ class TestClassificationRules:
         assert res.out_dtype("cmp_c", 0) == "bool"
         assert res.out_dtype("cmp_z", 0) == "bool"
 
-    @pytest.mark.parametrize(
-        "declared", ["float64", "int64", "int32", "uint8", "bool"]
-    )
+    @pytest.mark.parametrize("declared", ["float64", "int64", "int32", "uint8", "bool"])
     def test_constant_declared_dtype_is_output_dtype(self, declared: str) -> None:
         sim = _sim()
         sim.add(Constant(value=2.7, dtype=declared, id="c"))
@@ -146,9 +144,7 @@ class TestClassificationRules:
         res = resolve_dtypes(sim)
         assert res.out_dtype("c", 0) == "float64"
 
-    @pytest.mark.parametrize(
-        "declared", ["float64", "int64", "int32", "uint8", "bool"]
-    )
+    @pytest.mark.parametrize("declared", ["float64", "int64", "int32", "uint8", "bool"])
     def test_cast_declared_dtype_is_output_dtype(self, declared: str) -> None:
         sim = _sim()
         c = sim.add(Constant(value=1.5, id="c"))
@@ -331,9 +327,7 @@ class TestContinuousWidening:
         # 現語彙では縮小は発生しないため、要求 dtype を直接与えて防御経路を固定する
         integ = Integrator(x0=0.0, id="integ")
         diags: list[DTypeDiagnostic] = []
-        applied = dtypes._apply_input_requirement(
-            integ, ["float64"], diags.append, "int32"
-        )
+        applied = dtypes._apply_input_requirement(integ, ["float64"], diags.append, "int32")
         assert applied == ["float64"]  # 実際の縮小は行わない
         assert [d.code for d in diags] == ["dtype.narrowing_required"]
         assert diags[0].severity == "error"
@@ -430,9 +424,7 @@ class TestUnknownPropagation:
         inner_out = Outport(port_idx=0, id="out0")
         sub = Subsystem(
             blocks=[inner_in, inner_out],
-            connections=[
-                {"src": "in0", "src_port": 0, "dst": "out0", "dst_port": 0}
-            ],
+            connections=[{"src": "in0", "src_port": 0, "dst": "out0", "dst_port": 0}],
             id="sub",
         )
         sim = _sim()
@@ -445,8 +437,7 @@ class TestUnknownPropagation:
         # Stage 1 (SPEC-0028 Q6): full mode では Subsystem は float64 island
         assert res.out_dtype("sub", 0) == "float64"
         assert any(
-            d.code == "dtype.opaque_float64_island" and d.block_id == "sub"
-            for d in res.diagnostics
+            d.code == "dtype.opaque_float64_island" and d.block_id == "sub" for d in res.diagnostics
         )
 
     def test_unconnected_input_materializes_to_float64(self) -> None:
@@ -569,9 +560,7 @@ class TestDiagnostics:
         assert dict(res.ports) == {}
         assert res.summary.total_ports == 0
 
-    def test_internal_error_is_converted_not_raised(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_internal_error_is_converted_not_raised(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def boom(_sim: Simulator, **_kw: Any) -> DTypeResolution:
             raise RuntimeError("boom")
 
@@ -671,11 +660,7 @@ class TestCoverageGuard:
         assert len(names) == len(set(names))
 
     def test_opaque_list_is_exactly_subsystem_and_python_function(self) -> None:
-        opaque = sorted(
-            name
-            for name, cat in dtypes._CLASSIFICATION.items()
-            if cat == "opaque"
-        )
+        opaque = sorted(name for name, cat in dtypes._CLASSIFICATION.items() if cat == "opaque")
         assert opaque == ["PythonFunction", "Subsystem"]
 
 
@@ -709,9 +694,7 @@ class TestStaticMode:
         assert not marker.exists(), "static mode で PythonFunction が exec された"
         assert res.summary.total_ports > 0
 
-    def test_static_fallback_diagnostic_and_from_degrades_to_unknown(
-        self, tmp_path: Path
-    ) -> None:
+    def test_static_fallback_diagnostic_and_from_degrades_to_unknown(self, tmp_path: Path) -> None:
         marker = tmp_path / "executed.txt"
         sim = _sim()
         c = sim.add(Constant(value=1.0, dtype="int64", id="c"))
@@ -778,9 +761,7 @@ class TestStaticMode:
             id="sub",
         )
 
-    def test_user_code_inside_nested_subsystem_is_never_executed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_user_code_inside_nested_subsystem_is_never_executed(self, tmp_path: Path) -> None:
         # MUST-1 (security-reviewer): _contains_python_function の再帰
         # (_inner_blocks duck-typing) を固定する。これが壊れると full mode に
         # 落ちて Subsystem._build() 経由で exec に到達する (唯一の門番)。
@@ -801,9 +782,7 @@ class TestStaticMode:
         import flode.blocks.pythonfunc as pf_mod
 
         calls: list[object] = []
-        monkeypatch.setattr(
-            pf_mod, "exec_block_source", lambda *a, **k: calls.append((a, k))
-        )
+        monkeypatch.setattr(pf_mod, "exec_block_source", lambda *a, **k: calls.append((a, k)))
         marker = tmp_path / "executed.txt"
         sim = _sim()
         sim.add(self._nested_subsystem(marker))

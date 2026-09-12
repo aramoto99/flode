@@ -61,14 +61,11 @@ def _build_dtype_plan(order: list[Block], resolution: DTypeResolution) -> DTypeP
     plan: DTypePlan = []
     for b in order:
         bid = b.id if b.id is not None else "<unassigned>"
-        in_dts = tuple(
-            np.dtype(resolution.ports[(bid, "in", i)]) for i in range(b.n_inputs)
-        )
-        out_dts = tuple(
-            np.dtype(resolution.ports[(bid, "out", j)]) for j in range(b.n_outputs)
-        )
+        in_dts = tuple(np.dtype(resolution.ports[(bid, "in", i)]) for i in range(b.n_inputs))
+        out_dts = tuple(np.dtype(resolution.ports[(bid, "out", j)]) for j in range(b.n_outputs))
         plan.append((in_dts, out_dts))
     return plan
+
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
 StepCallback = Callable[[float, float], bool]
@@ -770,8 +767,7 @@ class Simulator:
             elif st == -1.0:
                 if not any(src is not None for src in b.input_sources):
                     raise BlockSpecError(
-                        f"Block {b.id!r} has sample_time=-1.0 (inherited) "
-                        "but no inputs"
+                        f"Block {b.id!r} has sample_time=-1.0 (inherited) but no inputs"
                     )
                 pending.append(b)
             else:
@@ -828,8 +824,7 @@ class Simulator:
             resolved_now: list[Block] = []
             for b in pending:
                 has_unresolved_upstream = any(
-                    src is not None and id(src[0]) in unresolved_ids
-                    for src in b.input_sources
+                    src is not None and id(src[0]) in unresolved_ids for src in b.input_sources
                 )
                 if has_unresolved_upstream:
                     deferred.append(b)
@@ -999,8 +994,7 @@ class Simulator:
             if in_dts is None:
                 return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
             return tuple(
-                np.zeros(shape, dtype=in_dts[i])
-                for i, shape in enumerate(b.port_shapes_in)
+                np.zeros(shape, dtype=in_dts[i]) for i, shape in enumerate(b.port_shapes_in)
             )
 
         def _gather_inputs(
@@ -1051,9 +1045,7 @@ class Simulator:
                 # ここ 1 箇所。cast_value は dtype 一致時 no-op、nan/inf/域外も
                 # 決定的)。予測 == 実行 (AC-2) をこの行が保証する。
                 out_dts = plan[idx][1]
-                outputs[b] = tuple(
-                    cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y)
-                )
+                outputs[b] = tuple(cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y))
         for idx, b in enumerate(order):
             if not b.direct_feedthrough:
                 in_dts = plan[idx][0] if plan is not None else None
@@ -1518,9 +1510,7 @@ class Simulator:
                     "solver": str(self.solver),
                     "rtol": float(self.rtol),
                     "atol": float(self.atol),
-                    "dt_base": (
-                        None if self.dt_base_hint is None else float(self.dt_base_hint)
-                    ),
+                    "dt_base": (None if self.dt_base_hint is None else float(self.dt_base_hint)),
                 },
                 "blocks": [b.to_dict() for b in self.blocks],
                 "connections": serialize_connections(self.blocks),

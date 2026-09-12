@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 def _chain_model(n_blocks: int, *, declare: bool) -> Simulator:
     sim = Simulator(t_end=0.05, dt=0.01)
     prev = sim.add(
-        Constant(value=1, dtype="int64", id="c0")
-        if declare
-        else Constant(value=1.0, id="c0")
+        Constant(value=1, dtype="int64", id="c0") if declare else Constant(value=1.0, id="c0")
     )
     for i in range(n_blocks - 1):
         s = sim.add(Sum(signs="+", id=f"s{i}"))

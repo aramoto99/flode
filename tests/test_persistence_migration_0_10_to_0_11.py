@@ -24,9 +24,7 @@ def test_migrate_is_noop_except_version() -> None:
     data = {
         "schema_version": "0.10",
         "simulator": {"t_end": 1.0, "dt": 0.01},
-        "blocks": [
-            {"id": "c", "type": "flode.blocks.sources.Constant", "params": {"value": 1.0}}
-        ],
+        "blocks": [{"id": "c", "type": "flode.blocks.sources.Constant", "params": {"value": 1.0}}],
         "connections": [],
     }
     out = _builtin_migrate_0_10_to_0_11(data)
@@ -117,7 +115,10 @@ def test_0_10_round_trip_diff_is_schema_version_only(tmp_path: Path) -> None:
     sim.save(path)
     text_current = path.read_text(encoding="utf-8")
     # 0.10 相当のファイルを作る (schema_version を書き戻すだけ)
-    path.write_text(text_current.replace('"schema_version": "0.13"', '"schema_version": "0.10"'), encoding="utf-8")
+    path.write_text(
+        text_current.replace('"schema_version": "0.13"', '"schema_version": "0.10"'),
+        encoding="utf-8",
+    )
     loaded = Simulator.load(path)
     out_path = tmp_path / "resaved.flw.json"
     loaded.save(out_path)

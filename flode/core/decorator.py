@@ -51,6 +51,7 @@ def _sample_time_is_statically_discrete(sample_time: float | str | None) -> bool
         and sample_time > 0.0
     )
 
+
 _logger = logging.getLogger("flode.decorator")
 
 _RESERVED_X0 = "x0"

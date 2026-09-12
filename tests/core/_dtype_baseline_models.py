@@ -50,9 +50,7 @@ RTOL: float = 1e-6
 ATOL: float = 1e-9
 
 # 採取先 (tests/data/ 配下、ファイル名に採取元バージョンを刻む)
-BASELINE_NPZ: Path = (
-    Path(__file__).resolve().parent.parent / "data" / "dtypes_baseline_v0_53_7.npz"
-)
+BASELINE_NPZ: Path = Path(__file__).resolve().parent.parent / "data" / "dtypes_baseline_v0_53_7.npz"
 
 # ばね-質量-減衰系の物理定数 (m=1 に正規化済み)
 _DAMPING_C: float = 0.5
