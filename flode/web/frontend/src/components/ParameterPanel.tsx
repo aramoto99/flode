@@ -20,6 +20,7 @@ import {
   isLongStringParam,
   isPrimitiveParam,
   parseNumericInput,
+  withDependentParams,
 } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
@@ -274,11 +275,21 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       newValue = raw;
     }
     setError(null);
-    updateBlockParams(
-      block.id,
-      { ...block.params, [k]: newValue },
-      registryMap,
-    );
+    const nextParams = withDependentParams(block, k, newValue);
+    // 従属パラメータの追従 / clamp で実際に入る値が入力と異なるキーは draft も
+    // 揃える (= 入力欄に「3」と残ったまま params は 1、という食い違いを防ぐ)
+    setDraft((d) => {
+      const out = { ...d };
+      for (const [key, v] of Object.entries(nextParams)) {
+        const changedByDependency = key !== k && block.params[key] !== v;
+        const clamped = key === k && v !== newValue;
+        if ((changedByDependency || clamped) && isPrimitiveParam(v)) {
+          out[key] = formatForDraft(v);
+        }
+      }
+      return out;
+    });
+    updateBlockParams(block.id, nextParams, registryMap);
   };
 
   return (

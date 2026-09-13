@@ -65,11 +65,12 @@ export function ModelSettingsModal({
   const [dtStr, setDtStr] = useState<string>(
     initial ? String(initial.dt) : "0.01",
   );
+  // フォールバック既定はエンジン Simulator.__init__ / lib/emptyModel.ts と揃える
   const [rtolStr, setRtolStr] = useState<string>(
-    initial ? String(initial.rtol) : "1e-3",
+    initial ? String(initial.rtol) : "1e-6",
   );
   const [atolStr, setAtolStr] = useState<string>(
-    initial ? String(initial.atol) : "1e-6",
+    initial ? String(initial.atol) : "1e-9",
   );
   const [dtBaseExplicit, setDtBaseExplicit] = useState<boolean>(
     initial?.dt_base != null,

@@ -21,6 +21,23 @@ export interface ResolvedPortCounts {
   nOutputs: number;
 }
 
+/**
+ * LogicalOperator の単項演算子 (Python 側 ``logic.py`` の ``_UNARY_OPS`` と一致させる)。
+ * 単項演算子は ``n_inputs=1`` 固定で、それ以外は ``n_inputs >= 2``。
+ * ポート数の解決 (本ファイル) と Inspector の従属パラメータ追従
+ * (``lib/paramEdit.ts`` の ``withDependentParams``) の両方がこの 1 箇所を参照する。
+ */
+export const LOGICAL_UNARY_OPERATORS: readonly string[] = ["NOT"];
+
+/**
+ * LogicalOperator の operator 値が単項 (= 1 入力固定) かを返す。
+ *
+ * @param operator - params.operator の値 (未設定 / 非文字列は false)
+ */
+export function isLogicalOperatorUnary(operator: unknown): boolean {
+  return typeof operator === "string" && LOGICAL_UNARY_OPERATORS.includes(operator);
+}
+
 export function resolvePortCounts(
   typePath: string,
   params: Record<string, unknown>,
@@ -54,7 +71,11 @@ export function resolvePortCounts(
   // ----- Logic -----
   // LogicalOperator: n_inputs param (logic.py:92)
   if (typePath.endsWith(".LogicalOperator")) {
-    // NOT は n_inputs=1 固定だが Python 側で検証されるので素直に n_inputs を使う
+    // NOT は n_inputs=1 固定 (logic.py: NOT requires n_inputs=1)。bug-fix 2026-09-13:
+    // Inspector で operator を NOT に変えた瞬間からポート数を 1 として扱い、
+    // 「select で選べるのに backend が拒否する / 2 ポート目が幽霊化する」を防ぐ
+    // (ParameterPanel 側でも n_inputs を 1 に追従させる)
+    if (isLogicalOperatorUnary(params.operator)) return { nInputs: 1, nOutputs: 1 };
     return { nInputs: readPositiveInt(params.n_inputs, defaultIn), nOutputs: 1 };
   }
 

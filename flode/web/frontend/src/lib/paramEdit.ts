@@ -2,6 +2,7 @@
 // React に依存しないため Vitest unit test で検証可能。
 
 import type { BlockEntry, FlwModel } from "../types/api";
+import { isLogicalOperatorUnary } from "./dynamicPorts";
 
 /**
  * パラメータ値が inline 編集可能 (number) かを判定する (legacy, 数値のみ)。
@@ -135,4 +136,47 @@ export function updateBlockParam(
  */
 export function findBlock(model: FlwModel, blockId: string): BlockEntry | undefined {
   return model.blocks.find((b) => b.id === blockId);
+}
+
+/**
+ * 1 つのパラメータ変更に伴って backend の validation 上 **必ず一緒に変わる** 従属
+ * パラメータを揃えた params を返す (bug-fix 2026-09-13)。
+ *
+ * 現状の対象は LogicalOperator のみ (``logic.py``: 単項演算子 NOT は ``n_inputs=1``
+ * 固定、それ以外は ``n_inputs >= 2``):
+ *
+ * - ``operator`` を変更 → 単項なら ``n_inputs=1``、単項から 2 項へ戻したら
+ *   ``max(2, 現在値)``
+ * - ``n_inputs`` を直接変更 → 単項なら常に 1、2 項なら ``max(2, 入力値)`` に clamp
+ *
+ * 既定 n_inputs=2 のまま NOT を選ぶと run / 保存時に BlockSpecError になり、Inspector
+ * からは原因が見えなかった。単項判定は ``dynamicPorts.ts`` の
+ * ``isLogicalOperatorUnary`` と共有する (ポート数の描画と一致させるため)。
+ *
+ * @param block - 編集中のブロック
+ * @param key - 変更したパラメータ名
+ * @param value - 変更後の値
+ * @returns 従属パラメータを揃えた新しい params
+ */
+export function withDependentParams(
+  block: BlockEntry,
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...block.params, [key]: value };
+  if (!block.type.endsWith(".LogicalOperator")) return next;
+  const currentN =
+    typeof block.params.n_inputs === "number" ? block.params.n_inputs : 2;
+  if (key === "operator") {
+    if (isLogicalOperatorUnary(value)) {
+      next.n_inputs = 1;
+    } else if (isLogicalOperatorUnary(block.params.operator) || currentN < 2) {
+      next.n_inputs = Math.max(2, currentN);
+    }
+  } else if (key === "n_inputs" && typeof value === "number") {
+    next.n_inputs = isLogicalOperatorUnary(block.params.operator)
+      ? 1
+      : Math.max(2, Math.trunc(value));
+  }
+  return next;
 }
