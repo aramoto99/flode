@@ -32,7 +32,7 @@ from ..core.block import (
 )
 from ..core.identifiers import fold_block_id
 from ..core.persistence import LayoutDict, normalize_layout
-from ..exceptions import AlgebraicLoopError, BlockSpecError
+from ..exceptions import AlgebraicLoopError, BlockSpecError, ModelSerializationError
 from ._mask import (
     collect_placeholder_names,
     normalize_mask_params,
@@ -640,7 +640,24 @@ class Subsystem(Block):
             self.sample_time = BASE_CLOCK_SAMPLE_TIME
 
         # save/load 用 params の確定
-        self._params["blocks"] = [b.to_dict() for b in self._inner_blocks]
+        # bug-fix 2026-09-13: 永続化できない内部ブロック (``@block`` で __main__ に
+        # 定義したユーザーブロック等) があっても **実行は妨げない**。to_dict は
+        # save 時 (``Subsystem.to_dict``) に改めて計算され、そこで
+        # ModelSerializationError が利用者に届く。従来は build 時点で例外になり、
+        # Subsystem に入れただけで run() すらできなかった。
+        try:
+            self._params["blocks"] = [b.to_dict() for b in self._inner_blocks]
+        except ModelSerializationError as exc:
+            if in_serialization_build():
+                # save 経路 (Subsystem.to_dict → _build) では利用者に即座に届ける
+                raise
+            _logger.debug(
+                "Subsystem %r: inner block params not cached at build (%s); "
+                "save() will raise the same error",
+                self.id,
+                exc,
+            )
+            self._params.pop("blocks", None)
         self._params["connections"] = self._serialize_inner_connections()
 
         # ADR-0058: control block hot-path で参照する出力キャッシュを build 末尾で

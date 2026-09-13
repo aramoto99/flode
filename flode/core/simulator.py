@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 import math
+import numbers
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -86,6 +87,21 @@ _GRID_TIME_DECIMALS = 12
 _MIN_DT_BASE = 10.0 ** -(_GRID_TIME_DECIMALS - 3)
 
 
+def _validate_positive_finite(name: str, value: Any) -> float:
+    """``Simulator`` のソルバー設定値 (dt / rtol / atol / dt_base) を検証して float で返す。
+
+    ``parse_t_end`` と同じく構築時に :class:`ModelLoadError` で拒否する
+    (``Simulator.from_dict`` 経由でも同じ例外型になる)。
+    """
+    # 判定は parse_t_end (persistence.py) と同じ numbers.Real ベースに揃える
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise ModelLoadError(f"Invalid {name}: must be a number, got {type(value).__name__}")
+    f = float(value)
+    if not math.isfinite(f) or f <= 0.0:
+        raise ModelLoadError(f"Invalid {name}: must be a positive finite number, got {value!r}")
+    return f
+
+
 def _grid_time(k: int, dt_base: float) -> float:
     """``k`` 番目の基準ステップ時刻 (格子点に丸めた ``k * dt_base``)。"""
     return round(k * dt_base, _GRID_TIME_DECIMALS)
@@ -119,11 +135,18 @@ class Simulator:
         # ADR-0042 §論点 4-A: ``"inf"`` (case-insensitive) を受け入れて
         # ``math.inf`` に変換する。``parse_t_end`` で全 validation 一元化。
         self.t_end: float = parse_t_end(t_end)
-        self.dt = float(dt)
+        # bug-fix 2026-09-13: ソルバー設定も構築時に検証する (t_end と同じく
+        # ModelLoadError)。従来 ``rtol <= 0`` は scipy が毎ステップ警告しつつ
+        # ``100*eps`` に黙って丸め、``atol < 0`` は scipy の生の ValueError が
+        # run() 途中で飛び、``atol == 0`` は状態 0 からの積分でステップ幅が 0 に
+        # 収束して事実上停止していた。
+        self.dt = _validate_positive_finite("dt", dt)
         self.solver = solver
-        self.rtol = rtol
-        self.atol = atol
-        self.dt_base_hint: float | None = None if dt_base is None else float(dt_base)
+        self.rtol = _validate_positive_finite("rtol", rtol)
+        self.atol = _validate_positive_finite("atol", atol)
+        self.dt_base_hint: float | None = (
+            None if dt_base is None else _validate_positive_finite("dt_base", dt_base)
+        )
         self.blocks: list[Block] = []
         self._blocks_by_id: dict[str, Block] = {}
         # ADR-0071 §(2): NFKC fold key → NFC id。重複判定専用 (``Gain_1`` と
