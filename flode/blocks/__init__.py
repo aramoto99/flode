@@ -25,6 +25,7 @@ from .lookup import (
 )
 from .mathops import (
     Abs,
+    Add,
     CompareToConstant,
     CompareToZero,
     DeadZone,
@@ -49,6 +50,7 @@ from .userfunc import Fcn
 
 __all__ = [
     "Abs",
+    "Add",
     "Cast",
     "Clock",
     "CompareToConstant",

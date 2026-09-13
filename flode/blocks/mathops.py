@@ -281,13 +281,19 @@ class Divide(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # 先頭が "/" のときは "1 / u[0]" (= 逆数) を起点として後続の乗除を続ける。
-        result = float(u[0]) if self.signs[0] == "*" else 1.0 / float(u[0])
-        for s, val in zip(self.signs[1:], u[1:], strict=True):
-            if s == "*":
-                result *= float(val)
-            else:
-                result /= float(val)
-        return np.array([result])
+        # bug-fix 2026-09-13: Python の float 演算は 0 除算で ZeroDivisionError を
+        # 投げ run 全体が落ちていた。docstring / ADR-0053 §論点 6 (定義域外は
+        # nan / inf 伝播) どおり numpy の float64 演算で計算し、警告は抑制する。
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = (
+                np.float64(u[0]) if self.signs[0] == "*" else np.float64(1.0) / np.float64(u[0])
+            )
+            for s, val in zip(self.signs[1:], u[1:], strict=True):
+                if s == "*":
+                    result = result * np.float64(val)
+                else:
+                    result = result / np.float64(val)
+        return np.array([float(result)])
 
 
 # ---------------------------------------------------------------------------

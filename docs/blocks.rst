@@ -79,6 +79,7 @@ Combinational arithmetic blocks (``direct_feedthrough=True``).
 
    flode.blocks.Gain
    flode.blocks.Sum
+   flode.blocks.Add
    flode.blocks.Product
    flode.blocks.Saturation
    flode.blocks.Abs

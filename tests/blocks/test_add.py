@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from flode.blocks.mathops import Add
+from flode.blocks import Add
 from flode.exceptions import BlockSpecError
 
 

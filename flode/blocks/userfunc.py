@@ -260,6 +260,12 @@ class Fcn(Block):
         n_inputs: 入力ポート数 (既定 1)。式中で参照される最大 index + 1 以上
             であること (範囲外 index は runtime で :class:`BlockEvalError`)。
 
+    Note:
+        ``u`` は入力ポートの dtype (``int32`` / ``uint8`` 等の宣言、SPEC-0028) に
+        関わらず、式評価時は常に **float64 の ndarray** として渡される (Fcn は
+        ``float_out`` 分類 = 出力も float64)。整数 dtype の入力で ``u[0]+u[1]`` が
+        wrap することはない。``2**53`` を超える整数の厳密性は保証しない。
+
     Raises:
         BlockSpecError: 式の syntax error / 禁止 AST ノード / 未定義 Name /
             ``u`` 以外への subscript / 指数 / 文字列長 / node 数 / 深さの上限超過、
@@ -328,7 +334,11 @@ class Fcn(Block):
                 block_id=self.id,
             )
         namespace = self._base_namespace.copy()
-        namespace["u"] = u
+        # bug-fix 2026-09-13: Fcn は float_out (SPEC-0028 分類 = 出力 float64) なので
+        # 式も float64 で評価する。入力 dtype (uint8 / int32 等) のまま渡すと numpy の
+        # 整数演算で wrap し (250+10 → 4)、出力 dtype は float64 なのに値だけが
+        # 整数演算の結果になっていた。
+        namespace["u"] = np.asarray(u, dtype=float)
         namespace["t"] = float(t)
         # numpy は警告発火時に内部で ``__import__`` を呼ぶため、``__builtins__={}``
         # と組み合わせると divide-by-zero / invalid 等で KeyError が出る。
