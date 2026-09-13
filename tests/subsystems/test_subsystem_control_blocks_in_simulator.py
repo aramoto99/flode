@@ -213,6 +213,27 @@ class TestEnabledSubsystemNonFeedthroughPath:
         np.testing.assert_allclose(ls.B, [[1.0]], atol=1e-6)
         np.testing.assert_allclose(ls.C, [[1.0]], atol=1e-6)
 
+    def test_states_reset_policy_with_continuous_states_is_rejected(self) -> None:
+        """2026-09-13: Enable-only + 連続状態では update() が呼ばれず reset 遷移を検出できない。
+
+        無警告で "held" と同じ挙動になっていたので、設計対応までは fail-closed にする。
+        """
+        sub = Subsystem(id="en_int")
+        sub.add(Inport(port_idx=0, id="in_data"))
+        sub.add(Integrator(x0=0.0, id="I"))
+        sub.add(Outport(port_idx=0, id="out"))
+        sub.add(Enable(states_when_enabling="reset", id="en"))
+        sub.connect("in_data", "I")
+        sub.connect("I", "out")
+        sim = Simulator(t_end=1.0, dt=0.1)
+        sim.add(Constant(value=1.0, id="one"))
+        sim.add(Constant(value=1.0, id="enable_on"))
+        sim.add(sub)
+        sim.connect("one", "en_int", dst_idx=0)
+        sim.connect("enable_on", "en_int", dst_idx=1)
+        with pytest.raises(BlockSpecError, match="states_when_enabling"):
+            sim.run()
+
     def test_enable_port_fed_back_from_own_output_is_an_algebraic_loop(self) -> None:
         """enable ポートは直達なので、自身の出力 (直達 Gain 経由) で駆動すると代数ループ。"""
         sub = Subsystem(id="en_gain")

@@ -319,6 +319,11 @@ class Goto(Block):
         # `None` は「まだ Goto が一度も実行されていない」状態 (= From 側の早期参照
         # を BlockSpecError で気付けるようにする)。
         self._last_input: npt.NDArray[Any] | None = None
+        # bug-fix 2026-09-13: Trigger / Enable 付き Subsystem の内部に置かれた Goto
+        # は初回 fire / enable まで実行されない。その間 From は 0 を返す (= 「まだ
+        # ホールド値が無い」状態で、スケジューリングバグではない)。
+        # ``Simulator._resolve_goto_from_virtual_edges`` が build 時に設定する。
+        self._hold_before_first_run: bool = False
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: u は 1D ndarray shape (1,)。値を保持して空配列を返す
@@ -393,7 +398,10 @@ class From(Block):
                 f"From {self.id!r}(tag={self.tag!r}): not resolved. "
                 f"Did Simulator._resolve_goto_from_virtual_edges run?"
             )
-        if self._resolved_goto._last_input is None:
+        if (
+            self._resolved_goto._last_input is None
+            and not self._resolved_goto._hold_before_first_run
+        ):
             raise BlockSpecError(
                 f"From {self.id!r}(tag={self.tag!r}): upstream Goto "
                 f"{self._resolved_goto.id!r} has not produced any output yet. "
@@ -402,16 +410,24 @@ class From(Block):
             )
         return self._resolved_goto
 
+    def _held_value(self) -> npt.NDArray[Any]:
+        """解決済み Goto の最新値 (未実行の Triggered / Enabled 内 Goto は 0)。"""
+        goto = self._ensure_resolved()
+        if goto._last_input is None:
+            # bug-fix 2026-09-13: 初回 fire 前のホールド値 = 0 (Outport の初期
+            # キャッシュ ``_last_y = zeros`` と同じ規約)。shape は build 時に確定した
+            # 出力 port shape に合わせる (SM-A なら (1,)、SM-B なら port_shape)。
+            shape = self.port_shapes_out[0] if self.port_shapes_out[0] != () else (1,)
+            return np.zeros(shape)
+        return np.asarray(goto._last_input)
+
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: 解決済み Goto の _last_input (= 1D shape (1,)) を copy 返却。
         # ADR-0055 §論点 6 (Option 6-A): MVP は 1 copy 固定 (view 最適化は Phase 2)。
-        goto = self._ensure_resolved()
         # Goto._last_input は SM-A path で shape (1,)、SM-B path で port_shape。
         # SM-A モードでは From.output は 1D shape (1,) を返す契約 (= n_outputs=1)。
-        last = np.asarray(goto._last_input, dtype=float)
-        # SM-A モードでは Goto._last_input.shape == (1,)、そのまま 1D で返せる。
         # SM-B モードでは output_v が呼ばれるため本メソッドは通らない。
-        return last.copy()
+        return np.asarray(self._held_value(), dtype=float).copy()
 
     def output_v(
         self,
@@ -421,9 +437,8 @@ class From(Block):
     ) -> tuple[npt.NDArray[Any], ...]:
         # SM-B path: 解決済み Goto の _last_input (= port_shape の ndarray) を
         # tuple of 1 ndarray にラップして copy 返却 (ADR-0055 §論点 6)。
-        goto = self._ensure_resolved()
         # SM-D Stage 1: dtype 素通し (Goto が保存した dtype を保つ)
-        return (np.asarray(goto._last_input).copy(),)
+        return (self._held_value().copy(),)
 
 
 # GotoTagVisibility は SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。

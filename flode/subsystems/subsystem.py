@@ -157,6 +157,12 @@ class Subsystem(Block):
         # 冒頭で deps に merge する。Goto/From を含まない Subsystem では常に空
         # set のため、既存テストの数値完全不変ガード。
         self._virtual_inner_deps: set[tuple[Block, Block]] = set()
+        # bug-fix 2026-09-13: 外部 (上位スコープ) の From から参照される Goto、
+        # またはそれを含む内側 Subsystem。``_infer_direct_feedthrough`` で Outport と
+        # 同じ「到達目標」として扱い、Inport から直達で到達できるなら本 Subsystem
+        # を直達にする (= パス 1 で実入力を使って Goto が値を記録できるようにする)。
+        # ``Simulator._resolve_goto_from_virtual_edges`` が populate する。
+        self._df_extra_targets: set[Block] = set()
 
         # save/load 用 params (= ADR-0039 で n_inputs / n_outputs / port_shapes_*
         # フィールドは廃止、内部 blocks / connections のみ保存)。
@@ -489,6 +495,23 @@ class Subsystem(Block):
                     "resolution is not supported in this release). Place it at the "
                     "root level, or give it an explicit-rate discrete block inside."
                 )
+        # bug-fix 2026-09-13: 内部ブロックの ``_resolved_sample_time`` をここで確定
+        # する。``Simulator._resolve_sample_times`` はルート直下しか走らないため、
+        # update() / output() で解決済み周期を要求するブロック (DiscreteIntegrator /
+        # RateLimiter / ZeroOrderHoldDirect 等) が Subsystem 内で
+        # "sample_time has not been resolved" になっていた。上の拒否で同期系
+        # (-1 / "dt") の離散専用ブロックは除外済みなので、数値周期はそのまま、
+        # それ以外 (連続 / 無状態の -1・"dt") は連続として確定できる。
+        for b in self._inner_blocks:
+            st_inner = b.sample_time
+            if (
+                isinstance(st_inner, (int, float))
+                and not isinstance(st_inner, bool)
+                and st_inner > 0.0
+            ):
+                b._resolved_sample_time = float(st_inner)
+            else:
+                b._resolved_sample_time = None
 
         # Phase 2 では Subsystem 内部の連続+離散混在を拒否する
         # (code-reviewer MUST #1 修正: Phase 3 で外部スケジューラとの統合を再設計)。
@@ -510,6 +533,21 @@ class Subsystem(Block):
                 f"Continuous: {[b.id for b in cont_states]}, "
                 f"Discrete: {[b.id for b in disc_states]}. "
                 f"Split into separate Subsystems or wait for Phase 3."
+            )
+        # code-reviewer MUST (2026-09-13): Subsystem.update() は内部の離散ブロックを
+        # 親の周期 (= 内部最小周期) で一括 update するため、周期の異なる離散
+        # ブロックが混在すると遅い方が速い周期で更新され無警告で誤った結果になる
+        # (内部ブロック単位の step_ratio ゲートは未実装、ADR-0014 既知制限)。
+        # 従来は DiscreteIntegrator 等が "sample_time not resolved" で落ちていた
+        # ので顕在化しなかった。fail-closed に拒否する。
+        disc_rates = sorted({float(b.sample_time) for b in disc_states})  # type: ignore[arg-type]
+        if len(disc_rates) > 1:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: inner discrete blocks with different sample_time "
+                f"{disc_rates} are not supported in this release (a Subsystem updates all "
+                "inner discrete blocks at its fastest inner rate; per-block step-ratio "
+                "gating is not implemented). Use a single rate inside the Subsystem, or "
+                "split rates into separate Subsystems with RateTransition at root."
             )
 
         # トポロジカル順 (direct_feedthrough のみ依存辺)
@@ -543,6 +581,27 @@ class Subsystem(Block):
         for b, sl in self._state_slices:
             x0[sl] = np.asarray(b.x0, dtype=float)
         self.x0 = x0
+
+        # bug-fix 2026-09-13: Enable-only で連続内部状態を持つ Subsystem は
+        # Simulator から update() が呼ばれない (連続ブロックとして layout される)
+        # ため、enable false→true 遷移の検出 = ``states_when_enabling="reset"`` が
+        # 一度も発火せず、無警告で "held" と同じ挙動になっていた。連続状態の
+        # 境界リセットはスケジューラ側の仕組み (ステップ境界 hook) が必要なので、
+        # 設計対応までは fail-closed に拒否する。
+        if (
+            self._has_enable
+            and not self._has_trigger
+            and self._enable_block is not None
+            and self._enable_block.states_when_enabling == "reset"
+            and self._continuous_slices
+        ):
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: Enable(states_when_enabling='reset') is not "
+                "supported when the subsystem holds continuous states "
+                f"({[b.id for b, _ in self._continuous_slices]}): the reset transition "
+                "is never detected for continuous-state subsystems in this release. "
+                "Use states_when_enabling='held', or discrete inner blocks."
+            )
 
         # direct_feedthrough を内部 Inport→Outport 経路から推論 (LO-A)
         self.direct_feedthrough = self._infer_direct_feedthrough(inports, outports)
@@ -591,6 +650,23 @@ class Subsystem(Block):
         # 完全不変ガード、既存テストへの影響なし)。
         if self._last_y is None or self._last_y.shape != (self.n_outputs,):
             self._last_y = np.zeros(self.n_outputs)
+
+    def reset(self) -> None:
+        """``Simulator.run()`` 開始時の lifecycle hook (run 間の再現性、bug-fix 2026-09-13)。
+
+        Trigger / Enable の前ステップ値 (NaN sentinel) と出力キャッシュを初期状態に
+        戻し、内部ブロックの ``reset()`` (RandomSource の RNG、Relay の x0、
+        入れ子 Subsystem 等) にも伝搬する。これが無いと同じ ``Simulator`` の 2 回目の
+        ``run()`` が前回の最終状態から edge 判定を始め、結果が初回と一致しなかった。
+        """
+        self._prev_trigger_value = float("nan")
+        self._prev_enable_value = float("nan")
+        if self._last_y is not None:
+            self._last_y = np.zeros(self.n_outputs)
+        for b in self._inner_blocks:
+            inner_reset = getattr(b, "reset", None)
+            if callable(inner_reset):
+                inner_reset()
 
     def _compute_exec_order(self) -> list[Block]:
         """内部 direct_feedthrough 依存に基づくトポロジカル順 (代数ループ検出付き)。"""
@@ -659,7 +735,21 @@ class Subsystem(Block):
                         continue
                     if src[0] is b:
                         adj[b.id].append(dst.id)
-        outport_ids: set[str] = {o.id for o in outports if o.id is not None}
+        # bug-fix 2026-09-13: Goto → From の仮想配線も直達辺として辿る
+        # (ADR-0055 §論点 5-A の deps と同じ対)。これが無いと「Inport → Goto /
+        # From → Outport」の Subsystem が非直達と誤判定され、パス 1 で入力ゼロの
+        # まま Goto が値を記録して From が 0 を読んでいた。
+        for vdep_dst, vdep_src in self._virtual_inner_deps:
+            if vdep_src.id is not None and vdep_dst.id is not None and vdep_src.direct_feedthrough:
+                adj[vdep_src.id].append(vdep_dst.id)
+        # 到達目標 = Outport + 外部から参照される Goto (またはそれを含む直達な
+        # 内側 Subsystem)。Goto 自体は n_outputs=0 なので到達すれば終端。
+        from ..blocks.routing import Goto
+
+        target_ids: set[str] = {o.id for o in outports if o.id is not None}
+        for extra in self._df_extra_targets:
+            if extra.id is not None and (isinstance(extra, Goto) or extra.direct_feedthrough):
+                target_ids.add(extra.id)
         for inp in inports:
             assert inp.id is not None
             visited: set[str] = set()
@@ -669,7 +759,7 @@ class Subsystem(Block):
                 if cur in visited:
                     continue
                 visited.add(cur)
-                if cur in outport_ids:
+                if cur in target_ids:
                     return True
                 for next_id in adj.get(cur, []):
                     if next_id not in visited:

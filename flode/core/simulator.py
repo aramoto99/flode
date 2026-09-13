@@ -76,6 +76,20 @@ _logger_routing = logging.getLogger("flode.routing.goto")
 
 _SAMPLE_TIME_RATIO_TOL = 1e-9
 
+#: bug-fix 2026-09-13: 基準ステップ時刻 ``t = k * dt_base`` の丸め桁。float 乗算だと
+#: ``3 * 0.3 = 0.8999999999999999`` のように真の格子点より僅かに小さくなり、
+#: ``Step(step_time=0.9)`` / ``PulseGenerator(period=0.9)`` 等の時刻比較が
+#: 1 サンプル遅れる。12 桁で丸めれば ``round(0.8999999999999999, 12) == 0.9``
+#: (= リテラルと同じ double) になり、格子点上の境界判定が厳密に一致する。
+_GRID_TIME_DECIMALS = 12
+#: 丸め桁に対して 3 桁の余裕を持たせた基準ステップの下限 (= 1e-9 s)。
+_MIN_DT_BASE = 10.0 ** -(_GRID_TIME_DECIMALS - 3)
+
+
+def _grid_time(k: int, dt_base: float) -> float:
+    """``k`` 番目の基準ステップ時刻 (格子点に丸めた ``k * dt_base``)。"""
+    return round(k * dt_base, _GRID_TIME_DECIMALS)
+
 
 class Simulator:
     """連続/離散ハイブリッドシミュレータ。
@@ -401,6 +415,7 @@ class Simulator:
             for b in blocks:
                 if isinstance(b, Subsystem):
                     b._virtual_inner_deps = set()
+                    b._df_extra_targets = set()
 
         from ..blocks.routing import From, Goto
 
@@ -469,6 +484,14 @@ class Simulator:
             from_block._set_port_shapes_out_for_build((src_shape,))
             # 解決済み Goto への参照を埋め込み (run 時に From.output が読む)
             from_block._resolved_goto = resolved_goto
+            # bug-fix 2026-09-13: Trigger / Enable 付き Subsystem の内部ブロックは
+            # fire / enable 中にしか実行されないので、初回 fire 前は Goto が値を
+            # 持たない。これはスケジューリングバグではなく「ホールド値がまだ無い」
+            # 状態なので、From は 0 を返してよい (Outport の初期キャッシュと同じ)。
+            resolved_goto._hold_before_first_run = any(
+                getattr(s, "_has_trigger", False) or getattr(s, "_has_enable", False)
+                for s in scope_of.get(resolved_goto, ())
+            )
             # 2 回目以降の ``run()`` で安全網 (= ``From._ensure_resolved`` の
             # ``_last_input is None`` ガード) が正しく機能するよう、build 時に
             # Goto._last_input をリセットする。
@@ -483,8 +506,13 @@ class Simulator:
         self._log_dangling(local_registry, global_registry, used_gotos)
 
         # ------------- Phase 5: Subsystem 内部 exec_order の再計算 (§論点 5-A) -------------
+        # bug-fix 2026-09-13: 先に全対象を無効化してから build する。親の ``_build``
+        # は内側の ``_build`` を先に呼ぶので、内側 Subsystem の direct_feedthrough
+        # 再推論 (``_df_extra_targets`` 反映) が親の推論より必ず先に済む
+        # (set の走査順に依存しない)。
         for sub in subsystems_with_goto_from:
             sub._exec_order = None
+        for sub in subsystems_with_goto_from:
             sub._build()
 
     def _resolve_from(
@@ -555,6 +583,15 @@ class Simulator:
         # (= scope_path[common_len] が存在すればそれ、なければブロック自身)
         from_top: Block = from_scope[common_len] if common_len < len(from_scope) else from_block
         goto_top: Block = goto_scope[common_len] if common_len < len(goto_scope) else goto_block
+        # bug-fix 2026-09-13: From が Goto より上位スコープにいる場合、Goto を含む
+        # 各祖先 Subsystem (共通祖先より下) に「外部から参照される到達目標」を
+        # 登録する。Inport からその目標へ直達で到達できる Subsystem は直達扱いに
+        # なり、パス 1 で実入力を使って Goto が値を記録する (非直達のままだと
+        # 入力ゼロで記録した値を From が読んでしまう)。
+        goto_path = goto_scope[common_len:]
+        for depth, ancestor in enumerate(goto_path):
+            target = goto_path[depth + 1] if depth + 1 < len(goto_path) else goto_block
+            ancestor._df_extra_targets.add(target)
         # 自己依存 (= from_top is goto_top) は skip (= 同一 Subsystem 内で from
         # も goto も同じ Subsystem 配下にいる場合、その Subsystem の内部 deps で
         # 別途追加するため、外側で自己依存を作るとループになる)。
@@ -881,6 +918,15 @@ class Simulator:
 
         if dt_base <= 0.0:
             raise SchedulingError(f"Computed dt_base={dt_base} is non-positive")
+        # code-reviewer SHOULD (2026-09-13): 格子時刻を 12 桁で丸める (_grid_time)
+        # ため、それより 3 桁の余裕を切る基準ステップでは隣接格子点が同じ値に
+        # 丸まりうる (solve_ivp に長さ 0 の区間が渡る)。明示的に拒否する。
+        if dt_base < _MIN_DT_BASE:
+            raise SchedulingError(
+                f"Computed dt_base={dt_base:g} is below the supported minimum "
+                f"{_MIN_DT_BASE:g} (time grid is rounded to {_GRID_TIME_DECIMALS} decimals). "
+                "Rescale the model's time unit instead of using such a small step."
+            )
 
         for b in self.blocks:
             t = b._resolved_sample_time
@@ -1205,6 +1251,29 @@ class Simulator:
             self._run_sm_a_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
         else:
             self._run_sm_b_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
+        self._warn_never_fired_gotos()
+
+    def _warn_never_fired_gotos(self) -> None:
+        """Trigger / Enable 配下で一度も実行されなかった Goto を WARNING で残す。
+
+        code-reviewer SHOULD (2026-09-13): これらの Goto を読む From は run 全区間で
+        0 を返す (bug-fix で例外から 0 返却に変更)。「まだ fire していない」と
+        「配線ミスで一生 fire しない」を数値では区別できないため、後者の診断情報を
+        ログで補う (数値挙動は変えない)。
+        """
+        from ..blocks.routing import Goto
+
+        for scope_path, blocks in self._walk_scopes():
+            for b in blocks:
+                if isinstance(b, Goto) and b._hold_before_first_run and b._last_input is None:
+                    _logger_routing.warning(
+                        "Goto %r (tag=%r, scope=%s) never fired during this run "
+                        "(its Triggered/Enabled Subsystem was never activated); "
+                        "From blocks reading it returned 0.0 for the entire simulation",
+                        b.id,
+                        b.tag,
+                        self._scope_path_str(scope_path),
+                    )
 
     def _run_sm_a_loop(
         self,
@@ -1238,7 +1307,7 @@ class Simulator:
 
         k = 0
         while True:
-            t = k * dt_base
+            t = _grid_time(k, dt_base)
 
             # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
             if discrete_state:
@@ -1279,7 +1348,7 @@ class Simulator:
 
             # [B] 連続部分の積分 [t_k, t_{k+1}]
             if n_total > 0:
-                t_next = (k + 1) * dt_base
+                t_next = _grid_time(k + 1, dt_base)
                 sol = solve_ivp(
                     f_continuous,
                     (t, t_next),
@@ -1341,7 +1410,7 @@ class Simulator:
 
         k = 0
         while True:
-            t = k * dt_base
+            t = _grid_time(k, dt_base)
 
             # [A'] 離散ブロック update (SM-B path)
             if discrete_state:
@@ -1392,7 +1461,7 @@ class Simulator:
 
             # [B] 連続積分 (SM-B 版 f_continuous_vector)
             if n_total > 0:
-                t_next = (k + 1) * dt_base
+                t_next = _grid_time(k + 1, dt_base)
                 sol = solve_ivp(
                     f_continuous_vector,
                     (t, t_next),

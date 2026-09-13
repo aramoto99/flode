@@ -362,16 +362,13 @@ def test_subsystem_inner_unit_delay_one_sample_delay() -> None:
     np.testing.assert_allclose(arr, expected, atol=1e-12)
 
 
-def test_subsystem_inner_discrete_integrator_resolved_sample_time_not_propagated() -> None:
-    """Subsystem 内の DiscreteIntegrator には外側の _resolve_sample_times が伝播しない。
+def test_subsystem_inner_discrete_integrator_resolved_sample_time_propagated() -> None:
+    """Subsystem 内の DiscreteIntegrator も解決済み sample_time で動く。
 
-    既知の実装制限 (ADR-0014 Risks #6): Subsystem 内部ブロックは外側 Simulator の
-    _resolve_sample_times に含まれないため、DiscreteIntegrator が使う
-    _resolved_sample_time が None のまま update() で BlockSpecError が発生する。
-    UnitDelay は _resolved_sample_time を使わないため影響を受けない。
-
-    これは Phase 3 で Subsystem と外部スケジューラの統合を再設計する際に修正予定
-    (subsystem.py: code-reviewer MUST #1 参照)。
+    旧 ADR-0014 Risks #6 の既知制限 (内部ブロックの ``_resolved_sample_time`` が
+    None のまま update() で BlockSpecError) は bug-fix 2026-09-13 で解消:
+    ``Subsystem._build`` が内部ブロックの数値周期を ``_resolved_sample_time`` に
+    確定する。本テストは旧制限を固定していたものを新挙動に更新した。
     """
     from flode.subsystems import Subsystem
     from flode.subsystems.ports import Inport, Outport
@@ -390,10 +387,9 @@ def test_subsystem_inner_discrete_integrator_resolved_sample_time_not_propagated
     sim.connect(src, s)
     sim.connect(s, sc)
 
-    # 既知制限: DiscreteIntegrator の _resolved_sample_time が None のまま
-    # update() 内で BlockSpecError が発生する
-    with pytest.raises(BlockSpecError, match="sample_time has not been resolved"):
-        sim.run()
+    sim.run()
+    # 前進 Euler: y[k] = 0.01 * k (ルート直下に置いた場合と同じ)
+    np.testing.assert_allclose(np.asarray(sc.values).reshape(-1), np.arange(6) * 0.01, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
