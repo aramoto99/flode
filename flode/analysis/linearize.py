@@ -381,6 +381,14 @@ def _evaluate(
                 inputs_a[b] = u
             else:
                 u = np.zeros(b.n_inputs)
+                # bug-fix 2026-09-13: 制御入力ポート (Enabled Subsystem の enable)
+                # は output() 前に必要 (Simulator._step と同じ扱い)。データポートの
+                # 上流は未計算でもよいので gather_inputs_a (全ポート解決) は使わない。
+                for i in b.control_input_ports:
+                    src = b.input_sources[i]
+                    if src is not None:
+                        sb, si = src
+                        u[i] = outputs_a[sb][si]
             xb = state_for(b)
             y = np.atleast_1d(np.asarray(b.output(t, xb, u), dtype=float))
             outputs_a[b] = y
@@ -428,6 +436,16 @@ def _evaluate(
             inputs_b[b] = u_b
         else:
             u_b = zero_inputs_b(b)
+            if b.control_input_ports:
+                # bug-fix 2026-09-13: 制御入力ポートだけ output_v 前に埋める
+                # (gather_inputs_b は全ポート解決なので使わない)
+                u_list_b = list(u_b)
+                for i in b.control_input_ports:
+                    src_c = b.input_sources[i]
+                    if src_c is not None:
+                        sb_c, si_c = src_c
+                        u_list_b[i] = outputs_b[sb_c][si_c]
+                u_b = tuple(u_list_b)
         xb = state_for(b)
         y_b = b.output_v(t, xb, u_b)
         if len(y_b) != b.n_outputs:

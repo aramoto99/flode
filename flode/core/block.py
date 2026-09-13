@@ -201,6 +201,14 @@ class Block:
     #: 無状態ブロックはこちら。
     requires_discrete_rate: ClassVar[bool] = False
 
+    #: ``direct_feedthrough=False`` でも ``output()`` 時点で値が必要な **制御入力**
+    #: ポートの index。スケジューラはこれらのポートだけを直達辺として依存グラフに
+    #: 加え、パス 1 (出力計算) で値を組み立てる (データ経路は非直達のまま)。
+    #: 用途: Enabled Subsystem の enable ポート (bug-fix 2026-09-13)。通常ブロック
+    #: は空 tuple。``direct_feedthrough=True`` のブロックでは全ポートが直達なので
+    #: 無視される。
+    control_input_ports: tuple[int, ...] = ()
+
     def __init__(
         self,
         *,

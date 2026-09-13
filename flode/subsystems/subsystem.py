@@ -478,6 +478,17 @@ class Subsystem(Block):
                     f"release (synced values -1.0 / {BASE_CLOCK_SAMPLE_TIME!r} "
                     "are unsupported here, and 0/None would silently freeze)."
                 )
+            # bug-fix 2026-09-13: 状態を持たない Triggered Subsystem はルートでは
+            # 基準クロック ("dt") で update される (下記 sample_time 継承参照) が、
+            # Subsystem 内部ではクロック解決が走らず ``_discrete_slices`` (n_states
+            # > 0) にも入らないため一度も発火しない。無警告凍結を避けて fail-closed。
+            if isinstance(b, Subsystem) and b._has_trigger and b.n_states == 0:
+                raise BlockSpecError(
+                    f"Subsystem {self.id!r}: inner Triggered Subsystem {b.id!r} has no "
+                    "internal state, so it would never fire when nested (inner clock "
+                    "resolution is not supported in this release). Place it at the "
+                    "root level, or give it an explicit-rate discrete block inside."
+                )
 
         # Phase 2 では Subsystem 内部の連続+離散混在を拒否する
         # (code-reviewer MUST #1 修正: Phase 3 で外部スケジューラとの統合を再設計)。
@@ -542,6 +553,15 @@ class Subsystem(Block):
         # 起こすため、推論結果を強制 False に書き換える。
         if self._has_trigger:
             self.direct_feedthrough = False
+        # bug-fix 2026-09-13: Enabled Subsystem の enable ポートは、データ経路が
+        # 非直達でも output() 時点で読む必要がある (無効中の出力ポリシー判定)。
+        # そのポートだけを制御入力として宣言し、Simulator / 親 Subsystem の
+        # スケジューラがパス 1 で値を組み立てる (データ経路は非直達のまま =
+        # 自身の出力をデータ入力に戻すループは代数ループにならない)。
+        if self._has_enable and self._enable_slot_idx is not None:
+            self.control_input_ports = (self._enable_slot_idx,)
+        else:
+            self.control_input_ports = ()
 
         # sample_time 継承 (ST-A): 内部の最小サンプル時間
         sample_times = [
@@ -551,6 +571,14 @@ class Subsystem(Block):
         ]
         if sample_times:
             self.sample_time = min(sample_times)
+        elif self._has_trigger and self.n_states == 0:
+            # bug-fix 2026-09-13: 内部に状態も離散レートもない Triggered Subsystem
+            # (純粋なサンプル & ホールド) は基準クロック ("dt") で update() を受け、
+            # trigger の edge を毎基準ステップ判定する (従来は連続扱いで update()
+            # が呼ばれず発火しなかった)。連続内部状態のみを持つ Triggered
+            # Subsystem は従来どおり連続分類のまま (fire しても連続状態は更新され
+            # ない既知の制限、ADR-0058 §論点 6)。
+            self.sample_time = BASE_CLOCK_SAMPLE_TIME
 
         # save/load 用 params の確定
         self._params["blocks"] = [b.to_dict() for b in self._inner_blocks]
@@ -571,6 +599,14 @@ class Subsystem(Block):
         for b in self._inner_blocks:
             if b.direct_feedthrough:
                 for src in b.input_sources:
+                    if src is not None:
+                        deps[b].add(src[0])
+                        rev[src[0]].add(b)
+            else:
+                # bug-fix 2026-09-13: 制御入力ポート (入れ子 Enabled Subsystem の
+                # enable) だけを直達辺として扱う (Simulator._execution_order と同じ)
+                for i in b.control_input_ports:
+                    src = b.input_sources[i]
                     if src is not None:
                         deps[b].add(src[0])
                         rev[src[0]].add(b)
@@ -721,7 +757,15 @@ class Subsystem(Block):
             if new_params == b._params:
                 continue  # 既に同値で resolve 済 (= 初回 _from_dict 直後)
             try:
-                new_block = type(b)(**new_params)
+                # bug-fix 2026-09-13: 入れ子 Subsystem は ``_from_dict`` factory で
+                # 再構築する (``_from_dict`` 側の再帰対応と対にする。素の
+                # ``__init__`` は内側 blocks の dict を受け付けない)
+                rebuild_factory = getattr(type(b), "_from_dict", None)
+                new_block: Block
+                if callable(rebuild_factory):
+                    new_block = rebuild_factory(**new_params)
+                else:
+                    new_block = type(b)(**new_params)
             except (TypeError, ValueError, BlockSpecError) as e:
                 raise BlockSpecError(
                     f"Subsystem {self.id!r}: cannot rebuild inner block {b.id!r} "
@@ -808,6 +852,12 @@ class Subsystem(Block):
                 inputs[b] = u
             else:
                 u = np.zeros(b.n_inputs)
+                # bug-fix 2026-09-13: 制御入力ポートだけは output() 前に埋める
+                for i in b.control_input_ports:
+                    src = b.input_sources[i]
+                    if src is not None:
+                        sb, si = src
+                        u[i] = outputs[sb][si]
             xb = state_for(b)
             y = np.atleast_1d(np.asarray(b.output(t, xb, u), dtype=float))
             outputs[b] = y
@@ -1156,7 +1206,14 @@ class Subsystem(Block):
                     resolved_params = substitute_placeholders(raw_params, active_mask_values)
                 else:
                     resolved_params = raw_params
-                instance = block_cls(id=b["id"], **resolved_params)
+                # bug-fix 2026-09-13: 入れ子 Subsystem は ``_from_dict`` factory で
+                # 再帰的に復元する (``Simulator.from_dict`` と同じ分岐)。直接
+                # ``__init__`` に渡すと内側 blocks の dict が Block として拒否される。
+                inner_factory = getattr(block_cls, "_from_dict", None)
+                if callable(inner_factory):
+                    instance = inner_factory(id=b["id"], **resolved_params)
+                else:
+                    instance = block_cls(id=b["id"], **resolved_params)
                 # placeholder が含まれていた場合のみ ``_unresolved_params`` を保存
                 if active_mask_values is not None and resolved_params != raw_params:
                     instance._unresolved_params = raw_params

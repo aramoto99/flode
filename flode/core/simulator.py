@@ -296,6 +296,14 @@ class Simulator:
                     if src is not None:
                         deps[b].add(src[0])
                         rev[src[0]].add(b)
+            else:
+                # bug-fix 2026-09-13: 非直達ブロックでも制御入力 (Enabled Subsystem
+                # の enable ポート等) は output() 時点で必要 → そのポートだけ直達辺
+                for i in b.control_input_ports:
+                    src = b.input_sources[i]
+                    if src is not None:
+                        deps[b].add(src[0])
+                        rev[src[0]].add(b)
         # ADR-0055 §論点 1-A / §論点 5-A: 仮想エッジ展開で追加された
         # Simulator level の仮想 deps を topo sort に merge。共通祖先スコープが
         # Simulator (= ()) のときだけ ``_virtual_deps_top`` が populate される
@@ -894,10 +902,13 @@ class Simulator:
         return layout, offset
 
     def _init_discrete_state(self) -> dict[Block, npt.NDArray[Any]]:
+        # bug-fix 2026-09-13: ``n_states == 0`` でも離散レートを持つブロック
+        # (例: 状態なし Triggered Subsystem) は ``update()`` の呼び出しが必要
+        # (edge 検出 / 出力キャッシュ更新)。状態ベクトルは空 (shape (0,)) で登録する。
         return {
             b: np.asarray(b.x0, dtype=float).copy()
             for b in self.blocks
-            if b.n_states > 0 and b._resolved_sample_time is not None
+            if b._resolved_sample_time is not None
         }
 
     def _step(
@@ -938,6 +949,13 @@ class Simulator:
                 inputs[b] = u
             else:
                 u = np.zeros(b.n_inputs)
+                # bug-fix 2026-09-13: 制御入力ポートだけは output() 前に埋める
+                # (依存辺は _execution_order で追加済みなので上流は計算済み)
+                for i in b.control_input_ports:
+                    src = b.input_sources[i]
+                    if src is not None:
+                        sb, si = src
+                        u[i] = outputs[sb][si]
             xb = state_for(b)
             # ADR-0056 §C-3: 例外時に runtime が関与ブロックを payload に詰めるため
             # output 呼出直前で current_block を更新する。
@@ -1026,6 +1044,20 @@ class Simulator:
                 inputs[b] = u
             else:
                 u = _zero_inputs(b, in_dts)
+                if b.control_input_ports:
+                    # bug-fix 2026-09-13: 制御入力ポートだけは output() 前に埋める
+                    # (SM-A path の _step と同じ扱い)。データポートの上流はこの時点で
+                    # 未計算でもよいので、_gather_inputs (全ポート解決) は使わない。
+                    u_list = list(u)
+                    for i in b.control_input_ports:
+                        src = b.input_sources[i]
+                        if src is not None:
+                            sb, si = src
+                            ui = outputs[sb][si]
+                            if in_dts is not None and ui.dtype != in_dts[i]:
+                                ui = cast_value(ui, in_dts[i])
+                            u_list[i] = ui
+                    u = tuple(u_list)
             xb = state_for(b)
             y = b.output_v(t, xb, u)
             # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
