@@ -418,3 +418,92 @@ class TestNestedControlSubsystem:
         y_nested = self._run(outer)
         np.testing.assert_allclose(y_nested, y_root)
         assert np.any(y_root != 0.0), "trigger が一度も fire していない"
+
+
+class TestSampledDataExactSolution:
+    """サンプル値閉ループの厳密解 (ZOH 等価離散化 + 離散漸化式を numpy で直接計算) との一致。
+
+    連続プラント 1/((s+1)(s+2)) + Tustin 離散 PI (直達あり) + 演算遅れ UnitDelay。
+    サンプル点での y は厳密に離散時間系なので、solve_ivp の許容誤差の範囲で一致するはず。
+    """
+
+    TS = 0.05
+    BC = None
+    AC = None
+
+    @classmethod
+    def _controller(cls):
+        import control
+
+        if cls.BC is None:
+            cz = control.c2d(control.tf([4.0, 6.0], [1.0, 0.0]), cls.TS, "tustin")
+            cls.BC = np.asarray(cz.num[0][0], float).ravel()
+            cls.AC = np.asarray(cz.den[0][0], float).ravel()
+        return cls.BC, cls.AC
+
+    @classmethod
+    def _exact(cls, n_steps: int, ctrl_ratio: int = 1) -> np.ndarray:
+        import control
+
+        pd = control.c2d(control.tf2ss(control.tf([1.0], [1.0, 3.0, 2.0])), cls.TS, "zoh")
+        Ad, Bd, Cd = np.asarray(pd.A), np.asarray(pd.B), np.asarray(pd.C)
+        bc, ac = cls._controller()
+        xp = np.zeros((Ad.shape[0], 1))
+        u_prev = e_prev = u = v = 0.0
+        ys = []
+        for k in range(n_steps + 1):
+            y = float((Cd @ xp).item())
+            ys.append(y)
+            e = 1.0 - y
+            if k % ctrl_ratio == 0:
+                u_new = -ac[1] * u_prev + bc[0] * e + bc[1] * e_prev
+                u_prev, e_prev, u = u_new, e, u_new
+            v_k, v = v, u  # UnitDelay: 出力は前サンプルの u
+            xp = Ad @ xp + Bd * v_k
+        return np.array(ys)
+
+    def _flode(self, ctrl_ts: float, use_block: bool = False) -> np.ndarray:
+        bc, ac = self._controller()
+        sim = Simulator(t_end=2.0, dt=self.TS, rtol=1e-11, atol=1e-13)
+        r = sim.add(Step(step_time=0.0, id="r"))
+        e = sim.add(Sum(signs="+-", id="e"))
+        if use_block:
+
+            @block(states=1, sample_time=ctrl_ts, direct_feedthrough=True)
+            def pi_block(
+                t: float, x: np.ndarray, u: float, *, x0: float = 0.0
+            ) -> tuple[float, np.ndarray]:
+                uk = bc[0] * u + x[0]
+                return float(uk), np.array([-ac[1] * uk + bc[1] * u])
+
+            c = sim.add(pi_block(id="pi"))
+        else:
+            c = sim.add(
+                DiscreteTransferFunction(
+                    numerator=list(bc), denominator=list(ac), sample_time=ctrl_ts, id="pi"
+                )
+            )
+        d = sim.add(UnitDelay(sample_time=self.TS, id="d"))
+        g = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 3.0, 2.0], id="G"))
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(r, e, dst_idx=0)
+        sim.connect(g, e, dst_idx=1)
+        sim.connect(e, c)
+        sim.connect(c, d)
+        sim.connect(d, g)
+        sim.connect(g, sc)
+        sim.run()
+        return sc.values[:, 0]
+
+    def test_single_rate_matches_exact(self):
+        np.testing.assert_allclose(self._flode(self.TS), self._exact(40), atol=1e-9)
+
+    def test_multirate_controller_matches_exact(self):
+        np.testing.assert_allclose(
+            self._flode(2 * self.TS), self._exact(40, ctrl_ratio=2), atol=1e-9
+        )
+
+    def test_block_form_matches_builtin(self):
+        np.testing.assert_allclose(
+            self._flode(self.TS, use_block=True), self._flode(self.TS), atol=1e-12
+        )
