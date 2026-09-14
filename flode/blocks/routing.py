@@ -17,6 +17,7 @@ SPEC-0003 / ADR-0055 Amendment (2026-05-19) で Phase 2 送り。Phase 2 で
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -519,6 +520,15 @@ class MultiportSwitch(Block):
         from ..exceptions import BlockEvalError
 
         offset = 0 if self.index_base == "zero" else 1
+        # bug-fix 2026-09-14: NaN は int() で builtin ValueError になり run 全体が
+        # flode の例外体系外で落ちていた。clip / error どちらのモードでも「どの
+        # データ入力を選ぶか決められない」のでドメイン例外で止める。
+        if math.isnan(selector_raw):
+            raise BlockEvalError(
+                f"MultiportSwitch[{self.name}]: selector is NaN; cannot choose a data "
+                "input (upstream produced nan)",
+                block_id=self.id,
+            )
         # round で integer 化 (Python int round half-to-even)
         idx = int(round(selector_raw)) - offset
         if idx < 0 or idx >= self.n_choices:

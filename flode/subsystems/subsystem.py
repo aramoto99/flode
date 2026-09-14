@@ -32,7 +32,12 @@ from ..core.block import (
 )
 from ..core.identifiers import fold_block_id
 from ..core.persistence import LayoutDict, normalize_layout
-from ..exceptions import AlgebraicLoopError, BlockSpecError, ModelSerializationError
+from ..exceptions import (
+    AlgebraicLoopError,
+    BlockSpecError,
+    ModelSerializationError,
+    PortIndexError,
+)
 from ._mask import (
     collect_placeholder_names,
     normalize_mask_params,
@@ -345,15 +350,18 @@ class Subsystem(Block):
         """内部ブロック同士を結線する。``Simulator.connect`` と同形。"""
         src_block = self._resolve(src)
         dst_block = self._resolve(dst)
+        # bug-fix 2026-09-14: builtin IndexError ではなくドメイン例外 (IndexError 互換)
         if dst_idx < 0 or dst_idx >= dst_block.n_inputs:
-            raise IndexError(
+            raise PortIndexError(
                 f"{dst_block.id}: input index {dst_idx} out of range "
-                f"(n_inputs={dst_block.n_inputs})"
+                f"(n_inputs={dst_block.n_inputs})",
+                block_id=dst_block.id,
             )
         if src_idx < 0 or src_idx >= src_block.n_outputs:
-            raise IndexError(
+            raise PortIndexError(
                 f"{src_block.id}: output index {src_idx} out of range "
-                f"(n_outputs={src_block.n_outputs})"
+                f"(n_outputs={src_block.n_outputs})",
+                block_id=src_block.id,
             )
         dst_block.input_sources[dst_idx] = (src_block, src_idx)
         # 構造変更があったので次回 _build を強制再実行

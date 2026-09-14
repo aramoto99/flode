@@ -145,6 +145,14 @@ class UnknownBlockIdError(FlodeError, KeyError):
     """
 
 
+class PortIndexError(BlockSpecError, IndexError):
+    """`Simulator.connect` / `Subsystem.connect` のポート index が範囲外 (bug-fix 2026-09-14)。
+
+    従来は builtin `IndexError` をそのまま投げていた。`IndexError` を継承するため
+    既存の `except IndexError` (= `Simulator.from_dict` の接続検証など) とも互換。
+    """
+
+
 class SchedulingError(FlodeError):
     """マルチレートスケジューラの構築不能 (継承解決失敗、`sample_time` 不正値など)。"""
 

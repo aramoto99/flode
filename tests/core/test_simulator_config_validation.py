@@ -34,11 +34,44 @@ from flode.exceptions import ModelLoadError
         {"atol": math.nan},
         {"dt_base": 0.0},
         {"dt_base": -0.01},
+        # 2026-09-14: solver 名も構築時に検証する (従来は連続状態があると scipy の生
+        # ValueError、無ければ黙って通っていた)
+        {"solver": "RK99"},
+        {"solver": ""},
+        {"solver": "rk45"},
+        {"solver": 42},
     ],
 )
 def test_invalid_solver_settings_are_rejected_at_construction(kwargs: dict) -> None:
     with pytest.raises(ModelLoadError, match="Invalid"):
         Simulator(t_end=1.0, **kwargs)
+
+
+def test_ode_solver_subclass_is_accepted_but_unrelated_class_is_rejected() -> None:
+    from scipy.integrate import RK23
+
+    sim = Simulator(t_end=0.05, dt=0.01, solver=RK23)
+    sim.add(Constant(value=1.0, id="c"))
+    sim.add(Integrator(id="i"))
+    sim.add(Scope(id="s"))
+    sim.connect("c", "i")
+    sim.connect("i", "s")
+    sim.run()
+    assert sim.get_block("s").values[-1, 0] == pytest.approx(0.05, abs=1e-6)
+    with pytest.raises(ModelLoadError, match="Invalid solver"):
+        Simulator(t_end=1.0, solver=int)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("solver", ["RK45", "RK23", "DOP853", "Radau", "BDF", "LSODA"])
+def test_all_scipy_solver_names_are_accepted(solver: str) -> None:
+    sim = Simulator(t_end=0.05, dt=0.01, solver=solver)
+    sim.add(Constant(value=1.0, id="c"))
+    sim.add(Integrator(id="i"))
+    sim.add(Scope(id="s"))
+    sim.connect("c", "i")
+    sim.connect("i", "s")
+    sim.run()
+    assert sim.get_block("s").values[-1, 0] == pytest.approx(0.05, abs=1e-6)
 
 
 def test_tiny_positive_tolerances_run() -> None:

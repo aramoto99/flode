@@ -19,12 +19,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from scipy.integrate import solve_ivp
+from scipy.integrate import OdeSolver, solve_ivp
 
 from ..exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
     ModelLoadError,
+    PortIndexError,
     SchedulingError,
     SolverError,
     UnknownBlockIdError,
@@ -86,6 +87,10 @@ _GRID_TIME_DECIMALS = 12
 #: 丸め桁に対して 3 桁の余裕を持たせた基準ステップの下限 (= 1e-9 s)。
 _MIN_DT_BASE = 10.0 ** -(_GRID_TIME_DECIMALS - 3)
 
+#: ``scipy.integrate.solve_ivp`` の ``method`` 名 (frontend ModelSettingsModal の
+#: SOLVER_OPTIONS と同じ集合)。構築時検証 (bug-fix 2026-09-14) の SSOT。
+_SOLVER_METHODS: tuple[str, ...] = ("RK45", "RK23", "DOP853", "Radau", "BDF", "LSODA")
+
 
 def _validate_positive_finite(name: str, value: Any) -> float:
     """``Simulator`` のソルバー設定値 (dt / rtol / atol / dt_base) を検証して float で返す。
@@ -126,7 +131,7 @@ class Simulator:
         self,
         t_end: float | str = 10.0,
         dt: float = 0.01,
-        solver: str = "RK45",
+        solver: str | type[OdeSolver] = "RK45",
         rtol: float = 1e-6,
         atol: float = 1e-9,
         dt_base: float | None = None,
@@ -141,7 +146,20 @@ class Simulator:
         # run() 途中で飛び、``atol == 0`` は状態 0 からの積分でステップ幅が 0 に
         # 収束して事実上停止していた。
         self.dt = _validate_positive_finite("dt", dt)
-        self.solver = solver
+        # bug-fix 2026-09-14: solver 名も構築時に検証する。従来は連続状態があると
+        # scipy の生 ValueError が run() 途中で飛び、無ければ黙って通っていた。
+        if isinstance(solver, str):
+            if solver not in _SOLVER_METHODS:
+                raise ModelLoadError(
+                    f"Invalid solver: {solver!r}. Supported: {', '.join(_SOLVER_METHODS)}"
+                )
+        elif not (isinstance(solver, type) and issubclass(solver, OdeSolver)):
+            # scipy は OdeSolver サブクラスも受け付ける (Python API 専用、JSON 不可)
+            raise ModelLoadError(
+                f"Invalid solver: must be one of {', '.join(_SOLVER_METHODS)} or an "
+                f"OdeSolver subclass, got {solver!r}"
+            )
+        self.solver: str | type[OdeSolver] = solver
         self.rtol = _validate_positive_finite("rtol", rtol)
         self.atol = _validate_positive_finite("atol", atol)
         self.dt_base_hint: float | None = (
@@ -283,15 +301,18 @@ class Simulator:
         """
         src_block = self._resolve(src)
         dst_block = self._resolve(dst)
+        # bug-fix 2026-09-14: builtin IndexError ではなくドメイン例外 (IndexError 互換)
         if dst_idx < 0 or dst_idx >= dst_block.n_inputs:
-            raise IndexError(
+            raise PortIndexError(
                 f"{dst_block.id}: input index {dst_idx} out of range "
-                f"(n_inputs={dst_block.n_inputs})"
+                f"(n_inputs={dst_block.n_inputs})",
+                block_id=dst_block.id,
             )
         if src_idx < 0 or src_idx >= src_block.n_outputs:
-            raise IndexError(
+            raise PortIndexError(
                 f"{src_block.id}: output index {src_idx} out of range "
-                f"(n_outputs={src_block.n_outputs})"
+                f"(n_outputs={src_block.n_outputs})",
+                block_id=src_block.id,
             )
         dst_block.input_sources[dst_idx] = (src_block, src_idx)
 

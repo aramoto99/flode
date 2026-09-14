@@ -83,7 +83,9 @@ CATEGORY_PYTHON_FUNCTION_DISABLED = "python_function_disabled"
 CATEGORY_PYTHON_FUNCTION_UNCONFIRMED = "python_function_unconfirmed"
 
 # Phase 1 で fall through する例外 (= unknown 扱い、Phase 2 で新カテゴリ追加候補):
-#   - ``TypeError`` / ``IndexError`` (= simulator.py の add/connect 引数 validation)
+#   - ``TypeError`` / 素の ``IndexError`` (= simulator.py の add 引数 validation 等。
+#     ``connect`` のポート範囲外は 2026-09-14 に ``PortIndexError`` (= ``BlockSpecError``
+#     継承) 化済みで、``start_validation`` / 400 に分類される)
 #   - ``RuntimeWarning`` (= numpy overflow、Phase 2 で overflow カテゴリ)
 #   - ``Fcn`` (式ブロック) の任意 Python 例外 (Phase 2)。``PythonFunction`` は
 #     専用カテゴリ ``python_function_error`` で扱う (ADR-0073 §論点 6)
