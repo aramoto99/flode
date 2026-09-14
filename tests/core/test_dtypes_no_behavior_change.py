@@ -98,6 +98,9 @@ class TestBehaviorInvariance:
 
     def test_baseline_arrays_match_v0_53_7(self) -> None:
         # AC-3: v0.53.7 で採取した基準配列との一致 (クロスバージョン層)。
+        # NOTE (ADR-0078, v0.61.0): discrete モデル (UnitDelay 累積ループ) の系列は
+        # BUG-001 の是正で 1 fire ごとに 1 増える正しい値に変わったため、discrete の
+        # 配列だけ v0.61.0 で再採取した (continuous / mixed は bit 一致のまま)。
         # times はサンプリング格子の決定的算術なので全系列で厳密一致を要求する。
         # values は ODE 積分 (solve_ivp) を含む continuous のみ、numpy/scipy の
         # ビルド差 (プラットフォーム・Python バージョンごとの wheel) で最終 bit が

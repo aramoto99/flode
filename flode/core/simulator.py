@@ -1008,6 +1008,11 @@ class Simulator:
         discrete_state: dict[Block, npt.NDArray[Any]],
         order: list[Block],
         layout: list[tuple[Block, slice]],
+        *,
+        fresh: frozenset[Block] | None = None,
+        cache: dict[Block, npt.NDArray[Any]] | None = None,
+        store: bool = False,
+        pre_outputs: dict[Block, npt.NDArray[Any]] | None = None,
     ) -> tuple[dict[Block, npt.NDArray[Any]], dict[Block, npt.NDArray[Any]]]:
         """1 時刻での SM-A scalar-port 用出力計算 (既存 hot path、ADR-0017 §(4))。
 
@@ -1017,6 +1022,15 @@ class Simulator:
         戻り値の ``inputs`` 辞書は **全ブロック** (direct_feedthrough の真偽によらず)
         について ``inputs[b]`` を持つ。direct_feedthrough=True はパス 1 で、
         False はパス 2 で書き込まれる。
+
+        ADR-0078 出力キャッシュ (``cache`` が None でない場合のみ有効):
+
+        * 離散ブロック (``discrete_state`` に載るブロック) のうち ``fresh`` に含まれる
+          ものだけ ``output()`` を呼び、それ以外は ``cache`` の値 (= 直前のサンプル
+          時刻で確定した出力) を返す = サンプル&ホールド。
+        * ``store=True`` で新規計算した出力を ``cache`` に書く (pass-2)。
+        * ``pre_outputs`` が与えられ、ブロックが ``output_before_update`` なら
+          再計算せず pass-1 の出力を採用する (「次状態」セマンティクス)。
         """
         cont_state = {b: x_cont[sl] for b, sl in layout}
         outputs: dict[Block, npt.NDArray[Any]] = {}
@@ -1046,11 +1060,21 @@ class Simulator:
                     if src is not None:
                         sb, si = src
                         u[i] = outputs[sb][si]
-            xb = state_for(b)
             # ADR-0056 §C-3: 例外時に runtime が関与ブロックを payload に詰めるため
             # output 呼出直前で current_block を更新する。
             self._current_block = b
-            y = np.atleast_1d(np.asarray(b.output(t, xb, u), dtype=float))
+            if cache is not None and b in discrete_state:
+                if fresh is not None and b in fresh:
+                    if pre_outputs is not None and b.output_before_update:
+                        y = pre_outputs[b]
+                    else:
+                        y = np.atleast_1d(np.asarray(b.output(t, state_for(b), u), dtype=float))
+                    if store:
+                        cache[b] = y
+                else:
+                    y = cache[b]
+            else:
+                y = np.atleast_1d(np.asarray(b.output(t, state_for(b), u), dtype=float))
             outputs[b] = y
         self._current_block = None
         for b in order:
@@ -1070,6 +1094,11 @@ class Simulator:
         discrete_state: dict[Block, npt.NDArray[Any]],
         order: list[Block],
         layout: list[tuple[Block, slice]],
+        *,
+        fresh: frozenset[Block] | None = None,
+        cache: dict[Block, tuple[npt.NDArray[Any], ...]] | None = None,
+        store: bool = False,
+        pre_outputs: dict[Block, tuple[npt.NDArray[Any], ...]] | None = None,
     ) -> tuple[
         dict[Block, tuple[npt.NDArray[Any], ...]], dict[Block, tuple[npt.NDArray[Any], ...]]
     ]:
@@ -1081,6 +1110,9 @@ class Simulator:
         戻り値の ``outputs`` / ``inputs`` 辞書は ``tuple[ndarray, ...]`` 形式。
         SM-A 互換ブロックは ``Block.output_v`` の default 実装が ``output`` を wrap
         するため、混在モデルでも動作する。
+
+        ``fresh`` / ``cache`` / ``store`` / ``pre_outputs`` は ``_step`` と同じ
+        ADR-0078 出力キャッシュの制御 (キャッシュ値は dtype cast 後の tuple)。
         """
         cont_state = {b: x_cont[sl] for b, sl in layout}
         outputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
@@ -1148,55 +1180,77 @@ class Simulator:
                                 ui = cast_value(ui, in_dts[i])
                             u_list[i] = ui
                     u = tuple(u_list)
-            xb = state_for(b)
-            y = b.output_v(t, xb, u)
-            # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
-            # 異なる長さの tuple を返すと、後続の signal 伝搬で IndexError や shape
-            # mismatch のような不可解な error になり debug が困難。ここで明示的に
-            # 拒否しておく (Block.output_v の default wrapper には長さ check がある
-            # が、override 経路はそれを通らない)。
-            if len(y) != b.n_outputs:
-                raise BlockSpecError(
-                    f"{type(b).__name__} {b.id!r}.output_v returned {len(y)} "
-                    f"output(s), expected {b.n_outputs}"
-                )
-            if plan is None:
-                outputs[b] = tuple(np.asarray(yi, dtype=float) for yi in y)
-            else:
-                # SPEC-0028 §3.6: 予測 dtype への強制 cast (SSOT の適用点は
-                # ここ 1 箇所。cast_value は dtype 一致時 no-op、nan/inf/域外も
-                # 決定的)。予測 == 実行 (AC-2) をこの行が保証する。
-                out_dts = plan[idx][1]
-                outputs[b] = tuple(cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y))
+            # ADR-0078 出力キャッシュ (SM-A ``_step`` と同じ規則)
+            if cache is not None and b in discrete_state:
+                if fresh is not None and b in fresh:
+                    if pre_outputs is not None and b.output_before_update:
+                        outputs[b] = pre_outputs[b]
+                    else:
+                        outputs[b] = self._output_v_cast(b, t, state_for(b), u, plan, idx)
+                    if store:
+                        cache[b] = outputs[b]
+                else:
+                    outputs[b] = cache[b]
+                continue
+            outputs[b] = self._output_v_cast(b, t, state_for(b), u, plan, idx)
         for idx, b in enumerate(order):
             if not b.direct_feedthrough:
                 in_dts = plan[idx][0] if plan is not None else None
                 inputs[b] = _gather_inputs(b, in_dts)
         return outputs, inputs
 
+    @staticmethod
+    def _output_v_cast(
+        b: Block,
+        t: float,
+        xb: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+        plan: DTypePlan | None,
+        idx: int,
+    ) -> tuple[npt.NDArray[Any], ...]:
+        """``output_v`` を呼び、長さ検証と dtype cast (SPEC-0028 §3.6) を施す。"""
+        y = b.output_v(t, xb, u)
+        # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
+        # 異なる長さの tuple を返すと、後続の signal 伝搬で IndexError や shape
+        # mismatch のような不可解な error になり debug が困難。ここで明示的に
+        # 拒否しておく (Block.output_v の default wrapper には長さ check がある
+        # が、override 経路はそれを通らない)。
+        if len(y) != b.n_outputs:
+            raise BlockSpecError(
+                f"{type(b).__name__} {b.id!r}.output_v returned {len(y)} "
+                f"output(s), expected {b.n_outputs}"
+            )
+        if plan is None:
+            return tuple(np.asarray(yi, dtype=float) for yi in y)
+        # SPEC-0028 §3.6: 予測 dtype への強制 cast (SSOT の適用点は
+        # ここ 1 箇所。cast_value は dtype 一致時 no-op、nan/inf/域外も
+        # 決定的)。予測 == 実行 (AC-2) をこの行が保証する。
+        out_dts = plan[idx][1]
+        return tuple(cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y))
+
     def run(self) -> None:
         """シミュレーションを実行する。
 
-        ハイブリッド (連続+離散) ループ (ADR-0015 §(1)、ADR-0014 §(1) を multi-rate
-        互換のため再更新):
+        ハイブリッド (連続+離散) ループ (ADR-0015 §(1) を ADR-0078 で補正):
 
-        - [A'] 離散ブロック update (発火条件 ``k % step_ratio == 0``、output 計算の
-          **前**、2-pass approach):
-
-          1. pre-fire の ``discrete_state`` で 1 回目の ``_step`` を呼び ``inputs`` を
-             組み立てる (output は前状態を見る)
-          2. fire 条件を満たすブロックに ``update(t_k, x_b, inputs[b])`` を呼んで
-             ``next_discrete`` に書き込む (double buffering で同時刻発火を整合)
-          3. ``discrete_state = next_discrete`` で一斉差し替え
-        - [A]  post-fire の ``discrete_state`` で 2 回目の ``_step`` を呼び
-          ``outputs`` / ``inputs`` を再計算 (Scope record と f_continuous が使う)
+        - [A0] 発火ブロック (``k % step_ratio == 0``) の ``advance(t_k, x)`` —
+          2-state ブロックのシフト相。「t_k で出力すべき値」を可視化する
+        - [A1] pass-1 ``_step``: 発火ブロックは advance 後の状態で出力を新規計算、
+          非発火の離散ブロックはキャッシュ値 → **同時刻の** 入力 ``u_k``
+        - [A'] ``update(t_k, x_b, u_k)`` を発火ブロックに呼び ``next_discrete`` に
+          書き込む (double buffering で一斉差し替え)
+        - [A]  pass-2 ``_step``: 発火ブロックは update 後の状態で出力を再計算して
+          キャッシュ (``output_before_update`` のブロックは pass-1 の値を採用)。
+          非発火ブロックはキャッシュ値。``outputs`` / ``inputs`` は Scope record と
+          f_continuous (= ODE 右辺、キャッシュ値のみ参照) が使う
         - [E]  ``record(t_k, inputs)`` (Scope 等)
         - [B]  連続部分を ``solve_ivp`` で 1 ステップ進める ``[t_k, t_{k+1}]``
 
-        ADR-0015 で ADR-0014 の multi-rate off-by-one を根本解決した。fire を
-        ``[A]`` の前に置くことで、サンプル境界 ``t = n*sample_time`` で update が
-        呼ばれ、UnitDelay の出力が ``y(n*T) = u((n-1)*T)`` (リファレンスツール semantics) と
-        一致する (single-rate / multi-rate 両方)。
+        ADR-0015 で ADR-0014 の multi-rate off-by-one を解決し、ADR-0078 で
+        「update が 1 サンプル古い上流出力を受ける」(離散→離散の余分な遅延) と
+        「直達項がサンプル間でホールドされない」を是正した。UnitDelay の出力は
+        ``y(n*T) = u((n-1)*T)`` (リファレンスツール semantics) で、直列 / ループでも
+        合成則 (2 段で ``u((n-2)*T)``) が成り立つ。
 
         実装は SM-A / SM-B モードで完全分離 (ADR-0018 §(2) R-A): モード判定後、
         ``_run_sm_a_loop`` (既存ホットパス) または ``_run_sm_b_loop`` (vector port
@@ -1339,8 +1393,14 @@ class Simulator:
         (= ``self.t_end = math.inf``)。終了は ``self._stop_requested`` のみ。
         """
 
+        # ADR-0078: 離散ブロックの出力キャッシュ (サンプル時刻で確定し、サンプル間
+        # = 非発火ステップと ODE 右辺評価ではキャッシュ値を返す = サンプル&ホールド)。
+        out_cache: dict[Block, npt.NDArray[Any]] = {}
+
         def f_continuous(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
-            _, ins = self._step(t, x, discrete_state, order, layout)
+            _, ins = self._step(
+                t, x, discrete_state, order, layout, fresh=frozenset(), cache=out_cache
+            )
             xdot = np.zeros(n_total)
             for b, sl in layout:
                 # ADR-0056 §C-3: derivative 内例外時に関与ブロックを記録。
@@ -1353,28 +1413,49 @@ class Simulator:
         while True:
             t = _grid_time(k, dt_base)
 
-            # [A'] 離散ブロックの状態更新 (ADR-0015 §(1)、output 計算の前)。
+            # ADR-0078 サンプル時刻の処理順 (ADR-0015 §(1) を advance 相と出力
+            # キャッシュで補正):
+            #   [A0] 発火ブロックの advance (2-state のシフト = t_k の出力を可視化)
+            #   [A1] pass-1 _step: 発火ブロックは advance 後の状態で出力を新規計算、
+            #        非発火ブロックはキャッシュ → 同時刻の入力 u_k
+            #   [A'] update(t_k, x, u_k) (double buffering で一斉差し替え)
+            #   [A]  pass-2 _step: 発火ブロックは update 後の状態で出力を再計算して
+            #        キャッシュ (output_before_update のブロックは pass-1 の値を採用)
             if discrete_state:
-                _, inputs_pre = self._step(t, x_cont, discrete_state, order, layout)
+                hit = [b for b in order if b in discrete_state and k % b._step_ratio == 0]
+                hit_set = frozenset(hit)
+                for b in hit:
+                    self._current_block = b
+                    discrete_state[b] = np.asarray(b.advance(t, discrete_state[b]), dtype=float)
+                outputs_pre, inputs_pre = self._step(
+                    t, x_cont, discrete_state, order, layout, fresh=hit_set, cache=out_cache
+                )
                 next_discrete: dict[Block, npt.NDArray[Any]] = dict(discrete_state)
-                for b in order:
-                    if b not in discrete_state:
-                        continue
-                    if k % b._step_ratio == 0:
-                        x_b = discrete_state[b]
-                        u_b = inputs_pre.get(b, np.zeros(b.n_inputs))
-                        # ADR-0056 §C-3: discrete update 例外時のブロック記録。
-                        self._current_block = b
-                        next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
+                for b in hit:
+                    x_b = discrete_state[b]
+                    u_b = inputs_pre.get(b, np.zeros(b.n_inputs))
+                    # ADR-0056 §C-3: discrete update 例外時のブロック記録。
+                    self._current_block = b
+                    next_discrete[b] = np.array(b.update(t, x_b, u_b), dtype=float)
                 self._current_block = None
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
                 # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
                 discrete_state.clear()
                 discrete_state.update(next_discrete)
-
-            # [A] 出力計算 2 パス (post-fire の discrete_state を反映)
-            outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
+                outputs, inputs = self._step(
+                    t,
+                    x_cont,
+                    discrete_state,
+                    order,
+                    layout,
+                    fresh=hit_set,
+                    cache=out_cache,
+                    store=True,
+                    pre_outputs=outputs_pre,
+                )
+            else:
+                outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             # [E] record (Scope 等)
             self._record(t, inputs)
 
@@ -1432,13 +1513,18 @@ class Simulator:
         (= ``self.t_end = math.inf``)。終了は ``self._stop_requested`` のみ。
         """
 
+        # ADR-0078: 離散ブロックの出力キャッシュ (SM-A と同じ)。
+        out_cache: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+
         def f_continuous_vector(t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
             # ADR-0018 §(2)(4): SM-B run path。``_step_vector`` から得た
             # ``inputs[b]`` は tuple of ndarrays。SM-A 連続ブロックは SM-A
             # ``derivative(t, x, u_1d)`` を期待するため、tuple を 1D ndarray に
             # concat (= rank-0 element を順に並べる) する wrapper で互換性を保つ。
             # SM-B-aware 連続ブロック (Phase 4+) は ``derivative_v`` を将来追加。
-            _, ins = self._step_vector(t, x, discrete_state, order, layout)
+            _, ins = self._step_vector(
+                t, x, discrete_state, order, layout, fresh=frozenset(), cache=out_cache
+            )
             xdot = np.zeros(n_total)
             for b, sl in layout:
                 u_tuple = ins[b]
@@ -1456,36 +1542,50 @@ class Simulator:
         while True:
             t = _grid_time(k, dt_base)
 
-            # [A'] 離散ブロック update (SM-B path)
+            # [A0]/[A1]/[A']/[A] 離散ブロック処理 (SM-B path、SM-A と同じ順序、ADR-0078)
             if discrete_state:
-                _, inputs_pre_v = self._step_vector(t, x_cont, discrete_state, order, layout)
+                hit = [b for b in order if b in discrete_state and k % b._step_ratio == 0]
+                hit_set = frozenset(hit)
+                for b in hit:
+                    self._current_block = b
+                    discrete_state[b] = np.asarray(b.advance(t, discrete_state[b]), dtype=float)
+                outputs_pre_v, inputs_pre_v = self._step_vector(
+                    t, x_cont, discrete_state, order, layout, fresh=hit_set, cache=out_cache
+                )
                 next_discrete: dict[Block, npt.NDArray[Any]] = dict(discrete_state)
-                for b in order:
-                    if b not in discrete_state:
-                        continue
-                    if k % b._step_ratio == 0:
-                        x_b = discrete_state[b]
-                        u_tuple = inputs_pre_v.get(
-                            b, tuple(np.zeros(s, dtype=float) for s in b.port_shapes_in)
-                        )
-                        # SM-B 離散ブロックは Phase 3 では存在しない。SM-A 互換
-                        # wrapper: tuple of rank-0 → 1D ndarray
-                        u_1d = np.array(
-                            [float(np.asarray(ui).item()) for ui in u_tuple],
-                            dtype=float,
-                        )
-                        # ADR-0056 §C-3: SM-B discrete update 例外時の記録。
-                        self._current_block = b
-                        next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
+                for b in hit:
+                    x_b = discrete_state[b]
+                    u_tuple = inputs_pre_v.get(
+                        b, tuple(np.zeros(s, dtype=float) for s in b.port_shapes_in)
+                    )
+                    # SM-B 離散ブロックは Phase 3 では存在しない。SM-A 互換
+                    # wrapper: tuple of rank-0 → 1D ndarray
+                    u_1d = np.array(
+                        [float(np.asarray(ui).item()) for ui in u_tuple],
+                        dtype=float,
+                    )
+                    # ADR-0056 §C-3: SM-B discrete update 例外時の記録。
+                    self._current_block = b
+                    next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
                 self._current_block = None
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
                 # capture しているため、再代入では新値が見えない (ADR-0018 修正)。
                 discrete_state.clear()
                 discrete_state.update(next_discrete)
-
-            # [A] 2nd pass (post-fire)
-            _, inputs_v = self._step_vector(t, x_cont, discrete_state, order, layout)
+                _, inputs_v = self._step_vector(
+                    t,
+                    x_cont,
+                    discrete_state,
+                    order,
+                    layout,
+                    fresh=hit_set,
+                    cache=out_cache,
+                    store=True,
+                    pre_outputs=outputs_pre_v,
+                )
+            else:
+                _, inputs_v = self._step_vector(t, x_cont, discrete_state, order, layout)
             # [E] record: SM-B 信号は Scope で拒否済み。SM-A scalar 入力を持つ
             # ブロック (Scope 含む) は inputs_v[b] が rank-0 ndarray のタプルなので、
             # SM-A の ``_record`` が期待する 1D ndarray に変換する。

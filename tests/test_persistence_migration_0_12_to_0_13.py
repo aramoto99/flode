@@ -202,8 +202,9 @@ class TestChainAndBehaviour:
         sim = Simulator.load(path)
         sim.run()
         values = np.asarray(sim.get_block("sc").values)[:, 0]
-        # v0.57.0 の実測系列 (2-state augmentation、2 fire で 1 増える)
-        assert values.tolist() == pytest.approx([1.0, 2.0, 2.0, 3.0, 3.0, 4.0])
+        # x[k+1] = x[k] + 1 の加算ループ: 1 fire ごとに 1 増える (ADR-0078 で
+        # v0.57.0 の半速系列 1,2,2,3,3,4 (BUG-001) を是正)
+        assert values.tolist() == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
     def test_top_level_schema_version_key_not_overwritten(self) -> None:
         # NOTE: migration は既存群と同じ「浅コピー + ネスト in-place」流儀。

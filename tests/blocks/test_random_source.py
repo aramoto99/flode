@@ -180,12 +180,13 @@ class TestRandomSourceSampleTimeHold:
         assert y3[0] == 0.5  # 中間時刻でも state 値を hold
 
     def test_update_advances_rng(self) -> None:
-        """update() を 2 回呼ぶと異なる値を返す (rng が進む)。"""
+        """advance() を 2 回呼ぶと異なる値を返す (rng が進む)。update() は hold (ADR-0078)。"""
         blk = RandomSource(sample_time=0.1, seed=42)
         x0 = np.array([0.0])
-        y1 = blk.update(0.0, x0, _EMPTY_U)
-        y2 = blk.update(0.1, x0, _EMPTY_U)
+        y1 = blk.advance(0.0, x0)
+        y2 = blk.advance(0.1, x0)
         assert y1[0] != y2[0]
+        np.testing.assert_array_equal(blk.update(0.1, y2, _EMPTY_U), y2)
 
     def test_state_hold_at_multirate(self) -> None:
         """sample_time > dt のとき、中間ステップでは Scope が前値を見続ける。"""

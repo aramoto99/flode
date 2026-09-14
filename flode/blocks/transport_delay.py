@@ -58,9 +58,10 @@ class TransportDelay(Block):
         if sample_time <= 0.0:
             raise BlockSpecError(f"TransportDelay: sample_time must be > 0, got {sample_time}")
 
-        # N = ceil(delay/sample) + 1。+1 は Simulator の update-before-output 順序
-        # (ADR-0015) を補正するため (左シフトで失われる 1 サンプル分を吸収)。
-        # 結果として「観測される delay = N - 1 サンプル ≥ delay_time / sample_time」となる。
+        # N = ceil(delay/sample) + 1。+1 は表示用スロット x[0] の分 (ADR-0078:
+        # advance() が x[0] ← x[1] のシフトを行い、x[1:] が直近 N-1 サンプルの入力
+        # buffer)。結果として「観測される delay = N - 1 サンプル ≥ delay_time /
+        # sample_time」となる。
         n_buffer = max(1, int(math.ceil(delay_time / sample_time))) + 1
 
         super().__init__(
@@ -84,9 +85,15 @@ class TransportDelay(Block):
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # x[0] が最古 = delay_time 前の入力 (= 出力する値)。
+        # x[0] = 表示中の出力 (= delay_time 前の入力)。
         return np.array([float(x[0])])
 
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相。x[0] (表示) ← x[1] (最古の保持入力)。buffer 長は不変。
+        # [x[1], x[1], x[2], ..., x[N-1]]
+        return np.concatenate([np.array([float(x[1])]), x[1:]])
+
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # 左シフト: [x[1], ..., x[N-1], u[0]]
-        return np.concatenate([x[1:], np.array([float(u[0])])])
+        # advance 後の x = [disp, disp, x2, ..., x_{N-1}] に対し
+        # [disp, x2, ..., x_{N-1}, u] (= 表示は維持、buffer を左シフトして u を追加)
+        return np.concatenate([x[:1], x[2:], np.array([float(u[0])])])

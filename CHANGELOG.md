@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.0] - 2026-09-14 — 離散ブロックのサンプル時刻セマンティクスを修正 (ADR-0078)
+
+### Fixed (BREAKING: 離散ブロックを含むモデルの数値結果が変わります)
+
+- **離散ブロック → 離散ブロックの直列 / 離散フィードバックループで 1 サンプル余分に
+  遅れていた問題を修正**。`UnitDelay` 2 段で `u[k-3]` (正: `u[k-2]`)、`UnitDelay` を
+  含む加算ループが 2 fire で 1 しか進まない (半速) など。同じ `H(z)` を
+  `DiscreteTransferFunction` 1 個で書いた場合と `UnitDelay`+`Gain`+`Sum` で組んだ
+  場合の結果が一致するようになり、`scipy.signal.dlsim` とも一致する。
+  原因: サンプル時刻の update が「シフト前」の表示状態から計算した 1 サンプル古い
+  上流出力を受け取っていた。新設の `Block.advance()` (シフト相) を update の入力
+  評価より前に呼ぶことで是正。v0.4.0 の CHANGELOG にある「feedback loops … period
+  extends from 2 to 4 … consistent with the reference tool」はこのバグを仕様と
+  誤認した記述で、本リリースで撤回する (period 2 が正)
+- **`@block` / `PythonFunction` の離散ステートフルブロックが 1 サンプル先行していた
+  問題を修正**。`t=0` で初期状態 `x0` が出力されず、ユーザー定義の UnitDelay 相当
+  ブロックの遅延がゼロになっていた。新設の `Block.output_before_update` (「次状態」
+  セマンティクス: `y_k = g(x_k)`, `x_{k+1} = f(x_k, u_k)`) をデコレータ生成 class に
+  付与し、組込 `UnitDelay` と同じタイミングにした
+- **直達項を持つ離散ブロック (`DiscreteTransferFunction` / `DiscreteStateSpace` の
+  `D ≠ 0`) がサンプル間で入力をホールドしていなかった問題を修正**。`D u` が毎
+  ベースステップ・ODE 右辺評価のたびに連続入力で再計算され、Tustin 離散化 PID や
+  デッドビート制御器がサンプル値系として振る舞わなかった (dt=Ts でも連続制御器と
+  同じ応答になっていた)。Simulator が離散ブロックの出力をサンプル時刻で確定して
+  キャッシュし、サンプル間はその値を返す (サンプル&ホールド) ようにした。
+  `ZeroOrderHoldDirect` の独自ホールド判定は残るが冗長 (無害)
+
+### Changed
+
+- `Simulator._step` / `_step_vector` に出力キャッシュ制御の keyword 引数
+  (`fresh` / `cache` / `store` / `pre_outputs`) を追加 (内部 API)。
+  サンプル時刻の処理順は [A0] advance → [A1] pass-1 出力 (同時刻の入力 u_k) →
+  [A'] update → [A] pass-2 出力 (キャッシュ) → [E] record → [B] 積分
+- `TransportDelay` は `advance()` で表示値をシフトする形に整理 (観測される遅延
+  `ceil(delay_time / sample_time)` サンプルは不変)
+- `Subsystem`: 制御ブロック無しは `advance()` を内部離散ブロックへ再帰、Trigger /
+  Enable 付きは fire 時に `update()` 内で内部シフトを行う
+- テスト: `tests/test_discrete_timing_semantics.py` (27 件) を追加。
+  `test_double_buffering_simultaneous_updates` 等 4 件の期待値を正しい系列に更新、
+  dtype ベースライン npz の discrete 配列を再採取
+
+### Known limitation
+
+- 即時型の 1-state 離散ブロック (`Relay` / `RateLimiter`) の
+  出力は update 後の値が `t_k` の出力になるため、同時刻に発火する下流離散ブロックの
+  update はそれらの **前サンプルの** 出力を見る (非直達宣言と整合。ADR-0078 §Consequences)。
+  `RandomSource` は入力を持たないため描画を `advance()` に移し、同時刻の下流にも新値が届く
+
 ## [0.59.0] - 2026-09-11 — 失敗時にエラーブロックへ自動フォーカス
 
 ### Added

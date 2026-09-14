@@ -90,9 +90,13 @@ class UnitDelay(Block):
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
 
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相。state[0] ← state[1] (前サンプルで保存した値を t_k で可視化)
+        return np.array([x[1], x[1]])
+
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # state[0] ← 前回の state[1] (前サンプルで保存した値が現サンプルで visible)
-        # state[1] ← u(t_k) (次サンプルで output される値)
+        # state[0] は advance() で確定済み (= t_k の出力)、state[1] ← u(t_k)
+        # (次サンプルで output される値)
         return np.array([x[1], u[0]])
 
 
@@ -148,6 +152,10 @@ class DiscreteIntegrator(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相。state[0] ← state[1] (累積最新値を t_k の出力として可視化)
+        return np.array([x[1], x[1]])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ステップ幅は **解決後の sample_time** を使う (継承時の動的解決に対応)。
@@ -297,6 +305,10 @@ class RateTransition(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相 (UnitDelay と同じ 2-state ローテーション)
+        return np.array([x[1], x[1]])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0015 §(1)(2) と同じローテーション。state[0] ← 前 buffer、
@@ -488,9 +500,15 @@ class DiscreteStateSpace(Block):
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # output は前半 (= output_curr) のみを使う
+        # output は前半 (= output_curr) のみを使う。直達項 D u のサンプル間ホールドは
+        # Simulator の出力キャッシュ (ADR-0078) が担う。
         x_curr = x[: self._n]
         return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相。x[:n] ← x[n:] (標準形の x[k] を t_k の出力用に可視化)
+        x_buf = x[self._n :]
+        return np.concatenate([x_buf, x_buf])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0015 §(3) 2n-state augmentation の semantics:
@@ -602,6 +620,11 @@ class DiscreteTransferFunction(Block):
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         x_curr = x[: self._n]
         return np.asarray(self._C @ x_curr + self._D @ u, dtype=float).ravel()
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # ADR-0078: シフト相 (DiscreteStateSpace と同じ)
+        x_buf = x[self._n :]
+        return np.concatenate([x_buf, x_buf])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0015 §(3) 2n-state augmentation: x[:n]=x[k-1] (output snapshot)、

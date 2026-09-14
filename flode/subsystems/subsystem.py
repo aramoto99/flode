@@ -1089,6 +1089,22 @@ class Subsystem(Block):
             )
         return xdot
 
+    def _advance_inner(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        """内部離散ブロックの ``advance`` (ADR-0078 シフト相) を state slice ごとに適用。"""
+        x_adv = np.array(x, dtype=float, copy=True)
+        for b, sl in self._discrete_slices:
+            x_adv[sl] = np.asarray(b.advance(t, x[sl]), dtype=float)
+        return x_adv
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        """ADR-0078: 制御ブロックを持たない Subsystem は内部離散ブロックを再帰的に
+        シフトする。Trigger / Enable 付きは発火するかどうかが ``update`` の中で
+        しか分からないため、ここでは何もせず ``update`` の fire 経路で行う。"""
+        self._build()
+        if self.n_states == 0 or self._has_trigger or self._has_enable:
+            return np.asarray(x, dtype=float)
+        return self._advance_inner(t, x)
+
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         # ADR-0058 §論点 14 数値完全不変ガード
@@ -1161,7 +1177,10 @@ class Subsystem(Block):
             # 凍結 (state reset があった場合はその x を返す、なければ受信 x をそのまま)
             return np.asarray(x, dtype=float)
 
-        # Fire: 内部 step を実行し _last_y を更新
+        # Fire: 内部離散ブロックをシフト (ADR-0078、ルートで advance を呼ばない分を
+        # ここで行う) → 内部 step を実行し _last_y を更新
+        if self.n_states > 0:
+            x = self._advance_inner(t, x)
         u_data = u[: self._n_data_inports]
         outputs, inputs = self._step_inner(t, x, u_data)
         self._last_y = self._compute_y_from_outputs(outputs)

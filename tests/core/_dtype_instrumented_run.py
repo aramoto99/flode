@@ -24,8 +24,9 @@ def run_with_dtype_trace(sim: Simulator) -> dict[PortKey, set[np.dtype]]:
     observed: dict[PortKey, set[np.dtype]] = {}
     orig = Simulator._step_vector
 
-    def spy(self, t, x_cont, discrete_state, order, layout):  # type: ignore[no-untyped-def]
-        outputs, inputs = orig(self, t, x_cont, discrete_state, order, layout)
+    def spy(self, t, x_cont, discrete_state, order, layout, **kwargs):  # type: ignore[no-untyped-def]
+        # ADR-0078: fresh / cache / store / pre_outputs (出力キャッシュ制御) を素通し
+        outputs, inputs = orig(self, t, x_cont, discrete_state, order, layout, **kwargs)
         for b, tup in outputs.items():
             for j, arr in enumerate(tup):
                 observed.setdefault((b.id, "out", j), set()).add(arr.dtype)

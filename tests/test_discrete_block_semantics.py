@@ -237,9 +237,9 @@ def test_unit_delay_in_feedback_loop_breaks_algebraic_loop() -> None:
     ループ: u → Sum → UnitDelay → (feedback to Sum -)。
     sample_time=0.01、入力 u=1。
 
-    ADR-0015 で UnitDelay が 2-state augmentation になり feedback での delay
-    pattern は v0.3.0 (1-state) と異なる。重要なのは「代数ループが切れている」
-    こと (= 例外が発生せず実行できる) であり、具体値は新 semantics 下で記録する。
+    重要なのは「代数ループが切れている」こと (= 例外が発生せず実行できる)。
+    値は x[k+1] = 1 - x[k] のトグル (0,1,0,1,…)。ADR-0015 直後は BUG-001 で
+    period 4 (0,1,1,0,0,1) になっていたが ADR-0078 で是正。
     """
     from flode.blocks import Sum
 
@@ -255,6 +255,6 @@ def test_unit_delay_in_feedback_loop_breaks_algebraic_loop() -> None:
     sim.run()
 
     arr = _record_array(sc)
-    # ADR-0015 2-state UnitDelay の feedback semantics (実測値で固定)
-    expected = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 1.0])
+    # x[k+1] = u - x[k] (u=1) → 0, 1, 0, 1, ... (ADR-0078)
+    expected = np.array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
     np.testing.assert_allclose(arr, expected, atol=1e-12)

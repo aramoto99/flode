@@ -201,6 +201,15 @@ class Block:
     #: 無状態ブロックはこちら。
     requires_discrete_rate: ClassVar[bool] = False
 
+    #: ADR-0078: サンプル時刻 ``t_k`` に記録 / ホールドされる出力を **update 前** の
+    #: 状態から計算するブロック (「次状態」セマンティクス ``y_k = g(x_k)``、
+    #: ``x_{k+1} = f(x_k, u_k)``; ``@block`` の離散ステートフルブロック)。``False``
+    #: (default) は update 後の状態で出力を計算する (2-state 組込ブロックは
+    #: update が表示側を変えないので無差別、Relay / RateLimiter 等の即時型
+    #: 1-state ブロックは update 後の値が t_k の出力)。``PythonFunction`` が
+    #: インスタンス単位で上書きするため ``ClassVar`` ではなく通常の属性。
+    output_before_update: bool = False
+
     #: ``direct_feedthrough=False`` でも ``output()`` 時点で値が必要な **制御入力**
     #: ポートの index。スケジューラはこれらのポートだけを直達辺として依存グラフに
     #: 加え、パス 1 (出力計算) で値を組み立てる (データ経路は非直達のまま)。
@@ -419,6 +428,25 @@ class Block:
             Default 実装は ``x`` をそのまま返す (組合せ論理のみの離散ブロック用)。
             実装側は **新しい ndarray を返す** こと。in-place 更新すると Simulator の
             double buffering が破綻する。
+        """
+        return x
+
+    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        """サンプル時刻 ``t_k`` の冒頭で呼ばれる「シフト相」(ADR-0078)。
+
+        ADR-0015 の 2-state 配置 (``x[:n]`` = 表示中の出力用状態、``x[n:]`` = 真の
+        状態) を持つブロックは、ここで ``x[:n] ← x[n:]`` を行い「t_k で出力すべき
+        値」を **update の入力評価より前に** 可視化する。Simulator はこの後で
+        全ブロックの出力を計算して ``update(t_k, x, u_k)`` に渡すため、同時刻に
+        発火する上流離散ブロックの出力 ``y_k`` が下流の更新に正しく届く。
+
+        Args:
+            t: 現サンプル時刻。
+            x: 現状態 (shape ``(n_states,)``)。
+
+        Returns:
+            シフト後の状態 (shape ``(n_states,)``)。Default 実装は ``x`` を
+            そのまま返す (1-state ブロック / 状態なしブロック用)。
         """
         return x
 

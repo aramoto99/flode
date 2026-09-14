@@ -91,8 +91,9 @@ def test_base_clock_sample_time_runs_on_dt_without_warning(caplog):
 
     明示宣言なので WARNING は出ない (v0.57.0 の暗黙フォールバック + WARNING は
     廃止)。Constant(1.0) → Add ← UnitDelay("dt") の加算ループが dt=0.01 で
-    t_end=0.05 までに 6 tick 進む。UnitDelay は 2-state augmentation (ADR-0015)
-    のため feedback ループでは 2 fire で 1 増える系列 (1,2,2,3,3,4) になる。
+    t_end=0.05 までに 6 tick 進む。x[k+1] = x[k] + 1 なので Add の出力は
+    1 fire ごとに 1 増える (1,2,3,4,5,6; ADR-0078 で BUG-001 の半速系列
+    1,2,2,3,3,4 を是正)。
     """
     from flode.blocks.mathops import Add
 
@@ -110,7 +111,7 @@ def test_base_clock_sample_time_runs_on_dt_without_warning(caplog):
 
     assert delay._resolved_sample_time == pytest.approx(0.01)
     values = scope.values[:, 0]
-    assert values.tolist() == pytest.approx([1.0, 2.0, 2.0, 3.0, 3.0, 4.0])
+    assert values.tolist() == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     assert not any("delay" in r.message for r in caplog.records if r.levelno >= logging.WARNING), (
         "明示宣言なのに WARNING が出ている"
     )
@@ -403,17 +404,17 @@ def test_double_buffering_simultaneous_updates():
     a_values = scope_a.values[:, 0]
     b_values = scope_b.values[:, 0]
 
-    # ADR-0015 で UnitDelay が 2-state augmentation になり、feedback loop での
-    # 出力 sequence は v0.3.0 (1-state、period 2 alternating) から period 4 に
-    # 変化した。state[0] が 1 fire 分遅れて state[1] の値を反映するため。
-    # double buffering は引き続き機能している (a と b が独立に同じ pattern で更新される)。
+    # ADR-0078 (2026-09-14): a[k+1] = b[k], b[k+1] = a[k] なので period 2 で交互に
+    # 入れ替わる (10, 20, 10, ...)。ADR-0015 直後は advance 相が無く、update が
+    # 「シフト前」の表示値 (= 1 サンプル古い出力) を受けていたため period 4 に
+    # なっていた (BUG-001)。double buffering (同時刻発火の a / b が互いの t_k の
+    # 出力を見る) は維持されている。
     assert a_values[0] == pytest.approx(10.0)
     assert b_values[0] == pytest.approx(20.0)
     assert a_values[1] == pytest.approx(20.0)
     assert b_values[1] == pytest.approx(10.0)
-    # ADR-0015: 2-state shift により iter 2 で state[0] = state[1]_post-iter-1 = u_a(1) = 20
-    assert a_values[2] == pytest.approx(20.0)
-    assert b_values[2] == pytest.approx(10.0)
+    assert a_values[2] == pytest.approx(10.0)
+    assert b_values[2] == pytest.approx(20.0)
 
 
 def test_continuous_only_phase0_compat():
