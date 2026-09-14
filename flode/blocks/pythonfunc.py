@@ -387,9 +387,6 @@ class PythonFunction(Block):
         )
         self.code: str = code
         self._static_spec: SourceSpec = spec
-        # ADR-0078: 状態を持つ離散 / 継承ブロックは「次状態」セマンティクス
-        # (t_k の出力は更新前の状態から計算) — デコレータ生成 class と同じ判定。
-        self.output_before_update = spec.n_states > 0 and spec.sample_time not in (None, 0.0)
         self.user_params: dict[str, Any] = self._filter_user_params(user_params, spec)
         self._inner: Block | None = None
         self._exec_ns: dict[str, Any] | None = None

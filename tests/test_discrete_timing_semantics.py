@@ -507,3 +507,193 @@ class TestSampledDataExactSolution:
         np.testing.assert_allclose(
             self._flode(self.TS, use_block=True), self._flode(self.TS), atol=1e-12
         )
+
+
+class TestImmediateBlocksSameInstant:
+    """直達の離散非線形ブロック (Relay / RateLimiter) の t_k の出力が、同時刻に発火する
+    下流 UnitDelay の update に届く (ADR-0078 Amendment: output() が u_k から決定値を計算)。"""
+
+    @staticmethod
+    def _run(mid) -> np.ndarray:
+        sim = Simulator(t_end=0.6, dt=TS)
+        src = sim.add(Step(step_time=0.25, final_value=1.0, id="src"))
+        m = sim.add(mid)
+        d = sim.add(UnitDelay(sample_time=TS, id="d"))
+        sc = sim.add(Scope(n_inputs=2, id="sc"))
+        sim.connect(src, m)
+        sim.connect(m, d)
+        sim.connect(m, sc, dst_idx=0)
+        sim.connect(d, sc, dst_idx=1)
+        sim.run()
+        return sc.values
+
+    def test_relay_then_unit_delay(self):
+        from flode.blocks import Relay
+
+        v = self._run(Relay(sample_time=TS, switch_on_point=0.5, switch_off_point=-0.5, id="relay"))
+        np.testing.assert_allclose(v[:, 0], [0, 0, 0, 1, 1, 1, 1])
+        np.testing.assert_allclose(v[1:, 1], v[:-1, 0])
+
+    def test_rate_limiter_then_unit_delay(self):
+        from flode.blocks import RateLimiter
+
+        v = self._run(
+            RateLimiter(sample_time=TS, rising_slew_rate=2.0, falling_slew_rate=-2.0, id="rl")
+        )
+        np.testing.assert_allclose(v[:, 0], [0, 0, 0, 0.2, 0.4, 0.6, 0.8])
+        np.testing.assert_allclose(v[1:, 1], v[:-1, 0])
+
+
+class TestImmediateBlocksInsideSubsystem:
+    """RateLimiter (直達の即時型ブロック) を非制御 Subsystem に入れてもルート直下と同じ値になる。"""
+
+    def test_rate_limiter_inside_subsystem(self):
+        from flode.blocks import RateLimiter
+
+        def make_rl(id_: str):
+            return RateLimiter(sample_time=TS, rising_slew_rate=2.0, falling_slew_rate=-2.0, id=id_)
+
+        sub = Subsystem(
+            blocks=[Inport(port_idx=0, id="in"), make_rl("rl"), Outport(port_idx=0, id="out")],
+            connections=[{"src": "in", "dst": "rl"}, {"src": "rl", "dst": "out"}],
+            id="sub",
+        )
+        src = Step(step_time=0.25, final_value=1.0, id="src")
+        y_root = _chain([make_rl("rl")], source=Step(step_time=0.25, final_value=1.0, id="src"))
+        y_sub = _chain([sub], source=src)
+        np.testing.assert_allclose(y_root, [0, 0, 0, 0.2, 0.4, 0.6, 0.8])
+        np.testing.assert_allclose(y_sub, y_root)
+
+
+class TestTriggeredSubsystemFeedthrough:
+    """ADR-0078: Trigger 付き Subsystem の direct_feedthrough は内部経路から推論する
+    (fire 時刻の出力はその時刻のデータ入力に依存 = 数学的に直達)。"""
+
+    @staticmethod
+    def _triggered_gain() -> Subsystem:
+        from flode.subsystems import Trigger
+
+        return Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="in_data"),
+                Gain(k=2.0, id="g"),
+                Outport(port_idx=0, id="out"),
+                Trigger(trigger_type="rising", id="trig"),
+            ],
+            connections=[{"src": "in_data", "dst": "g"}, {"src": "g", "dst": "out"}],
+            id="trig_gain",
+        )
+
+    def test_feedthrough_inner_path_is_inferred(self):
+        sub = self._triggered_gain()
+        sub._build()
+        assert sub.direct_feedthrough is True
+
+    def test_self_feedback_through_feedthrough_is_algebraic_loop(self):
+        from flode import AlgebraicLoopError
+        from flode.blocks import PulseGenerator
+
+        sub = self._triggered_gain()
+        sim = Simulator(t_end=0.3, dt=TS)
+        sim.add(PulseGenerator(period=0.2, id="pulse"))
+        sim.add(Sum(signs="++", id="s"))
+        sim.add(sub)
+        sim.connect("pulse", "s", dst_idx=0)
+        sim.connect("trig_gain", "s", dst_idx=1)  # 自身の出力 → Sum → データ入力 (直達ループ)
+        sim.connect("s", "trig_gain", dst_idx=0)
+        sim.connect("pulse", "trig_gain", dst_idx=1)
+        with pytest.raises(AlgebraicLoopError):
+            sim.run()
+
+    def test_non_feedthrough_inner_path_breaks_loop(self):
+        from flode.blocks import PulseGenerator
+        from flode.subsystems import Trigger
+
+        sub = Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="in_data"),
+                UnitDelay(sample_time=TS, id="d"),
+                Outport(port_idx=0, id="out"),
+                Trigger(trigger_type="rising", id="trig"),
+            ],
+            connections=[{"src": "in_data", "dst": "d"}, {"src": "d", "dst": "out"}],
+            id="trig_delay",
+        )
+        sub._build()
+        assert sub.direct_feedthrough is False
+        sim = Simulator(t_end=0.6, dt=TS)
+        sim.add(PulseGenerator(period=0.2, id="pulse"))
+        sim.add(Sum(signs="++", id="s"))
+        sim.add(sub)
+        sc = sim.add(Scope(id="sc"))
+        sim.connect("pulse", "s", dst_idx=0)
+        sim.connect("trig_delay", "s", dst_idx=1)
+        sim.connect("s", "trig_delay", dst_idx=0)
+        sim.connect("pulse", "trig_delay", dst_idx=1)
+        sim.connect("trig_delay", sc)
+        sim.run()  # 例外なし (UnitDelay がループを切る)
+        assert np.isfinite(sc.values).all()
+
+    def test_plain_subsystem_nested_inside_triggered_matches_flat(self):
+        """plain-in-triggered: 自身の離散状態を持つ非制御 Subsystem を Trigger 付き
+        Subsystem の内部に置いても、フラットな構成と一致する。"""
+        from flode.blocks import PulseGenerator
+
+        def inner_chain() -> Subsystem:
+            return Subsystem(
+                blocks=[
+                    Inport(port_idx=0, id="i"),
+                    UnitDelay(sample_time=TS, id="d1"),
+                    UnitDelay(sample_time=TS, id="d2"),
+                    Outport(port_idx=0, id="o"),
+                ],
+                connections=[
+                    {"src": "i", "dst": "d1"},
+                    {"src": "d1", "dst": "d2"},
+                    {"src": "d2", "dst": "o"},
+                ],
+                id="chain",
+            )
+
+        def triggered(inner_blocks, inner_conns) -> Subsystem:
+            from flode.subsystems import Trigger as _T
+
+            return Subsystem(
+                blocks=[
+                    Inport(port_idx=0, id="in_data"),
+                    *inner_blocks,
+                    Outport(port_idx=0, id="out"),
+                    _T(id="trig"),
+                ],
+                connections=inner_conns,
+                id="trig_sub",
+            )
+
+        def run(target: Subsystem) -> np.ndarray:
+            sim = Simulator(t_end=1.0, dt=TS)
+            clk = sim.add(Clock(id="clk"))
+            pulse = sim.add(PulseGenerator(amplitude=1.0, period=0.3, pulse_width=50.0, id="pulse"))
+            sim.add(target)
+            sc = sim.add(Scope(id="sc"))
+            sim.connect(clk, target, dst_idx=0)
+            sim.connect(pulse, target, dst_idx=1)
+            sim.connect(target, sc)
+            sim.run()
+            return sc.values[:, 0]
+
+        flat = triggered(
+            [UnitDelay(sample_time=TS, id="d1"), UnitDelay(sample_time=TS, id="d2")],
+            [
+                {"src": "in_data", "dst": "d1"},
+                {"src": "d1", "dst": "d2"},
+                {"src": "d2", "dst": "out"},
+            ],
+        )
+        nested = triggered(
+            [inner_chain()],
+            [{"src": "in_data", "dst": "chain"}, {"src": "chain", "dst": "out"}],
+        )
+        y_flat = run(flat)
+        y_nested = run(nested)
+        np.testing.assert_allclose(y_nested, y_flat)
+        assert np.any(y_flat != 0.0)

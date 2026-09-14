@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   誤認した記述で、本リリースで撤回する (period 2 が正)
 - **`@block` / `PythonFunction` の離散ステートフルブロックが 1 サンプル先行していた
   問題を修正**。`t=0` で初期状態 `x0` が出力されず、ユーザー定義の UnitDelay 相当
-  ブロックの遅延がゼロになっていた。新設の `Block.output_before_update` (「次状態」
-  セマンティクス: `y_k = g(x_k)`, `x_{k+1} = f(x_k, u_k)`) をデコレータ生成 class に
-  付与し、組込 `UnitDelay` と同じタイミングにした
+  ブロックの遅延がゼロになっていた。サンプル時刻の処理を「advance → output → update」
+  の 1 パス (`y_k = g(x_k, u_k)`, `x_{k+1} = f(x_k, u_k)`) に統一したことで、
+  組込 `UnitDelay` と同じタイミングになった
 - **直達項を持つ離散ブロック (`DiscreteTransferFunction` / `DiscreteStateSpace` の
   `D ≠ 0`) がサンプル間で入力をホールドしていなかった問題を修正**。`D u` が毎
   ベースステップ・ODE 右辺評価のたびに連続入力で再計算され、Tustin 離散化 PID や
@@ -34,24 +34,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `Simulator._step` / `_step_vector` に出力キャッシュ制御の keyword 引数
-  (`fresh` / `cache` / `store` / `pre_outputs`) を追加 (内部 API)。
-  サンプル時刻の処理順は [A0] advance → [A1] pass-1 出力 (同時刻の入力 u_k) →
-  [A'] update → [A] pass-2 出力 (キャッシュ) → [E] record → [B] 積分
+- `Block.advance(t, x, u)` (シフト相) を新設。サンプル時刻の処理は 1 パスで、
+  トポロジカル順に発火ブロックごとに `x_k = advance(t_k, x_k⁻, u_k)` →
+  `y_k = output(t_k, x_k, u_k)` (キャッシュ) を計算し、その後 `x_{k+1}⁻ = update(t_k, x_k, u_k)`
+  → record → 積分。`Simulator._step` / `_step_vector` に `fresh` / `cache` keyword 引数を
+  追加 (内部 API)。ODE 右辺評価と非発火ステップはキャッシュ値を返す
 - `TransportDelay` は `advance()` で表示値をシフトする形に整理 (観測される遅延
   `ceil(delay_time / sample_time)` サンプルは不変)
-- `Subsystem`: 制御ブロック無しは `advance()` を内部離散ブロックへ再帰、Trigger /
-  Enable 付きは fire 時に `update()` 内で内部シフトを行う
-- テスト: `tests/test_discrete_timing_semantics.py` (27 件) を追加。
+- `Subsystem`: `advance()` が内部離散ブロックをトポロジカル順にシフトする (制御ブロック無し
+  は常に、Trigger / Enable 付きは fire 判定が真のときだけ)。fire / enable / reset の判定は
+  `advance` / `output` / `update` で共有する純関数に統一。**Trigger ポートは制御入力
+  (`control_input_ports`) になり、Trigger 付き Subsystem の `direct_feedthrough` は内部経路から
+  推論する (従来は強制 False)**。fire する時刻の出力はその時刻のデータ入力から計算される
+  (数学的に直達) ため。Trigger 付き Subsystem を直達ブロックだけでフィードバックしていた
+  モデルは代数ループとして検出されるようになる (fire 時刻には実際に代数ループ)
+- テスト: `tests/test_discrete_timing_semantics.py` (36 件、サンプル値閉ループの厳密解との一致を含む) を追加。
   `test_double_buffering_simultaneous_updates` 等 4 件の期待値を正しい系列に更新、
   dtype ベースライン npz の discrete 配列を再採取
 
-### Known limitation
-
-- 即時型の 1-state 離散ブロック (`Relay` / `RateLimiter`) の
-  出力は update 後の値が `t_k` の出力になるため、同時刻に発火する下流離散ブロックの
-  update はそれらの **前サンプルの** 出力を見る (非直達宣言と整合。ADR-0078 §Consequences)。
-  `RandomSource` は入力を持たないため描画を `advance()` に移し、同時刻の下流にも新値が届く
+- **`Relay` / `RateLimiter` (直達の離散非線形ブロック) の `t_k` の出力が同時刻に発火する
+  下流離散ブロックの update に届いていなかった問題を修正** (直後の `UnitDelay` が 2 サンプル
+  遅れになっていた)。`output()` が現入力 `u_k` から遷移判定 / slew 制限後の値を返すようにし、
+  `update()` は同じ決定値を保存する (SPEC-0012「サンプル時刻で現入力を参照」の宣言どおり)。
+  `RandomSource` も同様に描画を `advance()` に移し、同時刻の下流に新値が届く
 
 ## [0.59.0] - 2026-09-11 — 失敗時にエラーブロックへ自動フォーカス
 

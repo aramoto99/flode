@@ -141,7 +141,7 @@ class RandomSource(Block):
         self._initial_seed: int | None = seed
         self._rng: np.random.Generator = rng
 
-        # x0=0.0 placeholder。Simulator.run() の [A0] advance (ADR-0078) で t=0 の
+        # x0=0.0 placeholder。Simulator.run() の [A] advance (ADR-0078) で t=0 の
         # サンプル境界に新乱数で上書きされるため、ユーザーには露出しない。
         self.x0 = np.array([0.0])
 
@@ -169,9 +169,9 @@ class RandomSource(Block):
         # state hold: 中間時刻でも同一 t 多重評価でも同一値を返す。
         return np.array([float(x[0])])
 
-    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+    def advance(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0078: サンプル境界 (Simulator が k % step_ratio == 0 で fire) の冒頭
-        # (シフト相) で rng を進めて新値を state に書く。入力を持たないソースなので
+        # (シフト相、output の直前) で rng を進めて新値を state に書く。入力を持たないソースなので
         # 「t_k の出力」はこの時点で確定でき、同時刻に発火する下流離散ブロックの
         # update にも新値が届く (以前は update で描画していたため 1 サンプル遅れて
         # 見えていた)。呼び出し回数・順序は従来の update と同じ 1 fire 1 draw なので、

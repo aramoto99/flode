@@ -183,8 +183,8 @@ class TestRandomSourceSampleTimeHold:
         """advance() を 2 回呼ぶと異なる値を返す (rng が進む)。update() は hold (ADR-0078)。"""
         blk = RandomSource(sample_time=0.1, seed=42)
         x0 = np.array([0.0])
-        y1 = blk.advance(0.0, x0)
-        y2 = blk.advance(0.1, x0)
+        y1 = blk.advance(0.0, x0, _EMPTY_U)
+        y2 = blk.advance(0.1, x0, _EMPTY_U)
         assert y1[0] != y2[0]
         np.testing.assert_array_equal(blk.update(0.1, y2, _EMPTY_U), y2)
 

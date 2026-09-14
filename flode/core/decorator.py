@@ -643,9 +643,6 @@ def _make_block_class(
         "output": output,
         "derivative": derivative,
         "update": update,
-        # ADR-0078: 離散 (または継承) のステートフルブロックは「次状態」セマンティクス
-        # (t_k の出力は update 前の x_k から計算)。組込 2-state ブロックと同じ遅延になる。
-        "output_before_update": bool(has_state and (static_is_discrete or is_inherited)),
         "_flode_func": staticmethod(func),
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(
@@ -1112,8 +1109,6 @@ def _make_block_class_from_class(
         "output": output,
         "derivative": derivative,
         "update": update,
-        # ADR-0078: 関数版と同じ「次状態」セマンティクス
-        "output_before_update": bool(has_state and (static_is_discrete or is_inherited)),
         "_flode_user_cls": user_cls,
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(

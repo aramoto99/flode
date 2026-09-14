@@ -156,6 +156,8 @@ class Subsystem(Block):
         # fire しないステップ / disable 中ステップで返す出力キャッシュ。
         # ``_build`` 後に zeros(n_outputs) で初期化される (= n_outputs は派生 property)。
         self._last_y: npt.NDArray[Any] | None = None
+        # ADR-0078: advance() が Enable の reset 遷移を適用した時刻 (update との二重適用防止)
+        self._reset_applied_at: float | None = None
 
         # ADR-0055 §論点 5-A: Goto/From 仮想エッジ展開で外部 (Simulator) から
         # 追加される内部 ``(dst, src)`` deps の set。``_compute_exec_order`` が
@@ -613,22 +615,34 @@ class Subsystem(Block):
 
         # direct_feedthrough を内部 Inport→Outport 経路から推論 (LO-A)
         self.direct_feedthrough = self._infer_direct_feedthrough(inports, outports)
-        # ADR-0058 §論点 11 / 旧 TriggeredSubsystem._build と同じく、Trigger 付き
-        # Subsystem は出力が「前回 fire 時の _last_y キャッシュ」になるため、内部の
-        # 直達経路に関係なく外側からは非直達。Simulator のトポロジカルソートが
-        # 誤って direct_feedthrough=True と扱うと代数ループ誤検知や順序ミスを
-        # 起こすため、推論結果を強制 False に書き換える。
-        if self._has_trigger:
-            self.direct_feedthrough = False
+        # ADR-0078: Trigger 付き Subsystem も内部の直達経路から推論した値をそのまま使う。
+        # fire するサンプル時刻の出力はその時刻のデータ入力から計算される (= 数学的には
+        # 直達) ため、旧 ADR-0058 §論点 11 の「_last_y キャッシュだから常に非直達」
+        # (強制 False) は廃止した。強制 False のままだとトポロジカル順で fire 時の
+        # データ入力が output() 前に確定せず、fire 時刻の出力が 0 になる。
         # bug-fix 2026-09-13: Enabled Subsystem の enable ポートは、データ経路が
         # 非直達でも output() 時点で読む必要がある (無効中の出力ポリシー判定)。
         # そのポートだけを制御入力として宣言し、Simulator / 親 Subsystem の
         # スケジューラがパス 1 で値を組み立てる (データ経路は非直達のまま =
         # 自身の出力をデータ入力に戻すループは代数ループにならない)。
+        ctrl_ports: list[int] = []
         if self._has_enable and self._enable_slot_idx is not None:
-            self.control_input_ports = (self._enable_slot_idx,)
-        else:
-            self.control_input_ports = ()
+            ctrl_ports.append(self._enable_slot_idx)
+        # ADR-0078: trigger ポートも制御入力。fire の判定を advance() (= output の前) で
+        # 行うため、trigger 信号は output() 前に確定している必要がある。
+        if self._has_trigger and self._trigger_slot_idx is not None:
+            ctrl_ports.append(self._trigger_slot_idx)
+        # ADR-0078: 内部に制御ポートを持つブロック (Trigger / Enable 付きのネスト
+        # Subsystem) があると、その制御信号がデータ Inport 経由で来る可能性があるので、
+        # advance() 時にデータ入力も確定している必要がある。保守的に全データ Inport を
+        # 制御入力にする (順序制約が増えるだけで数値は変わらない)。
+        if any(
+            b.control_input_ports
+            for b in self._inner_blocks
+            if not isinstance(b, (Trigger, Enable))
+        ):
+            ctrl_ports.extend(range(self._n_data_inports))
+        self.control_input_ports = tuple(sorted(set(ctrl_ports)))
 
         # sample_time 継承 (ST-A): 内部の最小サンプル時間
         sample_times = [
@@ -686,6 +700,7 @@ class Subsystem(Block):
         """
         self._prev_trigger_value = float("nan")
         self._prev_enable_value = float("nan")
+        self._reset_applied_at = None
         if self._last_y is not None:
             self._last_y = np.zeros(self.n_outputs)
         for b in self._inner_blocks:
@@ -921,7 +936,22 @@ class Subsystem(Block):
     def _step_inner(
         self, t: float, x: npt.NDArray[Any], u_external: npt.NDArray[Any]
     ) -> tuple[dict[Block, npt.NDArray[Any]], dict[Block, npt.NDArray[Any]]]:
+        """内部の 2 パス出力計算 (``Simulator._step`` の縮小版)。``_step_inner_core`` の
+        advance なし版 (戻り値 2-tuple)。
+        """
+        outputs, inputs, _x = self._step_inner_core(t, x, u_external, advance=False)
+        return outputs, inputs
+
+    def _step_inner_core(
+        self, t: float, x: npt.NDArray[Any], u_external: npt.NDArray[Any], *, advance: bool
+    ) -> tuple[dict[Block, npt.NDArray[Any]], dict[Block, npt.NDArray[Any]], npt.NDArray[Any]]:
         """内部の 2 パス出力計算 (``Simulator._step`` の縮小版)。
+
+        ``advance=True`` のとき (ADR-0078 シフト相) は、各内部離散ブロックの出力を
+        計算する直前に ``advance(t, x_slice, u)`` を適用し、advance 後の内部状態
+        (``x`` のコピー) を第 3 戻り値で返す。``Simulator._step`` と同じ順序
+        (トポロジカル順に advance → output) なので、内部の離散→離散の直列でも
+        同時刻の値が届く。
 
         外部 ``u_external[port_idx]`` を Inport の ``_external_value`` に注入してから
         実行する。
@@ -932,8 +962,11 @@ class Subsystem(Block):
         除いた ``u_data`` を渡してくる) でも IndexError にならない。
 
         Returns:
-            ``(outputs, inputs)``: 各内部ブロックの出力と入力ベクトル。
+            ``(outputs, inputs, x_work)``: 各内部ブロックの出力と入力ベクトル、および
+            (advance=True なら advance 後の) 内部状態ベクトル。
         """
+        x_work = np.array(x, dtype=float, copy=True) if advance else np.asarray(x, dtype=float)
+        discrete_slice_of = {b: sl for b, sl in self._discrete_slices} if advance else {}
         for port_idx, inport in self._inports_by_idx.items():
             # ADR-0017 SM-B: port_shape != () の Inport (= ベクトルポート) は本来
             # ndarray を ``_external_value`` に注入する必要がある。Phase 5b 時点では
@@ -942,14 +975,15 @@ class Subsystem(Block):
             # ``Subsystem.run()`` で BlockSpecError)。
             inport._external_value = float(u_external[port_idx])
 
-        # 内部状態を slice ごとに取り出す
-        cont_state = {b: x[sl] for b, sl in self._state_slices}
+        # 内部状態を slice ごとに取り出す (advance 時は x_work を参照 = advance 結果が見える)
+        state_slices = dict(self._state_slices)
 
         outputs: dict[Block, npt.NDArray[Any]] = {}
         inputs: dict[Block, npt.NDArray[Any]] = {}
 
         def state_for(b: Block) -> npt.NDArray[Any]:
-            return cont_state.get(b, np.zeros(0))
+            sl = state_slices.get(b)
+            return x_work[sl] if sl is not None else np.zeros(0)
 
         assert self._exec_order is not None
         for b in self._exec_order:
@@ -973,6 +1007,9 @@ class Subsystem(Block):
                     if src is not None:
                         sb, si = src
                         u[i] = outputs[sb][si]
+            if advance and b in discrete_slice_of:
+                sl = discrete_slice_of[b]
+                x_work[sl] = np.asarray(b.advance(t, x_work[sl], u), dtype=float)
             xb = state_for(b)
             y = np.atleast_1d(np.asarray(b.output(t, xb, u), dtype=float))
             outputs[b] = y
@@ -984,7 +1021,7 @@ class Subsystem(Block):
                         sb, si = src
                         u[i] = outputs[sb][si]
                 inputs[b] = u
-        return outputs, inputs
+        return outputs, inputs, x_work
 
     # ---------- ADR-0058 hot-path helpers (control block を持つ Subsystem 用) ----------
 
@@ -1014,11 +1051,87 @@ class Subsystem(Block):
 
     # ---------- Block 契約: output / derivative / update ----------
 
+    # ---------- ADR-0078: 制御判定 (advance / output / update で共有する純関数) ----------
+
+    def _decide(self, u: npt.NDArray[Any]) -> tuple[bool, bool, bool]:
+        """現在の制御入力 ``u`` と前回値 (``_prev_*``、ここでは書き換えない) から
+        ``(enabled, fire, reset_state)`` を返す純関数。
+
+        - enabled: Enable なし、または enable > 0 (NaN は無効化)
+        - fire: Trigger + Enable = enabled and edge / Trigger のみ = edge /
+          Enable のみ = enabled (毎ステップ) / 制御なし = True
+        - reset_state: Enable の false→true 遷移で ``states_when_enabling="reset"``
+        """
+        curr_enabled = True
+        reset_state = False
+        if self._has_enable:
+            assert self._enable_slot_idx is not None and self._enable_block is not None
+            curr_en = float(u[self._enable_slot_idx])
+            prev_en = self._prev_enable_value
+            curr_enabled = (not math.isnan(curr_en)) and curr_en > 0.0
+            prev_was_disabled = (not math.isnan(prev_en)) and prev_en <= 0.0
+            reset_state = (
+                curr_enabled
+                and prev_was_disabled
+                and self._enable_block.states_when_enabling == "reset"
+            )
+        if self._has_trigger:
+            assert self._trigger_slot_idx is not None and self._trigger_block is not None
+            edge = is_trigger_edge(
+                self._prev_trigger_value,
+                float(u[self._trigger_slot_idx]),
+                self._trigger_block.trigger_type,
+            )
+        else:
+            edge = False
+        if self._has_trigger and self._has_enable:
+            fire = curr_enabled and edge
+        elif self._has_trigger:
+            fire = edge
+        else:
+            fire = curr_enabled
+        return curr_enabled, fire, reset_state
+
+    def _commit_control(self, u: npt.NDArray[Any]) -> None:
+        """``update`` で前回制御値を確定する (edge / 遷移検出の基準を進める)。"""
+        if self._has_enable:
+            assert self._enable_slot_idx is not None
+            self._prev_enable_value = float(u[self._enable_slot_idx])
+        if self._has_trigger:
+            assert self._trigger_slot_idx is not None
+            self._prev_trigger_value = float(u[self._trigger_slot_idx])
+
+    # ---------- Block 契約: advance / output / derivative / update ----------
+
+    def advance(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        """ADR-0078 シフト相。内部離散ブロックを (トポロジカル順に) advance する。
+
+        - 制御ブロックなし: 常に内部 advance (Simulator が発火時のみ呼ぶ)。
+        - Trigger / Enable あり: ``_decide`` で fire を判定し、fire のときだけ内部
+          advance する (Enable の reset 遷移なら x0 から)。fire しなければ状態は凍結。
+          ``u`` の制御ポート (enable / trigger) は Simulator / 親 Subsystem が
+          output() 前に埋めている (``control_input_ports``)。
+        """
+        self._build()
+        if self.n_states == 0:
+            return np.asarray(x, dtype=float)
+        if not (self._has_trigger or self._has_enable):
+            _o, _i, x_adv = self._step_inner_core(t, x, u, advance=True)
+            return x_adv
+        _enabled, fire, reset_state = self._decide(u)
+        if not fire:
+            return np.asarray(x, dtype=float)
+        x_eff = np.array(self.x0, dtype=float, copy=True) if reset_state else x
+        if reset_state:
+            self._reset_applied_at = t
+        u_data = u[: self._n_data_inports]
+        _o, _i, x_adv = self._step_inner_core(t, x_eff, u_data, advance=True)
+        return x_adv
+
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         # ADR-0058 §論点 14 数値完全不変ガード: Trigger / Enable を持たない Subsystem
-        # は既存 hot-path をそのまま通る (= 既存テスト 949+ 件の数値が bit 単位で
-        # 変化しないことを保証)。
+        # は既存 hot-path をそのまま通る。
         if not (self._has_trigger or self._has_enable):
             outputs, _inputs = self._step_inner(t, x, u)
             return self._compute_y_from_outputs(outputs)
@@ -1027,30 +1140,26 @@ class Subsystem(Block):
         if self._last_y is None:
             self._last_y = np.zeros(self.n_outputs)
 
-        enabled = self._is_enabled(u)
+        enabled, fire, _reset = self._decide(u)
         if not enabled:
             # ADR-0058 §論点 5: disable 中の出力ポリシー
             assert self._enable_block is not None
             if self._enable_block.outputs_when_disabled == "reset":
                 return np.zeros(self.n_outputs)
             return np.asarray(self._last_y, dtype=float)
-
-        if self._has_trigger:
-            # Trigger-driven (enable 真のときも): _last_y キャッシュを返す
-            # (= update() で fire 時に更新される、旧 TriggeredSubsystem.output と同等)
+        if not fire:
+            # Trigger 駆動で edge なし: 前回 fire 時の出力を保持
             return np.asarray(self._last_y, dtype=float)
-
-        # Enable-only かつ enabled: 通常 Subsystem として現在 state から計算。
-        # ADR-0058 §論点 2 MUST 2: Simulator の 2-pass output 計算 (= ADR-0014 [A]
-        # phase) は 1 step 内で複数回 ``output()`` を呼ぶ可能性がある。内部 state
-        # を変えない設計 (``update()`` のみが state を進める) のため、``_step_inner``
-        # 再実行は idempotent (内部ブロックの ``output()`` も状態を変えない)。
-        # 余計な計算コストはあるが、副作用ゼロで仕様通り。
+        # fire (ADR-0078): サンプル時刻の出力は advance 済みの内部状態 x_k と同時刻の
+        # 入力から計算する。Trigger 付きは ``update`` が同じ計算で ``_last_y`` を確定する。
         u_data = u[: self._n_data_inports]
         outputs, _inputs = self._step_inner(t, x, u_data)
         y = self._compute_y_from_outputs(outputs)
-        # _last_y を更新: 次に disable に遷移したとき "held" policy で返す値の cache
-        self._last_y = y
+        if not self._has_trigger:
+            # Enable のみ (level 駆動): 連続状態だけの Subsystem では update() が呼ばれ
+            # ないため、ここで _last_y を更新する (disable 遷移後の "held" 用キャッシュ、
+            # ADR-0058 §論点 2 MUST 2: output() の再実行は冪等)。
+            self._last_y = y
         return y
 
     def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -1089,22 +1198,6 @@ class Subsystem(Block):
             )
         return xdot
 
-    def _advance_inner(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        """内部離散ブロックの ``advance`` (ADR-0078 シフト相) を state slice ごとに適用。"""
-        x_adv = np.array(x, dtype=float, copy=True)
-        for b, sl in self._discrete_slices:
-            x_adv[sl] = np.asarray(b.advance(t, x[sl]), dtype=float)
-        return x_adv
-
-    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        """ADR-0078: 制御ブロックを持たない Subsystem は内部離散ブロックを再帰的に
-        シフトする。Trigger / Enable 付きは発火するかどうかが ``update`` の中で
-        しか分からないため、ここでは何もせず ``update`` の fire 経路で行う。"""
-        self._build()
-        if self.n_states == 0 or self._has_trigger or self._has_enable:
-            return np.asarray(x, dtype=float)
-        return self._advance_inner(t, x)
-
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         self._build()
         # ADR-0058 §論点 14 数値完全不変ガード
@@ -1124,63 +1217,22 @@ class Subsystem(Block):
         if self._last_y is None:
             self._last_y = np.zeros(self.n_outputs)
 
-        # Enable 状態の遷移検出 (false → true) と prev 更新。
-        # ADR-0058 §論点 4 MUST 3: ``_prev_enable_value`` は NaN sentinel 初期化なので
-        # 「初回ステップで enable=true から始まる」ケースでは ``prev_was_disabled=False``
-        # となり ``enable_transition_to_true=False``。これは意図的設計で、Trigger の
-        # 偽エッジ防止 (``_prev_trigger_value=NaN``) と対称的。起動直後は内部状態が
-        # 既に x0 なので、reset policy 下でも追加の reset は不要 (= 余計な書き戻しを
-        # 避けて数値的に冪等)。
-        enable_transition_to_true = False
-        if self._has_enable:
-            assert self._enable_slot_idx is not None and self._enable_block is not None
-            curr_en = float(u[self._enable_slot_idx])
-            prev_en = self._prev_enable_value
-            curr_enabled = (not math.isnan(curr_en)) and curr_en > 0.0
-            prev_was_disabled = (not math.isnan(prev_en)) and prev_en <= 0.0
-            enable_transition_to_true = curr_enabled and prev_was_disabled
-            self._prev_enable_value = curr_en
-        else:
-            curr_enabled = True
+        _enabled, fire, reset_state = self._decide(u)
+        # 前回制御値の確定 (edge / 遷移の基準を進める)
+        self._commit_control(u)
 
-        # Trigger edge 検出と prev 更新 (旧 TriggeredSubsystem.update と同じ semantics)
-        if self._has_trigger:
-            assert self._trigger_slot_idx is not None and self._trigger_block is not None
-            curr_trig = float(u[self._trigger_slot_idx])
-            edge = is_trigger_edge(
-                self._prev_trigger_value, curr_trig, self._trigger_block.trigger_type
-            )
-            self._prev_trigger_value = curr_trig
-        else:
-            edge = False
-
-        # ADR-0058 §論点 4: state reset on enable false→true 遷移 (policy: reset)
-        if (
-            enable_transition_to_true
-            and self._enable_block is not None
-            and self._enable_block.states_when_enabling == "reset"
-        ):
+        # ADR-0058 §論点 4: state reset on enable false→true 遷移 (policy: reset)。
+        # Simulator 経由では advance() が同じサンプル時刻に既に x0 へ戻して内部 advance
+        # 済み (``_reset_applied_at == t``) なので二重に戻さない。update() を直接呼ぶ
+        # 経路 (単体テスト等) では従来どおりここで戻す。
+        if reset_state and self._reset_applied_at != t:
             x = np.array(self.x0, dtype=float, copy=True)
-
-        # Fire 条件 (ADR-0058 §論点 9: edge AND enable):
-        # - Trigger + Enable: enabled and edge
-        # - Trigger only: edge
-        # - Enable only: enabled (level-driven、毎ステップ fire)
-        if self._has_trigger and self._has_enable:
-            fire = curr_enabled and edge
-        elif self._has_trigger:
-            fire = edge
-        else:  # has_enable only
-            fire = curr_enabled
 
         if not fire:
             # 凍結 (state reset があった場合はその x を返す、なければ受信 x をそのまま)
             return np.asarray(x, dtype=float)
 
-        # Fire: 内部離散ブロックをシフト (ADR-0078、ルートで advance を呼ばない分を
-        # ここで行う) → 内部 step を実行し _last_y を更新
-        if self.n_states > 0:
-            x = self._advance_inner(t, x)
+        # Fire: 内部 step を実行し _last_y を更新 (output() と同じ計算)
         u_data = u[: self._n_data_inports]
         outputs, inputs = self._step_inner(t, x, u_data)
         self._last_y = self._compute_y_from_outputs(outputs)

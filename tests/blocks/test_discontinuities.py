@@ -337,12 +337,21 @@ class TestSampleTimeHold:
         # step_ratio=2 で偶数ステップだけ fire。すべて ON だが state は保持される。
         assert all(v == 1.0 for v in vals)
 
-    def test_output_pure_state_hold(self) -> None:
-        """output() は state 値だけを返す (pure)。"""
+    def test_output_is_slew_limited_current_input(self) -> None:
+        """output() は現入力から slew 制限後の値を返す (ADR-0078 Amendment、update と同じ決定値)。
+
+        サンプル間のホールドは Simulator の出力キャッシュが担う (output は発火時のみ呼ばれる)。
+        sample_time 未解決時は state をそのまま返す (fail-soft)。
+        """
         rl = RateLimiter(sample_time=0.1, x0=2.5)
-        for t_val in (0.0, 0.05, 0.07):
-            y = rl.output(t_val, np.array([2.5]), np.array([99.0]))
-            assert y[0] == 2.5
+        assert rl.output(0.0, np.array([2.5]), np.array([99.0]))[0] == 2.5  # 未解決: hold
+        rl._resolved_sample_time = 0.1
+        assert rl.output(0.0, np.array([2.5]), np.array([99.0]))[0] == pytest.approx(2.6)
+        assert rl.output(0.0, np.array([2.5]), np.array([2.55]))[0] == pytest.approx(2.55)
+        np.testing.assert_allclose(
+            rl.output(0.0, np.array([2.5]), np.array([99.0])),
+            rl.update(0.0, np.array([2.5]), np.array([99.0])),
+        )
 
 
 class TestDeterminism:

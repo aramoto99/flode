@@ -109,11 +109,18 @@ class RateLimiter(Block):
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # state hold: サンプル境界以外でも中間時刻でも state 値を返す。
-        return np.array([float(x[0])])
+        # ADR-0078 Amendment: 直達ブロックなのでサンプル時刻 t_k の出力は現入力 u_k から
+        # 決まる (y_k = x_k + clip(u_k - x_k))。サンプル間のホールドは Simulator の
+        # 出力キャッシュが担うため、output() はサンプル時刻でのみ呼ばれる。
+        # sample_time 未解決 (Simulator 外での直接呼び出し / linearize 等) では
+        # ZeroOrderHoldDirect と同様に state をそのまま返す (fail-soft)。
+        ts = self._resolved_sample_time
+        if ts is None or ts <= 0.0:
+            return np.array([float(x[0])])
+        return self._limited(x, u, ts)
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # サンプル境界でのみ Simulator が呼ぶ。slew 制限を適用して新 state を返す。
+        # サンプル境界でのみ Simulator が呼ぶ。output() と同じ決定値を新 state に保存する。
         # DiscreteIntegrator と同様に _resolved_sample_time が解決済か確認。
         ts = self._resolved_sample_time
         if ts is None or ts <= 0.0:
@@ -122,6 +129,9 @@ class RateLimiter(Block):
                 "Add this block to a Simulator and call run() (or invoke "
                 "_resolve_sample_times) before calling update() directly."
             )
+        return self._limited(x, u, ts)
+
+    def _limited(self, x: npt.NDArray[Any], u: npt.NDArray[Any], ts: float) -> npt.NDArray[Any]:
         # rising_slew_rate > 0 / falling_slew_rate < 0 は __init__ で検証済 (= ここでは
         # 不変条件として再検証しない)。direct な attribute 書き換えで反転させた場合
         # は clip 方向が崩れるが、ユーザー設計時のミスとして許容する。
@@ -242,12 +252,18 @@ class Relay(Block):
         self.x0 = self._x0_from_state()
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # state hold: x[0] (= 0.0 or 1.0) を見て output_on / output_off を選ぶ。
+        # ADR-0078 Amendment: 直達ブロックなのでサンプル時刻 t_k の出力は現入力 u_k で
+        # 遷移判定した後の state から決まる (update() と同じ関数)。サンプル間の
+        # ホールドは Simulator の出力キャッシュが担う。
         # 0.5 を境にした分岐で float 精度 (機械精度) の境界揺らぎを許容。
-        return np.array([self.output_on if x[0] > 0.5 else self.output_off])
+        state_on = self._next_state(x, u)[0] > 0.5
+        return np.array([self.output_on if state_on else self.output_off])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        # サンプル境界で遷移ロジックを評価する。
+        # サンプル境界で遷移ロジックを評価する (output() と同じ決定値)。
+        return self._next_state(x, u)
+
+    def _next_state(self, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         current_on = x[0] > 0.5
         u_val = float(u[0])
         if not current_on and u_val >= self.switch_on_point:

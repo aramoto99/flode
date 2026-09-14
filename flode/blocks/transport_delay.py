@@ -88,7 +88,7 @@ class TransportDelay(Block):
         # x[0] = 表示中の出力 (= delay_time 前の入力)。
         return np.array([float(x[0])])
 
-    def advance(self, t: float, x: npt.NDArray[Any]) -> npt.NDArray[Any]:
+    def advance(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # ADR-0078: シフト相。x[0] (表示) ← x[1] (最古の保持入力)。buffer 長は不変。
         # [x[1], x[1], x[2], ..., x[N-1]]
         return np.concatenate([np.array([float(x[1])]), x[1:]])
