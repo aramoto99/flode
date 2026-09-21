@@ -14,9 +14,10 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
+from ._elementwise import ElementwiseMixin
 
 
-class Rounding(Block):
+class Rounding(ElementwiseMixin, Block):
     """整数化単項関数 ``y = round_mode(u)``。
 
     Args:
@@ -63,3 +64,20 @@ class Rounding(Block):
         else:  # trunc
             r = float(np.trunc(val))
         return np.array([r])
+
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        v = np.asarray(u[0], dtype=float)
+        if self.mode == "floor":
+            r = np.floor(v)
+        elif self.mode == "ceil":
+            r = np.ceil(v)
+        elif self.mode == "round":
+            r = np.round(v)
+        else:  # trunc
+            r = np.trunc(v)
+        return (np.asarray(r, dtype=float),)

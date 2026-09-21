@@ -84,6 +84,10 @@ class BlockMetadata:
     params_spec: list[ParamSpec]
     default_n_inputs: int
     default_n_outputs: int
+    # ADR-0079 §(9): ここに載るのはブロックの **宣言** (``port_shapes_in/out``)。
+    # 実行時に各ポートを流れる shape は build 時の信号面解決 (``POST
+    # /api/v1/models/resolve-dtypes`` の ``shape``) で決まり、要素ごと演算ブロックは
+    # 宣言 ``()`` のまま上流のベクトル shape を受け取る。
     port_shapes_in_default: list[list[int]]
     port_shapes_out_default: list[list[int]]
     tags: list[str] = field(default_factory=list)
@@ -923,7 +927,11 @@ class ResolvedPortShapes:
 
 
 def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortShapes:
-    """与えた params で ``cls(**params)`` した結果の port shapes を返す。
+    """与えた params で ``cls(**params)`` した結果の port shapes (**宣言**) を返す。
+
+    ADR-0079 §(9): 返るのは ``__init__`` が宣言する ``port_shapes_in/out`` であり、
+    モデル内で実際に流れる shape ではない (それは build 時の信号面解決
+    ``resolve_signals`` が決める)。GUI のポート描画 (Mux / Demux のポート数等) 用。
 
     Args:
         type_path: ``"flode.blocks.Gain"`` 等の dotted path。

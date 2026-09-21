@@ -14,9 +14,10 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
+from ._elementwise import ElementwiseMixin
 
 
-class RelationalOperator(Block):
+class RelationalOperator(ElementwiseMixin, Block):
     """2 入力の比較 ``y = u[0] op u[1]``。
 
     Args:
@@ -61,8 +62,31 @@ class RelationalOperator(Block):
             r = a > b
         return np.array([1.0 if r else 0.0])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # output と同じく float() を経由しない要素ごと比較 (int64 の厳密比較を守る)
+        a, b = np.asarray(u[0]), np.asarray(u[1])
+        op = self.operator
+        if op == "<":
+            r = a < b
+        elif op == "<=":
+            r = a <= b
+        elif op == "==":
+            r = a == b
+        elif op == "!=":
+            r = a != b
+        elif op == ">=":
+            r = a >= b
+        else:  # ">"
+            r = a > b
+        return (np.asarray(np.where(r, 1.0, 0.0), dtype=float),)
 
-class LogicalOperator(Block):
+
+class LogicalOperator(ElementwiseMixin, Block):
     """論理演算ブロック。入力は ``0.0`` / 非 0 (= True 扱い) で解釈。
 
     Args:
@@ -118,3 +142,26 @@ class LogicalOperator(Block):
         else:  # "NOR"
             r = not any(bools)
         return np.array([1.0 if r else 0.0])
+
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        op = self.operator
+        # 非 0 (nan 含む) = True。共通 shape に揃えて (n, *shape) に積む
+        bools = np.stack(np.broadcast_arrays(*[np.asarray(v) != 0 for v in u]))
+        if op == "NOT":
+            r = ~bools[0]
+        elif op == "AND":
+            r = np.all(bools, axis=0)
+        elif op == "OR":
+            r = np.any(bools, axis=0)
+        elif op == "XOR":
+            r = np.sum(bools, axis=0) % 2 == 1
+        elif op == "NAND":
+            r = ~np.all(bools, axis=0)
+        else:  # "NOR"
+            r = ~np.any(bools, axis=0)
+        return (np.asarray(np.where(r, 1.0, 0.0), dtype=float),)

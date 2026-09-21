@@ -1,11 +1,13 @@
-// SPEC-0028 (SM-D Stage 1): Inspector の「信号型」セクション。
+// SPEC-0028 (SM-D Stage 1) / ADR-0079 (SM-T Stage 1): Inspector の「信号」セクション。
 //
 // Stage 0 の「(shadow)」表記と shadow_note (「結果に影響しません」) は撤去された
 // (AC-9) — Stage 1 では宣言 dtype が**実際に計算に効く**ため。
 // dtype 未宣言モデルでは代わりに auto_note (すべて float64 で計算) を出す。
+// ADR-0079 §(9): 各ポート行に解決済み shape を併記する (既存 primitives のみ、
+// 新 idiom ゼロ)。`shape.*` 診断はポート行の下にヒントとして出す。
 //
 // 設計制約:
-// - 表示のみ。frontend で dtype を再計算しない (ADR-0077 §データ整合性 1 SSOT)
+// - 表示のみ。frontend で dtype / shape を再計算しない (ADR-0077 §データ整合性 1 SSOT)
 // - データ取得はモデルレベル store (lib/dtypeResolution.ts、DiagramCanvas が
 //   300ms debounce で fetch) — Display の表示整形と同じ結果を共有する
 // - "unknown" 表示は static mode (PythonFunction 入り REST 解決) 用に温存
@@ -13,9 +15,9 @@
 
 import { useTranslation } from "react-i18next";
 
-import { hasDeclaredDtype, useDtypeResolution } from "../lib/dtypeResolution";
+import { formatShape, hasDeclaredDtype, useDtypeResolution } from "../lib/dtypeResolution";
 import { useAppStore } from "../store/appStore";
-import type { DtypesPortEntry } from "../types/api";
+import type { DtypesDiagnostic, DtypesPortEntry } from "../types/api";
 import { PropertyHint, PropertyRow, SectionDivider } from "./ui/inspector";
 
 /** Inspector 狭幅レイアウトのラベル幅 (ParameterPanel の既存行と揃える)。 */
@@ -77,11 +79,31 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
     (d) => d.code === "dtype.state_via_float64" && d.block_id === blockId,
   );
 
+  // ADR-0079 §(8): このブロックのポートに紐づく shape.* 診断 (error は赤字で出す)
+  const shapeDiagnosticsFor = (p: DtypesPortEntry): DtypesDiagnostic[] =>
+    data.diagnostics.filter(
+      (d) =>
+        d.code.startsWith("shape.") &&
+        d.block_id === blockId &&
+        d.direction === p.direction &&
+        d.port_index === p.port_index &&
+        d.code !== "shape.defaulted_to_scalar",
+    );
+  // shape 表示は "signals.v1" 以降 (= いずれかの port に shape がある) のみ
+  const hasShape = rows.some((p) => p.shape !== undefined);
+
   return (
     <>
-      <SectionDivider label={t("inspector.section.signal_dtype", "Signal dtype")} />
+      <SectionDivider
+        label={
+          hasShape
+            ? t("inspector.section.signal", "Signal")
+            : t("inspector.section.signal_dtype", "Signal dtype")
+        }
+      />
       {rows.map((p) => {
         const hint = widenedHint(p);
+        const shapeDiags = shapeDiagnosticsFor(p);
         return (
           <div key={`${p.direction}-${p.port_index}`}>
             <PropertyRow
@@ -95,6 +117,15 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
               >
                 {p.dtype === "unknown" ? "—" : p.dtype}
               </span>
+              {hasShape && (
+                <span
+                  data-testid={`shape-${p.direction}-${p.port_index}`}
+                  className="ml-2 font-mono text-[11px] tabular-nums text-slate-500"
+                  title={t("inspector.shape.title", "Resolved signal shape")}
+                >
+                  {p.shape === undefined || p.shape === null ? "—" : formatShape(p.shape)}
+                </span>
+              )}
             </PropertyRow>
             {p.dtype === "unknown" && (
               <PropertyHint
@@ -110,6 +141,21 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
                 testId={`dtype-widened-${p.port_index}`}
               />
             )}
+            {shapeDiags.map((d) => (
+              <PropertyHint
+                key={d.code}
+                labelWidth={LABEL_W}
+                text={
+                  d.severity === "error"
+                    ? t("inspector.shape.error", {
+                        message: d.message,
+                        defaultValue: `Shape error: ${d.message}`,
+                      })
+                    : d.message
+                }
+                testId={`shape-diag-${p.direction}-${p.port_index}`}
+              />
+            ))}
           </div>
         );
       })}

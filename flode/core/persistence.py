@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.13"
+CURRENT_SCHEMA_VERSION = "0.14"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -824,6 +824,21 @@ def _builtin_migrate_0_12_to_0_13(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _builtin_migrate_0_13_to_0_14(data: dict[str, Any]) -> dict[str, Any]:
+    """テンソル信号モデル (v0.62.0 / ADR-0079 Stage 1): 0.13 → 0.14。
+
+    内容は version 更新のみ (D-12)。0.14 は「ブロック間の shape は build 時に
+    信号面解決器が推論する」意味論のファイルであることを示す。既存の 0.13 ファイル
+    に書かれた ``port_shapes_in/out`` (Mux/Demux 由来の宣言) はそのまま有効で、
+    0.13 モデルの実行結果は数値的に不変 (全ポート ``()`` のモデルは従来経路)。
+    ``Gain`` の新パラメータ ``multiplication`` は非既定時のみ書かれるため、
+    既存ファイルには現れない (AC-9)。
+    """
+    out = dict(data)
+    out["schema_version"] = "0.14"
+    return out
+
+
 # -- 0.11 → 0.12 (output_type 撤去、v0.56.0) ---------------------------------
 
 _CONSTANT_TYPE = "flode.blocks.sources.Constant"
@@ -1157,6 +1172,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.10", "0.11")] = _builtin_migrate_0_10_to_0_11
     _MIGRATIONS[("0.11", "0.12")] = _builtin_migrate_0_11_to_0_12
     _MIGRATIONS[("0.12", "0.13")] = _builtin_migrate_0_12_to_0_13
+    _MIGRATIONS[("0.13", "0.14")] = _builtin_migrate_0_13_to_0_14
 
 
 _register_builtin_migrations()

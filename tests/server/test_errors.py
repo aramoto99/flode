@@ -13,10 +13,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from flode.core.signals import SignalDiagnostic
 from flode.exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
     ModelLoadError,
+    SignalShapeError,
     SolverError,
 )
 from flode.server.errors import (
@@ -71,6 +73,41 @@ def test_classify_block_spec_error_is_start_validation() -> None:
 def test_classify_model_load_error_is_start_validation() -> None:
     exc = ModelLoadError("bad json")
     assert classify_exception(exc).category == "start_validation"
+
+
+def test_classify_signal_shape_error_is_shape_mismatch() -> None:
+    """ADR-0079 §(8): build 時の信号 shape 診断は start_validation に埋もれない。"""
+    exc = SignalShapeError(
+        "signal shape resolution failed (1 error(s)):\n  [shape.mismatch] x",
+        block_id="integ",
+        direction="in",
+        port_index=0,
+        expected_shape=(),
+        actual_shape=(3,),
+        diagnostics=(
+            SignalDiagnostic(
+                severity="error",
+                code="shape.mismatch",
+                message="x",
+                block_id="integ",
+                direction="in",
+                port_index=0,
+                expected_shape=(),
+                actual_shape=(3,),
+            ),
+        ),
+    )
+    c = classify_exception(exc)
+    assert c.category == "shape_mismatch"
+    assert c.template_key == "error.shape_mismatch"
+    payload = build_failure_payload(exc, simulator=None, t=None)
+    assert payload["block_id"] == "integ"
+    args = payload["template_args"]
+    assert args["shapes"] == "expected () vs actual (3,)"
+    assert args["port"] == "in[0]"
+    assert args["code"] == "shape.mismatch"
+    assert args["diagnostics"][0]["block_id"] == "integ"
+    assert args["block_label"] == "integ"
 
 
 def test_classify_numpy_shape_mismatch_is_shape_mismatch() -> None:

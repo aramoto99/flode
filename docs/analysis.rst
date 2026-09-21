@@ -121,8 +121,9 @@ Operating-point convention
 * ``x = None`` (default): each continuous block contributes its ``x0``
   value, concatenated in registration order.
 * ``u = None`` (default): zero vector. The dimension equals the number
-  of unconnected, non-sink input ports across the model (each SM-B
-  vector port is flattened C-order).
+  of unconnected, non-sink input ports across the model (each vector
+  port — see :ref:`vector-signals` — is flattened C-order using the
+  shape resolved at build time).
 * ``t = 0.0`` (default).
 
 External outputs are the union of: (a) output ports that drive at

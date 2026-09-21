@@ -33,7 +33,7 @@ from flode.blocks.rounding import Rounding
 from flode.blocks.routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
 from flode.blocks.sinks import Scope
 from flode.blocks.sources import Constant
-from flode.core import dtypes
+from flode.core import signals as dtypes
 from flode.exceptions import BlockSpecError
 from flode.subsystems import Inport, Outport, Subsystem
 from tests.core._dtype_instrumented_run import (

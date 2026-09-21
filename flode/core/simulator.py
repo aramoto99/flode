@@ -31,7 +31,6 @@ from ..exceptions import (
     UnknownBlockIdError,
 )
 from .block import BASE_CLOCK_SAMPLE_TIME, Block
-from .dtypes import cast_value
 from .identifiers import fold_block_id, normalize_block_id, validate_block_id
 from .persistence import (
     CURRENT_SCHEMA_VERSION,
@@ -44,29 +43,53 @@ from .persistence import (
     serialize_connections,
     serialize_t_end,
 )
+from .signals import cast_value
 
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
     from ..analysis.linearize import LinearSystem
-    from .dtypes import DTypeResolution
+    from .signals import SignalResolution
 
-#: SM-D Stage 1 (SPEC-0028 §3.7): 実行順 (order) と並行に並べた
-#: ``(in_dtypes, out_dtypes)`` の列。hot loop で辞書引きしないための前処理形。
-DTypePlan = list[tuple[tuple[np.dtype[Any], ...], tuple[np.dtype[Any], ...]]]
+#: ADR-0079 §(2) (SPEC-0028 §3.7 の拡張): 実行順 (order) と並行に並べた
+#: ``(in_shapes, in_dtypes, out_shapes, out_dtypes)`` の列。hot loop で辞書引き
+#: しないための前処理形。``_step_vector`` はブロックの宣言ではなくこれを読む。
+SignalPlan = list[
+    tuple[
+        tuple[tuple[int, ...], ...],
+        tuple[np.dtype[Any], ...],
+        tuple[tuple[int, ...], ...],
+        tuple[np.dtype[Any], ...],
+    ]
+]
 
 
-def _build_dtype_plan(order: list[Block], resolution: DTypeResolution) -> DTypePlan:
-    """解決結果を実行順並行の dtype plan へ前処理する (SPEC-0028 §3.7)。
+def _build_signal_plan(order: list[Block], resolution: SignalResolution) -> SignalPlan:
+    """解決結果を実行順並行の signal plan へ前処理する (ADR-0079 §(2))。
 
-    materialize (Q5) 済みの full mode 結果を前提とするため、全ポートが
-    語彙 5 種のいずれかを持つ (unknown は来ない = 全域性 AC-3)。
+    materialize 済みの full mode 結果を前提とするため、全ポートが語彙 5 種の
+    dtype と確定 shape を持つ (unknown は来ない = 全域性 AC-3)。
     """
-    plan: DTypePlan = []
+    plan: SignalPlan = []
     for b in order:
         bid = b.id if b.id is not None else "<unassigned>"
-        in_dts = tuple(np.dtype(resolution.ports[(bid, "in", i)]) for i in range(b.n_inputs))
-        out_dts = tuple(np.dtype(resolution.ports[(bid, "out", j)]) for j in range(b.n_outputs))
-        plan.append((in_dts, out_dts))
+        in_keys = [(bid, "in", i) for i in range(b.n_inputs)]
+        out_keys = [(bid, "out", j) for j in range(b.n_outputs)]
+        in_shapes = tuple(_plan_shape(resolution, k) for k in in_keys)
+        in_dts = tuple(np.dtype(resolution.ports[k]) for k in in_keys)
+        out_shapes = tuple(_plan_shape(resolution, k) for k in out_keys)
+        out_dts = tuple(np.dtype(resolution.ports[k]) for k in out_keys)
+        plan.append((in_shapes, in_dts, out_shapes, out_dts))
     return plan
+
+
+def _plan_shape(resolution: SignalResolution, key: tuple[str, str, int]) -> tuple[int, ...]:
+    """plan 用の確定 shape (full mode では未確定は残らない — 残っていれば実装バグ)。"""
+    shape = resolution.shapes[key]
+    if shape is None:
+        raise BlockSpecError(
+            f"internal error: shape of port {key[0]!r}.{key[1]}[{key[2]}] is unresolved "
+            "after full-mode signal resolution"
+        )
+    return shape
 
 
 # ADR-0011 §(4): on_step_callback の型エイリアス
@@ -194,9 +217,10 @@ class Simulator:
         # する。run() が成功完了すれば ``None`` に戻る。例外が伝搬したときは最後に
         # set されたブロックが残り、サーバ層が構造化エラー payload に詰める。
         self._current_block: Block | None = None
-        # SM-D Stage 1 (SPEC-0028): run() が dtype 宣言モデルで設定する実行時
-        # dtype plan。None = 従来どおり float64 強制 (_step_vector が参照)。
-        self._dtype_plan: DTypePlan | None = None
+        # ADR-0079 §(2): run() が信号面解決の結果から作る実行時 plan
+        # (shape + dtype)。None = 解決器を通らない従来経路 (= SM-A path)。
+        # ``_step_vector`` が参照し、``plan is None`` が経路選択の唯一の判定。
+        self._signal_plan: SignalPlan | None = None
 
     def add(self, block: Block) -> Block:
         """ブロックを Simulator に登録する。
@@ -339,13 +363,13 @@ class Simulator:
         # 実行順序解析の前に全ブロックに対し呼ぶ。
         for b in self.blocks:
             b._build()
-        # ADR-0055 §論点 1-A: 各 ``b._build()`` 直後・``_check_port_shapes`` の前に
-        # 仮想エッジ展開フェーズを挟む。Goto/From を含まないモデルは早期 return
-        # するため、既存 949 件テストへの影響ゼロ (= ADR-0036 §(8) / 本 ADR
-        # §Consequences 数値完全不変ガード)。
+        # ADR-0055 §論点 1-A: 各 ``b._build()`` 直後に仮想エッジ展開フェーズを
+        # 挟む。Goto/From を含まないモデルは早期 return するため、既存テストへの
+        # 影響ゼロ (= ADR-0036 §(8) 数値完全不変ガード)。
+        # ADR-0079 D-11: port shape の検査はここでは行わない。トポロジカル順
+        # (代数ループ検出) の後に信号面解決器 (``flode.core.signals``) が
+        # 宣言との整合を検査する (= shape 不一致より代数ループが先に報告される)。
         self._resolve_goto_from_virtual_edges()
-        # ADR-0017 §(4): build 時 port shape 整合性 check (_execution_order の前)
-        self._check_port_shapes()
         deps: dict[Block, set[Block]] = {b: set() for b in self.blocks}
         rev: dict[Block, set[Block]] = defaultdict(set)
         for b in self.blocks:
@@ -521,13 +545,12 @@ class Simulator:
                     f"input port 0 is not connected; cannot resolve virtual edge "
                     f"for From {from_block.id!r}"
                 )
-            src_block, src_idx = resolved_goto.input_sources[0]
-            # ADR-0055 §論点 4-A: build 時 shape 確定 (Goto/From のみの例外 API)
-            src_shape = src_block.port_shapes_out[src_idx]
-            resolved_goto._set_port_shapes_in_for_build((src_shape,))
-            from_block._set_port_shapes_out_for_build((src_shape,))
+            # ADR-0079 D-2: shape はブロックへ書き戻さない。Goto/From の shape は
+            # 信号面解決器が透過 (fanout) 規則で決め、plan にだけ置く
+            # (ADR-0055 §論点 4-A の目的は保たれ、実装位置だけが移った)。
             # 解決済み Goto への参照を埋め込み (run 時に From.output が読む)
             from_block._resolved_goto = resolved_goto
+            from_block._plan_out_shape = None
             # bug-fix 2026-09-13: Trigger / Enable 付き Subsystem の内部ブロックは
             # fire / enable 中にしか実行されないので、初回 fire 前は Goto が値を
             # 持たない。これはスケジューリングバグではなく「ホールド値がまだ無い」
@@ -685,52 +708,6 @@ class Simulator:
             if goto not in used_gotos:
                 _logger_routing.info("dangling Goto: tag=%r visibility=global", tag)
 
-    def _check_port_shapes(self) -> None:
-        """ADR-0017 §(4): 接続元出力 port_shape と接続先入力 port_shape が一致するかチェック。
-
-        SM-A モード (全ポート shape ``()``) では既存挙動と等価 (全 ``()`` 同士の一致は
-        常に成立)。SM-B モード (一部に非 ``()`` shape があれば) は厳密な shape 一致を
-        要求 (broadcasting なし、ADR-0017 §(6) Phase 4+ 送り)。
-
-        Raises:
-            BlockSpecError: 接続元出力と接続先入力の port_shape が不一致。
-                エラーメッセージで Mux/Demux 経由を誘導する。
-        """
-        for dst in self.blocks:
-            for dst_idx, src in enumerate(dst.input_sources):
-                if src is None:
-                    continue
-                src_block, src_idx = src
-                src_shape = src_block.port_shapes_out[src_idx]
-                dst_shape = dst.port_shapes_in[dst_idx]
-                if src_shape != dst_shape:
-                    raise BlockSpecError(
-                        f"Port shape mismatch: {src_block.id!r}.out[{src_idx}] has "
-                        f"shape {src_shape} but {dst.id!r}.in[{dst_idx}] expects "
-                        f"shape {dst_shape}. Use a Mux/Demux block (Phase 3+) to "
-                        f"adapt scalar/vector ports."
-                    )
-
-    def _check_scope_inputs_are_scalar(self) -> None:
-        """ADR-0018 §(3) S-A: ``Scope`` ブロックは SM-A scalar 入力のみ受け付ける。
-
-        SM-B モードで Scope に vector 信号を直接繋ぐと build 時に明示エラーで
-        拒否し、Demux 経由 (port-by-port に分解) を誘導する。Scope クラス名で
-        判定 (= ADR-0018 §(8) U2 で Option a "abstraction leak" を許容)。
-        """
-        # 遅延 import で循環回避 (Scope は ``flode.blocks.sinks``、Block は ``core``)
-        from ..blocks.sinks import Scope
-
-        for b in self.blocks:
-            if isinstance(b, Scope):
-                for i, shape in enumerate(b.port_shapes_in):
-                    if shape != ():
-                        raise BlockSpecError(
-                            f"Scope {b.id!r}: input port {i} has shape {shape}, but "
-                            f"Scope only accepts scalar (rank-0) inputs. Use a Demux "
-                            f"block to split the vector signal into scalar ports first."
-                        )
-
     def _check_subsystem_sm_b_unsupported(self) -> None:
         """ADR-0018 §(4.3): SM-B port を持つ ``Subsystem`` は Phase 3 では run 不可。
 
@@ -768,11 +745,12 @@ class Simulator:
         t: float,
         inputs_v: dict[Block, tuple[npt.NDArray[Any], ...]],
     ) -> None:
-        """SM-B run path 用の record。tuple-of-ndarray inputs を SM-A の 1D ndarray に
+        """SM-B run path 用の record。tuple-of-ndarray inputs を 1D ndarray に
         変換して既存 ``record(t, u_1d)`` に橋渡しする (ADR-0018 §(3))。
 
-        Scope は SM-A only (ビルド時に確認済み) なので、各 input port は rank-0
-        ndarray。これらを 1D ndarray に concat して既存 API に渡す。
+        ADR-0079 §(4): 各 input port の ndarray を **C order で列展開**して
+        concat する (rank-0 は 1 列、``(3,)`` は 3 列、``(2, 2)`` は 4 列)。
+        全ポート ``()`` なら従来の「rank-0 を順に並べた 1D」と同一。
 
         Contract:
             ``inputs_v`` は ``_step_vector`` の 2nd-pass 戻り値で、``record`` を持つ
@@ -794,24 +772,49 @@ class Simulator:
                     f"_step_vector. This indicates an internal bug or an unsupported "
                     f"direct_feedthrough=False sink block."
                 )
-            # tuple of rank-0 ndarrays → 1D ndarray (length = n_inputs)
-            u_1d = np.array([float(np.asarray(ui).item()) for ui in u_tuple], dtype=float)
+            # tuple of ndarrays → 1D ndarray (C order 列展開、ADR-0079 §(4))
+            if u_tuple:
+                u_1d = np.concatenate(
+                    [np.ravel(np.asarray(ui, dtype=float), order="C") for ui in u_tuple]
+                )
+            else:
+                u_1d = np.zeros(0)
             b.record(t, u_1d)
 
-    def _is_sm_a_mode(self) -> bool:
-        """ADR-0017 §(8) U2: 全ブロックが SM-A 互換 (全 port_shape == ()) か判定。
+    @staticmethod
+    def _to_scalar_inputs(b: Block, u_tuple: tuple[npt.NDArray[Any], ...]) -> npt.NDArray[Any]:
+        """SM-B path の tuple-of-ndarray 入力を SM-A 互換の 1D ndarray へ変換する。
 
-        ホットパス分岐用。``run()`` 冒頭で 1 回判定し、SM-A モードなら既存の
-        高速 ``_step`` パスを使う (4xx 件のテストへの影響ゼロを保証)。
+        ``derivative`` / ``update`` / ``advance`` は SM-A 契約 (rank-0 要素を並べた
+        1D) のまま (ADR-0079 §(5): ``*_v`` は Stage 2)。Stage 1 では状態ブロックの
+        入力は解決器が ``()`` に固定するのでここに非 ``()`` は来ないが、来たら
+        黙って潰さず明示エラーにする (A-5 の fail-closed)。
         """
-        for b in self.blocks:
-            for shape in b.port_shapes_in:
-                if shape != ():
-                    return False
-            for shape in b.port_shapes_out:
-                if shape != ():
-                    return False
-        return True
+        flat: list[float] = []
+        for i, ui in enumerate(u_tuple):
+            arr = np.asarray(ui)
+            if arr.shape != ():
+                raise BlockSpecError(
+                    f"{type(b).__name__} {b.id!r}: input port {i} carries a vector "
+                    f"signal of shape {arr.shape}, but state blocks accept scalar "
+                    "inputs only in this release (vector states arrive in Stage 2, "
+                    "ADR-0079). Use a Demux block to select one element.",
+                    block_id=b.id,
+                )
+            flat.append(float(arr.item()))
+        return np.array(flat, dtype=float)
+
+    def _is_sm_a_mode(self) -> bool:
+        """モデルが SM-A hot path (``_step``) で走るかの pre-filter 判定。
+
+        ADR-0079 §(2): 経路選択の正は ``run()`` の ``plan is None``。本メソッドは
+        その plan を作る条件の否定 (= dtype 宣言なし **かつ** shape 起点なし) を
+        build 前でも答えられる形で返す (``has_shape_source`` は非 ``()`` の
+        ``port_shapes_in/out`` 宣言と配列パラメータ ``Gain.k`` の O(V) 走査)。
+        """
+        from .signals import has_declared_dtype, has_shape_source
+
+        return not (has_declared_dtype(self) or has_shape_source(self))
 
     def _resolve_sample_times(self, order: list[Block]) -> None:
         """サンプル時間のクロック解決 (SPEC-0030) を 2 相で行う。
@@ -1098,10 +1101,11 @@ class Simulator:
     ) -> tuple[
         dict[Block, tuple[npt.NDArray[Any], ...]], dict[Block, tuple[npt.NDArray[Any], ...]]
     ]:
-        """ADR-0017 §(4) SM-B vector-port 用出力計算。
+        """ADR-0017 §(4) / ADR-0079 §(2) SM-T vector-port 用出力計算。
 
         各ブロックの ``output_v`` を呼び、tuple of ndarrays でポート間の信号を
-        伝搬する。``port_shapes_in/out`` で宣言された shape を尊重する。
+        伝搬する。各ポートの shape / dtype は **plan** (信号面解決の結果) から
+        読む — ブロックの宣言 ``port_shapes_in/out`` は参照しない (D-2)。
 
         戻り値の ``outputs`` / ``inputs`` 辞書は ``tuple[ndarray, ...]`` 形式。
         SM-A 互換ブロックは ``Block.output_v`` の default 実装が ``output`` を wrap
@@ -1110,13 +1114,14 @@ class Simulator:
         ``fresh`` / ``cache`` は ``_step`` と同じ ADR-0078 サンプル時刻処理 / 出力
         キャッシュの制御 (キャッシュ値は dtype cast 後の tuple)。``advance`` に渡す
         ``u`` は SM-A 互換の 1D ndarray (rank-0 要素を並べたもの)。
+
+        ``plan is None`` は解決器を通っていない経路 (テストの直接呼び出し等) で、
+        その場合は宣言 shape + float64 で動く (従来互換)。
         """
         cont_state = {b: x_cont[sl] for b, sl in layout}
         outputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
         inputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
-        # SM-D Stage 1 (SPEC-0028 §3.7): run() が dtype 宣言モデルで設定する plan。
-        # None なら従来どおり float64 強制 (= shape 起因 SM-B の bit 不変を構造保証)。
-        plan = self._dtype_plan
+        plan = self._signal_plan
 
         def state_for(b: Block) -> npt.NDArray[Any]:
             if b in cont_state:
@@ -1125,27 +1130,29 @@ class Simulator:
                 return discrete_state[b]
             return np.zeros(0)
 
+        def _in_spec(
+            b: Block, idx: int
+        ) -> tuple[tuple[tuple[int, ...], ...], tuple[np.dtype[Any], ...] | None]:
+            if plan is None:
+                return b.port_shapes_in, None
+            return plan[idx][0], plan[idx][1]
+
         def _zero_inputs(
-            b: Block, in_dts: tuple[np.dtype[Any], ...] | None
+            shapes: tuple[tuple[int, ...], ...], in_dts: tuple[np.dtype[Any], ...] | None
         ) -> tuple[npt.NDArray[Any], ...]:
             if in_dts is None:
-                return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
-            return tuple(
-                np.zeros(shape, dtype=in_dts[i]) for i, shape in enumerate(b.port_shapes_in)
-            )
+                return tuple(np.zeros(shape, dtype=float) for shape in shapes)
+            return tuple(np.zeros(shape, dtype=in_dts[i]) for i, shape in enumerate(shapes))
 
         def _gather_inputs(
-            b: Block, in_dts: tuple[np.dtype[Any], ...] | None
+            b: Block,
+            shapes: tuple[tuple[int, ...], ...],
+            in_dts: tuple[np.dtype[Any], ...] | None,
         ) -> tuple[npt.NDArray[Any], ...]:
             u_list: list[npt.NDArray[Any]] = []
             for i, src in enumerate(b.input_sources):
                 if src is None:
-                    u_list.append(
-                        np.zeros(
-                            b.port_shapes_in[i],
-                            dtype=float if in_dts is None else in_dts[i],
-                        )
-                    )
+                    u_list.append(np.zeros(shapes[i], dtype=float if in_dts is None else in_dts[i]))
                 else:
                     sb, si = src
                     ui = outputs[sb][si]
@@ -1157,12 +1164,12 @@ class Simulator:
             return tuple(u_list)
 
         for idx, b in enumerate(order):
-            in_dts = plan[idx][0] if plan is not None else None
+            in_shapes, in_dts = _in_spec(b, idx)
             if b.direct_feedthrough:
-                u = _gather_inputs(b, in_dts)
+                u = _gather_inputs(b, in_shapes, in_dts)
                 inputs[b] = u
             else:
-                u = _zero_inputs(b, in_dts)
+                u = _zero_inputs(in_shapes, in_dts)
                 if b.control_input_ports:
                     # bug-fix 2026-09-13: 制御入力ポートだけは output() 前に埋める
                     # (SM-A path の _step と同じ扱い)。データポートの上流はこの時点で
@@ -1180,7 +1187,7 @@ class Simulator:
             # ADR-0078 サンプル時刻処理 / 出力キャッシュ (SM-A ``_step`` と同じ規則)
             if cache is not None and b in discrete_state:
                 if fresh is not None and b in fresh:
-                    u_1d = np.array([float(np.asarray(ui).item()) for ui in u], dtype=float)
+                    u_1d = self._to_scalar_inputs(b, u)
                     xb = np.asarray(b.advance(t, discrete_state[b], u_1d), dtype=float)
                     discrete_state[b] = xb
                     outputs[b] = self._output_v_cast(b, t, xb, u, plan, idx)
@@ -1191,8 +1198,8 @@ class Simulator:
             outputs[b] = self._output_v_cast(b, t, state_for(b), u, plan, idx)
         for idx, b in enumerate(order):
             if not b.direct_feedthrough:
-                in_dts = plan[idx][0] if plan is not None else None
-                inputs[b] = _gather_inputs(b, in_dts)
+                in_shapes, in_dts = _in_spec(b, idx)
+                inputs[b] = _gather_inputs(b, in_shapes, in_dts)
         return outputs, inputs
 
     @staticmethod
@@ -1201,10 +1208,15 @@ class Simulator:
         t: float,
         xb: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
-        plan: DTypePlan | None,
+        plan: SignalPlan | None,
         idx: int,
     ) -> tuple[npt.NDArray[Any], ...]:
-        """``output_v`` を呼び、長さ検証と dtype cast (SPEC-0028 §3.6) を施す。"""
+        """``output_v`` を呼び、長さ / shape 検証と dtype cast (SPEC-0028 §3.6) を施す。
+
+        ADR-0079 §(2): 出力 shape が plan の予測と一致することをここで検証する
+        (予測 == 実行、AC-2 をこの 1 箇所が保証する)。不一致はブロック実装の
+        バグなので ``BlockSpecError``。
+        """
         y = b.output_v(t, xb, u)
         # output_v を直接 override したブロック (Mux/Demux 等) が n_outputs と
         # 異なる長さの tuple を返すと、後続の signal 伝搬で IndexError や shape
@@ -1221,8 +1233,22 @@ class Simulator:
         # SPEC-0028 §3.6: 予測 dtype への強制 cast (SSOT の適用点は
         # ここ 1 箇所。cast_value は dtype 一致時 no-op、nan/inf/域外も
         # 決定的)。予測 == 実行 (AC-2) をこの行が保証する。
-        out_dts = plan[idx][1]
-        return tuple(cast_value(np.asarray(yi), out_dts[j]) for j, yi in enumerate(y))
+        out_shapes = plan[idx][2]
+        out_dts = plan[idx][3]
+        result: list[npt.NDArray[Any]] = []
+        for j, yi in enumerate(y):
+            arr = np.asarray(yi)
+            if arr.shape != out_shapes[j]:
+                raise BlockSpecError(
+                    f"{type(b).__name__} {b.id!r}.output_v returned shape {arr.shape} "
+                    f"on out[{j}] but the resolved signal plan expects "
+                    f"{out_shapes[j]}; this is a block implementation bug "
+                    "(the block's shape rule in flode.core.signals and its "
+                    "output_v disagree).",
+                    block_id=b.id,
+                )
+            result.append(cast_value(arr, out_dts[j]))
+        return tuple(result)
 
     def run(self) -> None:
         """シミュレーションを実行する。
@@ -1257,16 +1283,17 @@ class Simulator:
         # を呼ぶと前回の block が拾われる」リスクを除去)。
         self._current_block = None
         order = self._execution_order()
-        # ADR-0017 §(8) U2 / ADR-0018 §(2): SM-A / SM-B モード判定。``_execution_order()``
-        # で全ブロックの ``_build()`` (Subsystem の n_states 確定など) と port shape
-        # check が完了したあと判定する。SM-A モード (全ポート shape == ()) なら既存の
-        # 高速 _step パス、SM-B モード (任意 vector port あり) は _step_vector パスを使う。
-        # SM-D Stage 1 (SPEC-0028 §3.1/§3.2): dtype 宣言の O(V) pre-filter。
-        # False なら解決器を一切呼ばず従来経路 (= AC-1 の構造的保証)。
-        # True なら full mode で解決し (error 級診断は BlockSpecError に昇格)、
-        # SM-B path + dtype plan で実行する (D-6)。
-        from .dtypes import (
+        # ADR-0079 §(1)(2): 経路選択。``_execution_order()`` で全ブロックの
+        # ``_build()`` とトポロジカル順 (代数ループ検出) が完了したあと、
+        # pre-filter (dtype 宣言 or shape 起点が root に 1 つでもあるか、O(V)) が
+        # False なら解決器を一切呼ばず plan = None で従来の高速 ``_step`` パス
+        # (= AC-1 の構造的保証)。True なら full mode で信号面 (shape + dtype) を
+        # 解決し (error 級診断は SignalShapeError / BlockSpecError に昇格)、
+        # ``_step_vector`` + plan で実行する。``_step`` は plan を一切参照しない
+        # ので、非 () モデルが ``_step`` に入る経路は存在しない。
+        from .signals import (
             has_declared_dtype,
+            has_shape_source,
             reject_nested_dtype_declarations,
             resolve_for_execution,
         )
@@ -1277,24 +1304,19 @@ class Simulator:
         # の param 走査のみ — 数値挙動には一切影響しない)
         reject_nested_dtype_declarations(self)
 
-        use_dtype = has_declared_dtype(self)
-        if use_dtype:
-            resolution = resolve_for_execution(self)
-            self._dtype_plan = _build_dtype_plan(order, resolution)
-        else:
-            self._dtype_plan = None
-
-        sm_a_mode = self._is_sm_a_mode() and not use_dtype
-        if not sm_a_mode:
-            # ADR-0018 §(3) S-A: Scope は SM-A only。SM-B 信号を Scope に直接繋ぐと
-            # build 時に明示エラー (Demux 経由を誘導)。
-            # (dtype 起因の SM-B では全ポート scalar のため素通り = 無害)
-            self._check_scope_inputs_are_scalar()
-            # ADR-0018 §(4.3): SM-B Subsystem は Phase 4 まで run 不可。silent 破損
-            # を避けるため build 時に明示拒否。
+        if has_declared_dtype(self) or has_shape_source(self):
+            # ADR-0018 §(4.3): SM-B ポートを宣言した Subsystem は Stage 2 まで
+            # run 不可。解決器より先に従来メッセージで明示拒否する
             # (dtype 起因の scalar-port Subsystem は正当に通る — float64 island、
             #  SPEC-0028 Q6。_check_subsystem_sm_b_unsupported の docstring 参照)
             self._check_subsystem_sm_b_unsupported()
+            resolution = resolve_for_execution(self)
+            self._signal_plan = _build_signal_plan(order, resolution)
+            self._apply_plan_to_blocks(order, self._signal_plan)
+        else:
+            self._signal_plan = None
+
+        sm_a_mode = self._signal_plan is None
         self._resolve_sample_times(order)
         dt_base = self._compute_dt_base()
         layout, n_total = self._state_layout()
@@ -1482,8 +1504,8 @@ class Simulator:
 
         構造は SM-A と同一だが、各ステップ内で ``_step_vector`` を呼んで
         ``inputs[b]: tuple[npt.NDArray[Any], ...]`` で signal を伝搬する。``record`` は
-        SM-A 入力 (rank-0 scalar) のみを Scope に渡すため、Scope 側に SM-B 信号が
-        来るとビルド時に既に拒否されている (``_check_scope_inputs_are_scalar``)。
+        ``_record_v`` が各ポートを C order で列展開した 1D ndarray を受け取る
+        (ADR-0079 §(4): Scope はベクトル入力を n 列として記録する)。
 
         ``f_continuous_vector`` を本 method 内で定義することで closure が正しく
         ``discrete_state`` 再代入を追跡する (SM-A と同じ理由)。
@@ -1507,10 +1529,7 @@ class Simulator:
             xdot = np.zeros(n_total)
             for b, sl in layout:
                 u_tuple = ins[b]
-                u_1d = np.array(
-                    [float(np.asarray(ui).item()) for ui in u_tuple],
-                    dtype=float,
-                )
+                u_1d = self._to_scalar_inputs(b, u_tuple)
                 # ADR-0056 §C-3: SM-B derivative 例外時のブロック記録。
                 self._current_block = b
                 xdot[sl] = np.asarray(b.derivative(t, x[sl], u_1d), dtype=float)
@@ -1531,14 +1550,11 @@ class Simulator:
                 for b in hit:
                     x_b = discrete_state[b]
                     u_tuple = inputs_v.get(
-                        b, tuple(np.zeros(s, dtype=float) for s in b.port_shapes_in)
+                        b, tuple(np.zeros((), dtype=float) for _ in range(b.n_inputs))
                     )
-                    # SM-B 離散ブロックは Phase 3 では存在しない。SM-A 互換
-                    # wrapper: tuple of rank-0 → 1D ndarray
-                    u_1d = np.array(
-                        [float(np.asarray(ui).item()) for ui in u_tuple],
-                        dtype=float,
-                    )
+                    # ADR-0079 §(5): 状態ブロックの入力は Stage 1 では () 固定。
+                    # SM-A 互換 wrapper: tuple of rank-0 → 1D ndarray
+                    u_1d = self._to_scalar_inputs(b, u_tuple)
                     # ADR-0056 §C-3: SM-B discrete update 例外時の記録。
                     self._current_block = b
                     next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
@@ -1634,27 +1650,55 @@ class Simulator:
 
         return _linearize(self, t=t, x=x, u=u, method=method, epsilon=epsilon)
 
-    def resolve_dtypes(self) -> DTypeResolution:
-        """影の型解決を行う (SM-D Stage 0、SPEC-0027 / ADR-0077)。
+    def resolve_signals(self) -> SignalResolution:
+        """信号面 (shape + dtype) を静的に解決する (ADR-0079 §(1) / §(9))。
 
-        ``flode.core.dtypes.resolve_dtypes(self)`` の薄いラッパ。実行はせず、
-        各ポートが「SM-D 完成時に流れているべき dtype」を静的推論する。
-        **シミュレーション結果には一切影響しない** (Stage 0 は表示・測定のみ)。
+        ``flode.core.signals.resolve_signals(self)`` の薄いラッパ。実行はせず、
+        各ポートが運ぶ ``(shape, dtype)`` を build 時規則で推論する。
+        **シミュレーション結果には一切影響しない** (表示・測定用)。
         例外は送出せず、失敗は診断 (``dtype.build_failed`` 等) として返る。
 
         Returns:
-            :class:`flode.core.dtypes.DTypeResolution`
-            (``ports`` / ``diagnostics`` / ``summary``)。
+            :class:`flode.core.signals.SignalResolution`
+            (``ports`` / ``shapes`` / ``diagnostics`` / ``summary``)。
+
+        Example:
+            >>> res = sim.resolve_signals()  # doctest: +SKIP
+            >>> res.out_shape("mux-1", 0)  # doctest: +SKIP
+            (3,)
+        """
+        # 循環 import 回避のため遅延 import (linearize と同じ流儀)
+        from .signals import resolve_signals as _resolve_signals
+
+        return _resolve_signals(self)
+
+    def resolve_dtypes(self) -> SignalResolution:
+        """``resolve_signals`` の互換 alias (SPEC-0027 / ADR-0077 の公開名、ADR-0038)。
 
         Example:
             >>> res = sim.resolve_dtypes()  # doctest: +SKIP
             >>> res.out_dtype("const-1", 0)  # doctest: +SKIP
             'int64'
         """
-        # 循環 import 回避のため遅延 import (linearize と同じ流儀)
-        from .dtypes import resolve_dtypes as _resolve_dtypes
+        return self.resolve_signals()
 
-        return _resolve_dtypes(self)
+    def _apply_plan_to_blocks(self, order: list[Block], plan: SignalPlan) -> None:
+        """解決済み plan のうち、ブロック側が実行時に必要とする値を注入する。
+
+        ADR-0079 D-2 (宣言へは書き戻さない) の範囲内で、**runtime cache** として
+        以下だけを渡す:
+
+        - ``From._plan_out_shape``: 初回 fire 前のホールド値 (ゼロ) の shape
+        - ``Scope`` / ``Display`` 等の ``_apply_input_shapes(shapes)``: 列展開の
+          列数とラベルの確定 (duck-typing、持たないブロックは無視)
+        """
+        for idx, b in enumerate(order):
+            in_shapes, _in_dts, out_shapes, _out_dts = plan[idx]
+            if hasattr(b, "_plan_out_shape") and out_shapes:
+                b._plan_out_shape = out_shapes[0]
+            apply_shapes = getattr(b, "_apply_input_shapes", None)
+            if callable(apply_shapes):
+                apply_shapes(in_shapes)
 
     @property
     def is_stopped(self) -> bool:

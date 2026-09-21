@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
@@ -8,31 +8,106 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
+from ._elementwise import ElementwiseMixin
+
+#: ``Gain.multiplication`` の語彙 (ADR-0079 §(3))。
+GAIN_MULTIPLICATION_MODES: tuple[str, ...] = ("elementwise", "matrix-Ku", "matrix-uK")
+
+#: ``Gain.k`` に許す最大 rank (行列まで)。
+_GAIN_MAX_RANK = 2
 
 
-class Gain(Block):
-    """スカラーゲイン ``y = k * u``。
+def _broadcast_inputs(u: Sequence[npt.NDArray[Any]]) -> tuple[npt.NDArray[Any], ...]:
+    """合流規則 (完全一致 + rank-0 拡張) を満たす入力群を共通 shape に揃える。"""
+    if len(u) <= 1:
+        return tuple(np.asarray(ui) for ui in u)
+    return tuple(np.broadcast_arrays(*[np.asarray(ui) for ui in u]))
+
+
+class Gain(ElementwiseMixin, Block):
+    """ゲイン ``y = k * u`` (要素ごと) または行列ゲイン ``y = K @ u`` / ``y = u @ K``。
+
+    ADR-0079 §(3): ``k`` はスカラ / 1-D / 2-D を受ける。既定の
+    ``multiplication="elementwise"`` ではスカラ ``k`` が入力全要素に、配列 ``k`` は
+    入力と同 shape の要素ごとに掛かる。``"matrix-Ku"`` は ``k @ u``、``"matrix-uK"``
+    は ``u @ k`` (numpy ``matmul`` の規則、次元不整合は build 時に検出)。
 
     Args:
-        k: ゲイン係数。
+        k: ゲイン係数 (スカラ、または list / ndarray で 1-D / 2-D)。
+        multiplication: ``"elementwise"`` (既定) / ``"matrix-Ku"`` / ``"matrix-uK"``。
+
+    Raises:
+        BlockSpecError: ``k`` の rank が 2 を超える / 非数値、``multiplication`` が語彙外。
     """
+
+    _param_enums = {"multiplication": GAIN_MULTIPLICATION_MODES}
 
     def __init__(
         self,
-        k: float = 1.0,
+        k: float | Sequence[Any] | npt.NDArray[Any] = 1.0,
+        multiplication: str = "elementwise",
         *,
         id: str | None = None,
         name: str | None = None,
     ):
+        if multiplication not in GAIN_MULTIPLICATION_MODES:
+            raise BlockSpecError(
+                f"Gain: multiplication must be one of {GAIN_MULTIPLICATION_MODES}, "
+                f"got {multiplication!r}"
+            )
         super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
-        self.k = float(k)
+        self.multiplication = multiplication
+        self.k: float | npt.NDArray[Any]
+        if np.ndim(k) == 0:
+            # スカラ (従来どおり float 化。配列でないので信号面の起点にならない)
+            self.k = float(k)  # type: ignore[arg-type]
+        else:
+            try:
+                k_arr = np.asarray(k, dtype=float)
+            except (TypeError, ValueError) as e:
+                raise BlockSpecError(
+                    f"Gain: k must be numeric (scalar, 1-D or 2-D), got {k!r}"
+                ) from e
+            if k_arr.ndim > _GAIN_MAX_RANK:
+                raise BlockSpecError(
+                    f"Gain: k must be a scalar, 1-D or 2-D array, got rank {k_arr.ndim}"
+                )
+            self.k = k_arr
+        if multiplication != "elementwise" and np.ndim(self.k) == 0:
+            raise BlockSpecError(
+                f"Gain: multiplication={multiplication!r} requires a 1-D or 2-D k, got a scalar"
+            )
+        # AC-9: 既定 (elementwise) では multiplication を書き出さない = 既存 JSON 不変
         self._params = {"k": self.k}
+        if multiplication != "elementwise":
+            self._params["multiplication"] = multiplication
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.k * u[0]])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        if self.multiplication == "elementwise":
+            # スカラ k × rank-0 u は output と同じ式 (k * u[0]) = bit-identical
+            return (np.asarray(self.k * u[0]),)
+        if np.ndim(u[0]) == 0:
+            # 信号面解決器が build 時に拒否するので通常は到達しない。解決器を
+            # 通らない直接呼び出しでも numpy の ValueError を漏らさない (fail-closed)。
+            raise BlockSpecError(
+                f"Gain {self.id!r}: multiplication={self.multiplication!r} needs a "
+                "vector / matrix input, got a scalar (connect a Mux output).",
+                block_id=self.id,
+            )
+        if self.multiplication == "matrix-Ku":
+            return (np.asarray(np.matmul(self.k, u[0])),)
+        return (np.asarray(np.matmul(u[0], self.k)),)
 
-class Sum(Block):
+
+class Sum(ElementwiseMixin, Block):
     """符号付き加算 ``y = Σ sign_i * u_i``。
 
     入力ポート数は ``len(signs)``。``signs`` の各文字は ``"+"`` または ``"-"``。
@@ -71,8 +146,35 @@ class Sum(Block):
             return np.array([np.dot(self._signs_int, u)])
         return np.array([float(np.dot(self.signs, u))])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (_signed_sum(self.signs, self._signs_int, u),)
 
-class Add(Block):
+
+def _signed_sum(
+    signs: npt.NDArray[Any],
+    signs_int: npt.NDArray[Any],
+    u: tuple[npt.NDArray[Any], ...],
+) -> npt.NDArray[Any]:
+    """``Σ sign_i * u_i`` のテンソル版 (Sum / Add 共通、ADR-0079 §(3))。
+
+    入力を共通 shape に揃えて ``(n, *shape)`` に積み、先頭軸で ``np.dot`` を取る。
+    全入力が rank-0 のとき ``stacked`` は 1-D なので ``np.dot(signs, stacked)`` は
+    SM-A ``output`` の式と同一 (= bit-identical、AC-11)。
+    """
+    stacked = np.stack(_broadcast_inputs(u))
+    if stacked.dtype.kind in "bui":
+        return np.asarray(np.dot(signs_int, stacked))
+    if stacked.ndim == 1:
+        return np.asarray(float(np.dot(signs, stacked)))
+    return np.asarray(np.dot(signs, stacked))
+
+
+class Add(ElementwiseMixin, Block):
     """符号付き加算 (矩形版) ``y = Σ sign_i * u_i`` (v0.35.0)。
 
     ``Sum`` (= 円形 ○) と機能同等だが、形状が **矩形 □** で描画される。
@@ -122,8 +224,16 @@ class Add(Block):
             return np.array([np.dot(self._signs_int, u)])
         return np.array([float(np.dot(self.signs, u))])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (_signed_sum(self.signs, self._signs_int, u),)
 
-class Product(Block):
+
+class Product(ElementwiseMixin, Block):
     """全入力の乗算 ``y = Π u_i``。
 
     Args:
@@ -147,8 +257,19 @@ class Product(Block):
             return np.array([np.prod(u, dtype=u.dtype)])
         return np.array([float(np.prod(u))])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        stacked = np.stack(_broadcast_inputs(u))
+        if stacked.dtype.kind in "bui":
+            return (np.asarray(np.prod(stacked, axis=0, dtype=stacked.dtype)),)
+        return (np.asarray(np.prod(stacked, axis=0)),)
 
-class Saturation(Block):
+
+class Saturation(ElementwiseMixin, Block):
     """飽和 ``y = clip(u, lower, upper)``。
 
     Args:
@@ -174,8 +295,16 @@ class Saturation(Block):
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([float(np.clip(u[0], self.lower, self.upper))])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (np.asarray(np.clip(np.asarray(u[0], dtype=float), self.lower, self.upper)),)
 
-class Abs(Block):
+
+class Abs(ElementwiseMixin, Block):
     """絶対値 ``y = |u|``。"""
 
     def __init__(
@@ -190,8 +319,16 @@ class Abs(Block):
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([abs(float(u[0]))])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (np.asarray(np.abs(np.asarray(u[0], dtype=float))),)
 
-class Sign(Block):
+
+class Sign(ElementwiseMixin, Block):
     """符号関数 ``y = sign(u)`` (-1 / 0 / +1)。"""
 
     def __init__(
@@ -207,8 +344,18 @@ class Sign(Block):
         v = float(u[0])
         return np.array([1.0 if v > 0.0 else (-1.0 if v < 0.0 else 0.0)])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # output と同じ判定順 (nan は 0.0、np.sign の nan 伝播とは違う)
+        v = np.asarray(u[0], dtype=float)
+        return (np.asarray(np.where(v > 0.0, 1.0, np.where(v < 0.0, -1.0, 0.0))),)
 
-class MinMax(Block):
+
+class MinMax(ElementwiseMixin, Block):
     """複数入力の最小値または最大値を出力する。
 
     Args:
@@ -247,8 +394,18 @@ class MinMax(Block):
         v = float(np.min(u)) if self.operator == "min" else float(np.max(u))
         return np.array([v])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        stacked = np.stack(_broadcast_inputs(u))
+        reduced = np.min(stacked, axis=0) if self.operator == "min" else np.max(stacked, axis=0)
+        return (np.asarray(reduced),)
 
-class Divide(Block):
+
+class Divide(ElementwiseMixin, Block):
     """乗除を ``signs`` 文字列で記述する。``"*"`` は乗算、``"/"`` は除算。
 
     例: ``signs="*/"`` → ``y = u[0] / u[1]``、
@@ -295,13 +452,27 @@ class Divide(Block):
                     result = result / np.float64(val)
         return np.array([float(result)])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # output と同じ演算順 (先頭が "/" なら 1/u[0] 起点) を要素ごとに適用する
+        arrays = [np.asarray(ui, dtype=np.float64) for ui in u]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = arrays[0] if self.signs[0] == "*" else np.float64(1.0) / arrays[0]
+            for s, val in zip(self.signs[1:], arrays[1:], strict=True):
+                result = result * val if s == "*" else result / val
+        return (np.asarray(result, dtype=np.float64),)
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 送りブロック群 第 1 弾 (SPEC-0002 / ADR-0053、v0.36.0)
 # ---------------------------------------------------------------------------
 
 
-class MathFunction(Block):
+class MathFunction(ElementwiseMixin, Block):
     """汎用数学関数 ``y = f(u)``。``function`` で関数を選択する。
 
     SPEC-0002 / ADR-0053 で確定した 9 関数を提供する。``pow`` / ``mod`` / ``rem``
@@ -378,8 +549,38 @@ class MathFunction(Block):
             r = float(np.fmod(float(u[0]), float(u[1])))
         return np.array([r])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        f = self.function
+        a = np.asarray(u[0], dtype=float)
+        if f == "exp":
+            r = np.exp(a)
+        elif f == "log":
+            r = np.log(a)
+        elif f == "log10":
+            r = np.log10(a)
+        elif f == "sqrt":
+            r = np.sqrt(a)
+        elif f == "square":
+            r = np.square(a)
+        elif f == "reciprocal":
+            r = np.divide(1.0, a)
+        else:
+            b = np.asarray(u[1], dtype=float)
+            if f == "pow":
+                r = np.power(a, b)
+            elif f == "mod":
+                r = np.mod(a, b)
+            else:  # "rem"
+                r = np.fmod(a, b)
+        return (np.asarray(r, dtype=float),)
 
-class TrigFunction(Block):
+
+class TrigFunction(ElementwiseMixin, Block):
     """三角・双曲線関数 ``y = f(u)``。``function`` で関数を選択する (radian 固定)。
 
     SPEC-0002 / ADR-0053 で確定した 10 関数を提供する。``atan2`` のみ 2 入力
@@ -451,8 +652,31 @@ class TrigFunction(Block):
             r = float(np.arctan2(float(u[0]), float(u[1])))
         return np.array([r])
 
+    _UNARY_UFUNCS: dict[str, Callable[[npt.NDArray[Any]], npt.NDArray[Any]]] = {
+        "sin": np.sin,
+        "cos": np.cos,
+        "tan": np.tan,
+        "asin": np.arcsin,
+        "acos": np.arccos,
+        "atan": np.arctan,
+        "sinh": np.sinh,
+        "cosh": np.cosh,
+        "tanh": np.tanh,
+    }
 
-class DeadZone(Block):
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        a = np.asarray(u[0], dtype=float)
+        if self.function == "atan2":
+            return (np.asarray(np.arctan2(a, np.asarray(u[1], dtype=float)), dtype=float),)
+        return (np.asarray(self._UNARY_UFUNCS[self.function](a), dtype=float),)
+
+
+class DeadZone(ElementwiseMixin, Block):
     """不感帯 ``y = 0 (lower <= u <= upper)、u - lower (u < lower)、u - upper (u > upper)``。
 
     端点 ``u == lower`` / ``u == upper`` では出力 ``0.0`` (strict 不等号、リファレンス
@@ -492,6 +716,16 @@ class DeadZone(Block):
             r = 0.0
         return np.array([r])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        v = np.asarray(u[0], dtype=float)
+        r = np.where(v < self.lower, v - self.lower, np.where(v > self.upper, v - self.upper, 0.0))
+        return (np.asarray(r, dtype=float),)
+
 
 # ---------------------------------------------------------------------------
 # 比較系 dispatch helper (CompareToConstant / CompareToZero 共通)
@@ -525,7 +759,7 @@ def _build_compare_fn(op: str) -> Callable[[float, float], bool]:
     return _COMPARE_OPS[op]
 
 
-class CompareToConstant(Block):
+class CompareToConstant(ElementwiseMixin, Block):
     """入力を定数と比較 ``y = (u op const) ? 1.0 : 0.0``。
 
     出力型は ``0.0`` / ``1.0`` の float (既存 ``RelationalOperator`` 踏襲、
@@ -566,8 +800,18 @@ class CompareToConstant(Block):
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([1.0 if self._compare(float(u[0]), self.const) else 0.0])
 
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # _COMPARE_OPS の lambda は ndarray にもそのまま適用できる (要素ごと比較)
+        mask = self._compare(np.asarray(u[0], dtype=float), self.const)  # type: ignore[arg-type]
+        return (np.asarray(np.where(mask, 1.0, 0.0), dtype=float),)
 
-class CompareToZero(Block):
+
+class CompareToZero(ElementwiseMixin, Block):
     """入力をゼロと比較 ``y = (u op 0) ? 1.0 : 0.0``。
 
     ``CompareToConstant(const=0)`` の固定特殊化を別クラスで提供 (ADR-0053
@@ -602,3 +846,12 @@ class CompareToZero(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([1.0 if self._compare(float(u[0]), 0.0) else 0.0])
+
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        mask = self._compare(np.asarray(u[0], dtype=float), 0.0)  # type: ignore[arg-type]
+        return (np.asarray(np.where(mask, 1.0, 0.0), dtype=float),)

@@ -1,11 +1,13 @@
 """モデル静的解析ルート (SPEC-0027: SM-D Stage 0、v0.54.0 新設)。
 
-``POST /api/v1/models/resolve-dtypes`` — 影の型解決 (shadow dtype propagation)。
+``POST /api/v1/models/resolve-dtypes`` — 信号面 (shape + dtype) の静的解決。
+パスは SPEC-0027 のまま (frontend 互換、ADR-0079 §(9))。payload は
+``signals.v1`` (各 port に ``shape`` が additive に付く)。
 
 セキュリティ上の要点 (security-reviewer 向け):
 
 - **静的解析のみでユーザーコード (PythonFunction) を一切実行しない**。
-  エンジン (``flode.core.dtypes``) は PythonFunction を含むモデルでは
+  エンジン (``flode.core.signals``) は PythonFunction を含むモデルでは
   ``_build()`` を呼ばない static mode に縮退する (二経路設計)。
   そのため ``/simulations`` の python_ack (409) ゲートは不要
 - モデルの構築・path 検証は既存 ``_resolve_simulator`` を再利用
@@ -38,7 +40,7 @@ async def resolve_dtypes_get_stub() -> dict[str, Any]:
 
 @router.post("/resolve-dtypes")
 async def resolve_dtypes_endpoint(request: Request) -> dict[str, Any]:
-    """影の型解決を行い ``dtypes.v1`` payload を返す (SPEC-0027 §5.2)。
+    """信号面解決を行い ``signals.v1`` payload を返す (SPEC-0027 §5.2 / ADR-0079 §(9))。
 
     Request body は ``model_path`` または ``model`` のうち正確に 1 つを含む
     JSON object (``POST /simulations`` と同じ 2 形式)。実行は一切行わず、
@@ -62,6 +64,6 @@ async def resolve_dtypes_endpoint(request: Request) -> dict[str, Any]:
 
     def _resolve() -> dict[str, Any]:
         simulator, _display_id = _resolve_simulator(request, payload)
-        return simulator.resolve_dtypes().to_payload()
+        return simulator.resolve_signals().to_payload()
 
     return await run_in_threadpool(_resolve)

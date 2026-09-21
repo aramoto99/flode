@@ -80,9 +80,13 @@ class TestGotoFromLocal:
         sim.run()
         np.testing.assert_allclose(_flat(scope0), 1.0 * np.ones(6))
         np.testing.assert_allclose(_flat(scope1), 2.0 * np.ones(6))
-        # Goto / From の port_shape が build 後に (2,) で確定していることを確認
-        assert goto.port_shapes_in == ((2,),)
-        assert from_blk.port_shapes_out == ((2,),)
+        # ADR-0079 D-2: 宣言 (port_shapes_*) には書き戻さず、解決結果 (plan) で
+        # Goto.in / From.out が (2,) に決まる
+        assert goto.port_shapes_in == ((),)
+        assert from_blk.port_shapes_out == ((),)
+        res = sim.resolve_signals()
+        assert res.in_shape(goto.id, 0) == (2,)
+        assert res.out_shape(from_blk.id, 0) == (2,)
 
     def test_multiple_from_for_one_goto(self) -> None:
         """同じ tag の From が複数 OK (1 信号を複数箇所で参照)。"""

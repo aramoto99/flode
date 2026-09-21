@@ -181,14 +181,17 @@ class Block:
         port_shapes_out: 各出力ポートの shape。同様 default 全 ``()``。
 
     Note:
-        ADR-0017 SM-B: ベクトルポートを使うブロックは ``port_shapes_in`` /
-        ``port_shapes_out`` を明示的に指定し、``output_v`` をオーバーライドする。
+        ADR-0017 SM-B / ADR-0079 SM-T: ``port_shapes_in`` / ``port_shapes_out`` は
+        **宣言** であり、実行時に各ポートを流れる shape は build 時に信号面解決器
+        (``flode.core.signals``) が決める (要素ごと演算ブロックは宣言 ``()`` の
+        まま上流のベクトル shape を受け取る)。shape を変えるブロック (Mux /
+        Demux 等) は宣言を明示し ``output_v`` をオーバーライドする。
         SM-A (scalar-only) ブロックは default のままで動作 (``output`` のみ実装)。
     """
 
     #: D-4 (ADR-0077 / SPEC-0028 Q11): 全入力ポートに要求する dtype。
     #: ``None`` = 要求なし。連続系 / 離散 LTI ブロックが ``"float64"`` を宣言し、
-    #: 型解決器 (``flode.core.dtypes``) が MRO 経由で読む (要求宣言の SSOT)。
+    #: 信号面解決器 (``flode.core.signals``) が MRO 経由で読む (要求宣言の SSOT)。
     required_input_dtype: ClassVar[str | None] = None
 
     #: ADR-0002 §(2) 改訂 (v0.57.0→v0.58.0): ``sample_time=-1.0`` (上流に同期) が
@@ -378,7 +381,19 @@ class Block:
         # np.stack (= np.result_type で 1 本化。全 float64 なら従来と bit 同一)、
         # 出力の float 強制も外す。予測 dtype への強制 cast は
         # Simulator._step_vector 側の 1 箇所に集約する (SSOT)。
+        # ADR-0079 §(3) / AC-6: 非 () 入力は黙って潰さず明示エラー (fail-closed)。
+        # 信号面解決器が build 時に同じ条件を shape.mismatch / opaque_scalar_island
+        # で拒否するので、ここに到達するのは解決器を通らない直接呼び出しのみ。
         if len(u) > 0:
+            for i, ui in enumerate(u):
+                if np.asarray(ui).shape != ():
+                    raise BlockSpecError(
+                        f"{type(self).__name__} {self.id!r}: input port {i} carries a "
+                        f"vector signal of shape {np.asarray(ui).shape}, but this block "
+                        "implements the scalar `output` API only. Use a Demux block to "
+                        "select one element, or implement `output_v` (ADR-0079).",
+                        block_id=self.id,
+                    )
             u_flat = np.stack([np.asarray(ui).reshape(()) for ui in u])
         else:
             u_flat = np.zeros(0)
@@ -462,32 +477,6 @@ class Block:
         等の値を **解析前に**確定する責務を持つ。
         """
         return
-
-    def _set_port_shapes_in_for_build(
-        self, shapes: tuple[tuple[int, ...], ...] | list[tuple[int, ...]]
-    ) -> None:
-        """ADR-0055 §論点 4: Goto/From 専用 build 時 shape 確定 hook。
-
-        通常のブロックは ``__init__`` で ``port_shapes_in`` を静的宣言する
-        (ADR-0017 §(1) 静的宣言原則)。``Goto`` / ``From`` のみ例外として、
-        ``Simulator._resolve_goto_from_virtual_edges`` から本メソッドを呼んで
-        build 時に shape を上書きする。**他のサブクラスから呼ばない**
-        (= ADR-0017 原則の純粋性を 1 段だけ下げる Goto/From 専用 API)。
-
-        正規化 + 長さ check は ``_normalize_port_shapes`` に委譲するため、
-        ``n_inputs`` と長さが合わない場合は ``BlockSpecError``。
-        """
-        self.port_shapes_in = _normalize_port_shapes(shapes, self.n_inputs, "in")
-
-    def _set_port_shapes_out_for_build(
-        self, shapes: tuple[tuple[int, ...], ...] | list[tuple[int, ...]]
-    ) -> None:
-        """ADR-0055 §論点 4: Goto/From 専用 build 時 shape 確定 hook (out 側)。
-
-        ``_set_port_shapes_in_for_build`` と対の API。本メソッドも Goto/From
-        専用で、他のサブクラスからは呼ばない。
-        """
-        self.port_shapes_out = _normalize_port_shapes(shapes, self.n_outputs, "out")
 
     def to_dict(self) -> dict[str, Any]:
         """ブロックを JSON-serializable な辞書に変換する (ADR-0008 §(5))。

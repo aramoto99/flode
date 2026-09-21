@@ -26,6 +26,7 @@ from ..exceptions import (
     PythonFunctionEvalError,
     SchedulingError,
     SchemaVersionError,
+    SignalShapeError,
     SolverError,
     UnknownBlockIdError,
     UnknownBlockTypeError,
@@ -114,6 +115,9 @@ _CATEGORY_BY_EXC: tuple[tuple[type[BaseException], ErrorClassification], ...] = 
     ),
     (ZeroDivisionError, ErrorClassification(_CATEGORY_DIVIDE_BY_ZERO, "error.divide_by_zero")),
     (SolverError, ErrorClassification(_CATEGORY_SOLVER_FAILURE, "error.solver_failure")),
+    # ADR-0079 §(8): build 時の信号 shape 診断 (BlockSpecError のサブクラス) は
+    # start_validation に埋もれさせず shape_mismatch カテゴリに振る。
+    (SignalShapeError, ErrorClassification(_CATEGORY_SHAPE_MISMATCH, "error.shape_mismatch")),
     (BlockSpecError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     (ModelLoadError, ErrorClassification(_CATEGORY_START_VALIDATION, "error.start_validation")),
     (
@@ -193,12 +197,40 @@ def _block_type_path(block: Any) -> str | None:
 
 
 def _shape_mismatch_args(exc: BaseException) -> dict[str, Any]:
-    """``shape_mismatch`` カテゴリの ``template_args.shapes`` を抽出する best-effort 実装。
+    """``shape_mismatch`` カテゴリの ``template_args`` を抽出する。
 
-    numpy 2.x の ``ValueError`` message に含まれる ``(a,) (b,)`` 形式の shape タプル
-    だけを正規表現で拾う。失敗してもエラー全体は壊さない (= ``{}`` を返す)。
+    - ``SignalShapeError`` (ADR-0079 §(8)、build 時の信号面診断) は構造化属性から
+      ``shapes`` (``expected vs actual``) / ``port`` / ``code`` / ``diagnostics``
+      (error 級全件の ``{code, message, block_id, direction, port_index}``) を埋める
+    - それ以外 (numpy 2.x の ``ValueError``) は message 中の ``(a,) (b,)`` 形式の
+      shape タプルを正規表現で拾う best-effort。失敗してもエラー全体は壊さない
     """
     import re
+
+    if isinstance(exc, SignalShapeError):
+        args: dict[str, Any] = {}
+        expected = exc.expected_shape
+        actual = exc.actual_shape
+        if expected is not None or actual is not None:
+            args["shapes"] = f"expected {expected} vs actual {actual}"
+        if exc.port is not None:
+            args["port"] = exc.port
+        if exc.block_id is not None:
+            args.setdefault("block_label", exc.block_id)
+        diags = [
+            {
+                "code": getattr(d, "code", None),
+                "message": getattr(d, "message", None),
+                "block_id": getattr(d, "block_id", None),
+                "direction": getattr(d, "direction", None),
+                "port_index": getattr(d, "port_index", None),
+            }
+            for d in exc.diagnostics
+        ]
+        if diags:
+            args["code"] = diags[0]["code"]
+            args["diagnostics"] = diags
+        return args
 
     msg = str(exc)
     shapes = re.findall(r"\([\d,\s]*\)", msg)

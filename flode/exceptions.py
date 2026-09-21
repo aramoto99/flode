@@ -27,6 +27,51 @@ class BlockSpecError(FlodeError):
     """ブロック仕様の不正 (ID 衝突、不正文字、`id` と `name` 両方指定など)。"""
 
 
+class SignalShapeError(BlockSpecError):
+    """信号面 (shape / dtype) 解決の error 級診断が 1 件でもあった (ADR-0079 D-11)。
+
+    build 時に ``flode.core.signals.resolve_for_execution`` が **全診断を収集した
+    あと 1 回だけ** 送出する集約例外。``diagnostics`` に error 級の全件を持ち、
+    先頭 1 件の位置情報を ``block_id`` / ``direction`` / ``port_index`` /
+    ``expected_shape`` / ``actual_shape`` に展開する (サーバ層 ``build_failure_payload``
+    が ``shape_mismatch`` カテゴリの ``template_args`` に使う)。
+
+    Args:
+        message: 全件を列挙した説明文。
+        block_id: 先頭診断のブロック ID。
+        direction: 先頭診断のポート方向 (``"in"`` / ``"out"``)。
+        port_index: 先頭診断のポート index。
+        expected_shape: 先頭診断が期待した shape (無ければ ``None``)。
+        actual_shape: 先頭診断が観測した shape (無ければ ``None``)。
+        diagnostics: error 級診断の全件 (``SignalDiagnostic`` の tuple)。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        block_id: str | None = None,
+        direction: str | None = None,
+        port_index: int | None = None,
+        expected_shape: tuple[int, ...] | None = None,
+        actual_shape: tuple[int, ...] | None = None,
+        diagnostics: tuple[object, ...] = (),
+    ) -> None:
+        super().__init__(message, block_id=block_id)
+        self.direction: str | None = direction
+        self.port_index: int | None = port_index
+        self.expected_shape: tuple[int, ...] | None = expected_shape
+        self.actual_shape: tuple[int, ...] | None = actual_shape
+        self.diagnostics: tuple[object, ...] = diagnostics
+
+    @property
+    def port(self) -> str | None:
+        """``"in[0]"`` 形式のポート表記 (方向か index が無ければ ``None``)。"""
+        if self.direction is None or self.port_index is None:
+            return None
+        return f"{self.direction}[{self.port_index}]"
+
+
 class BlockEvalError(FlodeError):
     """ブロック ``output(t, x, u)`` 内のドメインエラー。
 

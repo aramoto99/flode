@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from flode import Simulator
 from flode.blocks.pythonfunc import PythonFunction, exec_block_source
 from flode.blocks.sources import Constant
-from flode.core import dtypes
+from flode.core import signals as dtypes
 from flode.exceptions import BlockSpecError
 from flode.server.app import create_app
 from flode.server.settings import Settings

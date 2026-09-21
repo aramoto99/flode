@@ -13,7 +13,7 @@ import numpy as np
 
 from flode import Simulator
 from flode.blocks.cast import Cast
-from flode.core import dtypes
+from flode.core import signals as dtypes
 from tests.core import _dtype_baseline_models as baseline
 
 
@@ -56,7 +56,7 @@ class TestSmAPathPreservation:
     def test_dtype_plan_stays_none_for_undeclared_model(self) -> None:
         sim, _scope = baseline.build_discrete()
         sim.run()
-        assert sim._dtype_plan is None
+        assert sim._signal_plan is None
 
 
 class TestAllFloat64Declared:
@@ -78,7 +78,7 @@ class TestAllFloat64Declared:
         sim_b, scope_b = build(declare=True)
         assert dtypes.has_declared_dtype(sim_b) is True
         sim_b.run()
-        assert sim_b._dtype_plan is not None  # SM-B + plan で走った
+        assert sim_b._signal_plan is not None  # SM-B + plan で走った
         vals_b = np.asarray(scope_b.values)
 
         assert np.array_equal(vals_a, vals_b)  # bit-identical

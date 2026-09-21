@@ -485,7 +485,7 @@ class TestChainAndEquivalence:
     def test_chain_from_0_11_reaches_current(self) -> None:
         data = _model_0_11([])
         out = migrate_to_current(data)
-        assert out["schema_version"] == "0.13"
+        assert out["schema_version"] == "0.14"
         assert out["_migrated_from"] == "0.11"
 
     def test_migrated_model_runs_with_identical_values(self, tmp_path: Path) -> None:

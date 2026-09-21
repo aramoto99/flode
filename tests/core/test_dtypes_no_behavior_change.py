@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 
 from flode import Simulator
-from flode.core import dtypes
+from flode.core import signals as dtypes
 from flode.core.persistence import CURRENT_SCHEMA_VERSION
 from tests.core import _dtype_baseline_models as baseline
 
@@ -94,7 +94,7 @@ class TestBehaviorInvariance:
         # Stage 0 (SPEC-0027 AC-4) 時点では 0.10 固定だった。SM-D Stage 1
         # (SPEC-0028) が dtype param 追加で 0.11 へ bump (no-op migration、
         # 旧ファイルは dtype なし = 従来挙動で完全互換)
-        assert CURRENT_SCHEMA_VERSION == "0.13"
+        assert CURRENT_SCHEMA_VERSION == "0.14"
 
     def test_baseline_arrays_match_v0_53_7(self) -> None:
         # AC-3: v0.53.7 で採取した基準配列との一致 (クロスバージョン層)。

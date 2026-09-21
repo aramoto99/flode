@@ -110,6 +110,48 @@ Signal selection and routing blocks.
    :nosignatures:
 
    flode.blocks.Switch
+   flode.blocks.Mux
+   flode.blocks.Demux
+
+.. _vector-signals:
+
+Vector signals
+--------------
+
+Every signal is a tensor. A port carries an ndarray of some *shape*: ``()``
+is the ordinary scalar, ``(3,)`` a 3-vector, ``(2, 2)`` a matrix. Shapes are
+resolved once, when the model is built, by the signal-plane resolver
+(:mod:`flode.core.signals`); blocks do not need to be told the shape.
+
+* ``Mux(n)`` packs ``n`` scalar ports into one ``(n,)`` signal and
+  ``Demux(n)`` unpacks it again. They are the usual way to create and
+  consume vector signals.
+* The combinational blocks (``Gain``, ``Sum``, ``Add``, ``Product``,
+  ``Divide``, ``Saturation``, ``DeadZone``, ``Abs``, ``Sign``, ``MinMax``,
+  ``MathFunction``, ``TrigFunction``, ``Rounding``, ``Cast``,
+  ``RelationalOperator``, ``LogicalOperator``, ``CompareToConstant``,
+  ``CompareToZero``) operate **element-wise** on whatever shape arrives.
+  Inputs must have identical shapes, or be a scalar combined with one
+  vector shape (the scalar is broadcast). Any other combination — for
+  example ``(3,)`` with ``(1, 3)`` — is rejected at build time; numpy-style
+  broadcasting is deliberately *not* applied.
+* ``Gain`` also supports matrix products: ``Gain(k=K, multiplication="matrix-Ku")``
+  computes ``K @ u`` and ``"matrix-uK"`` computes ``u @ K`` for a 1-D or 2-D
+  ``k``. Dimension mismatches are reported at build time.
+* ``Switch`` / ``MultiportSwitch`` / ``Merge`` pass vector data ports through
+  unchanged; their control (selector) port must stay scalar.
+* ``Scope`` and ``Display`` accept vector inputs and record one column per
+  element (``in0[0]``, ``in0[1]``, ... in C order); ``Scope.column_labels``
+  lists the expanded labels. ``Terminator`` consumes anything.
+* State blocks (``Integrator``, ``TransferFunction``, ``UnitDelay``, ...),
+  sources, lookup tables, ``XYGraph`` and user-code boundaries
+  (``Subsystem``, ``Fcn``, ``PythonFunction``, ``@block``) are scalar-only
+  in this release. Connecting a vector to them is a build error that names
+  the port and suggests ``Demux``.
+
+``Simulator.resolve_signals()`` returns the resolved ``(shape, dtype)`` of
+every port without running the model; the GUI Inspector shows the same
+information next to each port.
 
 .. _user-function:
 

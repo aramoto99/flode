@@ -22,20 +22,21 @@ import numpy as np
 import numpy.typing as npt
 
 from ..core.block import Block
-from ..core.dtypes import DTYPE_VOCABULARY, cast_value
+from ..core.signals import DTYPE_VOCABULARY, cast_value
 from ..exceptions import BlockSpecError
+from ._elementwise import ElementwiseMixin
 
 
-class Cast(Block):
+class Cast(ElementwiseMixin, Block):
     """実 dtype 変換 ``y = cast(u, dtype)``。
 
     出力は**実際にその numpy dtype** になる (SPEC-0028)。``dtype="float64"``
     (既定) も恒等ではなく実変換 (``astype``)。float → 整数は**ゼロ方向切り捨て**、
     nan → 0 / ±inf → 飽和は決定的 (規則の SSOT は
-    :func:`flode.core.dtypes.cast_value`)。
+    :func:`flode.core.signals.cast_value`)。
 
     Cast を含むモデルは常に dtype 宣言モデルとして実行される
-    (:func:`flode.core.dtypes.has_declared_dtype`)。
+    (:func:`flode.core.signals.has_declared_dtype`)。
 
     Args:
         dtype: 出力 dtype。``"float64"`` (既定) / ``"bool"`` / ``"uint8"`` /
@@ -64,3 +65,12 @@ class Cast(Block):
         # 実 dtype 変換 (SPEC-0028 §2.2)。float() を経由しないことで
         # int64 の精度 (> 2^53) を守る。
         return cast_value(np.asarray(u).reshape(-1)[:1], self.dtype)
+
+    def _kernel(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # cast_value は shape 保存なのでテンソルでもそのまま動く
+        return (cast_value(np.asarray(u[0]), self.dtype),)

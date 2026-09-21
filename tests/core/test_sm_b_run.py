@@ -1,7 +1,7 @@
 """ADR-0018 §(2) SM-B run path 統合の end-to-end 検証。
 
 Mux/Demux を含むモデルが ``Simulator.run()`` で動作し、Scope に SM-B 信号を直接
-繋いだ場合に build 時 ``BlockSpecError`` で拒否されることを検証する。
+繋いだ場合に列展開して記録されること (ADR-0079 §(4)、AC-7) を検証する。
 """
 
 from __future__ import annotations
@@ -95,54 +95,42 @@ class TestSmBRunWithContinuous:
 
 
 # ---------------------------------------------------------------------------
-# Scope に SM-B 信号を直接繋ぐと build 時拒否
+# Scope に SM-B 信号を直接繋ぐと列展開して記録 (ADR-0079 §(4)、AC-7)
 # ---------------------------------------------------------------------------
 
 
-class TestScopeRejectsSmB:
-    def test_mux_to_scope_direct_raises(self) -> None:
-        """Mux の出力 (vector) を Scope に直接繋ぐと build 時 ``BlockSpecError``。"""
+class TestScopeAcceptsVector:
+    def test_mux_to_scope_direct_records_n_columns(self) -> None:
+        """Mux(3) の出力 (3,) を Scope 1 ポートに直接繋ぐと 3 列 3 ラベルで記録される。"""
         sim = Simulator(t_end=0.05, dt=0.01)
         c0 = sim.add(Constant(value=1.0))
         c1 = sim.add(Constant(value=2.0))
-        m = sim.add(Mux(n=2))
-        sc = sim.add(Scope(n_inputs=1))
+        c2 = sim.add(Constant(value=3.0))
+        m = sim.add(Mux(n=3))
+        sc = sim.add(Scope(n_inputs=1, id="sc"))
         sim.connect(c0, m, dst_idx=0)
         sim.connect(c1, m, dst_idx=1)
-        # Scope.port_shapes_in = ((),) なので shape mismatch (Mux out = (2,))
+        sim.connect(c2, m, dst_idx=2)
         sim.connect(m, sc)
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
-            sim.run()
+        sim.run()
+        values = np.asarray(sc.values)
+        assert values.shape == (6, 3)
+        np.testing.assert_allclose(values[:, 0], 1.0)
+        np.testing.assert_allclose(values[:, 1], 2.0)
+        np.testing.assert_allclose(values[:, 2], 3.0)
+        assert sc.column_labels == ["in0[0]", "in0[1]", "in0[2]"]
 
-    def test_scope_only_accepts_scalar_message(self) -> None:
-        """SM-B モードで build 時 Scope check が走り、Demux 誘導メッセージが出る。
-
-        ここでは Scope の port_shapes_in を直接 vector に書き換えて build を呼ぶ
-        (= 通常の `connect` だと先に shape mismatch エラーが出るため)。
-        """
-
-        # port_shapes_in を直接 SM-B にしたカスタム Scope (テスト用)
-        # 通常ユーザーはこの状況に陥らないが、Simulator._check_scope_inputs_are_scalar の
-        # メッセージを直接検証する。
-        class _BadScope(Scope):
-            _serialize_port_shapes = False
-
-            def __init__(self, n_inputs: int = 1, *, id: str | None = None) -> None:
-                super().__init__(n_inputs=n_inputs, id=id)
-                # 強制的に SM-B 入力に書き換え (= テスト目的)
-                self.port_shapes_in = ((3,),)
-
+    def test_scope_label_count_mismatch_is_build_error(self) -> None:
+        """明示ラベル数がポート数とも列数とも合わないと build エラー (shape.mismatch)。"""
         sim = Simulator(t_end=0.05, dt=0.01)
-        # SM-B モード判定が true になるよう Mux を 1 つ含める
         c = sim.add(Constant(value=1.0))
         m = sim.add(Mux(n=3))
-        sim.add(_BadScope(id="bad"))
-        # Mux の出力 (3,) を _BadScope.in[0] (3,) に繋ぐ → shape は一致
+        sc = sim.add(Scope(n_inputs=1, labels=["a", "b"], id="sc"))
         sim.connect(c, m, dst_idx=0)
         sim.connect(c, m, dst_idx=1)
         sim.connect(c, m, dst_idx=2)
-        sim.connect(m, "bad")
-        with pytest.raises(BlockSpecError, match="Scope only accepts scalar"):
+        sim.connect(m, sc)
+        with pytest.raises(BlockSpecError, match="label"):
             sim.run()
 
 

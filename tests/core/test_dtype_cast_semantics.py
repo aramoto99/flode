@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from flode.core.dtypes import cast_value
+from flode.core.signals import cast_value
 
 
 class TestFloatToInt:

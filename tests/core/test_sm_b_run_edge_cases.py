@@ -5,7 +5,7 @@
 補強観点:
   #1  SM-B モードで Constant のみモデル (連続なし・離散なし・直達のみ) が完走する
   #2  SM-A 離散ブロック (UnitDelay) + SM-B ルーティング (Mux/Demux) の混在モデル
-  #3  SM-B モードで Scope に rank-0 入力 (= scalar) を繋ぐと build を通過する (regression)
+  #3  SM-B モードで Scope に rank-0 入力 (= scalar) を繋ぐと 1 列で記録される (regression)
   #4  空モデル・1ブロックモデルが SM-A モードと判定され正しく動く
   #5  SM-B モデルで n_steps=1 (t_end=dt) の最短シミュレーションが完走する
   #6  _record_v が Scope に正しく scalar 値を渡す
@@ -20,7 +20,6 @@ from flode import Simulator
 from flode.blocks import (
     Constant,
     Demux,
-    Gain,
     Integrator,
     Mux,
     Scope,
@@ -80,21 +79,22 @@ class TestSmBRunConstantOnly:
         np.testing.assert_allclose(_flat(sc0), 10.0)
         np.testing.assert_allclose(_flat(sc1), 20.0)
 
-    def test_constant_mux_gain_demux_scope_no_state(self) -> None:
-        """Constant → Mux → Gain (SM-A) → Demux 経路は port_shape mismatch になる。
+    def test_constant_mux_integrator_is_shape_mismatch(self) -> None:
+        """Constant → Mux → Integrator (スカラ専用) 経路は shape.mismatch になる。
 
-        Mux 出力 (3,) と Gain 入力 () が不一致なので BlockSpecError が出ることを確認する。
-        これは SM-B run path ではなく build-time check のテスト。
+        Mux 出力 (3,) と Integrator 入力 () が不一致なので BlockSpecError が出ることを
+        確認する (ADR-0079: Gain は要素ごと演算でベクトルを受理するため、スカラ専用の
+        状態ブロックで検証する)。これは SM-B run path ではなく build-time check のテスト。
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=1.0))
         m = sim.add(Mux(n=3))
-        g = sim.add(Gain(k=2.0))
+        integ = sim.add(Integrator(x0=0.0))
         sim.connect(c, m, dst_idx=0)
         sim.connect(c, m, dst_idx=1)
         sim.connect(c, m, dst_idx=2)
-        sim.connect(m, g)  # shape (3,) → () mismatch
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
+        sim.connect(m, integ)  # shape (3,) → () mismatch
+        with pytest.raises(BlockSpecError, match="shape.mismatch"):
             sim.run()
 
 
@@ -165,8 +165,8 @@ class TestScopeScalarInputInSmBMode:
     def test_scope_with_scalar_input_passes_build_in_sm_b_model(self) -> None:
         """SM-B モデルであっても Scope への scalar (() shape) 入力は build を通過する。
 
-        ADR-0018 §(3) S-A: Scope は scalar のみ受け付ける。
-        vector ではなく scalar を繋ぐ場合は _check_scope_inputs_are_scalar が通過する。
+        ADR-0079 §(4) で Scope はベクトルも受理するようになったが、scalar 入力の
+        既存挙動 (1 列記録) は不変であることを regression として固定する。
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=1.0))
@@ -188,19 +188,20 @@ class TestScopeScalarInputInSmBMode:
         arr = _flat(sc)
         np.testing.assert_allclose(arr, 1.0)  # Demux 出力[0] = Constant 値 1.0
 
-    def test_scope_check_passes_when_all_scope_inputs_scalar(self) -> None:
-        """_check_scope_inputs_are_scalar が scalar 入力 Scope に対して例外を出さない。"""
+    def test_scope_scalar_input_resolves_to_one_column(self) -> None:
+        """scalar 入力 Scope は信号面解決で () と決まり、記録は 1 列のまま。"""
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=1.0))
         m = sim.add(Mux(n=1))
         d = sim.add(Demux(n=1))
-        sc = sim.add(Scope(n_inputs=1))
+        sc = sim.add(Scope(n_inputs=1, id="sc"))
         sim.connect(c, m, dst_idx=0)
         sim.connect(m, d)
         sim.connect(d, sc)
-        sim._execution_order()  # build を発火させ SM-B モードへ
-        # SM-B モードで Scope check が scalar 入力に対して通過する
-        sim._check_scope_inputs_are_scalar()  # 例外なし
+        res = sim.resolve_signals()
+        assert res.in_shape("sc", 0) == ()
+        sim.run()
+        assert np.asarray(sc.values).shape == (6, 1)
 
 
 # ---------------------------------------------------------------------------

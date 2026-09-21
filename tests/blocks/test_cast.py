@@ -14,7 +14,7 @@ import pytest
 
 from flode import Simulator
 from flode.blocks import Cast, Scope, Sine
-from flode.core.dtypes import DTYPE_VOCABULARY
+from flode.core.signals import DTYPE_VOCABULARY
 from flode.exceptions import BlockSpecError
 
 _EMPTY_X = np.array([])

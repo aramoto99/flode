@@ -217,7 +217,7 @@ class _OutputSpec:
     y_slice: int  # 全体 y_ext 配列内の位置 (= C 行列の行インデックス)
 
 
-def _build_input_specs(simulator: Simulator) -> list[_InputSpec]:
+def _build_input_specs(simulator: Simulator, port_shapes: _PortShapes) -> list[_InputSpec]:
     """外部入力ポート (= 結線されていない入力ポート) の flatten 仕様を構築。
 
     sink ブロック (Scope / Display / XYGraph、= ``_is_sink`` で True 判定。
@@ -235,7 +235,7 @@ def _build_input_specs(simulator: Simulator) -> list[_InputSpec]:
         for i in range(b.n_inputs):
             if b.input_sources[i] is not None:
                 continue
-            shape = b.port_shapes_in[i]
+            shape = port_shapes.in_shape(b, i)
             n = int(np.prod(shape)) if shape else 1
             for flat in range(n):
                 specs.append(_InputSpec(block=b, port_idx=i, flat_idx=flat, u_slice=pos))
@@ -243,7 +243,36 @@ def _build_input_specs(simulator: Simulator) -> list[_InputSpec]:
     return specs
 
 
-def _build_output_specs(simulator: Simulator) -> list[_OutputSpec]:
+def _block_id(block: Block) -> str:
+    """信号面解決の突合キー用 block id (登録済みなら必ず str)。"""
+    return block.id if block.id is not None else "<unassigned>"
+
+
+class _PortShapes:
+    """線形化中に参照する各ポートの実行時 shape (ADR-0079 D-2)。
+
+    信号面解決 (``resolve_for_execution``) の結果があればそれ、無ければ
+    (= 解決器を通らない SM-A モデル) ブロックの宣言 ``port_shapes_in/out`` に
+    フォールバックする。
+    """
+
+    def __init__(self, resolved: dict[tuple[str, str, int], tuple[int, ...]]) -> None:
+        self._resolved = resolved
+
+    def in_shape(self, block: Block, port_idx: int) -> tuple[int, ...]:
+        key = (_block_id(block), "in", port_idx)
+        if key in self._resolved:
+            return self._resolved[key]
+        return block.port_shapes_in[port_idx]
+
+    def out_shape(self, block: Block, port_idx: int) -> tuple[int, ...]:
+        key = (_block_id(block), "out", port_idx)
+        if key in self._resolved:
+            return self._resolved[key]
+        return block.port_shapes_out[port_idx]
+
+
+def _build_output_specs(simulator: Simulator, port_shapes: _PortShapes) -> list[_OutputSpec]:
     """外部出力ポートの flatten 仕様を構築。
 
     採用条件 (ADR-0026 §(6) 出力次元):
@@ -265,7 +294,7 @@ def _build_output_specs(simulator: Simulator) -> list[_OutputSpec]:
             if has_non_sink and not drives_sink:
                 # 純粋な内部信号
                 continue
-            shape = b.port_shapes_out[j]
+            shape = port_shapes.out_shape(b, j)
             n = int(np.prod(shape)) if shape else 1
             for flat in range(n):
                 specs.append(_OutputSpec(block=b, port_idx=j, flat_idx=flat, y_slice=pos))
@@ -308,6 +337,7 @@ def _evaluate(
     input_specs: list[_InputSpec],
     output_specs: list[_OutputSpec],
     sm_a_mode: bool,
+    port_shapes: _PortShapes,
 ) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
     """動作点 ``(t, x_cont, u_ext)`` で ``(xdot, y_external)`` を計算。
 
@@ -340,7 +370,7 @@ def _evaluate(
                 _block = next(
                     s.block for s in input_specs if id(s.block) == bid and s.port_idx == p_idx
                 )
-                shape = _block.port_shapes_in[p_idx]
+                shape = port_shapes.in_shape(_block, p_idx)
                 flat_size = int(np.prod(shape)) if shape else 1
                 buf = np.zeros(flat_size, dtype=float)
                 for flat, val in entries:
@@ -413,7 +443,7 @@ def _evaluate(
     inputs_b: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
 
     def zero_inputs_b(b: Block) -> tuple[npt.NDArray[Any], ...]:
-        return tuple(np.zeros(shape, dtype=float) for shape in b.port_shapes_in)
+        return tuple(np.zeros(port_shapes.in_shape(b, i), dtype=float) for i in range(b.n_inputs))
 
     def gather_inputs_b(b: Block) -> tuple[npt.NDArray[Any], ...]:
         u_list: list[npt.NDArray[Any]] = []
@@ -423,7 +453,7 @@ def _evaluate(
                 if i in ext:
                     u_list.append(ext[i])
                 else:
-                    u_list.append(np.zeros(b.port_shapes_in[i], dtype=float))
+                    u_list.append(np.zeros(port_shapes.in_shape(b, i), dtype=float))
             else:
                 sb, si = src
                 u_list.append(outputs_b[sb][si])
@@ -569,8 +599,9 @@ def linearize(
     # SM-D Stage 1 (SPEC-0028 Q10 / AC-8): 非 float64 信号を含むモデルは明示拒否。
     # 数値線形化の摂動 (sqrt(eps) ~ 1.5e-8) は整数ポートで切り捨てられ、
     # Jacobian の列が黙って 0 になるため、誤った結果よりエラーが誠実。
-    from ..core.dtypes import (
+    from ..core.signals import (
         has_declared_dtype,
+        has_shape_source,
         reject_nested_dtype_declarations,
         resolve_for_execution,
     )
@@ -578,14 +609,15 @@ def linearize(
     # security MUST-1: ネスト dtype 宣言は run と同様に fail-closed
     reject_nested_dtype_declarations(simulator)
 
-    # Note (code-reviewer NIT 2026-09-08): linearize は `_dtype_plan` を構築しない。
-    # 下の拒否により「dtype 宣言モデルは non_float_ports == 0 のときだけ通る」
-    # という不変条件が成立し、その場合 plan なし (= 全ポート float64 強制) と
-    # 解決結果 (全ポート float64) は数値的に同一になるため。Q10 を緩和して
-    # 非 float64 モデルを通すようになったら、この省略は成立しなくなる。
-    if has_declared_dtype(simulator):
-        dtype_res = resolve_for_execution(simulator)
-        if dtype_res.summary.non_float_ports > 0:
+    # Note (code-reviewer NIT 2026-09-08): linearize は signal plan を構築しない。
+    # 下の拒否により「宣言モデルは non_float_ports == 0 かつ vector_ports == 0 の
+    # ときだけ通る」という不変条件が成立し、その場合 plan なし (= 全ポート
+    # float64 / 宣言 shape) と解決結果は数値的に同一になるため。Q10 を緩和して
+    # 非 float64 / ベクトルモデルを通すようになったら、この省略は成立しなくなる。
+    if has_declared_dtype(simulator) or has_shape_source(simulator):
+        simulator._check_subsystem_sm_b_unsupported()
+        signal_res = resolve_for_execution(simulator)
+        if signal_res.summary.non_float_ports > 0:
             raise BlockSpecError(
                 "linearize: model contains non-float64 signals (SM-D dtype). "
                 "Numerical linearisation requires float64 signals because the "
@@ -594,13 +626,25 @@ def linearize(
                 "dtype declarations or insert Cast(dtype='float64') before "
                 "the linearisation boundary."
             )
-
-    if simulator._is_sm_a_mode():
-        sm_a_mode = True
+        # ADR-0079 D-2: 実行時 shape は宣言ではなく解決結果。外部入出力の flatten と
+        # SM-B 評価はこの表を読む (要素ごと演算ブロックが上流のベクトル shape を
+        # 受け取るケースを宣言 () で誤って潰さないため)。
+        port_shapes = _PortShapes(
+            {
+                (_block_id(b), "in", i): signal_res.in_shape(_block_id(b), i) or ()
+                for b in simulator.blocks
+                for i in range(b.n_inputs)
+            }
+            | {
+                (_block_id(b), "out", j): signal_res.out_shape(_block_id(b), j) or ()
+                for b in simulator.blocks
+                for j in range(b.n_outputs)
+            }
+        )
     else:
-        sm_a_mode = False
-        simulator._check_scope_inputs_are_scalar()
-        simulator._check_subsystem_sm_b_unsupported()
+        port_shapes = _PortShapes({})
+
+    sm_a_mode = simulator._is_sm_a_mode()
     simulator._resolve_sample_times(order)
     simulator._compute_dt_base()
     layout, n_states = simulator._state_layout()
@@ -625,8 +669,8 @@ def linearize(
         _logger.warning(msg)
 
     # ----- 入出力次元の解決 -----
-    input_specs = _build_input_specs(simulator)
-    output_specs = _build_output_specs(simulator)
+    input_specs = _build_input_specs(simulator, port_shapes)
+    output_specs = _build_output_specs(simulator, port_shapes)
     n_in = len(input_specs)
     n_out = len(output_specs)
 
@@ -665,6 +709,7 @@ def linearize(
             input_specs=input_specs,
             output_specs=output_specs,
             sm_a_mode=sm_a_mode,
+            port_shapes=port_shapes,
         )
 
     xdot0, y0 = evaluate(t, x_op, u_op)

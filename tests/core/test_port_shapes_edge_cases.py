@@ -8,7 +8,7 @@
   #3  port_shapes_out 指定 + port_shapes_in=None (default) 混在
   #4  higher-rank shape (rank 2+) のブロック構築
   #5  空 list [] を渡した場合 (n_inputs=0)
-  #6  _check_port_shapes: SM-A only モデルで shape check が常に成功
+  #6  信号面解決 (resolve_for_execution): SM-A only モデルで shape check が常に成功
   #7  _is_sm_a_mode() の境界: 0 個 / 1 個 SM-A / SM-B 混在
   #8  SM-B run() のエラーメッセージ確認
   #9  multi-output ブロックの shape check (SM-A port と SM-B port が混在)
@@ -64,6 +64,7 @@ from flode.blocks import (
     ZeroOrderHoldDirect,
 )
 from flode.core.block import Block, _normalize_port_shapes
+from flode.core.signals import resolve_for_execution
 from flode.exceptions import BlockSpecError
 from flode.subsystems.ports import Inport, Outport
 from flode.subsystems.subsystem import Subsystem
@@ -264,16 +265,16 @@ class TestHigherRankShapes:
         dst = sim.add(_MatrixPortBlock())
         sim.connect(src, dst)
         # 例外なく shape check を通過することを確認
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_matrix_port_to_scalar_mismatch_raises(self) -> None:
-        """(3, 4) → () の接続は shape mismatch で BlockSpecError。"""
+        """(3, 4) → () (スカラ専用の Integrator) の接続は shape.mismatch で BlockSpecError。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         src = sim.add(_MatrixPortBlock())
-        sc = sim.add(Scope(n_inputs=1))
-        sim.connect(src, sc)
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
-            sim._check_port_shapes()
+        integ = sim.add(Integrator(x0=0.0))
+        sim.connect(src, integ)
+        with pytest.raises(BlockSpecError, match="shape.mismatch"):
+            resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------
@@ -316,13 +317,13 @@ class TestEmptyListPortShapes:
 
 
 # ---------------------------------------------------------------------------
-# #6: _check_port_shapes: SM-A only モデルで常に成功
+# #6: 信号面解決: SM-A only モデルで常に成功
 # ---------------------------------------------------------------------------
 
 
 class TestCheckPortShapesSmAOnly:
     def test_sm_a_chain_check_always_passes(self) -> None:
-        """SM-A only モデル (全 () shape) で _check_port_shapes が例外を出さない。"""
+        """SM-A only モデル (全 () shape) で信号面解決が例外を出さない。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         c = sim.add(Constant(value=1.0))
         g = sim.add(Gain(k=2.0))
@@ -330,20 +331,20 @@ class TestCheckPortShapesSmAOnly:
         sim.connect(c, g)
         sim.connect(g, sc)
         # 例外なし
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_empty_simulator_check_passes(self) -> None:
-        """ブロックなし Simulator でも _check_port_shapes が例外を出さない。"""
+        """ブロックなし Simulator でも信号面解決が例外を出さない。"""
         sim = Simulator(t_end=0.1, dt=0.01)
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_disconnected_sm_a_blocks_check_passes(self) -> None:
-        """未接続の SM-A ブロックが複数あっても _check_port_shapes が通る。"""
+        """未接続の SM-A ブロックが複数あっても信号面解決が通る。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(Constant(value=1.0))
         sim.add(Gain(k=2.0))
         # 接続なし
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------
@@ -440,16 +441,16 @@ class TestMultiOutputShapeCheck:
         sim.connect(src, sc, src_idx=0, dst_idx=0)
         # SM-B ポートが含まれているため _is_sm_a_mode() は False だが、
         # 接続した port[0] は shape () 同士なので shape check だけは通過する
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_sm_b_port_of_mixed_block_to_scalar_raises(self) -> None:
-        """2出力ブロックの port[1] (= SM-B (3,)) が SM-A 入力に接続 → mismatch。"""
+        """2出力ブロックの port[1] (= SM-B (3,)) がスカラ専用入力に接続 → mismatch。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         src = sim.add(_TwoOutputMixedBlock())
-        sc = sim.add(Scope(n_inputs=1))
-        sim.connect(src, sc, src_idx=1, dst_idx=0)
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
-            sim._check_port_shapes()
+        integ = sim.add(Integrator(x0=0.0))
+        sim.connect(src, integ, src_idx=1, dst_idx=0)
+        with pytest.raises(BlockSpecError, match="shape.mismatch"):
+            resolve_for_execution(sim)
 
     def test_sm_b_port_of_mixed_block_to_vector_passes(self) -> None:
         """2出力ブロックの port[1] (= SM-B (3,)) が (3,) 入力に接続 → check 通過。"""
@@ -457,7 +458,7 @@ class TestMultiOutputShapeCheck:
         src = sim.add(_TwoOutputMixedBlock())
         vsink = sim.add(_VectorSink())
         sim.connect(src, vsink, src_idx=1, dst_idx=0)
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------
@@ -471,13 +472,13 @@ class TestUnconnectedPortShapeCheckSkipped:
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(Gain(k=2.0))  # input[0] は未接続
         # input_sources[0] is None なので shape check は skip される
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_unconnected_sm_b_input_is_skipped(self) -> None:
         """SM-B port でも未接続なら skip される。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         sim.add(_VectorSink())  # SM-B (3,) 入力ポートが未接続
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
     def test_partially_connected_block_skips_only_unconnected(self) -> None:
         """接続済みポートのみ shape check し、未接続は skip される。"""
@@ -494,7 +495,7 @@ class TestUnconnectedPortShapeCheckSkipped:
         b = sim.add(_TwoInputBlock())
         sim.connect(c, b, dst_idx=0)
         # input[1] は未接続: skip される
-        sim._check_port_shapes()
+        resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------

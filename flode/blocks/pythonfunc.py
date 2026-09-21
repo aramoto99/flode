@@ -176,7 +176,7 @@ def exec_block_source(
     # SM-D Stage 1 (SPEC-0028 §3.8 / AC-7): static mode の型解決中は exec 禁止。
     # 「静的解決はユーザーコードを実行しない」(二経路設計) の実行時バックストップ
     # — 呼び出し側の規律が将来破れても、ここで fail-closed になる。
-    from ..core.dtypes import in_static_dtype_resolution
+    from ..core.signals import in_static_dtype_resolution
 
     if in_static_dtype_resolution():
         # 多層防御の作動 = 不変条件違反の証拠。監査可能なよう WARNING で残す
@@ -493,7 +493,7 @@ class PythonFunction(Block):
         自体も禁止する (exec ガードの適用範囲を module exec だけでなく
         「ユーザーコード境界」全体へ広げる純粋な防御)。
         """
-        from ..core.dtypes import in_static_dtype_resolution
+        from ..core.signals import in_static_dtype_resolution
 
         if in_static_dtype_resolution():
             _logger.warning(

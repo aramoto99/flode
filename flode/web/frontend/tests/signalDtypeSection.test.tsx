@@ -148,6 +148,54 @@ describe("SignalDtypeSection (SPEC-0028 Stage 1)", () => {
     expect(screen.getByTestId("dtype-unresolved-out-0")).toBeTruthy();
   });
 
+  it("shows the resolved shape next to the dtype for signals.v1 responses (ADR-0079)", () => {
+    _setDtypeResolutionForTest({
+      ...responseFor([
+        { block_id: "g", direction: "in", port_index: 0, dtype: "float64", shape: [3] },
+        { block_id: "g", direction: "out", port_index: 0, dtype: "float64", shape: [] },
+      ]),
+      schema_version: "signals.v1",
+    });
+    render(<SignalDtypeSection blockId="g" />);
+    expect(screen.getByTestId("shape-in-0").textContent).toBe("(3,)");
+    expect(screen.getByTestId("shape-out-0").textContent).toBe("()");
+  });
+
+  it("does not render shape cells for dtypes.v1 responses (no shape field)", () => {
+    _setDtypeResolutionForTest(
+      responseFor([{ block_id: "g", direction: "out", port_index: 0, dtype: "float64" }]),
+    );
+    render(<SignalDtypeSection blockId="g" />);
+    expect(screen.queryByTestId("shape-out-0")).toBeNull();
+  });
+
+  it("shows shape.* error diagnostics under the port row", () => {
+    _setDtypeResolutionForTest({
+      ...responseFor(
+        [{ block_id: "integ", direction: "in", port_index: 0, dtype: "float64", shape: [] }],
+        [
+          {
+            severity: "error",
+            code: "shape.mismatch",
+            message: "expects scalar",
+            block_id: "integ",
+            direction: "in",
+            port_index: 0,
+            from_dtype: null,
+            to_dtype: null,
+            expected_shape: [],
+            actual_shape: [3],
+          },
+        ],
+      ),
+      schema_version: "signals.v1",
+    });
+    render(<SignalDtypeSection blockId="integ" />);
+    expect(screen.getByTestId("shape-diag-in-0").textContent).toBe(
+      "Shape error: expects scalar",
+    );
+  });
+
   it("hides when no resolution is available", () => {
     render(<SignalDtypeSection blockId="integ" />);
     expect(screen.queryByTestId("dtype-in-0")).toBeNull();

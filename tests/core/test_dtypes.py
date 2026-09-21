@@ -1,4 +1,4 @@
-"""SPEC-0027 / ADR-0077: SM-D Stage 0 影の型伝播エンジン (`flode.core.dtypes`) のテスト。
+"""SPEC-0027 / ADR-0077: dtype 解決 (`flode.core.signals`、旧 `flode.core.dtypes`) のテスト。
 
 語彙 / 昇格閉包 / 分類規則 / D-4 自動昇格 / 不動点反復 / unknown 伝播 /
 突合キー / 診断 / 集計 / 網羅ガード / 性能 / static mode (PythonFunction 非実行)
@@ -32,9 +32,9 @@ from flode.blocks.rounding import Rounding
 from flode.blocks.routing import Demux, From, Goto, Mux, Switch
 from flode.blocks.sinks import Scope
 from flode.blocks.sources import Constant
-from flode.core import dtypes
+from flode.core import signals as dtypes
 from flode.core.block import Block
-from flode.core.dtypes import (
+from flode.core.signals import (
     DTYPE_VOCABULARY,
     UNKNOWN,
     DTypeDiagnostic,
@@ -586,6 +586,14 @@ class TestDiagnostics:
             "dtype.opaque_float64_island": "info",
             "dtype.defaulted_to_float64": "info",
             "dtype.state_via_float64": "info",
+            # SM-T Stage 1 (ADR-0079 §(8))
+            "shape.mismatch": "error",
+            "shape.broadcast_rejected": "error",
+            "shape.opaque_scalar_island": "error",
+            "shape.control_port_not_scalar": "error",
+            "shape.unresolved": "warning",
+            "shape.defaulted_to_scalar": "info",
+            "shape.large_vector": "info",
         }
         assert dict(dtypes._SEVERITY_BY_CODE) == expected
 
@@ -611,9 +619,9 @@ class TestSummary:
         sim = _sim()
         sim.add(Constant(value=1.0, dtype="bool", id="c"))
         payload = resolve_dtypes(sim).to_payload()
-        assert payload["schema_version"] == "dtypes.v1"
+        assert payload["schema_version"] == "signals.v1"
         assert payload["ports"] == [
-            {"block_id": "c", "direction": "out", "port_index": 0, "dtype": "bool"}
+            {"block_id": "c", "direction": "out", "port_index": 0, "dtype": "bool", "shape": []}
         ]
         assert payload["summary"]["total_ports"] == 1
         assert payload["summary"]["by_dtype"] == {"bool": 1}

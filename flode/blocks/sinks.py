@@ -21,15 +21,92 @@ _DEFAULT_SCOPE_CAPACITY = 100_000
 ScopeBufferMode = Literal["ring", "bounded", "unbounded"]
 
 
-class Scope(Block):
+def _expand_column_labels(labels: list[str], shapes: tuple[tuple[int, ...], ...]) -> list[str]:
+    """ポートごとのラベルを列 (C order の要素) ごとのラベルに展開する (ADR-0079 §(4))。
+
+    - ``len(labels) == 総列数`` なら列ごとのラベルとしてそのまま使う
+    - ``len(labels) == ポート数`` ならポートラベルを展開する: ``()`` のポートは
+      ``label`` のまま、``(n,)`` は ``label[0]`` … ``label[n-1]``、``(m, n)`` は
+      ``label[0,0]`` … (C order)
+    - どちらでもなければ呼び出し側 (信号面解決器) が build エラーにするので、
+      ここでは列数に合わせて末尾を切り詰め / 連番で補う (防御的)
+    """
+    n_columns = int(sum(int(np.prod(s, dtype=np.int64)) for s in shapes))
+    if len(labels) == n_columns and len(labels) != len(shapes):
+        return list(labels)
+    if len(labels) == len(shapes):
+        expanded: list[str] = []
+        for label, shape in zip(labels, shapes, strict=True):
+            if shape == ():
+                expanded.append(label)
+                continue
+            for index in np.ndindex(*shape):
+                expanded.append(f"{label}[{','.join(str(i) for i in index)}]")
+        return expanded
+    if len(labels) == n_columns:
+        return list(labels)
+    padded = list(labels[:n_columns])
+    padded.extend(f"col{i}" for i in range(len(padded), n_columns))
+    return padded
+
+
+class _VectorSinkMixin:
+    """ベクトル入力を受理するシンク共通の ``output_v`` (ADR-0079 §(4))。
+
+    シンクは出力を持たないので ``output_v`` は常に空 tuple。値の記録は
+    ``Simulator._record_v`` が各ポートを C order で列展開した 1D ndarray を
+    ``record`` に渡す。``_apply_input_shapes`` は Simulator が plan 構築後に
+    呼ぶ runtime hook で、列数とラベルを確定する。
+    """
+
+    labels: list[str]
+    n_inputs: int
+
+    def _apply_input_shapes(self, shapes: tuple[tuple[int, ...], ...]) -> None:
+        """信号面解決の in shape から列ラベルを確定する (Simulator が呼ぶ)。"""
+        self._column_shapes: tuple[tuple[int, ...], ...] | None = tuple(shapes)
+        self._column_labels: list[str] = _expand_column_labels(
+            list(self.labels), self._column_shapes
+        )
+
+    @property
+    def column_labels(self) -> list[str]:
+        """記録列ごとのラベル (ベクトル入力は ``in0[0]`` 等に展開、スカラは ``labels`` と同一)。"""
+        column_labels = getattr(self, "_column_labels", None)
+        if column_labels is None:
+            return list(self.labels)
+        return list(column_labels)
+
+    @property
+    def n_columns(self) -> int:
+        """記録列数 (= 全入力ポートの総要素数。plan 未適用なら ``n_inputs``)。"""
+        shapes = getattr(self, "_column_shapes", None)
+        if shapes is None:
+            return int(self.n_inputs)
+        return int(sum(int(np.prod(s, dtype=np.int64)) for s in shapes))
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return ()
+
+
+class Scope(_VectorSinkMixin, Block):
     """シミュレーション中の信号値を時系列で記録し、``plot()`` で可視化する。
 
     各時刻 ``t`` の入力 ``u`` を ``record(t, u)`` で蓄積する。``values`` プロパティ
-    で形状 ``(n_samples, n_inputs)`` の ndarray を取得できる。
+    で形状 ``(n_samples, n_columns)`` の ndarray を取得できる。ベクトル入力
+    (ADR-0079 §(4)) はポートごとに C order で列展開されるので、全ポートがスカラなら
+    ``n_columns == n_inputs`` (従来どおり)。
 
     Args:
         n_inputs: 記録する信号数 (= 入力ポート数)。
         labels: 各信号のラベル (省略時は ``in0``, ``in1`` ...)。``plot`` で凡例に使う。
+            ベクトル入力ではポートラベルを ``in0[0]`` 等に展開する (``column_labels``)。
+            列ごとのラベルを直接与えてもよい (要素数 = 総列数)。
         buffer_mode: バッファ動作 (ADR-0042 §論点 2-A)。``"ring"`` (default) は
             ``buffer_capacity`` 到達後に最古サンプルから FIFO drop (= ``Stop Time
             = inf`` の長時間実行で OOM 防止)。``"bounded"`` は capacity 到達で
@@ -117,8 +194,8 @@ class Scope(Block):
     @property
     def values(self) -> npt.NDArray[Any]:
         if not self._values:
-            return np.empty((0, self.n_inputs))
-        # deque は np.array() に直接渡せる (= shape は (n_samples, n_inputs))
+            return np.empty((0, self.n_columns))
+        # deque は np.array() に直接渡せる (= shape は (n_samples, n_columns))
         return np.array(list(self._values))
 
     def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
@@ -139,8 +216,9 @@ class Scope(Block):
         assert ax is not None
         t = np.array(self.times)
         v = self.values
+        labels = self.column_labels
         for i in range(v.shape[1]):
-            ax.plot(t, v[:, i], label=self.labels[i])
+            ax.plot(t, v[:, i], label=labels[i] if i < len(labels) else f"col{i}")
         ax.set_xlabel("t")
         ax.legend()
         ax.grid(True)
@@ -150,13 +228,15 @@ class Scope(Block):
         return ax
 
 
-class Display(Block):
+class Display(_VectorSinkMixin, Block):
     """シミュレーション中の現在値を数値表示するブロック (リファレンスツールの Display 相当)。
 
     Scope と同じ duck-type インタフェース (``record`` / ``times`` / ``values`` /
     ``labels``) を持つため server (ADR-0011) の WebSocket scope batch パイプラインを
     そのまま流用できる。フロント側は ``Display`` を canvas 上のブロックフェースに
     「最新値の大きな数字」として描画する (= 履歴プロットではない)。
+    ベクトル入力 (ADR-0079 §(4)) は列展開して 1 要素 1 行で表示する
+    (``column_labels`` が ``in0[0]`` 等の行ラベル、``format_latest`` が整形の SSOT)。
 
     Args:
         n_inputs: 入力ポート数 (>= 1)。複数値を縦に並べて表示する。
@@ -202,15 +282,31 @@ class Display(Block):
     @property
     def values(self) -> npt.NDArray[Any]:
         if not self._values:
-            return np.empty((0, self.n_inputs))
+            return np.empty((0, self.n_columns))
         return np.array(self._values)
 
     @property
     def latest(self) -> npt.NDArray[Any] | None:
-        """最終 sample の値 ndarray を返す。データなしのとき ``None``。"""
+        """最終 sample の値 ndarray (列展開済み 1D) を返す。データなしのとき ``None``。"""
         if not self._values:
             return None
         return self._values[-1]
+
+    def format_latest(self) -> list[tuple[str, str]]:
+        """最新値を ``(列ラベル, 整形済み文字列)`` の列で返す (整形規則の SSOT)。
+
+        ベクトル入力は列展開されているので 1 要素 1 行。データなしのときは
+        各列を ``"—"`` で埋める。
+        """
+        labels = self.column_labels
+        latest = self.latest
+        if latest is None:
+            return [(label, "—") for label in labels]
+        rows: list[tuple[str, str]] = []
+        for i, label in enumerate(labels):
+            value = float(latest[i]) if i < len(latest) else float("nan")
+            rows.append((label, f"{value:.{self.decimals}f}"))
+        return rows
 
 
 class XYGraph(Block):
@@ -287,11 +383,14 @@ class Terminator(Block):
     """入力を消費するだけで何もしない終端ブロック。
 
     リファレンスツールの Terminator 相当。使われない出力ポートを終端させて未接続警告を
-    避ける用途で使う。
+    避ける用途で使う。任意 shape の入力を受理する (ADR-0079 §(4))。
 
     Args:
         n_inputs: 入力ポート数 (>= 1)。
     """
+
+    # ADR-0079: ベクトル入力も消費する (output_v は空 tuple)
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -307,3 +406,11 @@ class Terminator(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return ()

@@ -15,7 +15,7 @@ from flode import Simulator
 from flode.blocks.cast import Cast
 from flode.blocks.mathops import Gain
 from flode.blocks.sources import Constant
-from flode.core.dtypes import DTYPE_PARAM_VALUES, DTYPE_VOCABULARY, has_declared_dtype
+from flode.core.signals import DTYPE_PARAM_VALUES, DTYPE_VOCABULARY, has_declared_dtype
 from flode.exceptions import BlockSpecError
 
 

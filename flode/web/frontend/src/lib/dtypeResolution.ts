@@ -9,7 +9,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { resolveModelDtypes } from "../api/client";
 import { useAppStore } from "../store/appStore";
-import type { DtypesResponse, FlwModel } from "../types/api";
+import type { DtypesPortEntry, DtypesResponse, FlwModel } from "../types/api";
 
 /** 編集 → 再取得の debounce (SPEC-0028、Stage 0 の Q3 を踏襲)。 */
 const RESOLVE_DEBOUNCE_MS = 300;
@@ -52,12 +52,11 @@ export function _resetDtypeFetchStateForTest(): void {
   _queued = null;
 }
 
-/** 指定ポートの解決済み dtype (無ければ null)。 */
-export function dtypeForPort(
+function findPort(
   blockId: string,
   direction: "in" | "out",
   portIndex: number,
-): string | null {
+): DtypesPortEntry | null {
   if (!current) return null;
   const entry = current.ports.find(
     (p) =>
@@ -65,7 +64,40 @@ export function dtypeForPort(
       p.direction === direction &&
       p.port_index === portIndex,
   );
+  return entry ?? null;
+}
+
+/** 指定ポートの解決済み dtype (無ければ null)。 */
+export function dtypeForPort(
+  blockId: string,
+  direction: "in" | "out",
+  portIndex: number,
+): string | null {
+  const entry = findPort(blockId, direction, portIndex);
   return entry ? entry.dtype : null;
+}
+
+/**
+ * 指定ポートの解決済み shape (ADR-0079 §(9))。
+ *
+ * `[]` は rank-0 スカラ。"dtypes.v1" の応答 (shape 無し) や static mode の
+ * 未確定は null。frontend で shape を計算しない (SSOT は backend の解決器)。
+ */
+export function shapeForPort(
+  blockId: string,
+  direction: "in" | "out",
+  portIndex: number,
+): number[] | null {
+  const entry = findPort(blockId, direction, portIndex);
+  if (!entry || entry.shape === undefined || entry.shape === null) return null;
+  return entry.shape;
+}
+
+/** shape を numpy 風の表記にする (`[]` → "()"、`[3]` → "(3,)"、`[2,3]` → "(2, 3)")。 */
+export function formatShape(shape: number[]): string {
+  if (shape.length === 0) return "()";
+  if (shape.length === 1) return `(${shape[0]},)`;
+  return `(${shape.join(", ")})`;
 }
 
 /**

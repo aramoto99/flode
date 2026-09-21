@@ -13,7 +13,7 @@ from flode import Simulator
 from flode.blocks.cast import Cast
 from flode.blocks.mathops import Gain, Sum
 from flode.blocks.sources import Constant
-from flode.core.dtypes import resolve_dtypes
+from flode.core.signals import resolve_dtypes
 
 logger = logging.getLogger(__name__)
 

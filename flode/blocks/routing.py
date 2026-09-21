@@ -93,6 +93,9 @@ class Switch(Block):
         # SM-D Stage 1 (SPEC-0028 §3.6): 制御 port (u[1]) は判定のみ、選択した
         # データ port を dtype ごと素通しする (default wrapper の 1 本化だと
         # データ dtype が制御 float64 と昇格してしまうため override)。
+        # ADR-0079 §(3): 制御 port は () 固定 (信号面解決器が
+        # shape.control_port_not_scalar で保証) なので ``.item()`` は安全。
+        # データ port は任意 shape (両データ port は同一 shape) を素通しする。
         select_true = self._select_true(float(np.asarray(u[1]).item()))
         return (np.asarray(u[0] if select_true else u[2]),)
 
@@ -359,7 +362,9 @@ class From(Block):
 
     Note:
         出力 shape は対応 Goto の入力 shape から build 時に推論される
-        (ADR-0055 §論点 4)。``direct_feedthrough`` も build 時に ``False``
+        (ADR-0055 §論点 4、ADR-0079 からは信号面解決器の透過規則として plan
+        にのみ置かれ、``port_shapes_out`` の宣言は ``()`` のまま)。
+        ``direct_feedthrough`` も build 時に ``False``
         (= 未解決状態の安全側 default) から ``True`` に書き換わる
         (= 仮想 wire 経由で Goto 上流に依存するため)。
     """
@@ -392,6 +397,10 @@ class From(Block):
         # build 時に解決済み Goto への参照を持つ。output / output_v はこれを
         # 介して Goto._last_input を返す。
         self._resolved_goto: Goto | None = None
+        # ADR-0079 D-2: 出力 shape は宣言ではなく signal plan で決まる。Simulator が
+        # plan 構築後に注入する runtime cache (初回 fire 前のホールド値の shape 用)。
+        # None = SM-A path (plan なし) → 従来どおり shape (1,) のゼロ。
+        self._plan_out_shape: tuple[int, ...] | None = None
 
     def _ensure_resolved(self) -> Goto:
         if self._resolved_goto is None:
@@ -416,10 +425,12 @@ class From(Block):
         goto = self._ensure_resolved()
         if goto._last_input is None:
             # bug-fix 2026-09-13: 初回 fire 前のホールド値 = 0 (Outport の初期
-            # キャッシュ ``_last_y = zeros`` と同じ規約)。shape は build 時に確定した
-            # 出力 port shape に合わせる (SM-A なら (1,)、SM-B なら port_shape)。
-            shape = self.port_shapes_out[0] if self.port_shapes_out[0] != () else (1,)
-            return np.zeros(shape)
+            # キャッシュ ``_last_y = zeros`` と同じ規約)。shape は信号面解決の
+            # plan (ADR-0079 D-2、``_plan_out_shape``) に合わせる: SM-A path
+            # (plan なし) なら (1,)、SM-T path なら plan の出力 shape。
+            if self._plan_out_shape is None:
+                return np.zeros((1,))
+            return np.zeros(self._plan_out_shape)
         return np.asarray(goto._last_input)
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -557,6 +568,8 @@ class MultiportSwitch(Block):
         # データ port の ndarray を dtype ごと素通しする。default wrapper の
         # 1 本化を経由すると int64 が制御 port の float64 と昇格して精度を失う
         # ため override する。SM-A の output() は不変。
+        # ADR-0079 §(3): selector port は () 固定 (信号面解決器が保証) なので
+        # ``.item()`` は安全。データ port は任意 shape (全データ port 同一)。
         idx = self._select_index(float(np.asarray(u[0]).item()))
         return (np.asarray(u[1 + idx]),)
 
@@ -574,7 +587,16 @@ class Merge(Block):
 
     Raises:
         BlockSpecError: ``n_inputs < 1``。
+
+    Note:
+        ADR-0079 §(3): ベクトル入力 (全データポート同一 shape、信号面解決器の
+        ``select`` 規則) では「非デフォルト」を **いずれかの要素が
+        ``initial_value`` と異なる** ことと定義する (``np.any``)。スカラでは従来の
+        ``float(val) != initial_value`` と同値。
     """
+
+    # ADR-0079 §(3): ベクトル入力用に output_v も実装する (Switch と同じ内部例外)
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -605,3 +627,20 @@ class Merge(Block):
             if float(val) != self.initial_value:
                 return np.array([val])
         return np.array([self.initial_value])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        # ADR-0079 §(3): 各データポートは同一 shape (解決器が保証)。いずれかの
+        # 要素が initial_value と異なる最初の入力を dtype ごと素通しする。
+        # 全て一致なら initial_value を入力 shape に広げて返す (plan の出力
+        # shape = データポートの shape)。
+        for i in range(self.n_inputs):
+            val = np.asarray(u[i])
+            if bool(np.any(val != self.initial_value)):
+                return (val,)
+        # n_inputs >= 1 は __init__ で保証済み
+        return (np.full(np.asarray(u[0]).shape, self.initial_value),)

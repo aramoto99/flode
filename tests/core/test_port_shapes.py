@@ -1,8 +1,8 @@
 """ADR-0017 (信号モデル SM-B、ベクトルポート) の動作検証。
 
 SM-A (全ポート shape = ``()``) で既存ブロックが不変動作することと、SM-B
-(任意 shape ndarray) でブロックを定義できること、shape mismatch が build 時に
-``BlockSpecError`` で検出されることを検証する。
+(任意 shape ndarray) でブロックを定義できること、宣言 shape の不一致が build 時に
+信号面解決器 (ADR-0079) の ``SignalShapeError`` で検出されることを検証する。
 
 Phase 3 #3 (本 ADR) では Block 拡張・shape check・``output_v`` wrapper まで実装。
 SM-B モードでの ``run()`` 実行は Phase 3 #4 (Mux/Demux + run path 統合) で完成。
@@ -16,9 +16,10 @@ import numpy as np
 import pytest
 
 from flode import Simulator
-from flode.blocks import Constant, Gain, Scope
+from flode.blocks import Constant, Gain, Integrator, Scope
 from flode.core.block import Block, _normalize_port_shapes
-from flode.exceptions import BlockSpecError
+from flode.core.signals import resolve_for_execution
+from flode.exceptions import BlockSpecError, SignalShapeError
 
 # ---------------------------------------------------------------------------
 # _normalize_port_shapes ヘルパー
@@ -133,13 +134,19 @@ class _VectorSrc(Block):
 
 
 class TestPortShapeMismatch:
+    """ADR-0079 D-11: 宣言 shape と上流 shape の不一致は信号面解決器が build 時
+    (``run()`` / ``resolve_for_execution``) に ``SignalShapeError`` (BlockSpecError の
+    サブクラス、code ``shape.mismatch``) で拒否する。"""
+
     def test_scalar_to_vector_mismatch_raises(self) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
         src = sim.add(_ScalarSrc())
         sink = sim.add(_VectorSink())
         sim.connect(src, sink)
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
-            sim._execution_order()
+        with pytest.raises(SignalShapeError, match="shape.mismatch") as ei:
+            sim.run()
+        assert ei.value.expected_shape == (3,)
+        assert ei.value.actual_shape == ()
 
     def test_error_message_suggests_mux_demux(self) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
@@ -147,16 +154,16 @@ class TestPortShapeMismatch:
         sink = sim.add(_VectorSink())
         sim.connect(src, sink)
         with pytest.raises(BlockSpecError, match="Mux/Demux"):
-            sim._execution_order()
+            sim.run()
 
     def test_vector_to_scalar_mismatch_raises(self) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
         vsrc = sim.add(_VectorSrc())
-        # Scope は scalar 入力を期待 (default port_shapes_in = ((),))
-        sc = sim.add(Scope(n_inputs=1))
-        sim.connect(vsrc, sc)
-        with pytest.raises(BlockSpecError, match="Port shape mismatch"):
-            sim._execution_order()
+        # Integrator は scalar 入力を宣言 (状態ブロックのベクトル化は Stage 2)
+        integ = sim.add(Integrator(x0=0.0))
+        sim.connect(vsrc, integ)
+        with pytest.raises(SignalShapeError, match="shape.mismatch"):
+            sim.run()
 
     def test_matching_vector_to_vector_passes(self) -> None:
         """SM-B 同 shape 接続では shape check が通る。"""
@@ -165,7 +172,7 @@ class TestPortShapeMismatch:
         vsink = sim.add(_VectorSink())
         sim.connect(vsrc, vsink)
         # 例外を出さずに完走することを確認
-        sim._execution_order()
+        resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------

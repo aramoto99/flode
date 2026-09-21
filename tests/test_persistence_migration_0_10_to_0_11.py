@@ -43,7 +43,7 @@ def test_migrate_does_not_mutate_input() -> None:
 def test_chain_from_0_10_reaches_current() -> None:
     data = {"schema_version": "0.10", "simulator": {}, "blocks": [], "connections": []}
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.13"
+    assert out["schema_version"] == "0.14"
     assert out["_migrated_from"] == "0.10"
 
 
@@ -83,7 +83,7 @@ def test_dtype_param_round_trips(tmp_path: Path) -> None:
     path = tmp_path / "m.flw.json"
     sim.save(path)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["schema_version"] == "0.13"
+    assert data["schema_version"] == "0.14"
     params_by_id = {b["id"]: b["params"] for b in data["blocks"]}
     assert params_by_id["c"]["dtype"] == "int32"
     assert params_by_id["k"]["dtype"] == "bool"
@@ -116,7 +116,7 @@ def test_0_10_round_trip_diff_is_schema_version_only(tmp_path: Path) -> None:
     text_current = path.read_text(encoding="utf-8")
     # 0.10 相当のファイルを作る (schema_version を書き戻すだけ)
     path.write_text(
-        text_current.replace('"schema_version": "0.13"', '"schema_version": "0.10"'),
+        text_current.replace('"schema_version": "0.14"', '"schema_version": "0.10"'),
         encoding="utf-8",
     )
     loaded = Simulator.load(path)

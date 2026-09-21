@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..core.block import Block
-from ..core.dtypes import DTYPE_PARAM_VALUES, cast_value
+from ..core.signals import DTYPE_PARAM_VALUES, cast_value
 from ..exceptions import BlockSpecError
 
 

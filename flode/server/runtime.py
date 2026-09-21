@@ -326,7 +326,11 @@ class SimulationManager:
                 continue
             assert scope.id is not None
             scopes[scope.id] = {
-                "labels": list(scope.labels),
+                # ADR-0079 §(4): ベクトル入力は列展開されるので列ごとのラベルを返す
+                # (全ポートスカラなら labels と同一)
+                # ``_as_scope`` は duck-typing (XYGraph 等 ``column_labels`` を持たない
+                # sink も通す) ため getattr でフォールバックする
+                "labels": list(getattr(scope, "column_labels", scope.labels)),
                 "times": list(scope.times),
                 "values": np.asarray(scope.values).tolist(),
             }

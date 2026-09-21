@@ -325,7 +325,7 @@ class Fcn(Block):
         # security SHOULD-2 (2026-09-08): static 型解決中はユーザー式の eval も禁止
         # (SPEC-0028 §3.8 の「ユーザーコード境界」防御。静的解決は output を呼ば
         # ない設計なので、ここに到達した時点で不変条件違反 = fail-closed)
-        from ..core.dtypes import in_static_dtype_resolution
+        from ..core.signals import in_static_dtype_resolution
 
         if in_static_dtype_resolution():
             raise BlockSpecError(

@@ -293,14 +293,21 @@ export interface ResolvedPortShapes {
   port_shapes_out: number[][];
 }
 
-// SPEC-0027 (SM-D Stage 0): ``POST /api/v1/models/resolve-dtypes`` のレスポンス
-// (schema "dtypes.v1")。dtype は表示専用の派生情報で、モデル JSON には保存しない。
+// SPEC-0027 (SM-D Stage 0) / ADR-0079 (SM-T Stage 1):
+// ``POST /api/v1/models/resolve-dtypes`` のレスポンス。schema は "dtypes.v1"
+// (dtype のみ) または "signals.v1" (各 port に shape が additive に付く) の両方を
+// 受容する。dtype / shape は表示専用の派生情報で、モデル JSON には保存しない。
 export interface DtypesPortEntry {
   block_id: string;
   direction: "in" | "out";
   port_index: number;
   /** 語彙 5 種 ("bool"/"uint8"/"int32"/"int64"/"float64") または "unknown"。 */
   dtype: string;
+  /**
+   * ADR-0079 §(9): 解決済み shape (numpy tuple を配列化、`[]` = rank-0 スカラ)。
+   * "dtypes.v1" の応答には無い (undefined)、static mode で未確定なら null。
+   */
+  shape?: number[] | null;
 }
 
 export interface DtypesDiagnostic {
@@ -313,6 +320,9 @@ export interface DtypesDiagnostic {
   port_index: number | null;
   from_dtype: string | null;
   to_dtype: string | null;
+  /** ADR-0079 §(8): `shape.*` 診断が埋める期待 / 実際の shape (他は無し)。 */
+  expected_shape?: number[] | null;
+  actual_shape?: number[] | null;
 }
 
 export interface DtypesSummary {
@@ -320,9 +330,14 @@ export interface DtypesSummary {
   by_dtype: Record<string, number>;
   unresolved: number;
   non_float_ports: number;
+  /** ADR-0079: 解決済み shape の最大 rank ("dtypes.v1" には無い)。 */
+  max_rank?: number;
+  /** ADR-0079: 非スカラ shape のポート数 ("dtypes.v1" には無い)。 */
+  vector_ports?: number;
 }
 
 export interface DtypesResponse {
+  /** "dtypes.v1" (SPEC-0027) または "signals.v1" (ADR-0079)。 */
   schema_version: string;
   ports: DtypesPortEntry[];
   diagnostics: DtypesDiagnostic[];

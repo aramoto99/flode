@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.0] - 2026-09-21 — 信号モデルをテンソル化し build 時に形状を伝播 (ADR-0079 Stage 1)
+
+### Added
+
+- **ベクトル / 行列信号を要素ごと演算ブロックがそのまま扱えるようになった** (SPEC-0031 /
+  ADR-0079 SM-T Stage 1)。`Gain` / `Sum` / `Add` / `Product` / `Divide` / `Saturation` /
+  `DeadZone` / `Abs` / `Sign` / `MinMax` / `MathFunction` / `TrigFunction` / `Rounding` /
+  `Cast` / `RelationalOperator` / `LogicalOperator` / `CompareToConstant` / `CompareToZero`
+  の 17 クラスが `Mux` の出力などの任意 shape 信号を受け取り、要素ごとに計算する
+  (共通 mixin `flode.blocks._elementwise.ElementwiseMixin` の `_kernel`)。
+  `Demux → 演算 × n → Mux` に展開した場合と bit 単位で同じ結果になる
+- **build 時の信号面解決器 `flode.core.signals`** (`flode.core.dtypes` の改名 + 統合)。
+  各ポートの `(shape, dtype)` を同じ不動点反復で確定し、`Simulator.resolve_signals()` /
+  `POST /api/v1/models/resolve-dtypes` (payload は `signals.v1`、各 port に `shape` が
+  additive) で参照できる。GUI の Inspector は各ポート行に解決済み shape を併記する
+- 合流規則は **完全一致 + rank-0 スカラ拡張のみ**。numpy なら通る `(3,)` + `(1, 3)`
+  等の組合せは `shape.broadcast_rejected` で build 時に拒否する
+- `Gain(k, multiplication=...)`: `k` にスカラ / 1-D / 2-D を受け、
+  `"matrix-Ku"` (`K @ u`) / `"matrix-uK"` (`u @ K`) の行列積モードを追加
+  (既定 `"elementwise"` は不変で、非既定のときだけ JSON に書き出す)
+- `Scope` / `Display` がベクトル入力を受理し、ポートごとに C order で列展開して記録する
+  (`column_labels` は `in0[0]` 等、`values` は `(n_samples, 総列数)`)。`Terminator` は
+  任意 shape を消費。`Merge` に `output_v` を追加 (ベクトルでは「いずれかの要素が
+  `initial_value` と異なる」入力を選ぶ)
+- 診断コード `shape.mismatch` / `shape.broadcast_rejected` / `shape.opaque_scalar_island` /
+  `shape.control_port_not_scalar` (error)、`shape.unresolved` (warning)、
+  `shape.defaulted_to_scalar` / `shape.large_vector` (info)。error 級は全件を集めてから
+  `SignalShapeError` (`BlockSpecError` のサブクラス、`diagnostics` / `expected_shape` /
+  `actual_shape` 属性) を 1 回だけ送出し、サーバは `shape_mismatch` カテゴリに分類する
+
+### Changed
+
+- 検査順序: shape の検査は `Simulator._check_port_shapes()` (削除) から解決器へ移り、
+  **代数ループ検出の後** に行われる (両方あるモデルでは代数ループが先に報告される)。
+  推論された shape はブロックの `port_shapes_in/out` (宣言) には書き戻さず、
+  `Goto` / `From` の build 時 shape 書き戻し API (`_set_port_shapes_*_for_build`) も撤去した
+- モデル schema `0.13 → 0.14` (version 更新のみの no-op migration)
+- 状態ブロック (`Integrator` / `TransferFunction` / `UnitDelay` …)、ソース、lookup、
+  `XYGraph`、ユーザーコード境界 (`Subsystem` / `Fcn` / `PythonFunction` / `@block`) は
+  このリリースではスカラ入力のみ。ベクトルを繋ぐと build 時に明示エラー (Stage 2 で対応予定)
+- `flode.core.dtypes` は `flode.core.signals` の互換 re-export になった
+  (`resolve_dtypes` / `DTypeResolution` 等の旧名はそのまま使える)。
+  `SignalResolution.ports` は従来どおり dtype、`shapes` が shape を持つ
+- 全ポートがスカラの既存モデルは解決器を通らず従来の `_step` 経路で走り、数値は不変
+
+### Fixed
+
+- SM-A 専用ブロック (`output` のみ実装) にベクトルが渡ったときの防御的 flatten
+  (ADR-0018 §2.3) を廃止し、黙って潰さず明示エラーにした
+
 ## [0.61.0] - 2026-09-14 — 離散ブロックのサンプル時刻セマンティクスを修正 (ADR-0078)
 
 ### Fixed (BREAKING: 離散ブロックを含むモデルの数値結果が変わります)

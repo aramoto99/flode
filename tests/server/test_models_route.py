@@ -61,7 +61,7 @@ class TestResolveDtypesEndpoint:
         resp = client.post(ENDPOINT, json={"model": _int_gain_model(tmp_path)})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["schema_version"] == "dtypes.v1"
+        assert body["schema_version"] == "signals.v1"
         ports = {
             (p["block_id"], p["direction"], p["port_index"]): p["dtype"] for p in body["ports"]
         }

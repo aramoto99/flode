@@ -25,8 +25,8 @@ from flode.core.persistence import (
 _UNIT_DELAY = "flode.blocks.discrete.UnitDelay"
 
 
-def test_current_schema_version_is_0_13() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.13"
+def test_current_schema_version_is_0_14() -> None:
+    assert CURRENT_SCHEMA_VERSION == "0.14"
 
 
 def _model_0_12(
@@ -172,7 +172,7 @@ class TestChainAndBehaviour:
     def test_chain_from_0_12_reaches_current(self) -> None:
         data = _model_0_12([])
         out = migrate_to_current(data)
-        assert out["schema_version"] == "0.13"
+        assert out["schema_version"] == "0.14"
         assert out["_migrated_from"] == "0.12"
 
     def test_migrated_v057_model_runs_identically(self, tmp_path: Path) -> None:
