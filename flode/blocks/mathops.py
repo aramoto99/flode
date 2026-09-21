@@ -855,3 +855,131 @@ class CompareToZero(ElementwiseMixin, Block):
     ) -> tuple[npt.NDArray[Any], ...]:
         mask = self._compare(np.asarray(u[0], dtype=float), 0.0)  # type: ignore[arg-type]
         return (np.asarray(np.where(mask, 1.0, 0.0), dtype=float),)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0079 Stage 3 (SPEC-0031 #19): 要素縮約と最小限の線形代数
+# ---------------------------------------------------------------------------
+
+#: ``Reduce.operation`` の語彙 → numpy の縮約関数。
+REDUCE_OPERATIONS: tuple[str, ...] = ("sum", "product", "min", "max", "mean")
+_REDUCE_FUNCS: dict[str, Callable[[npt.NDArray[Any]], Any]] = {
+    "sum": np.sum,
+    "product": np.prod,
+    "min": np.min,
+    "max": np.max,
+    "mean": np.mean,
+}
+
+
+class Reduce(Block):
+    """入力信号の全要素を 1 つのスカラに縮約する ``y = op(u)`` (SPEC-0031 F-5.3)。
+
+    ``Sum`` / ``Add`` は **ポート間** の和 (ベクトルでは要素ごと) であり、1 本の
+    ベクトルの要素総和には使えない (Q6)。本ブロックが要素方向の縮約を担う。
+    ``operation`` は ``"sum"`` (既定) / ``"product"`` / ``"min"`` / ``"max"`` /
+    ``"mean"``。任意 shape を受け、出力は常にスカラ ``()``。スカラ入力は恒等。
+
+    Args:
+        operation: 縮約の種類 (``REDUCE_OPERATIONS``)。
+
+    Raises:
+        BlockSpecError: ``operation`` が語彙外。
+    """
+
+    _param_enums = {"operation": REDUCE_OPERATIONS}
+    # SM-A (スカラ = 恒等) と SM-T (任意 shape → ()) の両 API を持つ内部例外
+    _skip_dual_api_check = True
+
+    def __init__(
+        self,
+        operation: str = "sum",
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        if operation not in REDUCE_OPERATIONS:
+            raise BlockSpecError(
+                f"Reduce: operation must be one of {REDUCE_OPERATIONS}, got {operation!r}"
+            )
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        self.operation = operation
+        self._reduce = _REDUCE_FUNCS[operation]
+        self._params = {"operation": operation}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        # スカラ入力の縮約はどの operation でも恒等
+        return np.array([float(u[0])])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (np.asarray(self._reduce(np.asarray(u[0], dtype=float)), dtype=float),)
+
+
+class DotProduct(Block):
+    """2 入力の全要素内積 ``y = Σ u0[i] * u1[i]`` (SPEC-0031 #19、線形代数)。
+
+    入力 2 本は合流規則 (完全一致 + スカラ拡張) を満たす同 shape で、出力はスカラ
+    ``()``。2 次形式 ``xᵀ P x`` は ``Gain(P, "matrix-Ku")`` → ``DotProduct`` で書ける。
+    スカラ同士は積。
+    """
+
+    _skip_dual_api_check = True
+
+    def __init__(self, *, id: str | None = None, name: str | None = None):
+        super().__init__(id=id, name=name, n_inputs=2, n_outputs=1)
+        self._params = {}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([float(u[0]) * float(u[1])])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        a, b = _broadcast_inputs(u)
+        return (np.asarray(np.dot(np.ravel(a), np.ravel(b)), dtype=float),)
+
+
+class MatrixMultiply(Block):
+    """行列積 ``y = u0 @ u1`` (SPEC-0031 #19、線形代数)。
+
+    shape は numpy ``matmul`` の規則 (rank 1 / 2、内側次元一致) で build 時に
+    解決器が検査する (``shape.mismatch``)。両入力がスカラなら積、片方だけスカラは
+    build エラー (信号の行列積に暗黙のスカラ拡張は持ち込まない)。信号同士の積が
+    要る場面 (時変ゲイン、``K(t) x``) 向け。定数行列との積は ``Gain`` の行列モード。
+    """
+
+    _skip_dual_api_check = True
+
+    def __init__(self, *, id: str | None = None, name: str | None = None):
+        super().__init__(id=id, name=name, n_inputs=2, n_outputs=1)
+        self._params = {}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([float(u[0]) * float(u[1])])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        a = np.asarray(u[0], dtype=float)
+        b = np.asarray(u[1], dtype=float)
+        if a.ndim == 0 and b.ndim == 0:
+            return (np.asarray(a * b, dtype=float),)
+        if a.ndim == 0 or b.ndim == 0:
+            # 解決器が build 時に拒否するので通常は到達しない (fail-closed)
+            raise BlockSpecError(
+                f"MatrixMultiply {self.id!r}: both inputs must be vectors / matrices "
+                f"(got shapes {a.shape} and {b.shape}); use Gain for a scalar factor.",
+                block_id=self.id,
+            )
+        return (np.asarray(np.matmul(a, b), dtype=float),)

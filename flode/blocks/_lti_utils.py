@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,97 @@ from ..exceptions import BlockSpecError
 
 # ADR-0006 §(6): D 行列の最大絶対値がこの閾値を超えたら direct_feedthrough = True
 _DF_TOLERANCE = 1e-12
+
+Shape = tuple[int, ...]
+
+
+def lti_port_layout(n_signals: int) -> tuple[int, tuple[Shape, ...]]:
+    """信号数 ``n_signals`` を ADR-0079 D-9 のポート規則に写す。
+
+    ``StateSpace`` 系は入力 m 本 / 出力 p 本の信号を **ベクトルポート 1 本** で運ぶ:
+    ``n >= 2`` なら shape ``(n,)`` の 1 ポート、``n == 1`` なら ``()`` の 1 ポート
+    (SISO / SIMO は 0.14 以前と同じ配線)、``n == 0`` ならポートなし。
+
+    Returns:
+        ``(n_ports, port_shapes)``。
+    """
+    if n_signals <= 0:
+        return 0, ()
+    if n_signals == 1:
+        return 1, ((),)
+    return 1, ((n_signals,),)
+
+
+class LtiVectorPortMixin:
+    """``StateSpace`` 系の vector-port API (ADR-0079 §(7) D-9)。
+
+    SM-A の ``output`` / ``derivative`` / ``update`` / ``advance`` は 0.14 以前と同じ
+    「長さ m の 1-D ``u``」を受け取る契約のまま (1 バイトも変えない)。本 mixin の
+    ``*_v`` は 1 本のベクトルポート (``(m,)``、m == 1 なら rank-0) を flat にして
+    SM-A 版へ渡し、出力 ``(p,)`` を p == 1 なら rank-0 に整形する。m 本のスカラ
+    ポートから組み立てていた配列と同じ値が渡るため、結果は bit-identical。
+
+    MRO 上は ``Block`` の **前** に置く。leaf は SM-A メソッドだけを定義するので
+    dual-override 検査に掛からない。``port_shapes_*`` は行列次元から一意に決まるため
+    JSON には書かない。
+    """
+
+    _serialize_port_shapes = False
+
+    # Block が持つ属性 / SM-A メソッド (型ヒントのみ、mypy 用)
+    n_outputs: int
+    output: Callable[..., npt.NDArray[Any]]
+    derivative: Callable[..., npt.NDArray[Any]]
+    update: Callable[..., npt.NDArray[Any]]
+    advance: Callable[..., npt.NDArray[Any]]
+
+    @staticmethod
+    def _u_flat(u: tuple[npt.NDArray[Any], ...]) -> npt.NDArray[Any]:
+        """ベクトルポート 1 本 (または無し) を SM-A の 1-D ``u`` に戻す。"""
+        if not u:
+            return np.zeros(0, dtype=float)
+        return np.asarray(u[0], dtype=float).reshape(-1)
+
+    def _y_port(self, y: npt.NDArray[Any]) -> tuple[npt.NDArray[Any], ...]:
+        """SM-A の 1-D 出力 ``(p,)`` をベクトルポート 1 本 (p == 1 なら rank-0) にする。"""
+        if self.n_outputs == 0:
+            return ()
+        arr = np.asarray(y, dtype=float).reshape(-1)
+        if arr.shape[0] == 1:
+            return (arr.reshape(()),)
+        return (arr,)
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return self._y_port(self.output(t, x, self._u_flat(u)))
+
+    def derivative_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        return np.asarray(self.derivative(t, x, self._u_flat(u)), dtype=float).ravel()
+
+    def update_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        return np.asarray(self.update(t, x, self._u_flat(u)), dtype=float).ravel()
+
+    def advance_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        return np.asarray(self.advance(t, x, self._u_flat(u)), dtype=float).ravel()
 
 
 def build_companion_form_siso(

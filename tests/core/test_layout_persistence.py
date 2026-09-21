@@ -51,7 +51,7 @@ class TestSchemaVersion:
     def test_current_is_0_11(self) -> None:
         # SM-D Stage 1 (SPEC-0028): dtype param 追加に伴う 0.10 → 0.11 bump
         # (no-op migration。旧ファイルは dtype なし = "auto" = 従来挙動)
-        assert CURRENT_SCHEMA_VERSION == "0.14"
+        assert CURRENT_SCHEMA_VERSION == "0.15"
 
     def test_supported_includes_current(self) -> None:
         assert CURRENT_SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS

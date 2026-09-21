@@ -13,24 +13,32 @@ from ..exceptions import BlockSpecError
 class Constant(Block):
     """定数値ソース ``y(t) = value``。
 
+    ADR-0079 Stage 3 (SPEC-0031 #18): ``value`` に配列を渡すとその shape の
+    ベクトル / 行列信号を出力する (shape の起点)。スカラ ``value`` は従来どおり。
+
     Args:
-        value: 出力する定数値。生値のまま保持され、``dtype`` の変換は出力時に
-            適用される (型を戻すと元の値が復活する)。float64 で保持するため、
-            2^53 を超える整数を正確に表現したい場合は上流での表現に注意
-            (SPEC-0028)。
+        value: 出力する定数値 (スカラまたは配列)。生値のまま保持され、``dtype`` の
+            変換は出力時に適用される (型を戻すと元の値が復活する)。float64 で
+            保持するため、2^53 を超える整数を正確に表現したい場合は上流での表現に
+            注意 (SPEC-0028)。
         dtype: 実 dtype (SPEC-0028)。``"auto"`` (既定、宣言しない = ただの
             float64 定数) 以外を選ぶと出力が実際にその numpy dtype になる。
             float → 整数はゼロ方向切り捨て。
 
     Raises:
-        BlockSpecError: ``dtype`` が許可値の外。
+        BlockSpecError: ``dtype`` が許可値の外、``value`` が数値に変換できない。
     """
 
     _param_enums = {"dtype": DTYPE_PARAM_VALUES}
+    # 出力 shape は value から一意に決まるので JSON には書かない。SM-A ``output``
+    # (スカラ) と SM-T ``output_v`` (任意 shape) を両方持つ (値で経路が変わるブロックの
+    # 正当な例外、``Block.__init__`` のコメント参照)
+    _serialize_port_shapes = False
+    _skip_dual_api_check = True
 
     def __init__(
         self,
-        value: float = 1.0,
+        value: float | npt.ArrayLike = 1.0,
         dtype: str = "auto",
         *,
         id: str | None = None,
@@ -40,10 +48,20 @@ class Constant(Block):
             raise BlockSpecError(
                 f"Constant: dtype must be one of {DTYPE_PARAM_VALUES}, got {dtype!r}"
             )
-        super().__init__(id=id, name=name, n_inputs=0, n_outputs=1)
-        self.value = float(value)
+        try:
+            arr = np.asarray(value, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise BlockSpecError(f"Constant: value must be numeric, got {value!r}: {exc}") from exc
+        super().__init__(
+            id=id, name=name, n_inputs=0, n_outputs=1, port_shapes_out=(tuple(arr.shape),)
+        )
+        self.value: float | npt.NDArray[np.float64]
+        if arr.ndim == 0:
+            self.value = float(arr)
+        else:
+            self.value = arr
         self.dtype = dtype
-        self._params = {"value": self.value}
+        self._params = {"value": self.value if arr.ndim == 0 else arr.tolist()}
         # Q1: "auto" は保存 JSON に出さない
         if dtype != "auto":
             self._params["dtype"] = dtype
@@ -52,6 +70,17 @@ class Constant(Block):
         if self.dtype != "auto":
             return cast_value(np.asarray([self.value]), self.dtype)
         return np.array([self.value])
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        arr = np.asarray(self.value, dtype=float)
+        if self.dtype != "auto":
+            return (cast_value(arr, self.dtype),)
+        return (arr,)
 
 
 class Step(Block):

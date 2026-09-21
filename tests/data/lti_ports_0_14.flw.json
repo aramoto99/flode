@@ -1,0 +1,511 @@
+{
+  "schema_version": "0.14",
+  "metadata": {
+    "created_at": "2026-09-21T00:00:00Z",
+    "tool": "flode 0.63.0"
+  },
+  "simulator": {
+    "t_end": 1.0,
+    "dt": 0.015625,
+    "solver": "RK45",
+    "rtol": 1e-06,
+    "atol": 1e-09,
+    "dt_base": null
+  },
+  "blocks": [
+    {
+      "id": "step",
+      "type": "flode.blocks.sources.Step",
+      "params": {
+        "step_time": 0.25,
+        "initial_value": 0.0,
+        "final_value": 1.0
+      }
+    },
+    {
+      "id": "sine",
+      "type": "flode.blocks.sources.Sine",
+      "params": {
+        "amplitude": 0.5,
+        "frequency": 1.0,
+        "phase": 0.0
+      }
+    },
+    {
+      "id": "ss",
+      "type": "flode.blocks.continuous.StateSpace",
+      "params": {
+        "A": [
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -2.0,
+            -0.5
+          ]
+        ],
+        "B": [
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "C": [
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "D": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "x0": [
+          1.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "dss",
+      "type": "flode.blocks.discrete.DiscreteStateSpace",
+      "params": {
+        "A": [
+          [
+            0.9,
+            0.1
+          ],
+          [
+            0.0,
+            0.8
+          ]
+        ],
+        "B": [
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "C": [
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ]
+        ],
+        "D": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "x0": [
+          0.0,
+          0.0
+        ],
+        "sample_time": 0.0625
+      }
+    },
+    {
+      "id": "mimo",
+      "type": "flode.blocks.continuous.MimoTransferFunction",
+      "params": {
+        "numerators": [
+          [
+            [
+              1.0
+            ],
+            [
+              0.0
+            ]
+          ],
+          [
+            [
+              0.0
+            ],
+            [
+              2.0
+            ]
+          ]
+        ],
+        "denominator": [
+          1.0,
+          1.0
+        ],
+        "x0": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "siso",
+      "type": "flode.blocks.continuous.StateSpace",
+      "params": {
+        "A": [
+          [
+            -1.0
+          ]
+        ],
+        "B": [
+          [
+            1.0
+          ]
+        ],
+        "C": [
+          [
+            1.0
+          ]
+        ],
+        "D": [
+          [
+            0.0
+          ]
+        ],
+        "x0": [
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "sub",
+      "type": "flode.subsystems.subsystem.Subsystem",
+      "params": {
+        "blocks": [
+          {
+            "id": "in0",
+            "type": "flode.subsystems.ports.Inport",
+            "params": {
+              "port_idx": 0
+            }
+          },
+          {
+            "id": "in1",
+            "type": "flode.subsystems.ports.Inport",
+            "params": {
+              "port_idx": 1
+            }
+          },
+          {
+            "id": "ss_in",
+            "type": "flode.blocks.continuous.StateSpace",
+            "params": {
+              "A": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  -3.0,
+                  -0.4
+                ]
+              ],
+              "B": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ]
+              ],
+              "C": [
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "D": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0
+                ]
+              ],
+              "x0": [
+                0.5,
+                0.0
+              ]
+            }
+          },
+          {
+            "id": "out0",
+            "type": "flode.subsystems.ports.Outport",
+            "params": {
+              "port_idx": 0
+            }
+          },
+          {
+            "id": "out1",
+            "type": "flode.subsystems.ports.Outport",
+            "params": {
+              "port_idx": 1
+            }
+          }
+        ],
+        "connections": [
+          {
+            "src": "in0",
+            "src_idx": 0,
+            "dst": "ss_in",
+            "dst_idx": 0
+          },
+          {
+            "src": "in1",
+            "src_idx": 0,
+            "dst": "ss_in",
+            "dst_idx": 1
+          },
+          {
+            "src": "ss_in",
+            "src_idx": 0,
+            "dst": "out0",
+            "dst_idx": 0
+          },
+          {
+            "src": "ss_in",
+            "src_idx": 1,
+            "dst": "out1",
+            "dst_idx": 0
+          }
+        ],
+        "layout": {
+          "in0": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "in1": {
+            "x": 0.0,
+            "y": 80.0
+          },
+          "ss_in": {
+            "x": 200.0,
+            "y": 40.0
+          },
+          "out0": {
+            "x": 400.0,
+            "y": 0.0
+          },
+          "out1": {
+            "x": 400.0,
+            "y": 80.0
+          }
+        }
+      }
+    },
+    {
+      "id": "scope",
+      "type": "flode.blocks.sinks.Scope",
+      "params": {
+        "n_inputs": 9,
+        "labels": [
+          "ss0",
+          "ss1",
+          "dss0",
+          "dss1",
+          "mimo0",
+          "mimo1",
+          "siso",
+          "sub0",
+          "sub1"
+        ],
+        "buffer_mode": "ring",
+        "buffer_capacity": 100000
+      }
+    }
+  ],
+  "connections": [
+    {
+      "src": "step",
+      "src_idx": 0,
+      "dst": "ss",
+      "dst_idx": 0
+    },
+    {
+      "src": "sine",
+      "src_idx": 0,
+      "dst": "ss",
+      "dst_idx": 1
+    },
+    {
+      "src": "step",
+      "src_idx": 0,
+      "dst": "dss",
+      "dst_idx": 0
+    },
+    {
+      "src": "sine",
+      "src_idx": 0,
+      "dst": "dss",
+      "dst_idx": 1
+    },
+    {
+      "src": "step",
+      "src_idx": 0,
+      "dst": "mimo",
+      "dst_idx": 0
+    },
+    {
+      "src": "sine",
+      "src_idx": 0,
+      "dst": "mimo",
+      "dst_idx": 1
+    },
+    {
+      "src": "step",
+      "src_idx": 0,
+      "dst": "siso",
+      "dst_idx": 0
+    },
+    {
+      "src": "step",
+      "src_idx": 0,
+      "dst": "sub",
+      "dst_idx": 0
+    },
+    {
+      "src": "sine",
+      "src_idx": 0,
+      "dst": "sub",
+      "dst_idx": 1
+    },
+    {
+      "src": "ss",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 0
+    },
+    {
+      "src": "ss",
+      "src_idx": 1,
+      "dst": "scope",
+      "dst_idx": 1
+    },
+    {
+      "src": "dss",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 2
+    },
+    {
+      "src": "dss",
+      "src_idx": 1,
+      "dst": "scope",
+      "dst_idx": 3
+    },
+    {
+      "src": "mimo",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 4
+    },
+    {
+      "src": "mimo",
+      "src_idx": 1,
+      "dst": "scope",
+      "dst_idx": 5
+    },
+    {
+      "src": "siso",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 6
+    },
+    {
+      "src": "sub",
+      "src_idx": 0,
+      "dst": "scope",
+      "dst_idx": 7
+    },
+    {
+      "src": "sub",
+      "src_idx": 1,
+      "dst": "scope",
+      "dst_idx": 8
+    }
+  ],
+  "layout": {
+    "step": {
+      "x": 0.0,
+      "y": 0.0
+    },
+    "sine": {
+      "x": 0.0,
+      "y": 120.0
+    },
+    "ss": {
+      "x": 300.0,
+      "y": 0.0
+    },
+    "dss": {
+      "x": 300.0,
+      "y": 120.0
+    },
+    "mimo": {
+      "x": 300.0,
+      "y": 240.0
+    },
+    "siso": {
+      "x": 300.0,
+      "y": 360.0
+    },
+    "sub": {
+      "x": 300.0,
+      "y": 480.0
+    },
+    "scope": {
+      "x": 700.0,
+      "y": 200.0
+    }
+  },
+  "branch_waypoints": {
+    "ss:1": [
+      {
+        "x": 500.0,
+        "y": 60.0
+      }
+    ],
+    "mimo:0": [
+      {
+        "x": 500.0,
+        "y": 250.0
+      }
+    ]
+  }
+}

@@ -23,8 +23,10 @@ import scipy.signal
 from flode import Simulator
 from flode.blocks import (
     Constant,
+    Demux,
     Integrator,
     MimoTransferFunction,
+    Mux,
     Scope,
     Step,
     TransferFunction,
@@ -168,8 +170,10 @@ class TestBiproperMimoCases:
             )
         )
         sc = sim.add(Scope(n_inputs=1))
-        sim.connect(u1, mimo, dst_idx=0)
-        sim.connect(u2, mimo, dst_idx=1)
+        mux = sim.add(Mux(n=2))
+        sim.connect(u1, mux, dst_idx=0)
+        sim.connect(u2, mux, dst_idx=1)
+        sim.connect(mux, mimo)
         sim.connect(mimo, sc)
         sim.run()
 
@@ -277,9 +281,11 @@ class TestSimoMiso:
             ],
             denominator=[1.0, 6.0, 11.0, 6.0],  # (s+1)(s+2)(s+3)
         )
-        # p=3, q=1, n=3 → n_states = 3*1*3 = 9
+        # p=3, q=1, n=3 → n_states = 3*1*3 = 9。ADR-0079 D-9: 出力は (3,) の 1 ポート
         assert mimo.n_inputs == 1
-        assert mimo.n_outputs == 3
+        assert mimo.n_outputs == 1
+        assert mimo.port_shapes_in == ((),)
+        assert mimo.port_shapes_out == ((3,),)
         assert mimo.n_states == 9
         assert mimo._A.shape == (9, 9)
         assert mimo._B.shape == (9, 1)
@@ -303,8 +309,10 @@ class TestSimoMiso:
         sc0 = sim.add(Scope(n_inputs=1, id="sc0"))
         sc1 = sim.add(Scope(n_inputs=1, id="sc1"))
         sim.connect(src, mimo, dst_idx=0)
-        sim.connect(mimo, sc0, src_idx=0)
-        sim.connect(mimo, sc1, src_idx=1)
+        demux = sim.add(Demux(n=2))
+        sim.connect(mimo, demux)
+        sim.connect(demux, sc0, src_idx=0)
+        sim.connect(demux, sc1, src_idx=1)
         sim.run()
 
         arr0 = _flat(sc0)
@@ -324,9 +332,11 @@ class TestSimoMiso:
             numerators=[[[1.0], [1.0], [1.0]]],
             denominator=[1.0, 1.0],
         )
-        # p=1, q=3, n=1 → n_states = 1*3*1 = 3
-        assert mimo.n_inputs == 3
+        # p=1, q=3, n=1 → n_states = 1*3*1 = 3。ADR-0079 D-9: 入力は (3,) の 1 ポート
+        assert mimo.n_inputs == 1
+        assert mimo.port_shapes_in == ((3,),)
         assert mimo.n_outputs == 1
+        assert mimo.port_shapes_out == ((),)
         assert mimo.n_states == 3
         assert mimo._A.shape == (3, 3)
         assert mimo._B.shape == (3, 3)
@@ -349,9 +359,11 @@ class TestSimoMiso:
             )
         )
         sc = sim.add(Scope(n_inputs=1))
-        sim.connect(u0, mimo, dst_idx=0)
-        sim.connect(u1, mimo, dst_idx=1)
-        sim.connect(u2, mimo, dst_idx=2)
+        mux = sim.add(Mux(n=3))
+        sim.connect(u0, mux, dst_idx=0)
+        sim.connect(u1, mux, dst_idx=1)
+        sim.connect(u2, mux, dst_idx=2)
+        sim.connect(mux, mimo)
         sim.connect(mimo, sc)
         sim.run()
 
@@ -485,8 +497,10 @@ class TestJsonRoundTripRun:
             )
         )
         sc1 = sim1.add(Scope(n_inputs=1, id="sc"))
-        sim1.connect("src", "mimo", dst_idx=0)
-        sim1.connect("src", "mimo", dst_idx=1)
+        sim1.add(Mux(n=2, id="mux"))
+        sim1.connect("src", "mux", dst_idx=0)
+        sim1.connect("src", "mux", dst_idx=1)
+        sim1.connect("mux", "mimo")
         sim1.connect("mimo", "sc", src_idx=0)
         sim1.run()
         arr1 = _flat(sc1)
@@ -538,7 +552,8 @@ class TestJsonRoundTripRun:
         sim2 = Simulator.load(path)
         simo2 = sim2.get_block("simo")
         assert simo2.n_inputs == 1
-        assert simo2.n_outputs == 3
+        assert simo2.n_outputs == 1
+        assert simo2.port_shapes_out == ((3,),)
         assert simo2.n_states == 3  # 3*1*1
 
 
@@ -564,10 +579,14 @@ class TestSparseMimo:
         )
         sc0 = sim.add(Scope(n_inputs=1, id="sc0"))
         sc1 = sim.add(Scope(n_inputs=1, id="sc1"))
-        sim.connect(u1, mimo, dst_idx=0)
-        sim.connect(u2, mimo, dst_idx=1)
-        sim.connect(mimo, sc0, src_idx=0)
-        sim.connect(mimo, sc1, src_idx=1)
+        mux = sim.add(Mux(n=2))
+        sim.connect(u1, mux, dst_idx=0)
+        sim.connect(u2, mux, dst_idx=1)
+        sim.connect(mux, mimo)
+        demux = sim.add(Demux(n=2))
+        sim.connect(mimo, demux)
+        sim.connect(demux, sc0, src_idx=0)
+        sim.connect(demux, sc1, src_idx=1)
         sim.run()
 
         arr0 = _flat(sc0)
@@ -611,9 +630,11 @@ class TestSparseMimo:
         sc1 = sim.add(Scope(n_inputs=1, id="sc1"))
         sc2 = sim.add(Scope(n_inputs=1, id="sc2"))
         sim.connect(src, mimo, dst_idx=0)
-        sim.connect(mimo, sc0, src_idx=0)
-        sim.connect(mimo, sc1, src_idx=1)
-        sim.connect(mimo, sc2, src_idx=2)
+        demux = sim.add(Demux(n=3))
+        sim.connect(mimo, demux)
+        sim.connect(demux, sc0, src_idx=0)
+        sim.connect(demux, sc1, src_idx=1)
+        sim.connect(demux, sc2, src_idx=2)
         sim.run()
 
         arr0 = _flat(sc0)

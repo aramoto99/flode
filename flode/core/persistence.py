@@ -19,18 +19,20 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from ..exceptions import (
+    BlockSpecError,
     ModelLoadError,
     ModelSerializationError,
     SchemaVersionError,
     UnknownBlockTypeError,
 )
-from .identifiers import normalize_block_id
+from .identifiers import _MAX_LEN as _BLOCK_ID_MAX_LEN
+from .identifiers import normalize_block_id, validate_block_id
 
 if TYPE_CHECKING:
     from .block import Block
 
 
-CURRENT_SCHEMA_VERSION = "0.14"
+CURRENT_SCHEMA_VERSION = "0.15"
 # 「migration を通さずそのまま受け入れるバージョン」の一覧。CURRENT のみを置く。
 # 旧バージョン (e.g. "0.1") は ``_MIGRATIONS`` 経由で常に CURRENT に変換される。
 # 将来 "0.3" を CURRENT にするとき、"0.2" を SUPPORTED に残せば追加の migration
@@ -839,6 +841,189 @@ def _builtin_migrate_0_13_to_0_14(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# -- 0.14 → 0.15 (StateSpace 系のベクトルポート統一、v0.64.0 / ADR-0079 §(7)) ----
+
+_MIGRATE_0_15_LOGGER = "flode.persistence.migrate_0_14_to_0_15"
+_MUX_TYPE = "flode.blocks.routing.Mux"
+_DEMUX_TYPE = "flode.blocks.routing.Demux"
+#: 挿入する Mux / Demux を元ブロックから水平にずらす距離 [px]
+#: (rect-wide の幅 96 + 余白。ADR-0079 §(7): 既存ブロックの座標は動かさない)
+LTI_MIGRATION_PORT_BLOCK_OFFSET: float = 120.0
+_LTI_IN_MUX_SUFFIX = "__in_mux"
+_LTI_OUT_DEMUX_SUFFIX = "__out_demux"
+_LTI_FALLBACK_BASE = "lti"
+
+
+def _lti_signal_counts(block_type: Any, params: dict[str, Any]) -> tuple[int, int] | None:
+    """0.14 の StateSpace 系 entry から ``(m, p)`` (入力数 / 出力数) を読む。
+
+    対象外の type、または行列が読めない壊れた entry は ``None`` (触らない)。
+    """
+    if block_type in (
+        "flode.blocks.continuous.StateSpace",
+        "flode.blocks.discrete.DiscreteStateSpace",
+    ):
+        b = params.get("B")
+        c = params.get("C")
+        if not (isinstance(b, list) and b and isinstance(b[0], list)):
+            return None
+        if not isinstance(c, list):
+            return None
+        return len(b[0]), len(c)
+    if block_type == "flode.blocks.continuous.MimoTransferFunction":
+        nums = params.get("numerators")
+        if not (isinstance(nums, list) and nums and isinstance(nums[0], list)):
+            return None
+        return len(nums[0]), len(nums)
+    return None
+
+
+def _migration_block_id(base: Any, suffix: str, existing: set[str]) -> str:
+    """決定的な挿入ブロック ID を作る (ADR-0079 §(7)、SPEC-0031 F-9.3)。
+
+    ``f"{base}{suffix}"`` を NFC 正規化し、64 code points を超えるときは base を
+    切り詰める。それでも有効な ID にならない (壊れた base) ときは ``lti`` を base に
+    する。同一スコープの既存 ID と衝突したときだけ ``_1``, ``_2`` … を後置する。
+    同じ入力からは常に同じ ID が出る。
+    """
+    base_str = normalize_block_id(base) if isinstance(base, str) else _LTI_FALLBACK_BASE
+    # 連番サフィックス ``_1``〜``_999`` 分の余裕。同一 base で 1000 件以上衝突する
+    # (実運用では起きない) 入力は 64 code point を超え、load 時の validate_block_id が
+    # BlockSpecError で fail-closed に止める (サイレント破損にはならない)
+    keep = max(1, _BLOCK_ID_MAX_LEN - len(suffix) - 4)
+    candidate = f"{base_str[:keep]}{suffix}"
+    try:
+        validate_block_id(candidate)
+    except BlockSpecError:
+        candidate = f"{_LTI_FALLBACK_BASE}{suffix}"
+    unique = candidate
+    counter = 0
+    while unique in existing:
+        counter += 1
+        unique = f"{candidate}_{counter}"
+    existing.add(unique)
+    return unique
+
+
+def _vectorize_lti_ports_recursive(
+    blocks: list[Any] | None,
+    connections: Any,
+    layout: Any,
+    waypoints: Any,
+    *,
+    parent_path: str = "<root>",
+) -> None:
+    """StateSpace 系の m 本 / p 本スカラポートを ``Mux`` / ``Demux`` で 1 本に付け替える (in-place)。
+
+    m ≥ 2 のブロックの手前に ``Mux(n=m)``、p ≥ 2 の後ろに ``Demux(n=p)`` を挿入し、
+    既存の結線 (``dst_idx`` / ``src_idx``) をそのまま Mux の入力 / Demux の出力へ移す。
+    ``Mux → SS`` / ``SS → Demux`` はどちらも ``(m,)`` / ``(p,)`` の 1 本なので数値等価。
+    未接続だったポートは Mux の未接続入力 (= 0.0) として同じ意味を保つ。
+
+    レイアウトは元ブロックの座標から水平に ``LTI_MIGRATION_PORT_BLOCK_OFFSET`` ずらした
+    位置 (座標を持たないモデルでは与えない)。``branch_waypoints`` の ``"<ss>:<j>"`` は
+    ``"<demux>:<j>"`` に付け替える。Subsystem の ``params`` にも再帰する。
+    """
+    logger = logging.getLogger(_MIGRATE_0_15_LOGGER)
+    if not isinstance(blocks, list):
+        return
+    existing: set[str] = {
+        b["id"] for b in blocks if isinstance(b, dict) and isinstance(b.get("id"), str)
+    }
+    conn_list = connections if isinstance(connections, list) else None
+    layout_dict = layout if isinstance(layout, dict) else None
+    wp_dict = waypoints if isinstance(waypoints, dict) else None
+
+    new_blocks: list[Any] = []
+    for entry in blocks:
+        params = entry.get("params") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict) or not isinstance(params, dict):
+            new_blocks.append(entry)
+            continue
+        inner = params.get("blocks")
+        if isinstance(inner, list):
+            _vectorize_lti_ports_recursive(
+                inner,
+                params.get("connections"),
+                params.get("layout"),
+                params.get("branch_waypoints"),
+                parent_path=f"{parent_path}/{entry.get('id', '<no-id>')}",
+            )
+        counts = _lti_signal_counts(entry.get("type"), params)
+        block_id = entry.get("id")
+        if counts is None or not isinstance(block_id, str):
+            new_blocks.append(entry)
+            continue
+        m, p = counts
+        pos = layout_dict.get(block_id) if layout_dict is not None else None
+        pos = pos if isinstance(pos, dict) else None
+
+        mux_id: str | None = None
+        if m >= 2:
+            mux_id = _migration_block_id(block_id, _LTI_IN_MUX_SUFFIX, existing)
+            new_blocks.append({"id": mux_id, "type": _MUX_TYPE, "params": {"n": m}})
+            if conn_list is not None:
+                for c in conn_list:
+                    if isinstance(c, dict) and c.get("dst") == block_id:
+                        c["dst"] = mux_id
+                conn_list.append({"src": mux_id, "src_idx": 0, "dst": block_id, "dst_idx": 0})
+            if pos is not None and layout_dict is not None:
+                layout_dict[mux_id] = {
+                    **{k: v for k, v in pos.items() if k in ("x", "y")},
+                    "x": float(pos.get("x", 0.0)) - LTI_MIGRATION_PORT_BLOCK_OFFSET,
+                }
+        new_blocks.append(entry)
+        demux_id: str | None = None
+        if p >= 2:
+            demux_id = _migration_block_id(block_id, _LTI_OUT_DEMUX_SUFFIX, existing)
+            new_blocks.append({"id": demux_id, "type": _DEMUX_TYPE, "params": {"n": p}})
+            if conn_list is not None:
+                for c in conn_list:
+                    if isinstance(c, dict) and c.get("src") == block_id:
+                        c["src"] = demux_id
+                conn_list.append({"src": block_id, "src_idx": 0, "dst": demux_id, "dst_idx": 0})
+            if pos is not None and layout_dict is not None:
+                layout_dict[demux_id] = {
+                    **{k: v for k, v in pos.items() if k in ("x", "y")},
+                    "x": float(pos.get("x", 0.0)) + LTI_MIGRATION_PORT_BLOCK_OFFSET,
+                }
+            if wp_dict is not None:
+                prefix = f"{block_id}:"
+                for key in [k for k in wp_dict if isinstance(k, str) and k.startswith(prefix)]:
+                    wp_dict[f"{demux_id}:{key[len(prefix) :]}"] = wp_dict.pop(key)
+        if mux_id is not None or demux_id is not None:
+            logger.debug(
+                "%r: block %r (m=%d, p=%d) rewired through mux=%r demux=%r (ADR-0079 D-9)",
+                parent_path,
+                block_id,
+                m,
+                p,
+                mux_id,
+                demux_id,
+            )
+    blocks[:] = new_blocks
+
+
+def _builtin_migrate_0_14_to_0_15(data: dict[str, Any]) -> dict[str, Any]:
+    """StateSpace 系のベクトルポート統一 (v0.64.0 / ADR-0079 Stage 3 D-9): 0.14 → 0.15。
+
+    ``StateSpace`` / ``DiscreteStateSpace`` / ``MimoTransferFunction`` の入出力が
+    m 本 / p 本のスカラポートから **ベクトルポート 1 本** (m, p ≥ 2 のとき
+    ``(m,)`` / ``(p,)``、== 1 のとき ``()``) に変わった。m ≥ 2 / p ≥ 2 のブロックだけ
+    ``Mux`` / ``Demux`` を挿入して既存の結線を付け替える (数値等価、
+    :func:`_vectorize_lti_ports_recursive`)。SISO / SIMO (m == p == 1) は無変更。
+    """
+    out = dict(data)
+    _vectorize_lti_ports_recursive(
+        out.get("blocks"),
+        out.get("connections"),
+        out.get("layout"),
+        out.get("branch_waypoints"),
+    )
+    out["schema_version"] = "0.15"
+    return out
+
+
 # -- 0.11 → 0.12 (output_type 撤去、v0.56.0) ---------------------------------
 
 _CONSTANT_TYPE = "flode.blocks.sources.Constant"
@@ -1173,6 +1358,7 @@ def _register_builtin_migrations() -> None:
     _MIGRATIONS[("0.11", "0.12")] = _builtin_migrate_0_11_to_0_12
     _MIGRATIONS[("0.12", "0.13")] = _builtin_migrate_0_12_to_0_13
     _MIGRATIONS[("0.13", "0.14")] = _builtin_migrate_0_13_to_0_14
+    _MIGRATIONS[("0.14", "0.15")] = _builtin_migrate_0_14_to_0_15
 
 
 _register_builtin_migrations()

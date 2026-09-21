@@ -187,20 +187,20 @@ def test_migrate_to_current_sets_migrated_from() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.14"
+    assert out["schema_version"] == "0.15"
     assert out["_migrated_from"] == "0.8"
 
 
 def test_migrate_to_current_no_meta_when_already_current() -> None:
     """現バージョンでロードした場合は ``_migrated_from`` メタを付けない。"""
     data = {
-        "schema_version": "0.14",
+        "schema_version": "0.15",
         "simulator": {},
         "blocks": [],
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.14"
+    assert out["schema_version"] == "0.15"
     assert "_migrated_from" not in out
 
 
@@ -214,5 +214,5 @@ def test_migrate_to_current_records_oldest_version() -> None:
         "connections": [],
     }
     out = migrate_to_current(data)
-    assert out["schema_version"] == "0.14"
+    assert out["schema_version"] == "0.15"
     assert out["_migrated_from"] == "0.7"

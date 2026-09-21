@@ -52,7 +52,7 @@ def test_subsystem_connect_out_of_range_raises_domain_error() -> None:
 
 def test_from_dict_still_wraps_into_model_load_error() -> None:
     data = {
-        "schema_version": "0.14",
+        "schema_version": "0.15",
         "simulator": {
             "t_end": 0.1,
             "dt": 0.01,

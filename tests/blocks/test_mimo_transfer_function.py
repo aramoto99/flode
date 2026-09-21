@@ -12,7 +12,9 @@ import pytest
 from flode import Simulator
 from flode.blocks import (
     Constant,
+    Demux,
     MimoTransferFunction,
+    Mux,
     Scope,
     Step,
     TransferFunction,
@@ -163,8 +165,11 @@ class TestMimoCases:
             )
         )
         sc = sim.add(Scope(n_inputs=1))
-        sim.connect(u1, mimo, dst_idx=0)
-        sim.connect(u2, mimo, dst_idx=1)
+        # ADR-0079 D-9: q = 2 の入力は Mux で束ねて (2,) の 1 ポートへ
+        mux = sim.add(Mux(n=2))
+        sim.connect(u1, mux, dst_idx=0)
+        sim.connect(u2, mux, dst_idx=1)
+        sim.connect(mux, mimo)
         sim.connect(mimo, sc)
         sim.run()
 
@@ -194,10 +199,14 @@ class TestMimoCases:
         )
         sc1 = sim.add(Scope(n_inputs=1, id="sc1"))
         sc2 = sim.add(Scope(n_inputs=1, id="sc2"))
-        sim.connect(u1, mimo, dst_idx=0)
-        sim.connect(u2, mimo, dst_idx=1)
-        sim.connect(mimo, sc1, src_idx=0)
-        sim.connect(mimo, sc2, src_idx=1)
+        mux = sim.add(Mux(n=2))
+        demux = sim.add(Demux(n=2))
+        sim.connect(u1, mux, dst_idx=0)
+        sim.connect(u2, mux, dst_idx=1)
+        sim.connect(mux, mimo)
+        sim.connect(mimo, demux)
+        sim.connect(demux, sc1, src_idx=0)
+        sim.connect(demux, sc2, src_idx=1)
         sim.run()
 
         arr1 = _flat(sc1)
@@ -232,10 +241,14 @@ class TestMimoCases:
         )
         sc1 = sim.add(Scope(n_inputs=1, id="sc1"))
         sc2 = sim.add(Scope(n_inputs=1, id="sc2"))
-        sim.connect(u1, mimo, dst_idx=0)
-        sim.connect(u2, mimo, dst_idx=1)
-        sim.connect(mimo, sc1, src_idx=0)
-        sim.connect(mimo, sc2, src_idx=1)
+        mux = sim.add(Mux(n=2))
+        demux = sim.add(Demux(n=2))
+        sim.connect(u1, mux, dst_idx=0)
+        sim.connect(u2, mux, dst_idx=1)
+        sim.connect(mux, mimo)
+        sim.connect(mimo, demux)
+        sim.connect(demux, sc1, src_idx=0)
+        sim.connect(demux, sc2, src_idx=1)
         sim.run()
 
         arr1 = _flat(sc1)
@@ -310,8 +323,10 @@ class TestMimoPersistence:
                 id="mimo",
             )
         )
-        sim.connect(src, "mimo", dst_idx=0)
-        sim.connect(src, "mimo", dst_idx=1)
+        mux = sim.add(Mux(n=2, id="mux"))
+        sim.connect(src, mux, dst_idx=0)
+        sim.connect(src, mux, dst_idx=1)
+        sim.connect(mux, "mimo")
 
         path = tmp_path / "mimo.flw.json"
         sim.save(path)
@@ -320,8 +335,17 @@ class TestMimoPersistence:
         mimo2 = sim2.get_block("mimo")
         # n_states = p * q * n = 2 * 2 * 2 = 8
         assert mimo2.n_states == 8
-        assert mimo2.n_inputs == 2
-        assert mimo2.n_outputs == 2
+        # ADR-0079 D-9: q = 2 / p = 2 はベクトルポート 1 本ずつ (JSON には書かれない)
+        assert mimo2.n_inputs == 1
+        assert mimo2.n_outputs == 1
+        assert mimo2.port_shapes_in == ((2,),)
+        assert mimo2.port_shapes_out == ((2,),)
+        import json
+
+        entry = next(
+            b for b in json.loads(path.read_text(encoding="utf-8"))["blocks"] if b["id"] == "mimo"
+        )
+        assert "port_shapes_in" not in entry and "port_shapes_out" not in entry
 
     def test_block_type_string(self, tmp_path) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)

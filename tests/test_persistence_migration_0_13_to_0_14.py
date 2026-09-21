@@ -21,7 +21,7 @@ from flode.core.persistence import (
 
 
 def test_current_schema_version_is_0_14() -> None:
-    assert CURRENT_SCHEMA_VERSION == "0.14"
+    assert CURRENT_SCHEMA_VERSION == "0.15"
 
 
 def _model_0_13(
@@ -82,7 +82,7 @@ class TestMigration:
 
     def test_chain_from_0_13_reaches_current(self) -> None:
         out = migrate_to_current(_model_0_13([]))
-        assert out["schema_version"] == "0.14"
+        assert out["schema_version"] == "0.15"
         assert out["_migrated_from"] == "0.13"
 
     def test_load_save_diff_is_schema_version_only(self, tmp_path: Path) -> None:
@@ -94,7 +94,7 @@ class TestMigration:
         sim.save(after)
         saved = json.loads(after.read_text(encoding="utf-8"))
         original = json.loads(before.read_text(encoding="utf-8"))
-        assert saved["schema_version"] == "0.14"
+        assert saved["schema_version"] == "0.15"
         assert saved["blocks"] == original["blocks"]
         assert saved["connections"] == original["connections"]
         # metadata は tool / created_at が更新されうるので比較しない

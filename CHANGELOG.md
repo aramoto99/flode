@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.64.0] - 2026-09-21 — StateSpace 系のベクトルポート統一とソース系のベクトル値 (ADR-0079 Stage 3)
+
+### Changed (BREAKING: `StateSpace` 系のポートが変わります)
+
+- **`StateSpace` / `DiscreteStateSpace` / `MimoTransferFunction` の入出力がベクトルポート
+  1 本ずつになった** (ADR-0079 §(7) D-9)。入力は `m >= 2` なら shape `(m,)` の 1 ポート
+  (`m == 1` はスカラ)、出力も同様 (`p`)。m 本のスカラ信号は `Mux` で束ねて繋ぎ、出力は
+  `Demux` で分けるか、ベクトルのまま下流へ渡す。Python API では `sim.connect(src, ss,
+  dst_idx=i)` (i ≥ 1) / `src_idx=j` の配線が `PortIndexError` になる (共通 mixin
+  `flode.blocks._lti_utils.LtiVectorPortMixin`、SM-A の `output` / `derivative` /
+  `update` / `advance` は不変で結果は bit-identical)。`port_shapes_*` は行列次元から
+  一意なので JSON には書かない
+- **モデル schema `0.14 → 0.15`** (`_builtin_migrate_0_14_to_0_15`)。既存ファイルの
+  `m >= 2` / `p >= 2` の StateSpace 系ブロックには `Mux(n=m)` (`<id>__in_mux`) /
+  `Demux(n=p)` (`<id>__out_demux`) が挿入され、既存の結線・`branch_waypoints` が
+  付け替わる (数値等価、v0.63.0 で採取した基準 npz で固定)。挿入 ID は決定的
+  (衝突時のみ `_1`, `_2` …、64 code point 超は切詰め)、レイアウトは元ブロックから
+  水平に 120 px ずらした位置 (既存ブロックの座標は不変)、Subsystem 内部にも再帰。
+  SISO / SIMO (`m == p == 1`) は無変更。`linearize` の外部入出力ラベルは
+  `ss.in[0][i]` / `ss.out[0][j]` (1 ポートの flat index) になる
+- `TransferFunction` / `DiscreteTransferFunction` (SISO)、時間ソース (`Step` / `Sine` /
+  `Ramp` / `Clock` / `PulseGenerator`)、`TransportDelay` / `Relay`、`Fcn`、`XYGraph` は
+  スカラ専用のまま (D-10)。エラーメッセージを Stage 3 の実態に更新
+
+### Added
+
+- **ソース系のベクトル値** (SPEC-0031 #18): `Constant(value=[…])` は配列の shape の信号を
+  出力する (shape の起点、`_params["value"]` は入れ子リスト)。`RandomSource(shape=(n,))`
+  はサンプル境界ごとに `shape` 個の独立サンプルを 1 回で引く (`shape=()` の既定は
+  従来の乱数系列と bit-identical、非既定時のみ JSON に書く)
+- **lookup 5 クラスのベクトル入力** (`LookupTable1D` / `LookupTable2D` / `LookupTableND` /
+  `Prelookup` / `InterpolationUsingPrelookup`): 要素ごとにスカラ核 `_eval` を適用する
+  (`ElementwiseMixin`、`Demux → × n → Mux` 版と bit-identical、`extrapolation="error"` /
+  nan / ±inf の扱いも要素ごと)。2 入力以上はスカラ拡張を含む合流規則に従う
+- **新ブロック** (SPEC-0031 #19、Math カテゴリ): `Reduce(operation="sum" | "product" |
+  "min" | "max" | "mean")` (全要素を 1 スカラに縮約、スカラ入力は恒等)、`DotProduct`
+  (同 shape 2 入力の内積)、`MatrixMultiply` (`u0 @ u1`、numpy matmul 規則を build 時に検査、
+  片方だけスカラは `shape.mismatch`)。shape 規則 `reduce` / `matmul` を解決器に追加
+- GUI: Inspector の数値欄で **`[1, 2, 3]` を配列として受理** (`Constant.value` / `Gain.k` /
+  ベクトル状態 7 クラスの `x0`、frontend の表 `lib/arrayParams.ts`)、配列欄に数値 1 個を
+  書くとスカラに戻る。ブロック面の `Constant` は配列値を `[1, 2, 3]` / `[2×2]` と表示。
+  新ブロックの glyph (Σ / u·v / A×B) と `Reduce` の operation 表示
+
+### Fixed
+
+- **GUI で `Mux` → `Gain` / `Integrator` 等の要素ごとブロックを接続できなかった**
+  (v0.62.0 から)。接続前検証が registry 既定の `()` と Mux の `(n,)` を strict 比較して
+  拒否していた。`()` は「build 時に推論する」の意味なので、両端とも非 `()` の宣言で
+  食い違うときだけ拒否し、それ以外は backend の信号面解決器に委ねる (ADR-0079 D-3)
+
 ## [0.63.0] - 2026-09-21 — ベクトル状態と Subsystem 境界のテンソル化 (ADR-0079 Stage 2)
 
 ### Added

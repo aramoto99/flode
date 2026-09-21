@@ -87,7 +87,7 @@ def test_tiny_positive_tolerances_run() -> None:
 
 def test_from_dict_rejects_invalid_rtol_as_model_load_error() -> None:
     data = {
-        "schema_version": "0.14",
+        "schema_version": "0.15",
         "simulator": {
             "t_end": 1.0,
             "dt": 0.01,

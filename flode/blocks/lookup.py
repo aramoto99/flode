@@ -23,6 +23,7 @@ from scipy.interpolate import RegularGridInterpolator, interp1d
 
 from ..core.block import Block
 from ..exceptions import BlockEvalError, BlockSpecError
+from ._elementwise import ElementwiseMixin
 
 _logger = logging.getLogger(__name__)
 
@@ -31,7 +32,25 @@ _logger = logging.getLogger(__name__)
 LOOKUP_ND_AXIS_WARNING_THRESHOLD = 6
 
 
-class LookupTable1D(Block):
+def _elementwise(
+    fn: Any, *arrays: npt.NDArray[Any], n_out: int = 1
+) -> tuple[npt.NDArray[Any], ...]:
+    """スカラ核 ``fn`` を要素ごとに適用する (ADR-0079 Stage 3、lookup 系のベクトル化)。
+
+    入力は解決器の合流規則 (完全一致 + rank-0 拡張) を満たすので ``np.broadcast_arrays``
+    で揃え、``np.vectorize`` で ``fn`` を各要素に呼ぶ。全入力が rank-0 なら各出力も
+    rank-0 で、SM-A ``output`` と同じスカラ核を通るため bit-identical。補間オブジェクトの
+    配列呼びは使わない (``extrapolation="error"`` / nan / ±inf の要素ごとの分岐を
+    スカラ核 1 箇所に保つため。性能より意味論の一致を優先、SPEC-0031 §非機能要件)。
+    """
+    vec = np.vectorize(fn, otypes=[float] * n_out)
+    out = vec(*np.broadcast_arrays(*arrays))
+    if n_out == 1:
+        return (np.asarray(out, dtype=float),)
+    return tuple(np.asarray(o, dtype=float) for o in out)
+
+
+class LookupTable1D(ElementwiseMixin, Block):
     """1 次元ルックアップテーブル ``y = f(u)``。
 
     ブレークポイント配列 ``breakpoints`` (厳密単調増加) と対応するテーブル値
@@ -237,14 +256,23 @@ class LookupTable1D(Block):
         return edge_y + slope * (val - edge_x)
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        val = float(np.asarray(u).reshape(-1)[0])
+        return np.array([self._eval(float(np.asarray(u).reshape(-1)[0]))])
+
+    def _kernel(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return _elementwise(self._eval, u[0])
+
+    def _eval(self, val: float) -> float:
+        """スカラ核 ``y = f(val)`` (SM-A ``output`` と SM-T ``_kernel`` が共有)。"""
+        val = float(val)
 
         # ±inf × linear 外挿: scipy 1.18+ の interp1d は外挿を lerp 形式
         # ``y_lo*(1-t) + y_hi*t`` で計算するため inf - inf = nan (+ RuntimeWarning)
         # になる (~1.17 は point-slope 形式で ±inf を返していた)。scipy を呼ばず
         # 全補間方式で端点 slope から極限値を直接計算する。
         if self.extrapolation == "linear" and np.isinf(val):
-            return np.array([self._extrapolate_from_edge(val)])
+            return self._extrapolate_from_edge(val)
 
         try:
             y = float(self._interp(val))
@@ -267,10 +295,10 @@ class LookupTable1D(Block):
         ):
             y = self._extrapolate_from_edge(val)
 
-        return np.array([y])
+        return y
 
 
-class LookupTable2D(Block):
+class LookupTable2D(ElementwiseMixin, Block):
     """2 次元ルックアップテーブル ``y = f(u[0], u[1])``。
 
     2 つのブレークポイント配列 (``breakpoints_row`` / ``breakpoints_col``、
@@ -496,8 +524,17 @@ class LookupTable2D(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         u_arr = np.asarray(u).reshape(-1)
-        u0 = float(u_arr[0])
-        u1 = float(u_arr[1])
+        return np.array([self._eval(float(u_arr[0]), float(u_arr[1]))])
+
+    def _kernel(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return _elementwise(self._eval, u[0], u[1])
+
+    def _eval(self, u0: float, u1: float) -> float:
+        """スカラ核 ``y = f(u0, u1)`` (SM-A ``output`` と SM-T ``_kernel`` が共有)。"""
+        u0 = float(u0)
+        u1 = float(u1)
 
         # nan は比較が全て False になるため、in_row/in_col は False となり
         # extrapolation 経路に入る (== 1-D と同方針)。
@@ -516,8 +553,7 @@ class LookupTable2D(Block):
                 )
             if self.extrapolation == "linear":
                 # nan は伝播 (np.isnan で early return、interp1d が nan を返すため不要)
-                y = self._linear_extrapolate(u0, u1)
-                return np.array([y])
+                return self._linear_extrapolate(u0, u1)
             # extrapolation == "clip": 端点に飽和してから補間
             u0 = float(np.clip(u0, self._bp_row[0], self._bp_row[-1]))
             u1 = float(np.clip(u1, self._bp_col[0], self._bp_col[-1]))
@@ -525,16 +561,14 @@ class LookupTable2D(Block):
         if self.interpolation == "flat":
             # nan が clip 後に残るのは clip(nan)=nan の場合 (ありうる)
             if np.isnan(u0) or np.isnan(u1):
-                return np.array([float("nan")])
-            y = self._flat_lookup(u0, u1)
-        else:
-            # RegularGridInterpolator は shape (npts, ndim) を期待 → (1, 2) で渡す。
-            # 戻り値は shape (1,) なので .item() で scalar 抽出 (numpy 2.0 警告回避)。
-            y = float(self._interp(np.array([[u0, u1]])).item())
-        return np.array([y])
+                return float("nan")
+            return self._flat_lookup(u0, u1)
+        # RegularGridInterpolator は shape (npts, ndim) を期待 → (1, 2) で渡す。
+        # 戻り値は shape (1,) なので .item() で scalar 抽出 (numpy 2.0 警告回避)。
+        return float(self._interp(np.array([[u0, u1]])).item())
 
 
-class Prelookup(Block):
+class Prelookup(ElementwiseMixin, Block):
     """1-D Prelookup: 入力 ``u`` から ``(k, f)`` を分離出力する (SPEC-0019)。
 
     breakpoints 検索結果を `(k=index, f=fraction)` の 2 出力に分離することで、
@@ -612,13 +646,23 @@ class Prelookup(Block):
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
-        val = float(np.asarray(u).reshape(-1)[0])
+        k, f = self._eval(float(np.asarray(u).reshape(-1)[0]))
+        return np.array([k, f])
+
+    def _kernel(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return _elementwise(self._eval, u[0], n_out=2)
+
+    def _eval(self, val: float) -> tuple[float, float]:
+        """スカラ核 ``(k, f) = g(val)`` (SM-A ``output`` と SM-T ``_kernel`` が共有)。"""
+        val = float(val)
         bp = self._breakpoints
         n = bp.size
 
         if np.isnan(val):
             # nan は 1-D LookupTable と同方針で伝播
-            return np.array([float("nan"), float("nan")])
+            return float("nan"), float("nan")
 
         in_domain = bool(bp[0] <= val <= bp[-1])
 
@@ -636,17 +680,17 @@ class Prelookup(Block):
                 else:  # val > bp[-1] (inf 含む)
                     k = n - 2
                 f = (val - float(bp[k])) / (float(bp[k + 1]) - float(bp[k]))
-                return np.array([float(k), f])
+                return float(k), f
             # extrapolation == "clip": 端点に飽和
             val = float(np.clip(val, bp[0], bp[-1]))
 
         # 定義域内 (or clip 後): 純 numpy 検索
         k = int(np.clip(np.searchsorted(bp, val, side="right") - 1, 0, n - 2))
         f = (val - float(bp[k])) / (float(bp[k + 1]) - float(bp[k]))
-        return np.array([float(k), f])
+        return float(k), f
 
 
-class InterpolationUsingPrelookup(Block):
+class InterpolationUsingPrelookup(ElementwiseMixin, Block):
     """1-D Prelookup を用いた補間 (SPEC-0019)。
 
     :class:`Prelookup` の出力 ``(k, f)`` を受け取り、内部 ``table`` から
@@ -726,30 +770,37 @@ class InterpolationUsingPrelookup(Block):
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         u_arr = np.asarray(u).reshape(-1)
-        k_raw = float(u_arr[0])
-        f = float(u_arr[1])
+        return np.array([self._eval(float(u_arr[0]), float(u_arr[1]))])
+
+    def _kernel(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return _elementwise(self._eval, u[0], u[1])
+
+    def _eval(self, k_raw: float, f: float) -> float:
+        """スカラ核 ``y = h(k, f)`` (SM-A ``output`` と SM-T ``_kernel`` が共有)。"""
+        k_raw = float(k_raw)
+        f = float(f)
         tbl = self._table
         n = tbl.size
 
         # k / f の nan は伝播 (= nan 出力)。
         if np.isnan(k_raw) or np.isnan(f):
-            return np.array([float("nan")])
+            return float("nan")
         # k は黙って clip ([0, n-2])。Prelookup の出力域だが上流ブロック自由なので保険。
         # ``np.clip`` を ``int()`` より先に評価することで ``k_raw=±inf`` でも
         # OverflowError を避けて n-2 / 0 に飽和させる (ADR-0056 構造化エラー protocol)。
         k = int(np.clip(k_raw, 0, n - 2))
 
         if self.interpolation == "linear":
-            y = float(tbl[k]) + f * (float(tbl[k + 1]) - float(tbl[k]))
-        elif self.interpolation == "nearest":
-            y = float(tbl[k + 1]) if f >= 0.5 else float(tbl[k])
-        else:  # "flat"
-            y = float(tbl[k])
-
-        return np.array([y])
+            return float(tbl[k]) + f * (float(tbl[k + 1]) - float(tbl[k]))
+        if self.interpolation == "nearest":
+            return float(tbl[k + 1]) if f >= 0.5 else float(tbl[k])
+        # "flat"
+        return float(tbl[k])
 
 
-class LookupTableND(Block):
+class LookupTableND(ElementwiseMixin, Block):
     """n 次元ルックアップテーブル ``y = f(u[0], u[1], ..., u[n-1])`` (SPEC-0018)。
 
     軸数 n は ``len(breakpoints_axes)`` で動的に決まる。``LookupTable1D`` (n=1) /
@@ -978,6 +1029,16 @@ class LookupTableND(Block):
                 f"LookupTableND[{self.name}]: expected {self._n_axes} inputs, got {u_arr.size}",
                 block_id=self.id,
             )
+        return np.array([self._eval(*u_arr)])
+
+    def _kernel(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return _elementwise(self._eval, *u)
+
+    def _eval(self, *vals: float) -> float:
+        """スカラ核 ``y = f(u[0], …, u[n-1])`` (SM-A ``output`` と SM-T ``_kernel`` が共有)。"""
+        u_arr = np.asarray(vals, dtype=float)
 
         # 各軸の定義域内判定 (nan は <=/>= で False になり外挿経路へ)
         in_domain_flags = [
@@ -999,8 +1060,7 @@ class LookupTableND(Block):
                 )
             if self.extrapolation == "linear":
                 # nan 含むときは結果も nan (interp1d が nan 伝播)
-                y = self._linear_extrapolate(u_arr)
-                return np.array([y])
+                return self._linear_extrapolate(u_arr)
             # extrapolation == "clip": 各軸独立に端点飽和
             u_arr = np.array(
                 [
@@ -1017,9 +1077,7 @@ class LookupTableND(Block):
 
         if self.interpolation == "flat":
             if bool(np.any(np.isnan(u_arr))):
-                return np.array([float("nan")])
-            y = self._flat_lookup(u_arr)
-        else:
-            # RegularGridInterpolator は shape (npts, ndim) を期待 → (1, n_axes)。
-            y = float(self._interp(u_arr.reshape(1, -1)).item())
-        return np.array([y])
+                return float("nan")
+            return self._flat_lookup(u_arr)
+        # RegularGridInterpolator は shape (npts, ndim) を期待 → (1, n_axes)。
+        return float(self._interp(u_arr.reshape(1, -1)).item())

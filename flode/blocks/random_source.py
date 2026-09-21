@@ -53,11 +53,14 @@ class RandomSource(Block):
         mean: gaussian の平均 (既定 0.0)。
         std: gaussian の標準偏差 (既定 1.0)。``> 0`` 必須。
         seed: ``int`` で決定性、``None`` (既定) で OS エントロピー (非決定)。
+        shape: 出力信号の shape (ADR-0079 Stage 3、SPEC-0031 #18)。既定 ``()`` は
+            スカラで従来と同じ乱数系列。``(n,)`` 等を指定すると各サンプル境界で
+            ``shape`` 個の独立サンプルを 1 回で引く (``rng.uniform(..., size=shape)``)。
 
     Raises:
         BlockSpecError: ``distribution`` enum 外 / ``sample_time <= 0`` /
             ``low >= high`` / ``std <= 0`` / ``seed`` が ``int | None`` 以外 /
-            numpy 側で ``seed`` が範囲外。
+            numpy 側で ``seed`` が範囲外 / ``shape`` が正整数の列でない。
 
     Note:
         ``low >= high`` / ``std <= 0`` の検証は ``distribution`` に関係なく実行する
@@ -79,6 +82,11 @@ class RandomSource(Block):
     _ALLOWED_DISTRIBUTIONS: tuple[str, ...] = ("uniform", "gaussian")
     # ADR-0019 / ADR-0039 follow-up: GUI ParameterPanel が enum select を出すヒント
     _param_enums = {"distribution": _ALLOWED_DISTRIBUTIONS}
+    # 出力 shape は ``shape`` から一意なので JSON には書かない。SM-A (スカラ) と
+    # SM-T (``shape`` 付き) の両 API を持つ (値で経路が変わるブロックの正当な例外、
+    # ``Block.__init__`` のコメント参照)
+    _serialize_port_shapes = False
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -90,6 +98,7 @@ class RandomSource(Block):
         mean: float = 0.0,
         std: float = 1.0,
         seed: int | None = None,
+        shape: tuple[int, ...] | list[int] = (),
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -120,15 +129,24 @@ class RandomSource(Block):
             rng = np.random.default_rng(seed)
         except (OverflowError, ValueError) as exc:
             raise BlockSpecError(f"RandomSource: invalid seed {seed!r}: {exc}") from exc
+        if not isinstance(shape, (tuple, list)) or not all(
+            isinstance(d, int) and not isinstance(d, bool) and d >= 1 for d in shape
+        ):
+            raise BlockSpecError(
+                f"RandomSource: shape must be a tuple of positive ints, got {shape!r}"
+            )
+        self.shape: tuple[int, ...] = tuple(int(d) for d in shape)
+        n_states = int(np.prod(self.shape)) if self.shape else 1
 
         super().__init__(
             id=id,
             name=name,
             n_inputs=0,
             n_outputs=1,
-            n_states=1,
+            n_states=n_states,
             direct_feedthrough=True,  # ソース、代数ループには寄与しない
             sample_time=sample_time,
+            port_shapes_out=(self.shape,),
         )
 
         self.distribution = distribution
@@ -143,7 +161,7 @@ class RandomSource(Block):
 
         # x0=0.0 placeholder。Simulator.run() の [A] advance (ADR-0078) で t=0 の
         # サンプル境界に新乱数で上書きされるため、ユーザーには露出しない。
-        self.x0 = np.array([0.0])
+        self.x0 = np.zeros(n_states)
 
         self._params: dict[str, Any] = {
             "distribution": distribution,
@@ -154,6 +172,9 @@ class RandomSource(Block):
             "sample_time": float(sample_time),
             "seed": seed,
         }
+        # 既定 () は書かない (既存 JSON 不変、AC-9)
+        if self.shape:
+            self._params["shape"] = list(self.shape)
 
     def reset(self) -> None:
         """``Simulator.run()`` 開始時の lifecycle hook (simulator.py:1004-1006)。
@@ -183,4 +204,37 @@ class RandomSource(Block):
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # 描画は advance() 済み。状態はそのまま hold する。
+        return x
+
+    # ---- SM-T vector-port API (ADR-0079 Stage 3): shape 付きの出力 ----
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return (np.asarray(x, dtype=float).reshape(self.shape),)
+
+    def advance_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        if not self.shape:
+            # スカラは SM-A と同じ 1 fire 1 draw (同一 seed で系列 bit-identical)
+            return self.advance(t, x, np.zeros(0))
+        if self.distribution == "uniform":
+            drawn = self._rng.uniform(self.low, self.high, size=self.shape)
+        else:
+            drawn = self._rng.normal(self.mean, self.std, size=self.shape)
+        return np.asarray(drawn, dtype=float).ravel()
+
+    def update_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
         return x

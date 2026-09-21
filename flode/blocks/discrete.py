@@ -32,7 +32,7 @@ import scipy.signal
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
-from ._lti_utils import _DF_TOLERANCE
+from ._lti_utils import _DF_TOLERANCE, LtiVectorPortMixin, lti_port_layout
 from ._vector_state import VectorStateMixin, X0Like
 
 _zohd_logger = logging.getLogger("flode.blocks.discrete")
@@ -465,11 +465,14 @@ class ZeroOrderHoldDirect(VectorStateMixin, Block):
         return self._u_state(u[0])
 
 
-class DiscreteStateSpace(Block):
+class DiscreteStateSpace(LtiVectorPortMixin, Block):
     """離散 LTI 状態空間 ``x[k+1] = A x[k] + B u[k]``、``y[k] = C x[k] + D u[k]`` (リファレンスツール互換)。
 
     ADR-0006 §(5)、ADR-0015 §(3) で 2n-state augmentation。``direct_feedthrough`` は
     ``D`` の最大絶対値が ``1e-12`` を超えるかで自動推論。
+
+    ポート (ADR-0079 §(7) D-9、v0.64.0): 入力はベクトルポート 1 本 (``m >= 2`` なら
+    shape ``(m,)``、``m == 1`` ならスカラ)、出力も同様 (``p``)。
 
     Internal state (n_states=2n、ADR-0015 §(3)):
         x[0..n-1]   = output_curr — 現サンプル境界での状態 (前回 fire で確定)
@@ -537,14 +540,18 @@ class DiscreteStateSpace(Block):
         df = bool(np.max(np.abs(D_arr)) > _DF_TOLERANCE) if D_arr.size else False
 
         # ADR-0015 §(3): 2n-state augmentation で n_states = 2n
+        n_in, shapes_in = lti_port_layout(m)
+        n_out, shapes_out = lti_port_layout(p)
         super().__init__(
             id=id,
             name=name,
-            n_inputs=m,
-            n_outputs=p,
+            n_inputs=n_in,
+            n_outputs=n_out,
             n_states=2 * n,
             direct_feedthrough=df,
             sample_time=sample_time,
+            port_shapes_in=shapes_in,
+            port_shapes_out=shapes_out,
         )
         self._A = A_arr
         self._B = B_arr

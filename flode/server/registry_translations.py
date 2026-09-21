@@ -290,6 +290,51 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             ),
         },
     },
+    # ADR-0079 Stage 3 (v0.64.0): 要素縮約 + 線形代数
+    "flode.blocks.mathops.Reduce": {
+        "en": {
+            "display_name": "Reduce",
+            "docstring_summary": (
+                "Reduce all elements of a vector / matrix signal to one scalar "
+                "(sum / product / min / max / mean). A scalar input passes through."
+            ),
+        },
+        "ja": {
+            "display_name": "要素縮約",
+            "docstring_summary": (
+                "ベクトル / 行列信号の全要素を 1 つのスカラに縮約する "
+                "(総和 / 総積 / 最小 / 最大 / 平均)。スカラ入力は素通し。"
+            ),
+        },
+    },
+    "flode.blocks.mathops.DotProduct": {
+        "en": {
+            "display_name": "Dot Product",
+            "docstring_summary": (
+                "Inner product of two same-shape signals y = sum(u0 * u1) (scalar output)."
+            ),
+        },
+        "ja": {
+            "display_name": "内積",
+            "docstring_summary": "同 shape の 2 信号の内積 y = sum(u0 * u1) (スカラ出力)。",
+        },
+    },
+    "flode.blocks.mathops.MatrixMultiply": {
+        "en": {
+            "display_name": "Matrix Multiply",
+            "docstring_summary": (
+                "Matrix product of two signals y = u0 @ u1 (numpy matmul rules, "
+                "rank 1 / 2). Use Gain for a constant matrix."
+            ),
+        },
+        "ja": {
+            "display_name": "行列積",
+            "docstring_summary": (
+                "2 信号の行列積 y = u0 @ u1 (numpy matmul 規則、rank 1 / 2)。"
+                "定数行列との積は Gain の行列モード。"
+            ),
+        },
+    },
     # ----- lookup (2) -----------------------------------------------------
     # SPEC-0008 / ADR-0059 (v5.1.0): Lookup Tables 新カテゴリ第 1 弾
     "flode.blocks.lookup.LookupTable1D": {

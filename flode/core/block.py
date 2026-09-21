@@ -311,7 +311,12 @@ class Block:
         # ケースを誤検出しない (code-reviewer MUST 修正)。
         # ADR-0018 §(5): フレームワーク内部 class (``Inport`` / ``Outport`` 等) は
         # SM-A / SM-B の両 path で動くため両方 override が必要。``_skip_dual_api_check
-        # = True`` を class 属性で立てて check を skip する (= 内部例外)。
+        # = True`` を class 属性で立てて check を skip する。
+        # ADR-0079 Stage 3: パラメータ次第でスカラにもベクトルにもなるブロック
+        # (``Constant`` / ``RandomSource`` / ``Reduce`` / ``DotProduct`` /
+        # ``MatrixMultiply``) も同じ理由で両方を持つ (全ポート () のモデルは SM-A の
+        # ``output`` 直呼び、それ以外は ``output_v``)。mixin (Elementwise /
+        # VectorState / LtiVectorPort) に載らない「値で経路が変わる」ブロックだけが対象。
         cls = type(self)
         if not getattr(cls, "_skip_dual_api_check", False):
             output_in_leaf = "output" in cls.__dict__

@@ -16,7 +16,12 @@ import scipy.signal
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
-from ._lti_utils import _DF_TOLERANCE, build_companion_form_siso
+from ._lti_utils import (
+    _DF_TOLERANCE,
+    LtiVectorPortMixin,
+    build_companion_form_siso,
+    lti_port_layout,
+)
 from ._vector_state import VectorStateMixin, X0Like
 
 
@@ -73,16 +78,20 @@ class Integrator(VectorStateMixin, Block):
         return self._u_state(u[0])
 
 
-class StateSpace(Block):
+class StateSpace(LtiVectorPortMixin, Block):
     """連続 LTI 状態空間 ``x_dot = A x + B u``、``y = C x + D u``。
 
     ``direct_feedthrough`` は ``D`` 行列の最大絶対値が ``1e-12`` を超えるかで
     自動推論する (ADR-0006 §(6))。
 
+    ポート (ADR-0079 §(7) D-9、v0.64.0): 入力は **ベクトルポート 1 本** (``m >= 2`` なら
+    shape ``(m,)``、``m == 1`` なら スカラ)、出力も同様 (``p``)。m 本のスカラ信号は
+    ``Mux`` で束ねて繋ぐ (0.14 以前のファイルは load 時に自動変換される)。
+
     Args:
         A: システム行列 (shape ``(n, n)``)。
-        B: 入力行列 (shape ``(n, m)``)、``m = n_inputs``。
-        C: 出力行列 (shape ``(p, n)``)、``p = n_outputs``。
+        B: 入力行列 (shape ``(n, m)``)、``m`` = 入力ベクトルの次元。
+        C: 出力行列 (shape ``(p, n)``)、``p`` = 出力ベクトルの次元。
         D: 直達行列 (shape ``(p, m)``)。``None`` のときゼロ行列。
         x0: 初期状態 (shape ``(n,)``)。``None`` のときゼロ。
     """
@@ -131,13 +140,17 @@ class StateSpace(Block):
                 raise BlockSpecError(f"StateSpace: D must have shape ({p}, {m}), got {D_arr.shape}")
         df = bool(np.max(np.abs(D_arr)) > _DF_TOLERANCE) if D_arr.size else False
 
+        n_in, shapes_in = lti_port_layout(m)
+        n_out, shapes_out = lti_port_layout(p)
         super().__init__(
             id=id,
             name=name,
-            n_inputs=m,
-            n_outputs=p,
+            n_inputs=n_in,
+            n_outputs=n_out,
             n_states=n,
             direct_feedthrough=df,
+            port_shapes_in=shapes_in,
+            port_shapes_out=shapes_out,
         )
         self._A = A_arr
         self._B = B_arr
@@ -253,7 +266,7 @@ class TransferFunction(Block):
         return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
 
 
-class MimoTransferFunction(Block):
+class MimoTransferFunction(LtiVectorPortMixin, Block):
     """連続 LTI MIMO 伝達関数 ``H(s) = N(s) / d(s)`` (共通分母版、ADR-0010 §(2)、ADR-0016)。
 
     入力 ``q`` 個 / 出力 ``p`` 個の伝達関数行列を扱う。共通分母 ``d(s)`` (1D) と、
@@ -280,8 +293,8 @@ class MimoTransferFunction(Block):
         - ``C``: shape ``(p, p*q*n)``、出力 i は ブロック (i, j) for all j の C を集約
         - ``D``: shape ``(p, q)``、各 (i, j) で biproper なら非ゼロ
 
-    SM-A 信号モデル (ADR-0010 §(1)) に従い、ポートは ``q`` 個のスカラー入力 +
-    ``p`` 個のスカラー出力。
+    ポート (ADR-0079 §(7) D-9、v0.64.0): 入力はベクトルポート 1 本 (``q >= 2`` なら
+    shape ``(q,)``、``q == 1`` ならスカラ)、出力も同様 (``p``)。
 
     Phase 3 では **共通分母版のみ** をサポート (各 (i, j) で異なる分母を許容する
     独立分母版は Phase 4+ で再検討、ADR-0010 §(2))。
@@ -397,13 +410,17 @@ class MimoTransferFunction(Block):
 
         df = bool(np.max(np.abs(D)) > _DF_TOLERANCE) if D.size else False
 
+        n_in, shapes_in = lti_port_layout(q)
+        n_out, shapes_out = lti_port_layout(p)
         super().__init__(
             id=id,
             name=name,
-            n_inputs=q,
-            n_outputs=p,
+            n_inputs=n_in,
+            n_outputs=n_out,
             n_states=n_total,
             direct_feedthrough=df,
+            port_shapes_in=shapes_in,
+            port_shapes_out=shapes_out,
         )
         self._A = A
         self._B = B

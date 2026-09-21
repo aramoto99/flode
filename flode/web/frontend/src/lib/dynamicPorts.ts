@@ -101,30 +101,10 @@ export function resolvePortCounts(
     };
   }
 
-  // ----- Continuous: 行列形状から導出 -----
-  // StateSpace: n_inputs = B.shape[1], n_outputs = C.shape[0]  (continuous.py:111)
-  if (typePath.endsWith(".StateSpace")) {
-    const ni = matrixCols(params.B) ?? defaultIn;
-    const no = matrixRows(params.C) ?? defaultOut;
-    return { nInputs: Math.max(1, ni), nOutputs: Math.max(1, no) };
-  }
-  // MimoTransferFunction: n_inputs = q (numerators[0].length), n_outputs = p (numerators.length)
-  //                      (continuous.py:371)
-  if (typePath.endsWith(".MimoTransferFunction")) {
-    const num = params.numerators;
-    if (Array.isArray(num) && num.length > 0) {
-      const p = num.length;
-      const q = Array.isArray(num[0]) ? (num[0] as unknown[]).length : 1;
-      return { nInputs: Math.max(1, q), nOutputs: Math.max(1, p) };
-    }
-    return { nInputs: defaultIn, nOutputs: defaultOut };
-  }
-  // DiscreteStateSpace: 同 StateSpace (discrete.py:353)
-  if (typePath.endsWith(".DiscreteStateSpace")) {
-    const ni = matrixCols(params.B) ?? defaultIn;
-    const no = matrixRows(params.C) ?? defaultOut;
-    return { nInputs: Math.max(1, ni), nOutputs: Math.max(1, no) };
-  }
+  // ----- Continuous -----
+  // ADR-0079 D-9 (v0.64.0): StateSpace / DiscreteStateSpace / MimoTransferFunction は
+  // 入力 1 本 / 出力 1 本のベクトルポート (shape は B / C / numerators の次元で
+  // backend が宣言する) → registry default (1 / 1) をそのまま使う (分岐なし)。
 
   // ----- Subsystem (ADR-0039 派生 property + ADR-0058 control block) -----
   // 内部 Inport / Outport / Trigger / Enable から自動算出。
@@ -199,9 +179,6 @@ export function hasDynamicPorts(typePath: string): boolean {
     ".Scope",
     ".Display",
     ".Terminator",
-    ".StateSpace",
-    ".DiscreteStateSpace",
-    ".MimoTransferFunction",
     ".Subsystem",
     ".PythonFunction",
   ].some((suffix) => typePath.endsWith(suffix));
@@ -212,18 +189,4 @@ function readPositiveInt(v: unknown, fallback: number): number {
     return Math.trunc(v);
   }
   return fallback;
-}
-
-/** 2D ndarray-like の列数 (= shape[1])。形状不正時 ``null``。 */
-function matrixCols(v: unknown): number | null {
-  if (!Array.isArray(v) || v.length === 0) return null;
-  const row0 = v[0];
-  if (!Array.isArray(row0)) return null;
-  return row0.length;
-}
-
-/** 2D ndarray-like の行数 (= shape[0])。 */
-function matrixRows(v: unknown): number | null {
-  if (!Array.isArray(v)) return null;
-  return v.length;
 }

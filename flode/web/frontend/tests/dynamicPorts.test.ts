@@ -71,49 +71,31 @@ describe("resolvePortCounts", () => {
     expect(r.nInputs).toBe(4);
   });
 
-  it("StateSpace: n_inputs from B.shape[1], n_outputs from C.shape[0]", () => {
-    // 2-state, 3-input, 1-output
-    const r = resolvePortCounts(
+  it("ADR-0079 D-9: StateSpace family is 1 vector port in / 1 out regardless of B / C", () => {
+    // v0.64.0: m = 3 / p = 1 でもポートは 1 本ずつ (shape (3,) は backend が宣言)
+    const ss = resolvePortCounts(
       "flode.blocks.continuous.StateSpace",
       {
         A: [[0, 1], [-1, 0]],
-        B: [[1, 0, 0], [0, 1, 0]], // 2x3 → 3 inputs
-        C: [[1, 0]], // 1x2 → 1 output
+        B: [[1, 0, 0], [0, 1, 0]],
+        C: [[1, 0]],
         D: [[0, 0, 0]],
       },
       META(1, 1),
     );
-    expect(r).toEqual({ nInputs: 3, nOutputs: 1 });
-  });
-
-  it("MimoTransferFunction: 2x2 numerators → 2 in / 2 out", () => {
-    const r = resolvePortCounts(
+    expect(ss).toEqual({ nInputs: 1, nOutputs: 1 });
+    const mimo = resolvePortCounts(
       "flode.blocks.continuous.MimoTransferFunction",
-      {
-        numerators: [
-          [[1.0], [0.5]],
-          [[0.3], [1.0]],
-        ],
-        denominator: [1.0, 1.0],
-      },
+      { numerators: [[[1.0], [0.5]], [[0.3], [1.0]]], denominator: [1.0, 1.0] },
       META(1, 1),
     );
-    expect(r).toEqual({ nInputs: 2, nOutputs: 2 });
-  });
-
-  it("DiscreteStateSpace: same as StateSpace", () => {
-    const r = resolvePortCounts(
+    expect(mimo).toEqual({ nInputs: 1, nOutputs: 1 });
+    const dss = resolvePortCounts(
       "flode.blocks.discrete.DiscreteStateSpace",
-      {
-        A: [[0]],
-        B: [[1, 1]], // 1x2 → 2 inputs
-        C: [[1], [1]], // 2x1 → 2 outputs
-        D: [[0, 0], [0, 0]],
-        sample_time: 0.1,
-      },
+      { A: [[0]], B: [[1, 1]], C: [[1], [1]], D: [[0, 0], [0, 0]], sample_time: 0.1 },
       META(1, 1),
     );
-    expect(r).toEqual({ nInputs: 2, nOutputs: 2 });
+    expect(dss).toEqual({ nInputs: 1, nOutputs: 1 });
   });
 
   it("Mux: n controls n_inputs and (n,) output shape implicitly", () => {
@@ -308,9 +290,6 @@ describe("hasDynamicPorts", () => {
       "flode.blocks.sinks.Scope",
       "flode.blocks.sinks.Display",
       "flode.blocks.sinks.Terminator",
-      "flode.blocks.continuous.StateSpace",
-      "flode.blocks.discrete.DiscreteStateSpace",
-      "flode.blocks.continuous.MimoTransferFunction",
       "flode.subsystems.subsystem.Subsystem",
     ];
     for (const t of dynTypes) {
@@ -322,5 +301,9 @@ describe("hasDynamicPorts", () => {
     expect(hasDynamicPorts("flode.blocks.mathops.Gain")).toBe(false);
     expect(hasDynamicPorts("flode.blocks.sources.Constant")).toBe(false);
     expect(hasDynamicPorts("flode.blocks.continuous.Integrator")).toBe(false);
+    // ADR-0079 D-9 (v0.64.0): StateSpace 系は 1 in / 1 out 固定になった
+    expect(hasDynamicPorts("flode.blocks.continuous.StateSpace")).toBe(false);
+    expect(hasDynamicPorts("flode.blocks.discrete.DiscreteStateSpace")).toBe(false);
+    expect(hasDynamicPorts("flode.blocks.continuous.MimoTransferFunction")).toBe(false);
   });
 });

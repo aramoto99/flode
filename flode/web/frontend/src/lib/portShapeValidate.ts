@@ -213,7 +213,16 @@ export function validatePortShapeConnection(
   }
   const srcShape = srcShapes.out[srcIdx]!;
   const dstShape = dstShapes.in[dstIdx]!;
-  if (!shapeEquals(srcShape, dstShape)) {
+  // ADR-0079 D-3 (ハイブリッド伝播、v0.64.0 bug-fix): registry 既定の ``[]`` は
+  // 「宣言 = スカラ」ではなく「build 時に推論する」の意味。両端とも非 ``[]`` の
+  // 宣言 (Mux / Demux / Inport 等) で食い違うときだけここで拒否し、それ以外は
+  // backend の信号面解決器が最終判定する (v0.62.0〜v0.63.0 は ``[]`` を strict
+  // 比較していたため Mux → Gain / Integrator を GUI で接続できなかった)。
+  if (
+    srcShape.length > 0 &&
+    dstShape.length > 0 &&
+    !shapeEquals(srcShape, dstShape)
+  ) {
     return {
       ok: false,
       reason:

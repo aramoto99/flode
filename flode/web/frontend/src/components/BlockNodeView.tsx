@@ -21,6 +21,7 @@ import {
   formatNumber,
   formatPolynomial,
   formatTransferFunction,
+  formatValue,
 } from "../lib/blockFormatting";
 import {
   BlockGlyph,
@@ -571,6 +572,15 @@ function ShapeOutline({
 // Inner content (glyph or text) per kind
 // ---------------------------------------------------------------------------
 
+/** ADR-0079 Stage 3: ``Reduce.operation`` → ブロック面の記号 (Python 側 REDUCE_OPERATIONS と一致)。 */
+const REDUCE_OPERATION_SYMBOLS: Readonly<Record<string, string>> = {
+  sum: "Σ",
+  product: "Π",
+  min: "min",
+  max: "max",
+  mean: "mean",
+};
+
 function ShapeContent({
   shape,
   typePath,
@@ -784,7 +794,7 @@ function ShapeContent({
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center font-mono text-slate-800">
           <span className="truncate px-1 text-[12px] font-semibold tabular-nums">
-            {formatNumber(params.value)}
+            {formatValue(params.value)}
           </span>
           <span
             data-testid="constant-dtype-label"
@@ -796,9 +806,10 @@ function ShapeContent({
       );
     }
     // v0.56.0 (output_type 撤去): 未宣言 (auto) は生値のみ表示
+    // (ADR-0079 Stage 3: 配列 value は ``[1, 2, 3]`` / ``[2×2]`` と短く整形)
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold tabular-nums text-slate-800">
-        <span className="truncate px-1">{formatNumber(params.value)}</span>
+        <span className="truncate px-1">{formatValue(params.value)}</span>
       </div>
     );
   }
@@ -836,6 +847,18 @@ function ShapeContent({
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium text-slate-800">
         <span>|u|</span>
+      </div>
+    );
+  }
+  // ADR-0079 Stage 3: Reduce は operation に応じた記号 (Σ / Π / min / max / mean)
+  if (typePath.endsWith(".Reduce")) {
+    const op = (paramsRaw as Record<string, unknown>).operation;
+    const label =
+      (typeof op === "string" ? REDUCE_OPERATION_SYMBOLS[op] : undefined) ??
+      REDUCE_OPERATION_SYMBOLS.sum;
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[13px] font-medium text-slate-800">
+        <span>{label}</span>
       </div>
     );
   }

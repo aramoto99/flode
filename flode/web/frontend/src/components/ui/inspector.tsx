@@ -662,6 +662,11 @@ interface JsonArrayEditorProps {
   onCommit: (next: unknown[]) => void;
   /** ``"number"`` / ``"string"`` は 1-D 配列、``"nested"`` は n-D 数値配列 (SPEC-0018)。 */
   elementType: "number" | "string" | "nested";
+  /**
+   * 与えると、有限の数値 1 個 (``2.5`` 等) を書いたときに配列ではなくスカラとして
+   * commit する (ADR-0079 Stage 3: 配列 → スカラに戻す経路)。
+   */
+  onCommitScalar?: (next: number) => void;
   testid?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -707,6 +712,7 @@ export function JsonArrayEditor({
   value,
   onCommit,
   elementType,
+  onCommitScalar,
   testid,
   placeholder,
   disabled = false,
@@ -735,6 +741,15 @@ export function JsonArrayEditor({
           message: (e as Error).message,
         }),
       );
+      return;
+    }
+    if (
+      onCommitScalar !== undefined &&
+      typeof parsed === "number" &&
+      Number.isFinite(parsed)
+    ) {
+      setError(null);
+      onCommitScalar(parsed);
       return;
     }
     if (!Array.isArray(parsed)) {

@@ -84,6 +84,10 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.mathops.Abs":                   { kind: "rect", width: 48, height: 48 },
   "flode.blocks.mathops.Sign":                  { kind: "rect", width: 48, height: 48 },
   "flode.blocks.mathops.MinMax":                { kind: "rect", width: 48, height: 48 },
+  // ADR-0079 Stage 3 (v0.64.0): 要素縮約 + 線形代数
+  "flode.blocks.mathops.Reduce":                { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.DotProduct":            { kind: "rect", width: 48, height: 48 },
+  "flode.blocks.mathops.MatrixMultiply":        { kind: "rect", width: 48, height: 48 },
   "flode.blocks.mathops.Saturation":            { kind: "rect", width: 48, height: 48 },
   "flode.blocks.sources.Sine":                  { kind: "rect", width: 48, height: 48 },
   "flode.blocks.sources.Step":                  { kind: "rect", width: 48, height: 48 },

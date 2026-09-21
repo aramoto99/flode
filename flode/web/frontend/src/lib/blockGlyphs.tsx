@@ -217,6 +217,59 @@ const DivideGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// ADR-0079 Stage 3 (v0.64.0): 要素縮約 (Σ) / 内積 (u·v) / 行列積 (u×v) の glyph。
+// operation で記号が変わる Reduce は既定 (sum) の Σ を表示 (MinMax と同じ方針)。
+const ReduceGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="17"
+      textAnchor="middle"
+      fontSize="14"
+      fontFamily="ui-monospace,monospace"
+      fontWeight="600"
+      fill="currentColor"
+      stroke="none"
+    >
+      Σ
+    </text>
+  </svg>
+);
+
+const DotProductGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="10"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      u·v
+    </text>
+  </svg>
+);
+
+const MatrixMultiplyGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <text
+      x="12"
+      y="16"
+      textAnchor="middle"
+      fontSize="10"
+      fontFamily="ui-monospace,monospace"
+      fontStyle="italic"
+      fill="currentColor"
+      stroke="none"
+    >
+      A×B
+    </text>
+  </svg>
+);
+
 // v0.36.1: SPEC-0002 / ADR-0053 で追加した Phase 2 Math 系 5 ブロックの glyph。
 // 関数名そのものではなく総称表現 (f(u) / sin の正弦波 / 入出力特性 / 比較記号) を使う
 // — enum 切替時にも glyph は static なので、関数族を示唆する形に揃える。
@@ -1215,6 +1268,10 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "flode.blocks.rounding.Rounding": RoundingGlyph,
   // SPEC-0026 (v0.53.0): Cast
   "flode.blocks.cast.Cast": CastGlyph,
+  // ADR-0079 Stage 3 (v0.64.0): 要素縮約 + 線形代数
+  "flode.blocks.mathops.Reduce": ReduceGlyph,
+  "flode.blocks.mathops.DotProduct": DotProductGlyph,
+  "flode.blocks.mathops.MatrixMultiply": MatrixMultiplyGlyph,
   // SPEC-0012 / ADR-0059 (v5.5.0): Discontinuities (Wave 2 第 1 弾)
   "flode.blocks.discontinuities.RateLimiter": RateLimiterGlyph,
   "flode.blocks.discontinuities.Relay": RelayGlyph,

@@ -86,6 +86,9 @@ Combinational arithmetic blocks (``direct_feedthrough=True``).
    flode.blocks.Sign
    flode.blocks.MinMax
    flode.blocks.Divide
+   flode.blocks.Reduce
+   flode.blocks.DotProduct
+   flode.blocks.MatrixMultiply
 
 Logic
 -----
@@ -160,11 +163,35 @@ resolved once, when the model is built, by the signal-plane resolver
   or, in class form, implement ``infer_output_shapes(in_shapes)`` (see
   :doc:`decorator`). Undeclared user code receiving a vector is a build
   error.
-* ``TransferFunction`` / ``DiscreteTransferFunction`` (SISO), the
-  ``StateSpace`` family, sources, lookup tables, ``TransportDelay``,
-  ``Relay``, ``Fcn`` and ``XYGraph`` are scalar-only in this release.
+* ``StateSpace``, ``DiscreteStateSpace`` and ``MimoTransferFunction`` have
+  **one vector input port and one vector output port**: the input is
+  ``(m,)`` for ``m >= 2`` inputs (a scalar for ``m == 1``) and the output is
+  ``(p,)`` for ``p >= 2`` outputs. Bundle scalar signals with ``Mux`` and
+  split the output with ``Demux``, or connect vector signals directly. Models
+  saved by earlier releases (schema ``0.14`` and older) are converted on load:
+  a ``Mux`` / ``Demux`` is inserted next to every block with ``m >= 2`` /
+  ``p >= 2`` so the wiring and the numerical results are unchanged.
+* ``Constant`` accepts an array ``value`` (the shape of the array becomes the
+  signal shape) and ``RandomSource(shape=(n,))`` draws ``n`` independent
+  samples per sample time. The lookup tables (``LookupTable1D`` / ``2D`` /
+  ``ND``, ``Prelookup``, ``InterpolationUsingPrelookup``) evaluate vector
+  inputs element by element, exactly as if each element went through its
+  own block.
+* ``Reduce`` collapses all elements of a signal to one scalar (``sum``,
+  ``product``, ``min``, ``max`` or ``mean``); ``DotProduct`` is the inner
+  product of two same-shape signals and ``MatrixMultiply`` the matrix
+  product ``u0 @ u1`` of two signals (numpy ``matmul`` rules, checked at
+  build time). ``Sum`` / ``Add`` remain sums *across ports*.
+* ``TransferFunction`` / ``DiscreteTransferFunction`` (SISO), the time
+  sources (``Step``, ``Sine``, ``Ramp``, ``Clock``, ``PulseGenerator``),
+  ``TransportDelay``, ``Relay``, ``Fcn`` and ``XYGraph`` are scalar-only.
   Connecting a vector to them is a build error that names the port and
-  suggests ``Demux``.
+  suggests ``Demux`` (or ``StateSpace`` for a MIMO system).
+
+In the Inspector, the numeric fields of ``Constant.value``, ``Gain.k`` and
+the ``x0`` of the vector-state blocks accept an array literal such as
+``[1, 2, 3]`` (and an array field accepts a plain number to go back to a
+scalar).
 
 ``Simulator.resolve_signals()`` returns the resolved ``(shape, dtype)`` of
 every port without running the model (``resolution.inner[<subsystem id>]``

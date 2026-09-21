@@ -306,3 +306,89 @@ describe("ParameterPanel: SPEC-0011 array & expression editor branches", () => {
     expect((blk.params.table as number[][])[1]![1]).toBe(999);
   });
 });
+
+// ADR-0079 Stage 3 (v0.64.0): 数値欄 ⇄ 配列欄の切替 (Constant.value / Gain.k / x0)
+function makeConstantModel(value: unknown): FlwModel {
+  return {
+    schema_version: "0.15",
+    simulator: {
+      t_end: 1,
+      dt: 0.01,
+      solver: "RK45",
+      rtol: 1e-3,
+      atol: 1e-6,
+      dt_base: null,
+    },
+    blocks: [
+      { id: "C_1", type: "flode.blocks.sources.Constant", params: { value } },
+      { id: "S_1", type: "flode.blocks.sources.Step", params: { step_time: 1.0 } },
+    ],
+    connections: [],
+    layout: {},
+  };
+}
+
+describe("ParameterPanel: ADR-0079 Stage 3 scalar ⇄ array switch", () => {
+  it("typing [1, 2, 3] into Constant.value commits an array", () => {
+    useAppStore.setState({
+      editingModel: makeConstantModel(1.0),
+      editingPath: [],
+      selectedNodeId: "C_1",
+    });
+    renderPanel();
+    const input = screen.getByTestId("param-input-value") as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    fireEvent.change(input, { target: { value: "[1, 2, 3]" } });
+    fireEvent.blur(input);
+    const blk = useAppStore.getState().editingModel!.blocks.find((b) => b.id === "C_1")!;
+    expect(blk.params.value).toEqual([1, 2, 3]);
+    // 配列になったので次の render は JsonArrayEditor (textarea)
+    expect(screen.getByTestId("param-input-value").tagName).toBe("TEXTAREA");
+  });
+
+  it("invalid array literal shows an error and keeps the scalar", () => {
+    useAppStore.setState({
+      editingModel: makeConstantModel(1.0),
+      editingPath: [],
+      selectedNodeId: "C_1",
+    });
+    renderPanel();
+    const input = screen.getByTestId("param-input-value") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "[1, 2" } });
+    fireEvent.blur(input);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    const blk = useAppStore.getState().editingModel!.blocks.find((b) => b.id === "C_1")!;
+    expect(blk.params.value).toBe(1.0);
+  });
+
+  it("typing a bare number into an array Constant.value commits a scalar", () => {
+    useAppStore.setState({
+      editingModel: makeConstantModel([1, 2, 3]),
+      editingPath: [],
+      selectedNodeId: "C_1",
+    });
+    renderPanel();
+    const ta = screen.getByTestId("param-input-value") as HTMLTextAreaElement;
+    expect(ta.tagName).toBe("TEXTAREA");
+    fireEvent.change(ta, { target: { value: "2.5" } });
+    fireEvent.blur(ta);
+    const blk = useAppStore.getState().editingModel!.blocks.find((b) => b.id === "C_1")!;
+    expect(blk.params.value).toBe(2.5);
+    expect(screen.getByTestId("param-input-value").tagName).toBe("INPUT");
+  });
+
+  it("params that are not array capable reject [..] as an invalid number", () => {
+    useAppStore.setState({
+      editingModel: makeConstantModel(1.0),
+      editingPath: [],
+      selectedNodeId: "S_1",
+    });
+    renderPanel();
+    const input = screen.getByTestId("param-input-step_time") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "[1, 2]" } });
+    fireEvent.blur(input);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    const blk = useAppStore.getState().editingModel!.blocks.find((b) => b.id === "S_1")!;
+    expect(blk.params.step_time).toBe(1.0);
+  });
+});

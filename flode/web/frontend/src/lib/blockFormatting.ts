@@ -22,6 +22,31 @@ export function formatNumber(v: unknown): string {
   return Number.parseFloat(v.toPrecision(4)).toString();
 }
 
+/** ブロック面に inline 表示する配列要素の上限 (これを超えると要素数だけ示す)。 */
+const INLINE_ARRAY_MAX = 4;
+
+/**
+ * スカラまたは配列 (ADR-0079 Stage 3: ベクトル / 行列の Constant 値等) を短く整形する。
+ * - 数値: ``formatNumber``
+ * - 1-D 配列 (4 要素まで): ``[1, 2, 3]``、それ以上: ``[…](n)``
+ * - 2-D 以上: ``[r×c]`` (次元を × で連結)
+ */
+export function formatValue(v: unknown): string {
+  if (!Array.isArray(v)) return formatNumber(v);
+  if (v.length === 0) return "[]";
+  if (Array.isArray(v[0])) {
+    const dims: number[] = [];
+    let cur: unknown = v;
+    while (Array.isArray(cur)) {
+      dims.push(cur.length);
+      cur = cur[0];
+    }
+    return `[${dims.join("×")}]`;
+  }
+  if (v.length > INLINE_ARRAY_MAX) return `[…](${v.length})`;
+  return `[${v.map((x) => formatNumber(x)).join(", ")}]`;
+}
+
 /**
  * 多項式係数 [a_n, a_{n-1}, ..., a_1, a_0] を ``a_n*var^n + ... + a_0`` の形に整形。
  *

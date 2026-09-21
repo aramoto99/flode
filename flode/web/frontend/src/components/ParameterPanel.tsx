@@ -12,6 +12,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
+import { isArrayCapableParam, parseArrayLiteral } from "../lib/arrayParams";
 import { PYTHON_FUNCTION_TYPE } from "../lib/blockTypes";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
@@ -252,6 +253,18 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   //   - "array": raw は unknown[] (JsonArrayEditor が parse + 検証済の配列)
   const commit = (k: string, raw: unknown, originalType: string): void => {
     let newValue: unknown;
+    if (originalType === "number" && isArrayCapableParam(block.type, k)) {
+      // ADR-0079 Stage 3: スカラ ⇄ 配列を許すパラメータは ``[…]`` を配列として受ける
+      const arr = parseArrayLiteral(raw as string);
+      if (arr === null) {
+        setError(t("inspector.array.element_type", { expected: "number" }));
+        return;
+      }
+      if (arr !== undefined) {
+        commit(k, arr, "array");
+        return;
+      }
+    }
     if (originalType === "number") {
       // raw は string で来る (number 入力は text 入力経路)
       const parsed = parseNumericInput(raw as string);
@@ -517,6 +530,12 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                       "e.g. [0.0, 1.0, 2.0]",
                     )}
                     onCommit={(next) => commit(k, next, "array")}
+                    // ADR-0079 Stage 3: 配列 → スカラに戻す (数値 1 個を書く)
+                    onCommitScalar={
+                      isArrayCapableParam(block.type, k)
+                        ? (n) => commit(k, String(n), "number")
+                        : undefined
+                    }
                   />
                 ) : valueType === "string" &&
                   isLongStringParam(v as string) ? (

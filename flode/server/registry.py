@@ -165,6 +165,10 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "flode.blocks.rounding.Rounding": ("mathops", "Rounding", "math.rounding"),
     # SPEC-0026 (v0.53.0): Cast — 値の意味論の型変換 (ADR-0076)
     "flode.blocks.cast.Cast": ("mathops", "Cast", "math.cast"),
+    # ADR-0079 Stage 3 (v0.64.0): 要素縮約 + 線形代数
+    "flode.blocks.mathops.Reduce": ("mathops", "Reduce", "math.reduce"),
+    "flode.blocks.mathops.DotProduct": ("mathops", "Dot Product", "math.dotproduct"),
+    "flode.blocks.mathops.MatrixMultiply": ("mathops", "Matrix Multiply", "math.matmul"),
     # continuous
     "flode.blocks.continuous.Integrator": ("continuous", "Integrator", "cont.integrator"),
     "flode.blocks.continuous.Derivative": ("continuous", "Derivative", "cont.derivative"),
@@ -308,6 +312,10 @@ _BLOCK_SEARCH_KEYWORDS: dict[str, tuple[str, ...]] = {
     "flode.blocks.mathops.Product": ("multiply", "multiplication", "乗算", "掛け算"),
     "flode.blocks.mathops.Divide": ("division", "除算", "割り算"),
     "flode.blocks.mathops.Saturation": ("limit", "clamp", "saturate", "飽和", "制限"),
+    # ADR-0079 Stage 3: 要素総和は「sum of elements」で探されることが多い
+    "flode.blocks.mathops.Reduce": ("sum", "total", "elements", "総和", "要素", "縮約"),
+    "flode.blocks.mathops.DotProduct": ("inner", "内積", "scalar product"),
+    "flode.blocks.mathops.MatrixMultiply": ("matmul", "行列積", "product"),
     # ADR-0058: control category の境界ブロックは「subsystem」検索で発見できる
     # ようにする (= category code は "control" で表面に出ないため、search_keywords
     # で "subsystem" 等を補強する)。ユーザー指摘 2026-05-27「subsystem 検索で

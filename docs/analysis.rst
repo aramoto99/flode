@@ -41,6 +41,12 @@ Quick example
    print(ls.input_names)   # ['Integrator_0.in[0][0]']
    print(ls.output_names)  # ['Integrator_0.out[0][0]']
 
+The last index of an input / output label is the flat (C order) position
+inside a vector port: a ``StateSpace`` with ``m = 3`` inputs has one
+``(3,)`` port and contributes the columns ``ss.in[0][0]``, ``ss.in[0][1]``,
+``ss.in[0][2]`` to ``B``. Vector states are named ``<id>.x[i]`` in the same
+flat order.
+
 Connecting to ``python-control``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

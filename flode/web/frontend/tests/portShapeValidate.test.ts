@@ -115,14 +115,28 @@ describe("validatePortShapeConnection", () => {
     ).toBe(true);
   });
 
-  it("Mux out (vector) → Gain in (scalar) is rejected", () => {
+  it("ADR-0079 D-3: Mux out (vector) → Gain in (registry default []) is accepted (inferred at build)", () => {
+    // v0.64.0 bug-fix: registry default の [] は「推論に任せる」。Gain は要素ごとに
+    // ベクトルを処理するので GUI が先に拒否してはならない (backend 解決器が最終判定)
     const r = validatePortShapeConnection(mux, 0, gain1, 0, registry);
-    expect(r.ok).toBe(false);
-    expect(r.reason).toContain("Port shape mismatch");
+    expect(r.ok).toBe(true);
   });
 
   it("Mux out (vector) → Demux in (vector) OK", () => {
     expect(validatePortShapeConnection(mux, 0, demux, 0, registry).ok).toBe(true);
+  });
+
+  it("declared vector → declared vector of a different length is rejected", () => {
+    const r = validatePortShapeConnection(
+      mux,
+      0,
+      demux,
+      0,
+      registry,
+      { src: { in: [[], []], out: [[3]] }, dst: { in: [[2]], out: [[], []] } },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("Port shape mismatch");
   });
 
   it("invalid src port index returns descriptive error", () => {

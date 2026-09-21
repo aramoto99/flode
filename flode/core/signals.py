@@ -514,6 +514,9 @@ _CLASSIFICATION: Final[Mapping[str, Category]] = {
     "DeadZone": "float_out",
     "Saturation": "float_out",
     "Gain": "float_out",
+    "Reduce": "float_out",
+    "DotProduct": "float_out",
+    "MatrixMultiply": "float_out",
     "Fcn": "float_out",
     "LookupTable1D": "float_out",
     "LookupTable2D": "float_out",
@@ -586,6 +589,10 @@ _CONTROL_PORT_INDEX: Final[Mapping[str, int]] = {"Switch": 1, "MultiportSwitch":
 #: - ``subsystem``: 階層再帰 (ADR-0079 §(6) D-8)。外側 in shape を内部 Inport に注入して
 #:   内部スコープを再帰解決し、内部 Outport の in shape を外側 out shape にする。
 #:   enable / trigger slot は ``()`` 固定
+#: - ``reduce``: 入力は合流規則で検査し (Reduce は 1 入力、DotProduct は同 shape 2 入力)、
+#:   出力は常に ``()`` (ADR-0079 Stage 3、SPEC-0031 F-5.3)
+#: - ``matmul``: 2 入力の行列積 ``u0 @ u1`` (``_matmul_shape``)。両方 ``()`` なら ``()``、
+#:   片方だけ ``()`` / 内側次元不一致は ``shape.mismatch``
 #: - ``sink``: 任意 shape を受理 (Scope / Display / Terminator)
 #: - ``sink_scalar``: ``()`` のみ受理 (XYGraph / Trigger / Enable)
 ShapeCategory = Literal[
@@ -597,6 +604,8 @@ ShapeCategory = Literal[
     "inferred",
     "state",
     "subsystem",
+    "reduce",
+    "matmul",
     "opaque",
     "sink",
     "sink_scalar",
@@ -627,6 +636,10 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
     "CompareToZero": "elementwise",
     # -- 行列 / 要素ごとゲイン --
     "Gain": "gain",
+    # -- 要素縮約 / 線形代数 (Stage 3) --
+    "Reduce": "reduce",
+    "DotProduct": "reduce",
+    "MatrixMultiply": "matmul",
     # -- 選択 (制御ポート () 固定、データポート同一 shape) --
     "Switch": "select",
     "MultiportSwitch": "select",
@@ -651,11 +664,12 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
     "StateSpace": "declared",
     "TransferFunction": "declared",
     "MimoTransferFunction": "declared",
-    "LookupTable1D": "declared",
-    "LookupTable2D": "declared",
-    "LookupTableND": "declared",
-    "Prelookup": "declared",
-    "InterpolationUsingPrelookup": "declared",
+    # lookup 系は Stage 3 から要素ごと (blocks/lookup.py の _eval スカラ核を vectorize)
+    "LookupTable1D": "elementwise",
+    "LookupTable2D": "elementwise",
+    "LookupTableND": "elementwise",
+    "Prelookup": "elementwise",
+    "InterpolationUsingPrelookup": "elementwise",
     "Relay": "declared",
     "TransportDelay": "declared",
     "DiscreteStateSpace": "declared",
@@ -691,6 +705,10 @@ _SHAPE_SOURCES: Final[Mapping[str, Callable[[Block], bool]]] = {
     "Gain": lambda b: np.ndim(getattr(b, "k", 0.0)) > 0,
     # ADR-0079 §(5): 非 rank-0 の x0 を持つ状態ブロック
     "VectorStateMixin": lambda b: tuple(getattr(b, "_x0_shape", ())) != (),
+    # ADR-0079 Stage 3 (SPEC-0031 #18): 配列 value / shape 付き乱数 (宣言でも拾えるが
+    # 起点一覧を SSOT にする、Risk 5)
+    "Constant": lambda b: np.ndim(getattr(b, "value", 0.0)) > 0,
+    "RandomSource": lambda b: tuple(getattr(b, "shape", ())) != (),
 }
 
 
@@ -1146,7 +1164,9 @@ def _check_in_shapes(
     raw_in = list(raw[:n_in])
     bid = block.id
 
-    if category in ("elementwise", "gain", "fanout", "sink", "inferred"):
+    if category in ("elementwise", "gain", "fanout", "sink", "inferred", "reduce", "matmul"):
+        # reduce の合流検査は _infer_out_shapes (_merge_many_shapes) が、matmul の
+        # 内側次元検査は _matmul_out_shape が行う
         return raw_in
 
     if category == "select":
@@ -1334,10 +1354,10 @@ def _check_in_shapes(
         if s is not None and s != declared and sink is not None:
             if declared == SCALAR_SHAPE:
                 detail = (
-                    "this block accepts scalar signals only in this release "
-                    "(vector support for state / source / lookup blocks arrives "
-                    "in a later stage, ADR-0079). Use a Demux block to select one "
-                    "element, or a vector-aware block."
+                    "this block accepts scalar signals only (SISO TransferFunction / "
+                    "DiscreteTransferFunction, Relay, TransportDelay and the time "
+                    "sources stay scalar, ADR-0079 D-10). Use a Demux block to select "
+                    "one element, or a vector-aware block (StateSpace for MIMO)."
                 )
             else:
                 detail = (
@@ -1503,6 +1523,40 @@ def _gain_out_shape(block: Block, in_shape: Shape | None, sink: DiagSink | None)
     return result
 
 
+def _matmul_out_shape(
+    block: Block, in_shapes: Sequence[Shape | None], sink: DiagSink | None
+) -> Shape | None:
+    """``MatrixMultiply`` の出力 shape (``u0 @ u1``、ADR-0079 Stage 3)。
+
+    両入力が既知になるまで ``None``。両方 ``()`` はスカラ積で ``()``。片方だけ ``()``
+    や内側次元の不一致は ``shape.mismatch`` (最終パスで ``()`` に materialize された
+    未接続入力も同じ経路で error 級になる)。
+    """
+    a = in_shapes[0] if len(in_shapes) > 0 else None
+    b = in_shapes[1] if len(in_shapes) > 1 else None
+    if a is None or b is None:
+        return None
+    if a == SCALAR_SHAPE and b == SCALAR_SHAPE:
+        return SCALAR_SHAPE
+    result = _matmul_shape(a, b)
+    if result is None and sink is not None:
+        sink(
+            _diag(
+                "shape.mismatch",
+                f"MatrixMultiply {block.id!r}: cannot compute u0 @ u1 for shapes "
+                f"{_shape_str(a)} and {_shape_str(b)}; both operands must be rank 1 "
+                f"or 2 with matching inner dimensions (use Mux to build the vectors, "
+                f"or Gain for a scalar factor).",
+                block_id=block.id,
+                direction="in",
+                port_index=1,
+                expected_shape=a,
+                actual_shape=b,
+            )
+        )
+    return result
+
+
 def _infer_out_shapes(
     block: Block,
     category: ShapeCategory,
@@ -1532,6 +1586,12 @@ def _infer_out_shapes(
         return [_state_out_shape(block, in_shapes, sink)] * n_out
     if category == "inferred":
         return _inferred_out_shapes(block, in_shapes, sink)
+    if category == "reduce":
+        # 入力の合流検査 (診断込み) だけ行い、出力は常にスカラ
+        _merge_many_shapes(in_shapes, sink, block)
+        return [SCALAR_SHAPE] * n_out
+    if category == "matmul":
+        return [_matmul_out_shape(block, in_shapes, sink)] * n_out
     if category == "subsystem":
         # 階層再帰は _resolve_graph が _resolve_subsystem で行う (ここは到達しない)
         raise BlockSpecError(
