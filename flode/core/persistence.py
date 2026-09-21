@@ -887,20 +887,25 @@ def _migration_block_id(base: Any, suffix: str, existing: set[str]) -> str:
     同じ入力からは常に同じ ID が出る。
     """
     base_str = normalize_block_id(base) if isinstance(base, str) else _LTI_FALLBACK_BASE
-    # 連番サフィックス ``_1``〜``_999`` 分の余裕。同一 base で 1000 件以上衝突する
-    # (実運用では起きない) 入力は 64 code point を超え、load 時の validate_block_id が
-    # BlockSpecError で fail-closed に止める (サイレント破損にはならない)
-    keep = max(1, _BLOCK_ID_MAX_LEN - len(suffix) - 4)
-    candidate = f"{base_str[:keep]}{suffix}"
-    try:
-        validate_block_id(candidate)
-    except BlockSpecError:
-        candidate = f"{_LTI_FALLBACK_BASE}{suffix}"
-    unique = candidate
+
+    def _build(counter: int) -> str:
+        # bug-fix 2026-09-21: 連番サフィックスの桁数ぶん base を切り詰め直し、衝突が
+        # 何件あっても 64 code point に収める (以前は 4 文字の固定余裕で、1000 件超の
+        # 衝突で上限を超えていた)
+        tail = "" if counter == 0 else f"_{counter}"
+        keep = max(1, _BLOCK_ID_MAX_LEN - len(suffix) - len(tail))
+        candidate = f"{base_str[:keep]}{suffix}{tail}"
+        try:
+            validate_block_id(candidate)
+        except BlockSpecError:
+            candidate = f"{_LTI_FALLBACK_BASE}{suffix}{tail}"
+        return candidate
+
     counter = 0
+    unique = _build(counter)
     while unique in existing:
         counter += 1
-        unique = f"{candidate}_{counter}"
+        unique = _build(counter)
     existing.add(unique)
     return unique
 

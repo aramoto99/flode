@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.64.1] - 2026-09-21 — Subsystem 内部の Goto を外側の From で受けるベクトル信号の修正
+
+### Fixed
+
+- **`Subsystem` 内部の `Goto` を外側の `From` が参照すると shape が `()` に落ちていた**
+  (v0.62.0 から、ADR-0079 D-n の既知制限)。build は通るのに実行時に From の `output_v` の
+  shape 不一致で `BlockSpecError` になっていた。信号面解決器が上流ブロックの所属スコープを
+  同一性で判定し (現スコープ → Subsystem 内部 → 上位スコープ)、内部スコープの解決結果から
+  shape / dtype を引くようにした。ネスト 2 段、外側に内部と同名 id のブロックがある場合も正しい
+- schema 0.14 → 0.15 migration の挿入 ID (`<id>__in_mux` 等) が同一 base で 1000 件超の
+  衝突時に 64 code point を超えていた (実運用では起きない極端な入力)。連番の桁数に応じて
+  base を切り詰め直す
+- テスト `test_save_load_bytes_unchanged` が `metadata.created_at` の秒境界で flaky だった
+  (時計を固定、製品コードは不変)
+- テスト: 0.14 → 0.15 migration の基準 npz との突合を bit 一致から極小許容誤差の allclose に
+  緩和 (v0.64.0 リリース直後の ac5de9e。CI の ubuntu では BLAS 差で最終ビットが変わる)
+
 ## [0.64.0] - 2026-09-21 — StateSpace 系のベクトルポート統一とソース系のベクトル値 (ADR-0079 Stage 3)
 
 ### Changed (BREAKING: `StateSpace` 系のポートが変わります)

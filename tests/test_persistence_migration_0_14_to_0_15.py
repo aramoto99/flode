@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from flode import Simulator
+from flode.core.identifiers import validate_block_id
 from flode.core.persistence import (
     CURRENT_SCHEMA_VERSION,
     LTI_MIGRATION_PORT_BLOCK_OFFSET,
@@ -175,6 +176,19 @@ class TestIdDeterminism:
         new_id = _migration_block_id(base, "__in_mux", set())
         assert new_id.endswith("__in_mux")
         assert len(new_id) <= 64
+
+    def test_many_collisions_still_yield_valid_length(self) -> None:
+        """bug-fix 2026-09-21: 同一 base で 1000 件超衝突しても 64 code point に収まる。"""
+        base = "x" * 64
+        existing: set[str] = set()
+        ids = [_migration_block_id(base, "__in_mux", existing) for _ in range(1002)]
+        assert len(set(ids)) == 1002  # 全て一意
+        for new_id in ids:
+            assert len(new_id) <= 64
+            validate_block_id(new_id)
+        assert ids[0].endswith("__in_mux")
+        assert ids[1].endswith("__in_mux_1")
+        assert ids[1001].endswith("__in_mux_1001")
 
     def test_invalid_base_falls_back(self) -> None:
         assert _migration_block_id("bad id!", "__out_demux", set()) == "lti__out_demux"

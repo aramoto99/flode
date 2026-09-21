@@ -180,6 +180,72 @@ class TestVectorThroughSubsystem:
         sim.run()
         np.testing.assert_array_equal(np.asarray(sc.values)[0], [2.0, 4.0])
 
+    def test_outer_from_reads_inner_goto_shape(self) -> None:
+        """bug-fix 2026-09-21 (ADR-0079 D-n): Subsystem 内部の Goto を外側の From が
+        参照すると shape が () に落ちていた → 内部スコープの解決結果を透過する。"""
+        sub = Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="i"),
+                Gain(k=3.0, id="g"),
+                Goto(tag="bus", tag_visibility="global", id="gt"),
+            ],
+            connections=[{"src": "i", "dst": "g"}, {"src": "g", "dst": "gt"}],
+            id="sub",
+        )
+        sim = Simulator(t_end=0.02, dt=TS)
+        c1 = sim.add(Constant(value=1.0, id="c1"))
+        c2 = sim.add(Constant(value=2.0, id="c2"))
+        m = sim.add(Mux(n=2, id="m"))
+        sim.add(sub)
+        fr = sim.add(From(tag="bus", id="fr"))
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(c1, m, dst_idx=0)
+        sim.connect(c2, m, dst_idx=1)
+        sim.connect(m, sub)
+        sim.connect(fr, sc)
+        res = sim.resolve_signals()
+        assert res.out_shape("fr", 0) == (2,)
+        sim.run()
+        np.testing.assert_array_equal(np.asarray(sc.values)[-1], [3.0, 6.0])
+
+    def test_outer_from_reads_nested_inner_goto_with_duplicate_ids(self) -> None:
+        """ネスト 2 段の内部 Goto を外側の From が参照し、外側にも内部と同じ id ("g") の
+        ブロックがあっても取り違えない (所属スコープは同一性で判定)。"""
+        inner = Subsystem(
+            blocks=[
+                Inport(port_idx=0, id="i"),
+                Gain(k=3.0, id="g"),
+                Goto(tag="bus", tag_visibility="global", id="gt"),
+            ],
+            connections=[{"src": "i", "dst": "g"}, {"src": "g", "dst": "gt"}],
+            id="inner",
+        )
+        outer = Subsystem(
+            blocks=[Inport(port_idx=0, id="i"), inner],
+            connections=[{"src": "i", "dst": "inner"}],
+            id="outer",
+        )
+        sim = Simulator(t_end=0.02, dt=TS)
+        c1 = sim.add(Constant(value=1.0, id="c1"))
+        c2 = sim.add(Constant(value=2.0, id="c2"))
+        m = sim.add(Mux(n=2, id="m"))
+        sim.add(outer)
+        g_outer = sim.add(Gain(k=1.0, id="g"))  # 内部と同じ id をあえて置く
+        fr = sim.add(From(tag="bus", id="fr"))
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(c1, m, dst_idx=0)
+        sim.connect(c2, m, dst_idx=1)
+        sim.connect(m, outer)
+        sim.connect(c1, g_outer)
+        sim.connect(fr, sc)
+        res = sim.resolve_signals()
+        assert res.out_shape("fr", 0) == (2,)
+        assert res.out_shape("g", 0) == ()  # 外側の g は影響を受けない
+        assert res.ports[("fr", "out", 0)] == "float64"
+        assert not any(d.code == "dtype.defaulted_to_float64" for d in res.diagnostics)
+        sim.run()
+        np.testing.assert_array_equal(np.asarray(sc.values)[-1], [3.0, 6.0])
+
     def test_inner_only_shape_source_takes_plan_path(self) -> None:
         """外側は全スカラでも、内部に Mux があれば plan 経路 (has_shape_source の再帰)。"""
         sub = Subsystem(

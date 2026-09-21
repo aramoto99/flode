@@ -961,17 +961,13 @@ def _promote_many(dtypes: Sequence[str], sink: DiagSink | None, block_id: str) -
     return result
 
 
-def _upstream_keys(block: Block) -> list[PortKey | None]:
-    """各入力ポートの上流出力キー (未接続は None)。From は対応 Goto の上流を
+def _upstream_sources(block: Block) -> list[tuple[Block, int] | None]:
+    """各入力ポートの上流 ``(block, out_idx)`` (未接続は None)。From は対応 Goto の上流を
     **仮想入力** として末尾に追加する (dtype / shape 共通の走査規則)。"""
-    keys: list[PortKey | None] = []
+    sources: list[tuple[Block, int] | None] = []
     for i in range(block.n_inputs):
         src = block.input_sources[i]
-        if src is None:
-            keys.append(None)
-        else:
-            src_block, src_idx = src
-            keys.append((_block_id(src_block), "out", src_idx))
+        sources.append(None if src is None else (src[0], src[1]))
     resolved_goto = getattr(block, "_resolved_goto", None)
     if resolved_goto is not None and resolved_goto.n_inputs > 0:
         # From の仮想入力 = 対応 Goto の上流出力 (反復中の out_of には
@@ -980,23 +976,28 @@ def _upstream_keys(block: Block) -> list[PortKey | None]:
         # 事前に run() 等 (正当な build) を済ませていると _resolved_goto が
         # 残存し、static mode でも Goto/From が解決されることがある (無害)。
         goto_src = resolved_goto.input_sources[0]
-        if goto_src is None:
-            keys.append(None)
-        else:
-            keys.append((_block_id(goto_src[0]), "out", goto_src[1]))
-    return keys
+        sources.append(None if goto_src is None else (goto_src[0], goto_src[1]))
+    return sources
 
 
-def _gather_raw_inputs(block: Block, out_of: Mapping[PortKey, str]) -> list[str]:
-    """各入力ポートの上流出力 dtype (未接続 / 未解決は unknown)。"""
-    return [UNKNOWN if k is None else out_of.get(k, UNKNOWN) for k in _upstream_keys(block)]
+def _gather_raw_inputs(block: Block, lookup: Callable[[Block, int], str | None]) -> list[str]:
+    """各入力ポートの上流出力 dtype (未接続 / 未解決は unknown)。
+
+    上流 ``(block, out_idx)`` の解決は ``lookup`` に委ねる (``_resolve_graph`` のスコープ
+    判定: 現スコープ → Subsystem 内部 (外側の From が内部の Goto を参照する
+    ADR-0079 D-n) → 上位スコープ)。
+    """
+    return [
+        UNKNOWN if s is None else (lookup(s[0], s[1]) or UNKNOWN) for s in _upstream_sources(block)
+    ]
 
 
 def _gather_raw_shapes(
-    block: Block, shape_of: Mapping[PortKey, Shape | None]
+    block: Block, lookup: Callable[[Block, int], Shape | None]
 ) -> list[Shape | None]:
-    """各入力ポートの上流出力 shape (未接続 / 未解決は ``None``)。"""
-    return [None if k is None else shape_of.get(k) for k in _upstream_keys(block)]
+    """各入力ポートの上流出力 shape (未接続 / 未解決は ``None``)。``lookup`` は
+    :func:`_gather_raw_inputs` と同じ。"""
+    return [None if s is None else lookup(s[0], s[1]) for s in _upstream_sources(block)]
 
 
 def _infer_outputs(
@@ -1694,6 +1695,28 @@ class _SubsystemResolver:
         self.static = static
         self.results: dict[str, SignalResolution] = {}
         self._cache: dict[tuple[int, tuple[Shape | None, ...]], SignalResolution] = {}
+        # bug-fix 2026-09-21 (ADR-0079 D-n): 内部ブロック id() → その内部スコープの最新の
+        # 解決結果。外側の From が内部の Goto を参照するとき、内部の out shape / dtype を
+        # ここから引く (反復ごとに更新され、最終パスでは最終結果を指す)
+        self._latest_by_block: dict[int, SignalResolution] = {}
+
+    def owns(self, block: Block) -> bool:
+        """``block`` が (既に解決された) いずれかの Subsystem 内部スコープに属するか。"""
+        return id(block) in self._latest_by_block
+
+    def inner_out_shape(self, block: Block, port_idx: int) -> Shape | None:
+        """内部スコープに属する ``block`` の出力 shape (未解決なら ``None``)。"""
+        res = self._latest_by_block.get(id(block))
+        if res is None:
+            return None
+        return res.shapes.get((_block_id(block), "out", port_idx))
+
+    def inner_out_dtype(self, block: Block, port_idx: int) -> str | None:
+        """内部スコープに属する ``block`` の出力 dtype (未解決なら ``None``)。"""
+        res = self._latest_by_block.get(id(block))
+        if res is None:
+            return None
+        return res.ports.get((_block_id(block), "out", port_idx))
 
     def resolve(
         self,
@@ -1707,8 +1730,8 @@ class _SubsystemResolver:
         n_data, _e, _t = _subsystem_slots(sub)
         key = (id(sub), tuple(in_shapes[:n_data]))
         res = self._cache.get(key)
+        inner_blocks = list(getattr(sub, "_inner_blocks", ()))
         if res is None:
-            inner_blocks = list(getattr(sub, "_inner_blocks", ()))
             exec_order = getattr(sub, "_exec_order", None)
             order = (
                 list(exec_order)
@@ -1736,6 +1759,8 @@ class _SubsystemResolver:
                 sub_resolver=self,
             )
             self._cache[key] = res
+        for inner in inner_blocks:
+            self._latest_by_block[id(inner)] = res
         if sink is not None:
             # 最終パス: この Subsystem の内部結果を公開 (診断は内部側に残す)
             self.results[_block_id(sub)] = res
@@ -1821,6 +1846,27 @@ def _resolve_graph(
     shape_lookup: Mapping[PortKey, Shape | None] = (
         ChainMap(shape_of, dict(outer_shapes)) if outer_shapes else shape_of
     )
+    # bug-fix 2026-09-21 (ADR-0079 D-n): 上流ブロックの所属スコープは **同一性** で判定する
+    # (block id は スコープ内でしか一意でないため、外側にも同じ id があると id キーだけでは
+    # 内部ブロックを取り違える)。現スコープ → Subsystem 内部 → 上位スコープの順。
+    local_ids = {id(b) for b in blocks}
+
+    def _upstream_shape(src: Block, idx: int) -> Shape | None:
+        if id(src) in local_ids:
+            return shape_of.get((_block_id(src), "out", idx))
+        assert sub_resolver is not None
+        if sub_resolver.owns(src):
+            return sub_resolver.inner_out_shape(src, idx)
+        return shape_lookup.get((_block_id(src), "out", idx))
+
+    def _upstream_dtype(src: Block, idx: int) -> str | None:
+        if id(src) in local_ids:
+            return out_of.get((_block_id(src), "out", idx))
+        assert sub_resolver is not None
+        if sub_resolver.owns(src):
+            return sub_resolver.inner_out_dtype(src, idx)
+        # 上位スコープの dtype 表は持たない (内部は float64 island、SPEC-0028 Q6)
+        return None
 
     def _out_shapes_for(
         b: Block, shape_cat: ShapeCategory, raw_shapes: list[Shape | None], sink: DiagSink | None
@@ -1839,7 +1885,7 @@ def _resolve_graph(
     for _ in range(max_iterations):
         changed = False
         for b in order:
-            raw = _gather_raw_inputs(b, out_of)
+            raw = _gather_raw_inputs(b, _upstream_dtype)
             category, _missing = _classify(b)
             required = _required_input_dtype(b, island=island)
             in_dtypes = _apply_input_requirement(b, raw, None, required)
@@ -1853,7 +1899,7 @@ def _resolve_graph(
                 if out_of[key] != d:
                     out_of[key] = d
                     changed = True
-            raw_shapes = _gather_raw_shapes(b, shape_lookup)
+            raw_shapes = _gather_raw_shapes(b, _upstream_shape)
             shape_cat = shape_cats[id(b)]
             # 入力側の検査 (_check_in_shapes) は診断付きの最終パスだけで行う
             for j, s in enumerate(_out_shapes_for(b, shape_cat, raw_shapes, None)):
@@ -1910,13 +1956,13 @@ def _resolve_graph(
     ports: dict[PortKey, str] = dict(out_of)
     shapes: dict[PortKey, Shape | None] = dict(shape_of)
     for b in order:
-        raw = _gather_raw_inputs(b, out_of)
+        raw = _gather_raw_inputs(b, _upstream_dtype)
         category, rule_missing = _classify(b)
         required = _required_input_dtype(b, island=island)
         in_dtypes = _apply_input_requirement(b, raw, sink, required)
         if force_float64:
             in_dtypes = ["float64"] * len(in_dtypes)
-        raw_shapes = _gather_raw_shapes(b, shape_lookup)
+        raw_shapes = _gather_raw_shapes(b, _upstream_shape)
         shape_cat = shape_cats[id(b)]
         in_shapes = _check_in_shapes(b, shape_cat, raw_shapes, sink)
         # 仮想入力 (From の Goto 参照) は in ポートとして数えない

@@ -15,15 +15,28 @@ SM-D Stage 0 の鉄則「計算結果を 1 bit も変えない」を、
 
 from __future__ import annotations
 
+import datetime
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
+from pytest_mock import MockerFixture
 
 from flode import Simulator
 from flode.core import signals as dtypes
 from flode.core.persistence import CURRENT_SCHEMA_VERSION
 from tests.core import _dtype_baseline_models as baseline
+
+_T0 = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+
+
+def _freeze_save_clock(mocker: MockerFixture, instants: list[datetime.datetime]) -> None:
+    """``Simulator.save`` が metadata.created_at に使う時計を固定する。"""
+    fake = mocker.patch("flode.core.simulator.datetime")
+    fake.UTC = datetime.UTC
+    fake.datetime.now.side_effect = list(instants)
+
 
 # npz 基準比較 (クロス環境層) で ODE 積分を含む continuous 系列にのみ適用する
 # 許容誤差。観測された環境差は最終 bit (相対 ~1e-16) のみで、ソルバ自身の精度
@@ -77,8 +90,11 @@ class TestBehaviorInvariance:
         sim.run()
         assert len(scope.times) > 0
 
-    def test_save_load_bytes_unchanged(self, tmp_path: Path) -> None:
-        # AC-4: resolve_dtypes を挟んでも .flw.json は 1 バイトも変わらない
+    def test_save_load_bytes_unchanged(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        # AC-4: resolve_dtypes を挟んでも .flw.json は 1 バイトも変わらない。
+        # bug-fix 2026-09-21: metadata.created_at は save 時刻 (秒精度) なので、2 回の
+        # save が秒境界をまたぐと本テストが flaky に落ちていた → 時計を固定する
+        _freeze_save_clock(mocker, [_T0, _T0])
         sim, _scope = baseline.build_mixed()
         before = tmp_path / "before.flw.json"
         after = tmp_path / "after.flw.json"
@@ -89,6 +105,27 @@ class TestBehaviorInvariance:
         loaded.save(after)
 
         assert before.read_bytes() == after.read_bytes()
+
+    def test_save_load_across_second_boundary_changes_only_created_at(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """秒境界をまたいでも変わるのは metadata.created_at だけ (flaky の原因の固定)。"""
+        _freeze_save_clock(mocker, [_T0, _T0 + datetime.timedelta(seconds=1)])
+        sim, _scope = baseline.build_mixed()
+        before = tmp_path / "before.flw.json"
+        after = tmp_path / "after.flw.json"
+        sim.save(before)
+        loaded = Simulator.load(before)
+        loaded.resolve_dtypes()
+        loaded.save(after)
+
+        a = json.loads(before.read_text(encoding="utf-8"))
+        b = json.loads(after.read_text(encoding="utf-8"))
+        assert a["metadata"]["created_at"] != b["metadata"]["created_at"]
+        assert a["metadata"]["created_at"] == "2026-01-01T00:00:00Z"
+        del a["metadata"]["created_at"]
+        del b["metadata"]["created_at"]
+        assert a == b
 
     def test_schema_version_current_pin(self) -> None:
         # Stage 0 (SPEC-0027 AC-4) 時点では 0.10 固定だった。SM-D Stage 1
