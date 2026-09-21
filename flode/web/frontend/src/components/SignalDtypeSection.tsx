@@ -17,11 +17,27 @@ import { useTranslation } from "react-i18next";
 
 import { formatShape, hasDeclaredDtype, useDtypeResolution } from "../lib/dtypeResolution";
 import { useAppStore } from "../store/appStore";
-import type { DtypesDiagnostic, DtypesPortEntry } from "../types/api";
+import type { DtypesDiagnostic, DtypesPortEntry, DtypesResponse } from "../types/api";
 import { PropertyHint, PropertyRow, SectionDivider } from "./ui/inspector";
 
 /** Inspector 狭幅レイアウトのラベル幅 (ParameterPanel の既存行と揃える)。 */
 const LABEL_W = 88;
+
+/**
+ * editingPath (Subsystem id の列) に対応するスコープの解決結果を返す。
+ * 途中で ``inner`` が無ければ null (= セクション非表示)。
+ */
+export function resolveScope(
+  root: DtypesResponse | null,
+  path: readonly string[],
+): DtypesResponse | null {
+  let cur: DtypesResponse | null = root;
+  for (const id of path) {
+    if (!cur || !cur.inner) return null;
+    cur = cur.inner[id] ?? null;
+  }
+  return cur;
+}
 
 interface SignalDtypeSectionProps {
   /** 選択中ブロックの id。 */
@@ -37,10 +53,12 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
   const { t } = useTranslation();
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
-  const data = useDtypeResolution();
+  const rootData = useDtypeResolution();
 
-  const isRootScope = editingPath.length === 0;
-  if (!data || !isRootScope) return null;
+  // ADR-0079 §(6) (Stage 2): Subsystem 内を編集中は ``inner`` を editingPath で辿る
+  // (Stage 1 以前の応答には inner が無いので root 以外は非表示のまま)。
+  const data = resolveScope(rootData, editingPath);
+  if (!data) return null;
 
   const rows = data.ports
     .filter((p) => p.block_id === blockId)

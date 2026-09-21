@@ -59,6 +59,8 @@ interface MenuItemSpec {
   divider?: boolean;
   // Settings > Language サブメニュー用 (現在言語と一致時に ✓ 表示)
   language?: SupportedLanguage;
+  // 汎用トグル項目 (true なら ✓ 表示)。Language 項目と同じ ✓ 描画を使う
+  checked?: boolean;
 }
 
 export function MenuBar(): JSX.Element {
@@ -78,6 +80,7 @@ export function MenuBar(): JSX.Element {
   const setEditingModel = useAppStore((s) => s.setEditingModel);
   const setDirty = useAppStore((s) => s.setDirty);
   const editingModel = useAppStore((s) => s.editingModel);
+  const vectorEdgesBold = useAppStore((s) => s.vectorEdgesBold);
   const workspaceHash = useAppStore((s) => s.workspaceHash);
   // v0.42.0: Edit / View / Simulation メニュー用の購読。
   // 選択配列は boolean に落として購読する (= 選択変更のたびに MenuBar 全体が
@@ -616,7 +619,7 @@ export function MenuBar(): JSX.Element {
     },
   ];
 
-  // 設定メニュー (アプリ全体に関わる設定。Language が現状唯一の項目)
+  // 設定メニュー (アプリ全体に関わる設定: Language / ベクトル配線の太線表示)
   const settingsItems: MenuItemSpec[] = [
     { label: t("menu.settings.language"), disabled: true },
     {
@@ -633,6 +636,16 @@ export function MenuBar(): JSX.Element {
       onClick: () => {
         setOpenMenu(null);
         void setLanguage("ja");
+      },
+    },
+    { label: "", divider: true },
+    {
+      // ADR-0079 §(9): ベクトル信号 (rank >= 1) の配線を太線で描く
+      label: t("menu.settings.vector_edges", "Bold vector signal lines"),
+      checked: vectorEdgesBold,
+      onClick: () => {
+        setOpenMenu(null);
+        useAppStore.getState().setVectorEdgesBold(!vectorEdgesBold);
       },
     },
   ];
@@ -772,11 +785,13 @@ function Menu({
                 }`}
               >
                 <span className="flex items-center gap-1.5">
-                  {item.language && (
+                  {(item.language !== undefined || item.checked !== undefined) && (
                     <span
                       aria-hidden
+                      data-testid={item.checked !== undefined ? "menu-item-check" : undefined}
                       className={
-                        item.language === currentLang
+                        (item.language !== undefined && item.language === currentLang) ||
+                        item.checked === true
                           ? "text-blue-600"
                           : "text-transparent"
                       }

@@ -52,6 +52,12 @@ _logger = logging.getLogger("flode.subsystem")
 class Subsystem(Block):
     """Atomic Subsystem: 内部に独自のブロック群と結線を持つ複合ブロック。
 
+    ADR-0079 §(6) (v0.63.0): ベクトル信号は境界を透過する。信号面解決器が外側の
+    in shape を内部 ``Inport`` に注入して内部スコープを再帰解決し、その plan を
+    ``_inner_signal_plan`` として受け取る。SM-T path (``output_v`` /
+    ``derivative_v`` / ``update_v`` / ``advance_v``) は ``_step_inner_core_v`` で
+    内部を tuple-of-ndarray で回す。SM-A path (``output`` 等) は不変。
+
     ADR-0039 (v2.0): ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
     ``port_shapes_out`` は **内部 ``Inport`` / ``Outport`` から派生する property**
     で、コンストラクタには渡せない (TypeError)。利用者は
@@ -68,6 +74,10 @@ class Subsystem(Block):
         mask_params: マスクパラメータ宣言 (ADR-0021)。
         mask_values: マスク現在値。
     """
+
+    # ADR-0079 §(6): SM-A の output と SM-T の output_v の両方を実装する内部クラス
+    # (Inport / Outport / Switch と同じ例外、ADR-0018 §(5))
+    _skip_dual_api_check = True
 
     def __init__(
         self,
@@ -158,6 +168,25 @@ class Subsystem(Block):
         self._last_y: npt.NDArray[Any] | None = None
         # ADR-0078: advance() が Enable の reset 遷移を適用した時刻 (update との二重適用防止)
         self._reset_applied_at: float | None = None
+        # ADR-0079 §(6): 信号面解決器が作った内部 plan (``_exec_order`` 並行) と、
+        # ブロック → plan entry の索引。``Simulator._apply_plan_to_blocks`` が注入する
+        # runtime cache (宣言ではない)。None = SM-A path (plan なし)。
+        self._inner_signal_plan: (
+            list[
+                tuple[
+                    tuple[tuple[int, ...], ...],
+                    tuple[np.dtype[Any], ...],
+                    tuple[tuple[int, ...], ...],
+                    tuple[np.dtype[Any], ...],
+                ]
+            ]
+            | None
+        ) = None
+        self._inner_plan_by_block: dict[Block, tuple[tuple[int, ...], ...]] = {}
+        self._inner_out_shapes_by_block: dict[Block, tuple[tuple[int, ...], ...]] = {}
+        self._plan_out_shapes: tuple[tuple[int, ...], ...] | None = None
+        # SM-T path の held output (plan の out_shape ごとの ndarray タプル)
+        self._last_y_v: tuple[npt.NDArray[Any], ...] | None = None
 
         # ADR-0055 §論点 5-A: Goto/From 仮想エッジ展開で外部 (Simulator) から
         # 追加される内部 ``(dst, src)`` deps の set。``_compute_exec_order`` が
@@ -233,7 +262,11 @@ class Subsystem(Block):
             (b for b in self._inner_blocks if isinstance(b, Inport)),
             key=lambda p: p.port_idx,
         )
-        shapes: tuple[tuple[int, ...], ...] = tuple(p.port_shape for p in inports)
+        # ADR-0079 §(6): port_shape=None (継承) は Block 契約上 () として見せる。
+        # 実行時 shape は信号面解決器が内部 Inport に外側 shape を注入して決める。
+        shapes: tuple[tuple[int, ...], ...] = tuple(
+            p.port_shape if p.port_shape is not None else () for p in inports
+        )
         has_enable = any(isinstance(b, Enable) for b in self._inner_blocks)
         has_trigger = any(isinstance(b, Trigger) for b in self._inner_blocks)
         if has_enable:
@@ -252,7 +285,7 @@ class Subsystem(Block):
             (b for b in self._inner_blocks if isinstance(b, Outport)),
             key=lambda p: p.port_idx,
         )
-        return tuple(p.port_shape for p in outports)
+        return tuple(p.port_shape if p.port_shape is not None else () for p in outports)
 
     @port_shapes_out.setter
     def port_shapes_out(self, value: tuple[tuple[int, ...], ...]) -> None:  # noqa: ARG002
@@ -574,23 +607,7 @@ class Subsystem(Block):
             register_serialization_invalidation(lambda: setattr(self, "_exec_order", None))
 
         # 状態 layout 計算
-        offset = 0
-        for b in self._inner_blocks:
-            if b.n_states > 0:
-                sl = slice(offset, offset + b.n_states)
-                self._state_slices.append((b, sl))
-                # 連続+離散混在は上で拒否済みなので片方のみ
-                if b.sample_time is None or b.sample_time == 0.0:
-                    self._continuous_slices.append((b, sl))
-                else:
-                    self._discrete_slices.append((b, sl))
-                offset += b.n_states
-        self.n_states = offset
-        # x0 を組み立て
-        x0 = np.zeros(offset)
-        for b, sl in self._state_slices:
-            x0[sl] = np.asarray(b.x0, dtype=float)
-        self.x0 = x0
+        self._compute_state_layout()
 
         # bug-fix 2026-09-13: Enable-only で連続内部状態を持つ Subsystem は
         # Simulator から update() が呼ばれない (連続ブロックとして layout される)
@@ -690,6 +707,33 @@ class Subsystem(Block):
         if self._last_y is None or self._last_y.shape != (self.n_outputs,):
             self._last_y = np.zeros(self.n_outputs)
 
+    def _compute_state_layout(self) -> None:
+        """内部ブロックの状態 slice / ``n_states`` / ``x0`` を確定する。
+
+        ``_build`` から呼ぶほか、ADR-0079 §(5) で信号面 plan がベクトル状態ブロックの
+        ``n_states`` を変えた後 (``_finalize_inner_signal_plan``) にも再計算する。
+        """
+        self._state_slices = []
+        self._continuous_slices = []
+        self._discrete_slices = []
+        offset = 0
+        for b in self._inner_blocks:
+            if b.n_states > 0:
+                sl = slice(offset, offset + b.n_states)
+                self._state_slices.append((b, sl))
+                # 連続+離散混在は _build で拒否済みなので片方のみ
+                if b.sample_time is None or b.sample_time == 0.0:
+                    self._continuous_slices.append((b, sl))
+                else:
+                    self._discrete_slices.append((b, sl))
+                offset += b.n_states
+        self.n_states = offset
+        # x0 を組み立て
+        x0 = np.zeros(offset)
+        for b, sl in self._state_slices:
+            x0[sl] = np.asarray(b.x0, dtype=float)
+        self.x0 = x0
+
     def reset(self) -> None:
         """``Simulator.run()`` 開始時の lifecycle hook (run 間の再現性、bug-fix 2026-09-13)。
 
@@ -703,6 +747,7 @@ class Subsystem(Block):
         self._reset_applied_at = None
         if self._last_y is not None:
             self._last_y = np.zeros(self.n_outputs)
+        self._last_y_v = None
         for b in self._inner_blocks:
             inner_reset = getattr(b, "reset", None)
             if callable(inner_reset):
@@ -1022,6 +1067,297 @@ class Subsystem(Block):
                         u[i] = outputs[sb][si]
                 inputs[b] = u
         return outputs, inputs, x_work
+
+    # ---------- ADR-0079 §(6): SM-T (vector-port) 内部ランタイム ----------
+
+    def _apply_inner_signal_plan(
+        self,
+        plan: list[
+            tuple[
+                tuple[tuple[int, ...], ...],
+                tuple[np.dtype[Any], ...],
+                tuple[tuple[int, ...], ...],
+                tuple[np.dtype[Any], ...],
+            ]
+        ],
+    ) -> None:
+        """信号面解決器が作った内部 plan (``_exec_order`` 並行) を受け取る (runtime cache)。"""
+        assert self._exec_order is not None
+        self._inner_signal_plan = plan
+        self._inner_plan_by_block = {b: plan[i][0] for i, b in enumerate(self._exec_order)}
+        self._inner_out_shapes_by_block = {b: plan[i][2] for i, b in enumerate(self._exec_order)}
+        self._last_y_v = None
+
+    def _finalize_inner_signal_plan(self) -> None:
+        """内部ブロックへ plan を適用した後の再計算 (ベクトル状態で ``n_states`` が変わる)。"""
+        self._compute_state_layout()
+        # 外側の出力 shape (= Outport の入力 shape)
+        out_shapes: list[tuple[int, ...]] = []
+        for port_idx in range(self.n_outputs):
+            outport = self._outports_by_idx[port_idx]
+            src = outport.input_sources[0]
+            if src is None:
+                out_shapes.append(outport.port_shape if outport.port_shape is not None else ())
+            else:
+                sb, si = src
+                out_shapes.append(self._inner_out_shapes_by_block[sb][si])
+        self._plan_out_shapes = tuple(out_shapes)
+
+    def _require_inner_plan(self) -> None:
+        if self._inner_signal_plan is None:
+            raise BlockSpecError(
+                f"Subsystem {self.id!r}: vector-port execution requires the inner signal "
+                "plan (resolved by Simulator.run() / linearize via flode.core.signals); "
+                "call through a Simulator instead of invoking output_v directly.",
+                block_id=self.id,
+            )
+
+    def _zeros_v(self, shapes: tuple[tuple[int, ...], ...]) -> tuple[npt.NDArray[Any], ...]:
+        return tuple(np.zeros(s, dtype=float) for s in shapes)
+
+    def _step_inner_v(
+        self, t: float, x: npt.NDArray[Any], u_external: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[
+        dict[Block, tuple[npt.NDArray[Any], ...]], dict[Block, tuple[npt.NDArray[Any], ...]]
+    ]:
+        outputs, inputs, _x = self._step_inner_core_v(t, x, u_external, advance=False)
+        return outputs, inputs
+
+    def _step_inner_core_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u_external: tuple[npt.NDArray[Any], ...],
+        *,
+        advance: bool,
+    ) -> tuple[
+        dict[Block, tuple[npt.NDArray[Any], ...]],
+        dict[Block, tuple[npt.NDArray[Any], ...]],
+        npt.NDArray[Any],
+    ]:
+        """``_step_inner_core`` の SM-T 版 (``Simulator._step_vector`` の縮小版、ADR-0079 §(6))。
+
+        各ポートの shape は内部 plan から取り、外部入力 (plan 準拠の ndarray) を
+        Inport の ``_external_value`` に注入する。内部の dtype は float64 island
+        (SPEC-0028 Q6) のまま = 各出力を float64 に cast し、shape は plan と突合する。
+        """
+        self._require_inner_plan()
+        x_work = np.array(x, dtype=float, copy=True) if advance else np.asarray(x, dtype=float)
+        discrete_slice_of = {b: sl for b, sl in self._discrete_slices} if advance else {}
+        for port_idx, inport in self._inports_by_idx.items():
+            inport._external_value = np.asarray(u_external[port_idx], dtype=float)
+
+        state_slices = dict(self._state_slices)
+        outputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+        inputs: dict[Block, tuple[npt.NDArray[Any], ...]] = {}
+
+        def state_for(b: Block) -> npt.NDArray[Any]:
+            sl = state_slices.get(b)
+            return x_work[sl] if sl is not None else np.zeros(0)
+
+        def gather(b: Block) -> tuple[npt.NDArray[Any], ...]:
+            shapes = self._inner_plan_by_block[b]
+            u_list: list[npt.NDArray[Any]] = []
+            for i, src in enumerate(b.input_sources):
+                if src is None:
+                    u_list.append(np.zeros(shapes[i], dtype=float))
+                else:
+                    sb, si = src
+                    u_list.append(outputs[sb][si])
+            return tuple(u_list)
+
+        assert self._exec_order is not None
+        for b in self._exec_order:
+            if isinstance(b, (Trigger, Enable)):
+                continue
+            if b.direct_feedthrough:
+                u = gather(b)
+                inputs[b] = u
+            else:
+                u_list = list(self._zeros_v(self._inner_plan_by_block[b]))
+                # 制御入力ポートだけは output_v 前に埋める (SM-A 版と同じ)
+                for i in b.control_input_ports:
+                    src_c = b.input_sources[i]
+                    if src_c is not None:
+                        sb_c, si_c = src_c
+                        u_list[i] = outputs[sb_c][si_c]
+                u = tuple(u_list)
+            if advance and b in discrete_slice_of:
+                sl = discrete_slice_of[b]
+                x_work[sl] = np.asarray(b.advance_v(t, x_work[sl], u), dtype=float)
+            y = b.output_v(t, state_for(b), u)
+            expected = self._inner_out_shapes_by_block[b]
+            if len(y) != b.n_outputs:
+                raise BlockSpecError(
+                    f"{type(b).__name__} {b.id!r}.output_v returned {len(y)} output(s), "
+                    f"expected {b.n_outputs}",
+                    block_id=b.id,
+                )
+            cast: list[npt.NDArray[Any]] = []
+            for j, yj in enumerate(y):
+                arr = np.asarray(yj, dtype=float)
+                if arr.shape != expected[j]:
+                    raise BlockSpecError(
+                        f"{type(b).__name__} {b.id!r}.output_v returned shape {arr.shape} on "
+                        f"out[{j}] but the resolved signal plan expects {expected[j]} "
+                        "(block shape rule and output_v disagree).",
+                        block_id=b.id,
+                    )
+                cast.append(arr)
+            outputs[b] = tuple(cast)
+        for b in self._exec_order:
+            if not b.direct_feedthrough and not isinstance(b, (Trigger, Enable)):
+                inputs[b] = gather(b)
+        return outputs, inputs, x_work
+
+    def _compute_y_from_outputs_v(
+        self, outputs: dict[Block, tuple[npt.NDArray[Any], ...]]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        assert self._plan_out_shapes is not None
+        y: list[npt.NDArray[Any]] = []
+        for port_idx in range(self.n_outputs):
+            outport = self._outports_by_idx[port_idx]
+            src = outport.input_sources[0]
+            if src is None:
+                y.append(np.zeros(self._plan_out_shapes[port_idx], dtype=float))
+            else:
+                sb, si = src
+                y.append(outputs[sb][si])
+        return tuple(y)
+
+    def _control_vector(self, u: tuple[npt.NDArray[Any], ...]) -> npt.NDArray[Any]:
+        """SM-T の外部入力タプルから、制御 slot だけを埋めた SM-A 互換 1D を作る。
+
+        ``_decide`` / ``_commit_control`` / ``_is_enabled`` は制御 slot しか読まない。
+        制御ポートは解決器が ``()`` 固定にしている (``shape.control_port_not_scalar``)。
+        """
+        ctrl = np.zeros(self.n_inputs)
+        for idx in (self._enable_slot_idx, self._trigger_slot_idx):
+            if idx is not None and idx < len(u):
+                ctrl[idx] = float(np.asarray(u[idx]).reshape(()))
+        return ctrl
+
+    def _held_output_v(self) -> tuple[npt.NDArray[Any], ...]:
+        assert self._plan_out_shapes is not None
+        if self._last_y_v is None:
+            self._last_y_v = self._zeros_v(self._plan_out_shapes)
+        return self._last_y_v
+
+    def advance_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        self._build()
+        if self.n_states == 0:
+            return np.asarray(x, dtype=float)
+        if not (self._has_trigger or self._has_enable):
+            _o, _i, x_adv = self._step_inner_core_v(t, x, u, advance=True)
+            return x_adv
+        _enabled, fire, reset_state = self._decide(self._control_vector(u))
+        if not fire:
+            return np.asarray(x, dtype=float)
+        x_eff = np.array(self.x0, dtype=float, copy=True) if reset_state else x
+        if reset_state:
+            self._reset_applied_at = t
+        _o, _i, x_adv = self._step_inner_core_v(t, x_eff, u[: self._n_data_inports], advance=True)
+        return x_adv
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        self._build()
+        if not (self._has_trigger or self._has_enable):
+            outputs, _inputs = self._step_inner_v(t, x, u)
+            return self._compute_y_from_outputs_v(outputs)
+        held = self._held_output_v()
+        enabled, fire, _reset = self._decide(self._control_vector(u))
+        if not enabled:
+            assert self._enable_block is not None
+            if self._enable_block.outputs_when_disabled == "reset":
+                assert self._plan_out_shapes is not None
+                return self._zeros_v(self._plan_out_shapes)
+            return held
+        if not fire:
+            return held
+        outputs, _inputs = self._step_inner_v(t, x, u[: self._n_data_inports])
+        y = self._compute_y_from_outputs_v(outputs)
+        if not self._has_trigger:
+            self._last_y_v = y
+        return y
+
+    def derivative_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        self._build()
+        if self.n_states == 0:
+            return np.zeros(0)
+        if not (self._has_trigger or self._has_enable):
+            _outputs, inputs = self._step_inner_v(t, x, u)
+            return self._collect_xdot_v(t, x, inputs)
+        if not self._is_enabled(self._control_vector(u)):
+            return np.zeros(self.n_states)
+        if self._has_trigger:
+            return np.zeros(self.n_states)
+        _outputs, inputs = self._step_inner_v(t, x, u[: self._n_data_inports])
+        return self._collect_xdot_v(t, x, inputs)
+
+    def _collect_xdot_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        inputs: dict[Block, tuple[npt.NDArray[Any], ...]],
+    ) -> npt.NDArray[Any]:
+        xdot = np.zeros(self.n_states)
+        for b, sl in self._continuous_slices:
+            u_b = inputs.get(b, self._zeros_v(self._inner_plan_by_block[b]))
+            xdot[sl] = np.asarray(b.derivative_v(t, x[sl], u_b), dtype=float)
+        return xdot
+
+    def update_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        self._build()
+        if not (self._has_trigger or self._has_enable):
+            if self.n_states == 0:
+                return np.asarray(x, dtype=float)
+            _outputs, inputs = self._step_inner_v(t, x, u)
+            return self._collect_x_next_v(t, x, inputs)
+        self._held_output_v()
+        ctrl = self._control_vector(u)
+        _enabled, fire, reset_state = self._decide(ctrl)
+        self._commit_control(ctrl)
+        if reset_state and self._reset_applied_at != t:
+            x = np.array(self.x0, dtype=float, copy=True)
+        if not fire:
+            return np.asarray(x, dtype=float)
+        outputs, inputs = self._step_inner_v(t, x, u[: self._n_data_inports])
+        self._last_y_v = self._compute_y_from_outputs_v(outputs)
+        if self.n_states == 0:
+            return np.asarray(x, dtype=float)
+        return self._collect_x_next_v(t, x, inputs)
+
+    def _collect_x_next_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        inputs: dict[Block, tuple[npt.NDArray[Any], ...]],
+    ) -> npt.NDArray[Any]:
+        x_next = np.array(x, dtype=float, copy=True)
+        for b, sl in self._discrete_slices:
+            u_b = inputs.get(b, self._zeros_v(self._inner_plan_by_block[b]))
+            x_next[sl] = np.asarray(b.update_v(t, x[sl], u_b), dtype=float)
+        return x_next
 
     # ---------- ADR-0058 hot-path helpers (control block を持つ Subsystem 用) ----------
 

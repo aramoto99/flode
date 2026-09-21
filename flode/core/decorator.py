@@ -80,6 +80,9 @@ class BlockStructure:
         output_names: 出力ポート名。規則は ``input_names`` と同じ。
         has_u_arg: 関数 (または class の ``output``) が ``u`` 引数を持つか。
             GUI が「入力数を編集できるか」の判定に使う (``u`` 無し = 0 入力固定)。
+        port_shapes_in: 入力ポートの宣言 shape (ADR-0079 §(3) 6c)。空 tuple = 全ポート
+            ``()`` (スカラ、既定)。指定時は長さが ``n_inputs`` に一致。
+        port_shapes_out: 出力ポートの宣言 shape。規則は ``port_shapes_in`` と同じ。
     """
 
     n_inputs: int
@@ -90,6 +93,8 @@ class BlockStructure:
     input_names: tuple[str, ...] = ()
     output_names: tuple[str, ...] = ()
     has_u_arg: bool = True
+    port_shapes_in: tuple[tuple[int, ...], ...] = ()
+    port_shapes_out: tuple[tuple[int, ...], ...] = ()
 
 
 def block(
@@ -104,6 +109,8 @@ def block(
     direct_feedthrough: bool | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    port_shapes_in: Sequence[Sequence[int]] | None = None,
+    port_shapes_out: Sequence[Sequence[int]] | None = None,
 ) -> Any:
     """関数または class から ``Block`` サブクラスを生成する。
 
@@ -129,6 +136,17 @@ def block(
             すること。空文字列 = そのポートは無名。名前は表示用キャプションで、
             重複可・正規化なし・32 コードポイント以内・制御文字不可。
         output_names: 出力ポート名の列。規則は ``input_names`` と同じ。
+        port_shapes_in: 入力ポートの shape 宣言 (ADR-0079 §(3) 6c、例
+            ``((3,), ())``)。省略時は全ポート ``()`` (スカラ) で、ベクトル信号が
+            繋がれると build 時に ``shape.opaque_scalar_island`` で拒否される。
+            宣言したポートには plan の ndarray がそのまま渡る: ``u`` が ``float``
+            注釈なら **そのポートの ndarray** (スカラ宣言なら Python float)、
+            ``tuple[...]`` 注釈なら ndarray のタプル、``inputs=N`` なら全ポート
+            スカラのとき従来の 1D ndarray、それ以外は ndarray のタプル。
+        port_shapes_out: 出力ポートの shape 宣言。戻り値 (各ポートの値) の shape
+            はこれと一致していなければならない。class 形では代わりに
+            ``infer_output_shapes(self, in_shapes)`` メソッドを定義して入力 shape
+            から出力 shape を返すこともできる (要素ごと演算のユーザーブロック用)。
 
     Returns:
         ``Block`` のサブクラス。インスタンス化はキーワード引数のみ
@@ -160,6 +178,8 @@ def block(
                 direct_feedthrough_override=direct_feedthrough,
                 input_names=input_names,
                 output_names=output_names,
+                port_shapes_in=port_shapes_in,
+                port_shapes_out=port_shapes_out,
             )
         if not callable(target):
             raise BlockSpecError(f"@block expects a function or class, got {type(target).__name__}")
@@ -173,6 +193,8 @@ def block(
             direct_feedthrough_override=direct_feedthrough,
             input_names=input_names,
             output_names=output_names,
+            port_shapes_in=port_shapes_in,
+            port_shapes_out=port_shapes_out,
         )
 
     if func_or_cls is None:
@@ -191,6 +213,8 @@ def _build_class_from_function(
     direct_feedthrough_override: bool | None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    port_shapes_in: Sequence[Sequence[int]] | None = None,
+    port_shapes_out: Sequence[Sequence[int]] | None = None,
 ) -> type[Block]:
     if not isinstance(n_states, int) or n_states < 0:
         raise BlockSpecError(f"@block: states must be a non-negative int, got {n_states!r}")
@@ -287,6 +311,9 @@ def _build_class_from_function(
     resolved_output_names = _resolve_port_names(
         output_names, n_outputs, role="output_names", owner_name=func.__name__
     )
+    shapes_in, shapes_out = _resolve_port_shapes(
+        port_shapes_in, port_shapes_out, n_inputs, n_outputs, owner_name=func.__name__
+    )
 
     return _make_block_class(
         func=func,
@@ -303,7 +330,39 @@ def _build_class_from_function(
         has_u_in_func=(u_param is not None),
         input_names=resolved_input_names,
         output_names=resolved_output_names,
+        port_shapes_in=shapes_in,
+        port_shapes_out=shapes_out,
     )
+
+
+def _resolve_port_shapes(
+    port_shapes_in: Sequence[Sequence[int]] | None,
+    port_shapes_out: Sequence[Sequence[int]] | None,
+    n_inputs: int,
+    n_outputs: int,
+    *,
+    owner_name: str,
+) -> tuple[tuple[tuple[int, ...], ...], tuple[tuple[int, ...], ...]]:
+    """``@block(port_shapes_in=..., port_shapes_out=...)`` を正規化する (ADR-0079 §(3) 6c)。
+
+    ``None`` / 全 ``()`` は **空 tuple** (= 全ポートスカラ、``BlockStructure`` の既定) に
+    畳む。``Block._normalize_port_shapes`` と同じ検証 (長さ = ポート数、各 dim は
+    非負 int) を **デコレータ適用時** に行う。
+    """
+    from .block import _normalize_port_shapes
+
+    def _norm(
+        shapes: Sequence[Sequence[int]] | None, n_ports: int, side: str
+    ) -> tuple[tuple[int, ...], ...]:
+        if shapes is None:
+            return ()
+        try:
+            normalized = _normalize_port_shapes([tuple(s) for s in shapes], n_ports, side)
+        except (TypeError, BlockSpecError) as e:
+            raise BlockSpecError(f"@block: {owner_name!r}: {e}") from e
+        return normalized if any(s != () for s in normalized) else ()
+
+    return _norm(port_shapes_in, n_inputs, "in"), _norm(port_shapes_out, n_outputs, "out")
 
 
 # u_arg_kind:
@@ -537,6 +596,8 @@ def _make_block_class(
     has_u_in_func: bool,
     input_names: tuple[str, ...] = (),
     output_names: tuple[str, ...] = (),
+    port_shapes_in: tuple[tuple[int, ...], ...] = (),
+    port_shapes_out: tuple[tuple[int, ...], ...] = (),
 ) -> type[Block]:
     # 連続/離散の確定判定。sample_time が確定値 (None / 0 / >0 / "dt") なら
     # デコレータ呼び出し時に決まる。``-1.0`` (上流に同期) は ``Simulator`` が
@@ -544,6 +605,9 @@ def _make_block_class(
     # (ADR-0003 Risk 4)。
     static_is_discrete = _sample_time_is_statically_discrete(sample_time)
     is_inherited = sample_time == -1.0
+    # 構造 (BlockStructure) では空 tuple = 全スカラ、Block.__init__ には展開して渡す
+    shapes_in = port_shapes_in or tuple(() for _ in range(n_inputs))
+    shapes_out = port_shapes_out or tuple(() for _ in range(n_outputs))
 
     def _effective_is_discrete(instance: Block) -> bool:
         """``derivative`` / ``update`` が「離散モード」で振る舞うべきかを返す。
@@ -587,6 +651,8 @@ def _make_block_class(
             n_states=n_states,
             direct_feedthrough=direct_feedthrough,
             sample_time=sample_time,
+            port_shapes_in=shapes_in,
+            port_shapes_out=shapes_out,
         )
 
         self._params = dict(bound)
@@ -604,6 +670,16 @@ def _make_block_class(
             call_args.append(_pack_u_for_func(u, u_arg_kind, n_inputs))
         return func(*call_args, **params)
 
+    def _call_inner_v(
+        t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...], params: dict[str, Any]
+    ) -> Any:
+        call_args: list[Any] = [float(t)]
+        if has_state:
+            call_args.append(x)
+        if has_u_in_func:
+            call_args.append(_pack_u_for_func_v(u, u_arg_kind))
+        return func(*call_args, **params)
+
     def output(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         result = _call_inner(t, x, u, self._params)
         if has_state:
@@ -611,6 +687,39 @@ def _make_block_class(
         else:
             y_raw = result
         return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
+
+    def output_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        result = _call_inner_v(t, x, u, self._params)
+        if has_state:
+            y_raw, _ = _split_state_result(result, cls_name)
+        else:
+            y_raw = result
+        # 宣言 (空 tuple = 無宣言) をそのまま渡す。shapes_out は Block.__init__ 用の展開形
+        return _pack_y_v(y_raw, n_outputs, cls_name, port_shapes_out)
+
+    def derivative_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        if not has_state:
+            return np.zeros(0)
+        if _effective_is_discrete(self):
+            return np.zeros(n_states)
+        result = _call_inner_v(t, x, u, self._params)
+        _, x_change = _split_state_result(result, cls_name)
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
+
+    def update_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        if not has_state:
+            return x
+        if not _effective_is_discrete(self):
+            return x
+        result = _call_inner_v(t, x, u, self._params)
+        _, x_change = _split_state_result(result, cls_name)
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_next")
 
     def derivative(
         self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
@@ -643,6 +752,11 @@ def _make_block_class(
         "output": output,
         "derivative": derivative,
         "update": update,
+        # ADR-0079 §(3): vector-port API (SM-A 版と両方持つ内部生成クラス)
+        "output_v": output_v,
+        "derivative_v": derivative_v,
+        "update_v": update_v,
+        "_skip_dual_api_check": True,
         "_flode_func": staticmethod(func),
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(
@@ -654,6 +768,8 @@ def _make_block_class(
             input_names=input_names,
             output_names=output_names,
             has_u_arg=has_u_in_func,
+            port_shapes_in=port_shapes_in,
+            port_shapes_out=port_shapes_out,
         ),
     }
     return type(cls_name, (Block,), namespace)
@@ -718,6 +834,75 @@ def _pack_u_for_func(u: npt.NDArray[Any], kind: str, n_inputs: int) -> Any:
     return u  # "ndarray"
 
 
+def _port_arg(value: npt.NDArray[Any]) -> Any:
+    """SM-T path のポート値をユーザー関数の引数にする: rank-0 は float、他は ndarray。"""
+    arr = np.asarray(value)
+    if arr.shape == ():
+        return float(arr)
+    return arr
+
+
+def _pack_u_for_func_v(u: tuple[npt.NDArray[Any], ...], kind: str) -> Any:
+    """``_pack_u_for_func`` の vector-port 版 (ADR-0079 §(3) 6c)。
+
+    - ``"scalar"``: そのポートの値 (スカラ宣言なら float、ベクトル宣言なら ndarray)
+    - ``"tuple"``: 各ポートの値のタプル
+    - ``"ndarray"`` (``inputs=N``): 全ポートが rank-0 なら従来どおり 1D ndarray、
+      ベクトルポートを含むなら各ポート ndarray のタプル
+    """
+    if kind == "scalar":
+        return _port_arg(u[0])
+    if kind == "tuple":
+        return tuple(_port_arg(v) for v in u)
+    if all(np.asarray(v).shape == () for v in u):
+        return np.array([float(np.asarray(v)) for v in u], dtype=float)
+    return tuple(np.asarray(v) for v in u)
+
+
+def _pack_y_v(
+    y_raw: Any,
+    n_outputs: int,
+    cls_name: str,
+    port_shapes_out: tuple[tuple[int, ...], ...],
+) -> tuple[npt.NDArray[Any], ...]:
+    """``_pack_y`` の vector-port 版: 各ポートの値を宣言 shape の ndarray に揃える。
+
+    ``n_outputs == 1`` は戻り値そのものを 1 ポートの値とみなし、それ以外は
+    長さ ``n_outputs`` のタプル / list / 1D ndarray を各ポートに割り当てる。
+    """
+    if n_outputs == 1:
+        parts: list[Any] = [y_raw]
+    else:
+        if isinstance(y_raw, np.ndarray) and y_raw.ndim == 1 and y_raw.shape[0] == n_outputs:
+            parts = list(y_raw)
+        elif isinstance(y_raw, (tuple, list)) and len(y_raw) == n_outputs:
+            parts = list(y_raw)
+        else:
+            raise BlockSpecError(
+                f"{cls_name}: function must return {n_outputs} output values "
+                f"(tuple / list / 1D ndarray), got {type(y_raw).__name__}"
+            )
+    packed: list[npt.NDArray[Any]] = []
+    for j, part in enumerate(parts):
+        arr = np.asarray(part, dtype=float)
+        # 宣言 (port_shapes_out 非空) があれば突合。無宣言 (infer_output_shapes hook /
+        # スカラ island) は plan との突合を Simulator._output_v_cast に任せる
+        if port_shapes_out:
+            declared = port_shapes_out[j] if j < len(port_shapes_out) else ()
+            if arr.shape != declared:
+                if arr.size == 1 and declared == ():
+                    arr = arr.reshape(())
+                else:
+                    raise BlockSpecError(
+                        f"{cls_name}: output port {j} has shape {arr.shape} but "
+                        f"port_shapes_out declares {declared}"
+                    )
+        elif arr.ndim == 1 and arr.size == 1 and n_outputs == 1:
+            arr = arr.reshape(())
+        packed.append(arr)
+    return tuple(packed)
+
+
 def _split_state_result(result: Any, cls_name: str) -> tuple[Any, Any]:
     if not isinstance(result, tuple) or len(result) != 2:
         raise BlockSpecError(
@@ -771,6 +956,8 @@ def _build_class_from_class(
     direct_feedthrough_override: bool | None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    port_shapes_in: Sequence[Sequence[int]] | None = None,
+    port_shapes_out: Sequence[Sequence[int]] | None = None,
 ) -> type[Block]:
     """User class から ``Block`` サブクラスを生成する (Option C)。
 
@@ -852,6 +1039,14 @@ def _build_class_from_class(
     resolved_output_names = _resolve_port_names(
         output_names, n_outputs, role="output_names", owner_name=user_cls.__name__
     )
+    shapes_in, shapes_out = _resolve_port_shapes(
+        port_shapes_in, port_shapes_out, n_inputs, n_outputs, owner_name=user_cls.__name__
+    )
+    user_infer = getattr(user_cls, "infer_output_shapes", None)
+    if user_infer is not None and not callable(user_infer):
+        raise BlockSpecError(
+            f"@block class {user_cls.__name__!r}: `infer_output_shapes` must be a method"
+        )
 
     return _make_block_class_from_class(
         user_cls=user_cls,
@@ -873,6 +1068,8 @@ def _build_class_from_class(
         user_update=user_update,
         input_names=resolved_input_names,
         output_names=resolved_output_names,
+        port_shapes_in=shapes_in,
+        port_shapes_out=shapes_out,
     )
 
 
@@ -1012,7 +1209,12 @@ def _make_block_class_from_class(
     user_update: Any,
     input_names: tuple[str, ...] = (),
     output_names: tuple[str, ...] = (),
+    port_shapes_in: tuple[tuple[int, ...], ...] = (),
+    port_shapes_out: tuple[tuple[int, ...], ...] = (),
 ) -> type[Block]:
+    shapes_in = port_shapes_in or tuple(() for _ in range(n_inputs))
+    shapes_out = port_shapes_out or tuple(() for _ in range(n_outputs))
+
     def _effective_is_discrete(instance: Block) -> bool:
         if is_inherited:
             resolved = instance._resolved_sample_time
@@ -1027,6 +1229,16 @@ def _make_block_class_from_class(
             call_args.append(x)
         if has_u_in_method:
             call_args.append(_pack_u_for_func(u, u_arg_kind, n_inputs))
+        return call_args
+
+    def _pack_method_args_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> list[Any]:
+        call_args: list[Any] = [self, float(t)]
+        if has_state:
+            call_args.append(x)
+        if has_u_in_method:
+            call_args.append(_pack_u_for_func_v(u, u_arg_kind))
         return call_args
 
     def __init__(self: Block, **kwargs: Any) -> None:
@@ -1058,6 +1270,8 @@ def _make_block_class_from_class(
             n_states=n_states,
             direct_feedthrough=direct_feedthrough,
             sample_time=sample_time,
+            port_shapes_in=shapes_in,
+            port_shapes_out=shapes_out,
         )
 
         self._params = dict(bound)
@@ -1072,6 +1286,32 @@ def _make_block_class_from_class(
         args = _pack_method_args(self, t, x, u)
         y_raw = user_output(*args)
         return _pack_y(y_raw, y_arg_kind, n_outputs, cls_name)
+
+    def output_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        args = _pack_method_args_v(self, t, x, u)
+        y_raw = user_output(*args)
+        # 宣言 (空 tuple = 無宣言) をそのまま渡す。shapes_out は Block.__init__ 用の展開形
+        return _pack_y_v(y_raw, n_outputs, cls_name, port_shapes_out)
+
+    def derivative_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        if not has_state or _effective_is_discrete(self):
+            return np.zeros(n_states if has_state else 0)
+        assert user_derivative is not None
+        x_change = user_derivative(*_pack_method_args_v(self, t, x, u))
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_dot")
+
+    def update_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        if not has_state or not _effective_is_discrete(self):
+            return x
+        assert user_update is not None
+        x_change = user_update(*_pack_method_args_v(self, t, x, u))
+        return _coerce_state_change(x_change, n_states, cls_name, role="x_next")
 
     def derivative(
         self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]
@@ -1109,6 +1349,11 @@ def _make_block_class_from_class(
         "output": output,
         "derivative": derivative,
         "update": update,
+        # ADR-0079 §(3): vector-port API
+        "output_v": output_v,
+        "derivative_v": derivative_v,
+        "update_v": update_v,
+        "_skip_dual_api_check": True,
         "_flode_user_cls": user_cls,
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(
@@ -1120,14 +1365,18 @@ def _make_block_class_from_class(
             input_names=input_names,
             output_names=output_names,
             has_u_arg=has_u_in_method,
+            port_shapes_in=port_shapes_in,
+            port_shapes_out=port_shapes_out,
         ),
     }
-    # user class が `record` / `reset` 等の追加メソッドを持っていれば素直に継承する
-    # (Sink 系で record を持つケースを想定)。
+    # user class が `record` / `reset` / `infer_output_shapes` (ADR-0079 §(3) 6c) 等の
+    # 追加メソッドを持っていれば素直に継承する (Sink 系で record を持つケースを想定)。
     # Block 基底のメソッドを無音で上書きしないようガードする (`__init__` などの dunder は
     # ``__`` プレフィックスで除外、それ以外で Block にあるものは warning)。
     block_reserved = {n for n, v in vars(Block).items() if not n.startswith("__") and callable(v)}
-    skip_names = {"output", "derivative", "update"} | {p[0] for p in params_spec}
+    skip_names = {"output", "derivative", "update", "output_v", "derivative_v", "update_v"} | {
+        p[0] for p in params_spec
+    }
     for attr_name, attr_value in user_cls.__dict__.items():
         if attr_name.startswith("__"):
             continue

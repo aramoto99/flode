@@ -708,38 +708,6 @@ class Simulator:
             if goto not in used_gotos:
                 _logger_routing.info("dangling Goto: tag=%r visibility=global", tag)
 
-    def _check_subsystem_sm_b_unsupported(self) -> None:
-        """ADR-0018 §(4.3): SM-B port を持つ ``Subsystem`` は Phase 3 では run 不可。
-
-        ``Subsystem.output_v`` は override されておらず、``Block.output_v`` default
-        wrapper は ``output`` を呼んで内部で ``_step_inner`` の SM-A scalar coercion
-        (``float(u_external[port_idx])``) を経由する。従って SM-B 信号 (ndarray) は
-        サイレントに切り捨てられる。`_step_inner_v` は Phase 4 で追加予定 (ADR-0018
-        §(4.3))。
-
-        Note (SM-D Stage 1、SPEC-0028 Q6): **dtype 起因** で SM-B path に入った
-        scalar-port Subsystem は本チェックの対象外で正当に通る。その場合の
-        scalar coercion は「サイレント切り捨て」ではなく **意図した float64
-        island** である — 解決器が境界入力を float64 要求 + `_gather_inputs` の
-        in-plan cast で実際に float64 化してから渡すため、値は失われない。
-        """
-        # 遅延 import で循環回避
-        from ..subsystems import Subsystem
-
-        for b in self.blocks:
-            if isinstance(b, Subsystem):
-                has_sm_b = any(s != () for s in b.port_shapes_in) or any(
-                    s != () for s in b.port_shapes_out
-                )
-                if has_sm_b:
-                    raise BlockSpecError(
-                        f"Subsystem {b.id!r}: running a Subsystem with SM-B vector "
-                        f"ports (port_shapes_in={b.port_shapes_in}, "
-                        f"port_shapes_out={b.port_shapes_out}) is not supported in "
-                        f"Phase 3 (ADR-0018 §(4.3)). Save/load round-trip is preserved, "
-                        f"but execution awaits ``_step_inner_v`` in Phase 4."
-                    )
-
     def _record_v(
         self,
         t: float,
@@ -780,29 +748,6 @@ class Simulator:
             else:
                 u_1d = np.zeros(0)
             b.record(t, u_1d)
-
-    @staticmethod
-    def _to_scalar_inputs(b: Block, u_tuple: tuple[npt.NDArray[Any], ...]) -> npt.NDArray[Any]:
-        """SM-B path の tuple-of-ndarray 入力を SM-A 互換の 1D ndarray へ変換する。
-
-        ``derivative`` / ``update`` / ``advance`` は SM-A 契約 (rank-0 要素を並べた
-        1D) のまま (ADR-0079 §(5): ``*_v`` は Stage 2)。Stage 1 では状態ブロックの
-        入力は解決器が ``()`` に固定するのでここに非 ``()`` は来ないが、来たら
-        黙って潰さず明示エラーにする (A-5 の fail-closed)。
-        """
-        flat: list[float] = []
-        for i, ui in enumerate(u_tuple):
-            arr = np.asarray(ui)
-            if arr.shape != ():
-                raise BlockSpecError(
-                    f"{type(b).__name__} {b.id!r}: input port {i} carries a vector "
-                    f"signal of shape {arr.shape}, but state blocks accept scalar "
-                    "inputs only in this release (vector states arrive in Stage 2, "
-                    "ADR-0079). Use a Demux block to select one element.",
-                    block_id=b.id,
-                )
-            flat.append(float(arr.item()))
-        return np.array(flat, dtype=float)
 
     def _is_sm_a_mode(self) -> bool:
         """モデルが SM-A hot path (``_step``) で走るかの pre-filter 判定。
@@ -1187,8 +1132,9 @@ class Simulator:
             # ADR-0078 サンプル時刻処理 / 出力キャッシュ (SM-A ``_step`` と同じ規則)
             if cache is not None and b in discrete_state:
                 if fresh is not None and b in fresh:
-                    u_1d = self._to_scalar_inputs(b, u)
-                    xb = np.asarray(b.advance(t, discrete_state[b], u_1d), dtype=float)
+                    # ADR-0079 §(5): vector-port 版 advance (SM-A ブロックは Block 基底の
+                    # wrapper が rank-0 に縮退して advance() を呼ぶ)
+                    xb = np.asarray(b.advance_v(t, discrete_state[b], u), dtype=float)
                     discrete_state[b] = xb
                     outputs[b] = self._output_v_cast(b, t, xb, u, plan, idx)
                     cache[b] = outputs[b]
@@ -1305,14 +1251,7 @@ class Simulator:
         reject_nested_dtype_declarations(self)
 
         if has_declared_dtype(self) or has_shape_source(self):
-            # ADR-0018 §(4.3): SM-B ポートを宣言した Subsystem は Stage 2 まで
-            # run 不可。解決器より先に従来メッセージで明示拒否する
-            # (dtype 起因の scalar-port Subsystem は正当に通る — float64 island、
-            #  SPEC-0028 Q6。_check_subsystem_sm_b_unsupported の docstring 参照)
-            self._check_subsystem_sm_b_unsupported()
-            resolution = resolve_for_execution(self)
-            self._signal_plan = _build_signal_plan(order, resolution)
-            self._apply_plan_to_blocks(order, self._signal_plan)
+            self._prepare_signal_plan(order, resolve_for_execution(self))
         else:
             self._signal_plan = None
 
@@ -1529,10 +1468,10 @@ class Simulator:
             xdot = np.zeros(n_total)
             for b, sl in layout:
                 u_tuple = ins[b]
-                u_1d = self._to_scalar_inputs(b, u_tuple)
                 # ADR-0056 §C-3: SM-B derivative 例外時のブロック記録。
                 self._current_block = b
-                xdot[sl] = np.asarray(b.derivative(t, x[sl], u_1d), dtype=float)
+                # ADR-0079 §(5): vector-port 版 derivative (flat x_dot を返す)
+                xdot[sl] = np.asarray(b.derivative_v(t, x[sl], u_tuple), dtype=float)
             self._current_block = None
             return xdot
 
@@ -1552,12 +1491,10 @@ class Simulator:
                     u_tuple = inputs_v.get(
                         b, tuple(np.zeros((), dtype=float) for _ in range(b.n_inputs))
                     )
-                    # ADR-0079 §(5): 状態ブロックの入力は Stage 1 では () 固定。
-                    # SM-A 互換 wrapper: tuple of rank-0 → 1D ndarray
-                    u_1d = self._to_scalar_inputs(b, u_tuple)
                     # ADR-0056 §C-3: SM-B discrete update 例外時の記録。
                     self._current_block = b
-                    next_discrete[b] = np.array(b.update(t, x_b, u_1d), dtype=float)
+                    # ADR-0079 §(5): vector-port 版 update
+                    next_discrete[b] = np.array(b.update_v(t, x_b, u_tuple), dtype=float)
                 self._current_block = None
                 # closure 共有のため in-place update (= 同じ dict 参照を維持)。
                 # f_continuous / f_continuous_vector が discrete_state を closure で
@@ -1682,7 +1619,19 @@ class Simulator:
         """
         return self.resolve_signals()
 
-    def _apply_plan_to_blocks(self, order: list[Block], plan: SignalPlan) -> None:
+    def _prepare_signal_plan(self, order: list[Block], resolution: SignalResolution) -> None:
+        """解決結果から実行 plan を作り、ブロック側の runtime cache に反映する。
+
+        ``run()`` と ``linearize`` が共有する (ADR-0079 §(2))。``_state_layout`` /
+        ``_init_discrete_state`` より **前** に呼ぶこと (ベクトル状態ブロックの
+        ``n_states`` / ``x0`` がここで確定する、§(5) 7a')。
+        """
+        self._signal_plan = _build_signal_plan(order, resolution)
+        self._apply_plan_to_blocks(order, self._signal_plan, resolution)
+
+    def _apply_plan_to_blocks(
+        self, order: list[Block], plan: SignalPlan, resolution: SignalResolution
+    ) -> None:
         """解決済み plan のうち、ブロック側が実行時に必要とする値を注入する。
 
         ADR-0079 D-2 (宣言へは書き戻さない) の範囲内で、**runtime cache** として
@@ -1691,6 +1640,10 @@ class Simulator:
         - ``From._plan_out_shape``: 初回 fire 前のホールド値 (ゼロ) の shape
         - ``Scope`` / ``Display`` 等の ``_apply_input_shapes(shapes)``: 列展開の
           列数とラベルの確定 (duck-typing、持たないブロックは無視)
+        - ベクトル状態ブロックの ``_apply_state_shape(shape)``: 実効 state shape
+          (= 出力 shape) から ``n_states`` / ``x0`` を確定 (§(5) 7a')
+        - ``Subsystem._apply_inner_signal_plan(...)``: 内部 plan の注入と内部ブロックへの
+          再帰適用、内部 layout の再計算 (§(6))
         """
         for idx, b in enumerate(order):
             in_shapes, _in_dts, out_shapes, _out_dts = plan[idx]
@@ -1699,6 +1652,21 @@ class Simulator:
             apply_shapes = getattr(b, "_apply_input_shapes", None)
             if callable(apply_shapes):
                 apply_shapes(in_shapes)
+            apply_state = getattr(b, "_apply_state_shape", None)
+            if callable(apply_state) and out_shapes:
+                apply_state(out_shapes[0])
+            apply_inner = getattr(b, "_apply_inner_signal_plan", None)
+            if callable(apply_inner):
+                bid = b.id if b.id is not None else "<unassigned>"
+                inner_res = resolution.inner.get(bid)
+                if inner_res is not None:
+                    inner_order = list(getattr(b, "_exec_order", None) or [])
+                    inner_plan = _build_signal_plan(inner_order, inner_res)
+                    apply_inner(inner_plan)
+                    self._apply_plan_to_blocks(inner_order, inner_plan, inner_res)
+                    finalize = getattr(b, "_finalize_inner_signal_plan", None)
+                    if callable(finalize):
+                        finalize()
 
     @property
     def is_stopped(self) -> bool:

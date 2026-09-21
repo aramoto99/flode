@@ -23,6 +23,7 @@ from flode.blocks import (
     Integrator,
     Mux,
     Scope,
+    TransferFunction,
     UnitDelay,
 )
 from flode.exceptions import BlockSpecError
@@ -79,17 +80,17 @@ class TestSmBRunConstantOnly:
         np.testing.assert_allclose(_flat(sc0), 10.0)
         np.testing.assert_allclose(_flat(sc1), 20.0)
 
-    def test_constant_mux_integrator_is_shape_mismatch(self) -> None:
-        """Constant → Mux → Integrator (スカラ専用) 経路は shape.mismatch になる。
+    def test_constant_mux_transfer_function_is_shape_mismatch(self) -> None:
+        """Constant → Mux → TransferFunction (SISO、D-10) 経路は shape.mismatch になる。
 
-        Mux 出力 (3,) と Integrator 入力 () が不一致なので BlockSpecError が出ることを
+        Mux 出力 (3,) と TransferFunction 入力 () が不一致なので BlockSpecError が出ることを
         確認する (ADR-0079: Gain は要素ごと演算でベクトルを受理するため、スカラ専用の
         状態ブロックで検証する)。これは SM-B run path ではなく build-time check のテスト。
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         c = sim.add(Constant(value=1.0))
         m = sim.add(Mux(n=3))
-        integ = sim.add(Integrator(x0=0.0))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0]))
         sim.connect(c, m, dst_idx=0)
         sim.connect(c, m, dst_idx=1)
         sim.connect(c, m, dst_idx=2)

@@ -20,6 +20,26 @@ export const DIAGRAM_EDGE_STYLE = {
   stroke: DIAGRAM_EDGE_STROKE,
   strokeWidth: 1.5,
 };
+// ADR-0079 §(9) (Stage 2): ベクトル信号 (rank >= 1) の配線は太線で描く。
+// 設定メニューの「ベクトル信号を太線で表示」(vectorEdgesBold) で on/off。
+export const DIAGRAM_EDGE_STYLE_VECTOR = {
+  stroke: DIAGRAM_EDGE_STROKE,
+  strokeWidth: 3,
+};
+
+/**
+ * 配線の描画スタイルを解決済み shape から選ぶ (SSOT)。
+ *
+ * @param shape backend の解決結果 (`shapeForPort`)。`[]` = スカラ、null = 未解決
+ * @param bold 設定「ベクトル信号を太線で表示」
+ */
+export function edgeStyleForShape(
+  shape: number[] | null,
+  bold: boolean,
+): { stroke: string; strokeWidth: number } {
+  if (bold && shape !== null && shape.length > 0) return DIAGRAM_EDGE_STYLE_VECTOR;
+  return DIAGRAM_EDGE_STYLE;
+}
 export const DIAGRAM_MARKER_END = {
   type: MarkerType.ArrowClosed,
   color: DIAGRAM_EDGE_STROKE,

@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.63.0] - 2026-09-21 — ベクトル状態と Subsystem 境界のテンソル化 (ADR-0079 Stage 2)
+
+### Added
+
+- **ベクトル状態ブロック** (ADR-0079 §(5) D-7): `Integrator` / `Derivative` / `UnitDelay` /
+  `DiscreteIntegrator` / `RateTransition` / `ZeroOrderHoldDirect` / `RateLimiter` が
+  ベクトル信号を要素ごとに扱う (共通 mixin `flode.blocks._vector_state.VectorStateMixin`
+  の kernel)。`x0` がスカラなら状態 shape は入力 shape に従い (スカラ拡張)、配列 `x0` は
+  状態 shape を固定する (入力はスカラかその shape)。状態の格納は flat のまま
+  (`solve_ivp` / `linearize` の契約不変、state_names は `<id>.x[i]` の C order index)。
+  `Demux → 状態ブロック × n → Mux` と bit-identical (連続状態を含む閉ループは
+  ソルバの誤差制御分のみ差)
+- **Subsystem 境界のベクトル透過** (ADR-0079 §(6) D-8): 信号面解決器が外側の in shape を
+  内部 `Inport` に注入して内部スコープを再帰解決し (`SignalResolution.inner[<id>]`、
+  REST payload の `inner`)、`Subsystem` は SM-T path (`output_v` / `derivative_v` /
+  `update_v` / `advance_v`、内部は `_step_inner_core_v`) で動く。ネスト、Goto/From、
+  Enabled (held / reset) / Triggered の held output (plan shape のゼロ / 直前値) に対応。
+  `Inport` / `Outport` の `port_shape` 既定は `None` (= 外側から継承)、明示した
+  `port_shape` (`()` を含む) は宣言として一致検査される
+- **`@block` の宣言 API** (ADR-0079 §(3) 6c): `@block(port_shapes_in=..., port_shapes_out=...)`
+  と class 形の `infer_output_shapes(self, in_shapes)` hook。宣言ポートにはそのポートの
+  ndarray が渡る。`PythonFunction` はソースのリテラル宣言をそのまま使う
+- `Block.derivative_v` / `update_v` / `advance_v` (vector-port 版、既定は SM-A 版への
+  wrapper)、`Block.state_shape`
+- GUI: ベクトル信号 (rank ≥ 1) の配線を太線で描画 (設定メニュー「ベクトル信号の配線を
+  太線で表示」、既定 ON、`flode.vector_edges` に永続化)、Inspector は Subsystem 内を
+  編集中も解決済み shape / dtype を表示
+
+### Changed
+
+- `Simulator._check_subsystem_sm_b_unsupported` (ベクトルポート Subsystem の実行拒否) を
+  撤去。`linearize` はベクトル状態ブロックを `derivative_v` で線形化する
+- `has_shape_source` は Subsystem 内部も再帰走査する (内部だけにベクトル起点がある
+  モデルも plan 経路で実行)
+- `Simulator._to_scalar_inputs` を撤去し、SM-A 専用ブロックへの縮退は Block 基底の
+  `*_v` wrapper (`_scalar_inputs_1d`) に集約
+- スカラ専用のまま: `TransferFunction` / `DiscreteTransferFunction` (SISO、D-10)、
+  `StateSpace` 系 (Stage 3)、ソース / lookup、`TransportDelay` / `Relay`、`Fcn`、`XYGraph`。
+  Subsystem 内部の dtype は float64 island のまま (SPEC-0028 Q6)。schema は 0.14 のまま
+
 ## [0.62.0] - 2026-09-21 — 信号モデルをテンソル化し build 時に形状を伝播 (ADR-0079 Stage 1)
 
 ### Added

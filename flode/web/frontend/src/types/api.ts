@@ -342,6 +342,11 @@ export interface DtypesResponse {
   ports: DtypesPortEntry[];
   diagnostics: DtypesDiagnostic[];
   summary: DtypesSummary;
+  /**
+   * ADR-0079 §(6) (Stage 2): Subsystem 内部スコープの解決結果 (key = Subsystem の
+   * block id、ネストは inner の inner)。"dtypes.v1" / Stage 1 の応答には無い。
+   */
+  inner?: Record<string, DtypesResponse>;
 }
 
 // ADR-0056: シミュレーション失敗時の構造化エラー payload。

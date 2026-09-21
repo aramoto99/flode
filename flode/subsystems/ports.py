@@ -49,30 +49,34 @@ class Inport(Block):
         *,
         id: str | None = None,
         name: str | None = None,
-        port_shape: tuple[int, ...] = (),
+        port_shape: tuple[int, ...] | None = None,
     ) -> None:
         if not isinstance(port_idx, int) or port_idx < 0:
             raise BlockSpecError(f"Inport: port_idx must be a non-negative int, got {port_idx!r}")
+        # ADR-0079 §(6) D-8: ``port_shape=None`` (既定) = 外側から継承。明示した shape
+        # (``()`` を含む) は宣言として解決器が一致検査する。Block 基底の
+        # ``port_shapes_out`` は tuple 契約なので None は () として渡す。
+        declared = None if port_shape is None else tuple(int(d) for d in port_shape)
         super().__init__(
             id=id,
             name=name,
             n_inputs=0,
             n_outputs=1,
-            port_shapes_out=(tuple(port_shape),),
+            port_shapes_out=((declared if declared is not None else ()),),
         )
         self.port_idx = port_idx
-        self.port_shape: tuple[int, ...] = tuple(port_shape)
-        # Subsystem ランタイムが各ステップで上書きする
-        # SM-A (port_shape=()) では float、SM-B では ndarray を保持する。
+        self.port_shape: tuple[int, ...] | None = declared
+        # Subsystem ランタイムが各ステップで上書きする。SM-A path は float、
+        # SM-T path (``_step_inner_core_v``) は plan 準拠の ndarray を注入する。
         self._external_value: npt.NDArray[Any] | float
-        if self.port_shape == ():
+        if declared is None or declared == ():
             self._external_value = 0.0
         else:
-            self._external_value = np.zeros(self.port_shape, dtype=float)
+            self._external_value = np.zeros(declared, dtype=float)
         self._params = {"port_idx": port_idx}
-        # SM-B のとき JSON serialize に port_shape も含める
-        if self.port_shape != ():
-            self._params["port_shape"] = list(self.port_shape)
+        # 明示宣言のときだけ JSON に書く (None = 継承はキーなし = 既存 JSON と同じ)
+        if declared is not None:
+            self._params["port_shape"] = list(declared)
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         # SM-A path: rank-0 → 1D ndarray (n_outputs=1) で返す
@@ -84,7 +88,7 @@ class Inport(Block):
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> tuple[npt.NDArray[Any], ...]:
-        # SM-B path: 任意 shape を tuple of 1 で返す
+        # SM-T path: 注入された ndarray (plan の shape) を tuple of 1 で返す
         return (np.asarray(self._external_value, dtype=float),)
 
 
@@ -116,22 +120,24 @@ class Outport(Block):
         *,
         id: str | None = None,
         name: str | None = None,
-        port_shape: tuple[int, ...] = (),
+        port_shape: tuple[int, ...] | None = None,
     ) -> None:
         if not isinstance(port_idx, int) or port_idx < 0:
             raise BlockSpecError(f"Outport: port_idx must be a non-negative int, got {port_idx!r}")
+        # ADR-0079 §(6): None (既定) = 内部の上流から継承、明示は宣言 (Inport と同じ)
+        declared = None if port_shape is None else tuple(int(d) for d in port_shape)
         super().__init__(
             id=id,
             name=name,
             n_inputs=1,
             n_outputs=0,
-            port_shapes_in=(tuple(port_shape),),
+            port_shapes_in=((declared if declared is not None else ()),),
         )
         self.port_idx = port_idx
-        self.port_shape: tuple[int, ...] = tuple(port_shape)
+        self.port_shape: tuple[int, ...] | None = declared
         self._params = {"port_idx": port_idx}
-        if self.port_shape != ():
-            self._params["port_shape"] = list(self.port_shape)
+        if declared is not None:
+            self._params["port_shape"] = list(declared)
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.zeros(0)

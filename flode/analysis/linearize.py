@@ -488,23 +488,12 @@ def _evaluate(
         if not b.direct_feedthrough:
             inputs_b[b] = gather_inputs_b(b)
 
-    # SM-B 連続ブロックの xdot: SM-A 互換 wrapper (Simulator.f_continuous_vector と同じ)。
-    # NOTE: ``Block.derivative`` の契約 (ADR-0001) は SM-A 1D ndarray (= 各 port が
-    # scalar) を前提とする。SM-B vector port を持つカスタム連続ブロック (= ``@block``
-    # で states>=1 かつ非 scalar port を宣言) は本 MVP では未対応。``derivative_v``
-    # の追加は Phase 5+ (ADR-0026 §(10) note)。各入力 port の値が rank-0 でない場合
-    # は明示エラーで誘導する (silent な ValueError を防ぐ)。
+    # SM-B 連続ブロックの xdot: ADR-0079 §(5) の vector-port 版 ``derivative_v``
+    # (Simulator.f_continuous_vector と同じ)。SM-A ブロックは Block 基底の wrapper が
+    # rank-0 入力に縮退して ``derivative`` を呼ぶ (非 () は明示エラー)。
     xdot = np.zeros(n_states)
     for b, sl in layout:
-        u_tuple = inputs_b[b]
-        if any(np.asarray(ui).size != 1 for ui in u_tuple):
-            raise BlockSpecError(
-                f"linearize: block {b.id!r} has continuous states and SM-B vector "
-                f"input ports. Vector-port continuous blocks are not yet supported "
-                f"(Phase 5+, ADR-0026 §(10))."
-            )
-        u_1d = np.array([float(np.asarray(ui).item()) for ui in u_tuple], dtype=float)
-        xdot[sl] = np.asarray(b.derivative(t, x_cont[sl], u_1d), dtype=float)
+        xdot[sl] = np.asarray(b.derivative_v(t, x_cont[sl], inputs_b[b]), dtype=float)
 
     # 外部出力 y_external を取り出す (port shape を C-order で flatten)
     y_ext = np.zeros(len(output_specs))
@@ -609,14 +598,13 @@ def linearize(
     # security MUST-1: ネスト dtype 宣言は run と同様に fail-closed
     reject_nested_dtype_declarations(simulator)
 
-    # Note (code-reviewer NIT 2026-09-08): linearize は signal plan を構築しない。
-    # 下の拒否により「宣言モデルは non_float_ports == 0 かつ vector_ports == 0 の
-    # ときだけ通る」という不変条件が成立し、その場合 plan なし (= 全ポート
-    # float64 / 宣言 shape) と解決結果は数値的に同一になるため。Q10 を緩和して
-    # 非 float64 / ベクトルモデルを通すようになったら、この省略は成立しなくなる。
+    # ADR-0079 §(5): 宣言モデルでは run() と同じく plan を構築し、ベクトル状態
+    # ブロックの n_states / x0 と Subsystem の内部 plan を確定してから layout を取る。
+    # (非 float64 は下で拒否するので、plan の dtype 面は全 float64 = SM-A と同値)
     if has_declared_dtype(simulator) or has_shape_source(simulator):
-        simulator._check_subsystem_sm_b_unsupported()
         signal_res = resolve_for_execution(simulator)
+        # 検査してから変更する: plan 適用 (n_states / x0 / 内部 plan の書き換え) は
+        # 拒否判定の後 (code-reviewer SHOULD 2026-09-21)
         if signal_res.summary.non_float_ports > 0:
             raise BlockSpecError(
                 "linearize: model contains non-float64 signals (SM-D dtype). "
@@ -626,6 +614,7 @@ def linearize(
                 "dtype declarations or insert Cast(dtype='float64') before "
                 "the linearisation boundary."
             )
+        simulator._prepare_signal_plan(order, signal_res)
         # ADR-0079 D-2: 実行時 shape は宣言ではなく解決結果。外部入出力の flatten と
         # SM-B 評価はこの表を読む (要素ごと演算ブロックが上流のベクトル shape を
         # 受け取るケースを宣言 () で誤って潰さないため)。

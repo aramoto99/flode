@@ -309,6 +309,8 @@ def _verify_structure(cls: type[Block], spec: SourceSpec, block_id: str | None) 
         spec.sample_time,
         spec.input_names,
         spec.output_names,
+        spec.port_shapes_in,
+        spec.port_shapes_out,
     )
     actual = (
         s.n_inputs,
@@ -318,13 +320,15 @@ def _verify_structure(cls: type[Block], spec: SourceSpec, block_id: str | None) 
         s.sample_time,
         s.input_names,
         s.output_names,
+        s.port_shapes_in,
+        s.port_shapes_out,
     )
     if expected != actual:
         raise BlockSpecError(
             f"PythonFunction[{block_id}]: block structure after execution "
-            f"(inputs, outputs, states, direct_feedthrough, sample_time)={actual} differs "
-            f"from the static analysis {expected}. The @block arguments and annotations "
-            f"must be literal so that both agree.",
+            f"(inputs, outputs, states, direct_feedthrough, sample_time, names, "
+            f"port_shapes)={actual} differs from the static analysis {expected}. "
+            f"The @block arguments and annotations must be literal so that both agree.",
             block_id=block_id,
         )
 
@@ -363,6 +367,9 @@ class PythonFunction(Block):
         (1, 1, 0)
     """
 
+    # ADR-0079 §(3): SM-A の output と SM-T の output_v を内包インスタンスへ委譲する
+    _skip_dual_api_check = True
+
     def __init__(
         self,
         code: str = DEFAULT_CODE,
@@ -384,6 +391,9 @@ class PythonFunction(Block):
             n_states=spec.n_states,
             direct_feedthrough=spec.direct_feedthrough,
             sample_time=spec.sample_time,
+            # ADR-0079 §(3) 6c: ソースの @block(port_shapes_*) が宣言 (信号面解決器が読む)
+            port_shapes_in=spec.port_shapes_in or None,
+            port_shapes_out=spec.port_shapes_out or None,
         )
         self.code: str = code
         self._static_spec: SourceSpec = spec
@@ -550,6 +560,29 @@ class PythonFunction(Block):
         inner = self._synced_inner()
         with self._user_frame_guard():
             return inner.update(t, x, u)
+
+    # ---- ADR-0079 §(3): vector-port API (内包インスタンスへ委譲) ----
+
+    def output_v(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        inner = self._inner_or_raise()
+        with self._user_frame_guard():
+            return inner.output_v(t, x, u)
+
+    def derivative_v(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        inner = self._synced_inner()
+        with self._user_frame_guard():
+            return inner.derivative_v(t, x, u)
+
+    def update_v(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        inner = self._synced_inner()
+        with self._user_frame_guard():
+            return inner.update_v(t, x, u)
 
     def reset(self) -> None:
         """内包インスタンスが ``reset`` を持つ場合のみ委譲する (``run()`` は ``_build`` 後に呼ぶ)。"""

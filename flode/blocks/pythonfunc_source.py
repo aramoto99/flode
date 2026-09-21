@@ -87,6 +87,8 @@ class SourceSpec:
         input_names: 入力ポート名 (SPEC-0024)。空 tuple = 全ポート無名。
         output_names: 出力ポート名。
         has_u_arg: 関数が ``u`` 引数を持つか (= GUI の入力数編集可否判定)。
+        port_shapes_in: 入力ポートの宣言 shape (ADR-0079 §(3) 6c、全 ``()`` が既定)。
+        port_shapes_out: 出力ポートの宣言 shape。
     """
 
     func_name: str
@@ -100,6 +102,8 @@ class SourceSpec:
     input_names: tuple[str, ...] = ()
     output_names: tuple[str, ...] = ()
     has_u_arg: bool = True
+    port_shapes_in: tuple[tuple[int, ...], ...] = ()
+    port_shapes_out: tuple[tuple[int, ...], ...] = ()
 
 
 class _UnresolvedAnnotation(Exception):
@@ -199,6 +203,8 @@ def analyze_source(code: str, *, block_id: str | None = None) -> SourceSpec:
         input_names=structure.input_names,
         output_names=structure.output_names,
         has_u_arg=structure.has_u_arg,
+        port_shapes_in=structure.port_shapes_in,
+        port_shapes_out=structure.port_shapes_out,
     )
 
 
@@ -288,7 +294,8 @@ def _decorator_kwargs(func_def: ast.FunctionDef, block_id: str | None) -> dict[s
             except ValueError as e:
                 raise PythonFunctionSourceError(
                     f"PythonFunction: @block argument {kw.arg!r} must be a literal "
-                    f"(int / float / bool / str / None), got `{ast.unparse(kw.value)}`.",
+                    f"(int / float / bool / str / None / tuple of these, e.g. "
+                    f"port_shapes_in=((3,),)), got `{ast.unparse(kw.value)}`.",
                     lineno=deco.lineno,
                     block_id=block_id,
                 ) from e

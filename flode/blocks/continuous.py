@@ -17,16 +17,22 @@ import scipy.signal
 from ..core.block import Block
 from ..exceptions import BlockSpecError
 from ._lti_utils import _DF_TOLERANCE, build_companion_form_siso
+from ._vector_state import VectorStateMixin, X0Like
 
 
-class Integrator(Block):
+class Integrator(VectorStateMixin, Block):
     """連続時間積分器 ``y = x``、``x_dot = u``。
 
     ``direct_feedthrough=False`` (出力は状態 ``x`` のみ参照) なので、閉ループ内
     の代数ループを切る用途に使える。
 
+    ADR-0079 §(5): ベクトル信号を積分できる。``x0`` がスカラなら状態 shape は
+    上流の入力 shape に従い (スカラ拡張)、配列なら入力はその shape (またはスカラ)
+    でなければならない。状態は flat で格納される (``linearize`` の state_names は
+    C order の flat index)。
+
     Args:
-        x0: 初期状態 ``x(0)``。
+        x0: 初期状態 ``x(0)`` (スカラまたは配列)。
     """
 
     # D-4 (SPEC-0028 Q11): 連続ブロックは入力に float64 を要求する
@@ -34,7 +40,7 @@ class Integrator(Block):
 
     def __init__(
         self,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         *,
         id: str | None = None,
         name: str | None = None,
@@ -47,14 +53,24 @@ class Integrator(Block):
             n_states=1,
             direct_feedthrough=False,
         )
-        self.x0 = np.array([float(x0)])
-        self._params = {"x0": float(x0)}
+        self._init_vector_state(x0)
+        self._params = {"x0": self._x0_param()}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
 
     def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([u[0]])
+
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return xs
+
+    def _derivative_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return self._u_state(u[0])
 
 
 class StateSpace(Block):
@@ -426,8 +442,8 @@ class MimoTransferFunction(Block):
         return np.asarray(self._A @ x + self._B @ u, dtype=float).ravel()
 
 
-class Derivative(Block):
-    """フィルタ付き微分 ``H(s) = N*s / (s + N)`` (ADR-0006 §(3))。
+class Derivative(VectorStateMixin, Block):
+    """フィルタ付き微分 ``H(s) = N*s / (s + N)`` (ADR-0006 §(3))。ベクトル信号は要素ごと (ADR-0079)。
 
     純粋微分 ``s`` は実装不能なので 1 次フィルタ近似を採用する。``N`` を大きく
     すると純粋微分に近づくがノイズも拡大する。リファレンスツールの Derivative の
@@ -448,7 +464,7 @@ class Derivative(Block):
     def __init__(
         self,
         N: float = 1000.0,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         *,
         id: str | None = None,
         name: str | None = None,
@@ -464,11 +480,21 @@ class Derivative(Block):
             direct_feedthrough=True,
         )
         self.N = float(N)
-        self.x0 = np.array([float(x0)])
-        self._params = {"N": self.N, "x0": float(x0)}
+        self._init_vector_state(x0)
+        self._params = {"N": self.N, "x0": self._x0_param()}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.N * (u[0] - x[0])])
 
     def derivative(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([self.N * (u[0] - x[0])])
+
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.asarray(self.N * (self._u_state(u[0]) - xs))
+
+    def _derivative_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.asarray(self.N * (self._u_state(u[0]) - xs))

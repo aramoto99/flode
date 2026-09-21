@@ -161,6 +161,29 @@ function writeWorkspaceCollapsed(collapsed: boolean): void {
   }
 }
 
+/** ADR-0079 §(9): 「ベクトル信号を太線で表示」(既定 ON)。localStorage "0" で OFF。 */
+const VECTOR_EDGES_STORAGE_KEY = "flode.vector_edges";
+
+function readVectorEdgesBold(): boolean {
+  try {
+    return window.localStorage.getItem(VECTOR_EDGES_STORAGE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writeVectorEdgesBold(bold: boolean): void {
+  try {
+    if (bold) {
+      window.localStorage.removeItem(VECTOR_EDGES_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(VECTOR_EDGES_STORAGE_KEY, "0");
+    }
+  } catch {
+    // localStorage 不可環境では session 内のみ反映
+  }
+}
+
 /** localStorage から Inspector 折りたたみ状態を復元 (= 起動時 default)。 */
 function readInspectorCollapsed(): boolean {
   try {
@@ -427,6 +450,11 @@ interface AppState {
   // のみ表示、``false`` で tree 展開。
   workspaceCollapsed: boolean;
   setWorkspaceCollapsed: (collapsed: boolean) => void;
+
+  // ADR-0079 §(9) (v0.63.0): ベクトル信号 (rank >= 1) の配線を太線で描くか。
+  // 設定メニューでトグル、localStorage "flode.vector_edges" に永続化 (既定 ON)。
+  vectorEdgesBold: boolean;
+  setVectorEdgesBold: (bold: boolean) => void;
 
   // ADR-0051 §(1) §(2): activity bar (列 0) で切替される sidebar mode。
   // 列 1 (left sidebar) の中身を mode に応じて切替: file = FileBrowser /
@@ -1138,6 +1166,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWorkspaceCollapsed: (collapsed) => {
     writeWorkspaceCollapsed(collapsed);
     set({ workspaceCollapsed: collapsed });
+  },
+  // ADR-0079 §(9): ベクトル配線の太線表示 (localStorage 連動、既定 ON)
+  vectorEdgesBold: readVectorEdgesBold(),
+  setVectorEdgesBold: (bold) => {
+    writeVectorEdgesBold(bold);
+    set({ vectorEdgesBold: bold });
   },
   // ADR-0051 §(1) §(2): activity bar sidebar mode (= file / library / search)
   sidebarMode: readSidebarMode(),

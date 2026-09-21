@@ -31,6 +31,7 @@
   "menu.settings.language": "Language",
   "menu.settings.language.en": "English",
   "menu.settings.language.ja": "日本語",
+  "menu.settings.vector_edges": "Bold vector signal lines",
   "menu.help": "Help",
   "menu.file.new": "New",
   "menu.file.open": "Open…",

@@ -33,11 +33,12 @@ import scipy.signal
 from ..core.block import Block
 from ..exceptions import BlockSpecError
 from ._lti_utils import _DF_TOLERANCE
+from ._vector_state import VectorStateMixin, X0Like
 
 _zohd_logger = logging.getLogger("flode.blocks.discrete")
 
 
-class UnitDelay(Block):
+class UnitDelay(VectorStateMixin, Block):
     """1 サンプル遅延 ``y[k+1] = u[k]`` (リファレンスツールの UnitDelay 互換、ADR-0014/0015)。
 
     Internal state (n_states=2):
@@ -62,12 +63,14 @@ class UnitDelay(Block):
     # SPEC-0030: 連続として動けない離散専用ブロック。-1 (上流に同期) が
     # 解決できなければエラーにする (凍結防止の fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
+    # ADR-0015 / ADR-0078 の 2-state 配置 (ベクトル状態では x[:n] / x[n:])
+    _state_slots: ClassVar[int] = 2
 
     def __init__(
         self,
         *,
         sample_time: float | str,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -83,9 +86,9 @@ class UnitDelay(Block):
         # ADR-0015 §(2): state[0]=output_curr, state[1]=output_next。
         # 初期状態は両 state を ``x0`` で埋める (t=0 での出力 = x0、最初のサンプル
         # 境界で fire するまで buffer も x0)。
-        self.x0 = np.array([float(x0), float(x0)])
-        # JSON serialize 時は scalar の ``x0`` を保持 (ADR-0015 §(4))。
-        self._params = {"sample_time": self.sample_time, "x0": float(x0)}
+        self._init_vector_state(x0)
+        # JSON serialize 時はユーザー指定の ``x0`` を保持 (ADR-0015 §(4))。
+        self._params = {"sample_time": self.sample_time, "x0": self._x0_param()}
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([x[0]])
@@ -99,8 +102,23 @@ class UnitDelay(Block):
         # (次サンプルで output される値)
         return np.array([x[1], u[0]])
 
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.asarray(xs[0])
 
-class DiscreteIntegrator(Block):
+    def _advance_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.stack([xs[1], xs[1]])
+
+    def _update_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.stack([xs[1], self._u_state(u[0])])
+
+
+class DiscreteIntegrator(VectorStateMixin, Block):
     """前進 Euler 離散積分 ``x[k+1] = x[k] + sample_time * gain * u[k]``、出力 ``y[k] = x[k]`` (リファレンスツール互換)。
 
     Internal state (n_states=2、ADR-0015 §(3) で 2-state augmentation):
@@ -121,13 +139,14 @@ class DiscreteIntegrator(Block):
     required_input_dtype: ClassVar[str | None] = "float64"
     # SPEC-0030: 離散専用 — -1 (上流に同期) が解決できなければエラー (fail-closed)
     requires_discrete_rate: ClassVar[bool] = True
+    _state_slots: ClassVar[int] = 2
 
     def __init__(
         self,
         *,
         sample_time: float | str,
         gain: float = 1.0,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -142,12 +161,12 @@ class DiscreteIntegrator(Block):
         )
         self.gain = float(gain)
         # ADR-0015 §(3): state[0]=output_curr, state[1]=next_x。両方を x0 で埋める
-        self.x0 = np.array([float(x0), float(x0)])
-        # JSON serialize 時は scalar の x0 を維持 (ADR-0015 §(4))
+        self._init_vector_state(x0)
+        # JSON serialize 時はユーザー指定の x0 を維持 (ADR-0015 §(4))
         self._params = {
             "sample_time": self.sample_time,
             "gain": self.gain,
-            "x0": float(x0),
+            "x0": self._x0_param(),
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -162,13 +181,7 @@ class DiscreteIntegrator(Block):
         # Simulator 経由なら ``_resolve_sample_times`` で必ず確定する。直接呼びだ
         # された場合や未登録の状態では `BlockSpecError` で明示する (silent zero-step
         # を返さない: 無音バグ防止)。
-        ts = self._resolved_sample_time
-        if ts is None or ts <= 0.0:
-            raise BlockSpecError(
-                f"DiscreteIntegrator {self.id!r}: sample_time has not been resolved. "
-                "Add this block to a Simulator and call `run()` (or invoke "
-                "`_resolve_sample_times`) before calling update() directly."
-            )
+        ts = self._resolved_ts()
         # ADR-0015 §(3) 2-state augmentation の semantics:
         # - x[1] は「累積最新値 = 標準形の x[k]」。fire のたびに ``T*g*u(t)`` を加算する
         # - x[0] は「output 用スナップショット = x[k-1]」。fire 時に旧 x[1] からシフト
@@ -178,6 +191,33 @@ class DiscreteIntegrator(Block):
         # 初期境界以外で崩れ、累積が 1 step ずれるため不可)。
         return np.array([x[1], x[1] + ts * self.gain * u[0]])
 
+    def _resolved_ts(self) -> float:
+        """解決済み sample_time を返す (未解決なら ``BlockSpecError``、SM-A / SM-T 共用)。"""
+        ts = self._resolved_sample_time
+        if ts is None or ts <= 0.0:
+            raise BlockSpecError(
+                f"DiscreteIntegrator {self.id!r}: sample_time has not been resolved. "
+                "Add this block to a Simulator and call `run()` (or invoke "
+                "`_resolve_sample_times`) before calling update() directly."
+            )
+        return ts
+
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.asarray(xs[0])
+
+    def _advance_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.stack([xs[1], xs[1]])
+
+    def _update_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        ts = self._resolved_ts()
+        return np.stack([xs[1], xs[1] + ts * self.gain * self._u_state(u[0])])
+
 
 # ADR-0014 §(3): サンプル時刻判定の許容誤差。整数比カウンタで決まる
 # `_resolved_sample_time` の倍数からのずれを許容する閾値。Simulator の
@@ -185,7 +225,7 @@ class DiscreteIntegrator(Block):
 _ZOH_SAMPLE_TOL = 1e-9
 
 
-class RateTransition(Block):
+class RateTransition(VectorStateMixin, Block):
     """異なるサンプル時間の離散ブロック間でレート変換を行う (リファレンスツール同名、ADR-0036)。
 
     マルチレートモデルで、上流ブロックのサンプル周期 ``input_sample_time`` と
@@ -225,6 +265,7 @@ class RateTransition(Block):
     _VALID_MODES = ("zoh", "delay", "auto")
     # ADR-0039 follow-up: GUI ParameterPanel が enum select を出すヒント
     _param_enums = {"mode": _VALID_MODES}
+    _state_slots: ClassVar[int] = 2
 
     def __init__(
         self,
@@ -232,7 +273,7 @@ class RateTransition(Block):
         input_sample_time: float,
         output_sample_time: float,
         mode: str = "auto",
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -282,12 +323,12 @@ class RateTransition(Block):
         self.mode = mode
 
         # state[0]=output_curr、state[1]=output_next (ADR-0015 §(2))
-        self.x0 = np.array([float(x0), float(x0)])
+        self._init_vector_state(x0)
         self._params = {
             "input_sample_time": float(input_sample_time),
             "output_sample_time": float(output_sample_time),
             "mode": mode,
-            "x0": float(x0),
+            "x0": self._x0_param(),
         }
 
     @staticmethod
@@ -317,8 +358,23 @@ class RateTransition(Block):
         # ことで実効的に zoh / delay に見える」点)。
         return np.array([x[1], u[0]])
 
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.asarray(xs[0])
 
-class ZeroOrderHoldDirect(Block):
+    def _advance_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.stack([xs[1], xs[1]])
+
+    def _update_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return np.stack([xs[1], self._u_state(u[0])])
+
+
+class ZeroOrderHoldDirect(VectorStateMixin, Block):
     """リファレンスツールの ZOH 互換 ``y(t_k) = u(t_k)`` の即時反映ホールド (ADR-0014 §(3))。
 
     サンプル時刻 ``t_k`` で現入力 ``u(t_k)`` を出力に即時反映し、次サンプル時刻まで
@@ -349,7 +405,7 @@ class ZeroOrderHoldDirect(Block):
         self,
         *,
         sample_time: float | str,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -362,10 +418,11 @@ class ZeroOrderHoldDirect(Block):
             direct_feedthrough=True,
             sample_time=sample_time,
         )
-        self.x0 = np.array([float(x0)])
-        self._params = {"sample_time": self.sample_time, "x0": float(x0)}
+        self._init_vector_state(x0)
+        self._params = {"sample_time": self.sample_time, "x0": self._x0_param()}
 
-    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+    def _is_sample_instant(self, t: float) -> bool | None:
+        """``t`` がサンプル時刻なら True、中間時刻なら False、sample_time 未解決なら None。"""
         ts = self._resolved_sample_time
         if ts is None or ts <= 0.0:
             # サンプル時間未解決時は素朴 fallback (継承未解決などの境界条件)。
@@ -376,19 +433,36 @@ class ZeroOrderHoldDirect(Block):
                 "This is expected only outside Simulator.run().",
                 self.id,
             )
-            return np.array([u[0]])
+            return None
         n = round(t / ts)
         # 許容誤差は `ts` と `|t|` の双方を下限に持たせる:
         # - `ts` を下限にすることで、短い sample_time × 大きな t で誤判定を防ぐ
         # - `|t|` を上限の一部に持たせることで、t が大きい時の浮動小数累積誤差に対応
-        if abs(t - n * ts) <= _ZOH_SAMPLE_TOL * max(ts, abs(t)):
-            # サンプル時刻ぴったり: 現入力を即時反映
+        return abs(t - n * ts) <= _ZOH_SAMPLE_TOL * max(ts, abs(t))
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        at_sample = self._is_sample_instant(t)
+        if at_sample is None or at_sample:
+            # サンプル時刻ぴったり (または未解決 fallback): 現入力を即時反映
             return np.array([u[0]])
         # 中間時刻: 前回サンプル値を保持
         return np.array([x[0]])
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         return np.array([u[0]])
+
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        at_sample = self._is_sample_instant(t)
+        if at_sample is None or at_sample:
+            return self._u_state(u[0])
+        return xs
+
+    def _update_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return self._u_state(u[0])
 
 
 class DiscreteStateSpace(Block):

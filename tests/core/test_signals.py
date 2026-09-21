@@ -34,6 +34,7 @@ from flode.blocks import (
     Scope,
     Sum,
     Switch,
+    TransferFunction,
     XYGraph,
 )
 from flode.blocks.pythonfunc import PythonFunction
@@ -295,7 +296,7 @@ class TestRejections:
     def test_scalar_only_state_block_rejects_vector(self) -> None:
         sim = _sim()
         m = _mux3(sim)
-        integ = sim.add(Integrator(x0=0.0, id="integ"))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="integ"))
         sim.connect(m, integ)
         with pytest.raises(SignalShapeError, match="Demux") as ei:
             resolve_for_execution(sim)
@@ -313,7 +314,7 @@ class TestRejections:
         """D-11: error 級を全件集めてから 1 回だけ raise する。"""
         sim = _sim()
         m = _mux3(sim)
-        integ = sim.add(Integrator(x0=0.0, id="integ"))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="integ"))
         xy = sim.add(XYGraph(id="xy"))
         sim.connect(m, integ)
         sim.connect(m, xy, dst_idx=0)
@@ -331,7 +332,7 @@ class TestRejections:
     def test_run_raises_the_same_error(self) -> None:
         sim = _sim()
         m = _mux3(sim)
-        integ = sim.add(Integrator(x0=0.0, id="integ"))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="integ"))
         sim.connect(m, integ)
         with pytest.raises(SignalShapeError, match="shape.mismatch"):
             sim.run()
@@ -344,7 +345,7 @@ class TestRejections:
         m = _mux3(sim)
         g1 = sim.add(Gain(k=1.0, id="g1"))
         g2 = sim.add(Gain(k=1.0, id="g2"))
-        integ = sim.add(Integrator(x0=0.0, id="integ"))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0], id="integ"))
         sim.connect(g1, g2)
         sim.connect(g2, g1)  # 代数ループ
         sim.connect(m, integ)  # shape 不一致
@@ -358,7 +359,8 @@ class TestRejections:
 
 
 class TestOpaqueIsland:
-    def test_subsystem_rejects_vector_input(self) -> None:
+    def test_subsystem_passes_vector_through_and_resolves_inner(self) -> None:
+        """ADR-0079 §(6): Subsystem 境界はベクトルを透過し、内部が再帰解決される。"""
         sim = _sim()
         m = _mux3(sim)
         sub = Subsystem(
@@ -375,9 +377,15 @@ class TestOpaqueIsland:
         )
         sim.add(sub)
         sim.connect(m, "sub")
-        with pytest.raises(SignalShapeError, match="shape.opaque_scalar_island") as ei:
-            resolve_for_execution(sim)
-        assert "Stage 2" in str(ei.value)
+        res = resolve_for_execution(sim)
+        assert res.in_shape("sub", 0) == (3,)
+        assert res.out_shape("sub", 0) == (3,)
+        inner = res.inner["sub"]
+        assert inner.out_shape("ip", 0) == (3,)
+        assert inner.out_shape("ig", 0) == (3,)
+        assert inner.in_shape("op", 0) == (3,)
+        # dtype island (SPEC-0028 Q6): 内部は全ポート float64
+        assert set(inner.ports.values()) == {"float64"}
 
     def test_fcn_rejects_vector_input(self) -> None:
         sim = _sim()
@@ -423,13 +431,33 @@ class TestOpaqueIsland:
         with pytest.raises(BlockSpecError, match="scalar `output` API"):
             Block.output_v(g, 0.0, np.zeros(1), (np.array([1.0, 2.0, 3.0]),))
 
-    def test_declared_vector_subsystem_port_is_flagged(self) -> None:
+    def test_declared_inport_shape_mismatch_is_rejected(self) -> None:
+        """明示 ``port_shape`` は宣言: 外側 shape と違えば shape.mismatch。"""
         sim = _sim()
+        m = _mux3(sim)
         sub = Subsystem(id="sub")
-        sub.add(Inport(port_idx=0, port_shape=(3,), id="ip"))
+        sub.add(Inport(port_idx=0, port_shape=(2,), id="ip"))
+        sub.add(Outport(port_idx=0, id="op"))
+        sub.connect("ip", "op")
         sim.add(sub)
-        res = resolve_signals(sim)
-        assert "shape.opaque_scalar_island" in _codes(res)
+        sim.connect(m, "sub")
+        with pytest.raises(SignalShapeError, match="shape.mismatch") as ei:
+            resolve_for_execution(sim)
+        assert ei.value.expected_shape == (2,)
+        assert ei.value.actual_shape == (3,)
+
+    def test_inner_error_is_reported_with_subsystem_context(self) -> None:
+        """内部の error 級診断も集約例外に含まれる (Subsystem 名付き)。"""
+        sim = _sim()
+        m = _mux3(sim)
+        sub = Subsystem(id="sub")
+        sub.add(Inport(port_idx=0, id="ip"))
+        sub.add(XYGraph(id="xy"))
+        sub.connect("ip", "xy", 0, 0)
+        sim.add(sub)
+        sim.connect(m, "sub")
+        with pytest.raises(SignalShapeError, match="inside Subsystem 'sub'"):
+            resolve_for_execution(sim)
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +558,7 @@ class TestShapeCoverageGuard:
 
     def test_dtype_and_shape_tables_cover_the_same_builtin_names(self) -> None:
         dtype_names = set(signals._CLASSIFICATION)
-        shape_names = set(signals._SHAPE_RULES) - {"ElementwiseMixin"}
+        shape_names = set(signals._SHAPE_RULES) - {"ElementwiseMixin", "VectorStateMixin"}
         assert dtype_names == shape_names
 
     def test_elementwise_rule_is_inherited_via_mixin(self) -> None:

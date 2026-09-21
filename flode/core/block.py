@@ -159,6 +159,28 @@ def _normalize_port_shapes(
     return tuple(normalized)
 
 
+def _scalar_inputs_1d(block: Block, u: tuple[npt.NDArray[Any], ...]) -> npt.NDArray[Any]:
+    """SM-T の tuple-of-ndarray 入力を SM-A 互換の 1D ndarray へ縮退する。
+
+    ``derivative_v`` / ``update_v`` / ``advance_v`` の default wrapper が使う。
+    ベクトル入力を SM-A 専用ブロックへ渡すのは実装ミス (信号面解決器が build 時に
+    拒否する) なので、黙って潰さず明示エラーにする (ADR-0079 A-5 の fail-closed)。
+    """
+    flat: list[float] = []
+    for i, ui in enumerate(u):
+        arr = np.asarray(ui)
+        if arr.shape != ():
+            raise BlockSpecError(
+                f"{type(block).__name__} {block.id!r}: input port {i} carries a vector "
+                f"signal of shape {arr.shape}, but this block implements the scalar "
+                "state API only (derivative / update / advance). Use a Demux block to "
+                "select one element, or implement the `_v` variants (ADR-0079).",
+                block_id=block.id,
+            )
+        flat.append(float(arr.item()))
+    return np.array(flat, dtype=float)
+
+
 class Block:
     """全ブロックの基底クラス。
 
@@ -266,6 +288,9 @@ class Block:
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
         self.n_states = n_states
+        # ADR-0079 D-7: 状態の論理 shape。格納は常に flat ``(n_states,)`` で、
+        # ベクトル状態ブロック (``VectorStateMixin``) だけがこれを上書きする。
+        self.state_shape: tuple[int, ...] = (n_states,)
         self.direct_feedthrough = direct_feedthrough
         self.sample_time: float | str | None = sample_time
         self.x0: npt.NDArray[Any] = np.zeros(n_states)
@@ -464,6 +489,51 @@ class Block:
             そのまま返す (1-state ブロック / 状態なしブロック用)。
         """
         return x
+
+    # ---------- SM-T (ADR-0079 §(5)): 状態ブロックの vector-port API ----------
+    #
+    # ``derivative_v`` / ``update_v`` / ``advance_v`` は ``output_v`` と対になる
+    # tuple-of-ndarray 入力版。状態 ``x`` は常に **flat float64** (``_state_layout`` /
+    # ``solve_ivp`` の契約は不変、D-7)。ベクトル状態ブロックは ``x.reshape(state_shape)``
+    # して使う (``flode.blocks._vector_state.VectorStateMixin``)。Default 実装は
+    # 全入力が rank-0 のときだけ SM-A 版へ縮退する wrapper (非 () は明示エラー)。
+
+    def derivative_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        """vector-port 版 ``derivative`` (ADR-0079 §(5))。
+
+        Args:
+            t: 現時刻。
+            x: 現状態 (flat、shape ``(n_states,)``)。
+            u: 各入力ポートの ndarray のタプル。
+
+        Returns:
+            ``x_dot`` (flat、shape ``(n_states,)``)。Default は SM-A ``derivative`` を
+            rank-0 入力で呼ぶ wrapper。
+        """
+        return self.derivative(t, x, _scalar_inputs_1d(self, u))
+
+    def update_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        """vector-port 版 ``update`` (ADR-0079 §(5))。Default は SM-A ``update`` への wrapper。"""
+        return self.update(t, x, _scalar_inputs_1d(self, u))
+
+    def advance_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> npt.NDArray[Any]:
+        """vector-port 版 ``advance`` (ADR-0079 §(5)、A-5)。Default は SM-A ``advance`` への wrapper。"""
+        return self.advance(t, x, _scalar_inputs_1d(self, u))
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self._id!r}>"

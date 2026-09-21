@@ -143,15 +143,34 @@ resolved once, when the model is built, by the signal-plane resolver
 * ``Scope`` and ``Display`` accept vector inputs and record one column per
   element (``in0[0]``, ``in0[1]``, ... in C order); ``Scope.column_labels``
   lists the expanded labels. ``Terminator`` consumes anything.
-* State blocks (``Integrator``, ``TransferFunction``, ``UnitDelay``, ...),
-  sources, lookup tables, ``XYGraph`` and user-code boundaries
-  (``Subsystem``, ``Fcn``, ``PythonFunction``, ``@block``) are scalar-only
-  in this release. Connecting a vector to them is a build error that names
-  the port and suggests ``Demux``.
+* The element-wise state blocks ``Integrator``, ``Derivative``, ``UnitDelay``,
+  ``DiscreteIntegrator``, ``RateTransition``, ``ZeroOrderHoldDirect`` and
+  ``RateLimiter`` carry **vector states**. With a scalar ``x0`` (the default)
+  the state takes the shape of the input signal; an array ``x0`` fixes the
+  state shape and the input must be a scalar or exactly that shape. States
+  are stored flat, so ``linearize`` names them ``<id>.x[i]`` in C order.
+* ``Subsystem`` boundaries pass vectors through: the resolver injects the
+  outer input shape into the inner ``Inport`` blocks, resolves the inner
+  diagram recursively and takes the ``Outport`` shapes as the outer outputs.
+  ``Inport`` / ``Outport`` inherit by default (``port_shape=None``); an
+  explicit ``port_shape`` is a declaration that must match. The enable and
+  trigger ports of a subsystem stay scalar.
+* ``@block`` functions and classes (and the ``PythonFunction`` block) are
+  scalar-only unless they declare ``port_shapes_in`` / ``port_shapes_out``
+  or, in class form, implement ``infer_output_shapes(in_shapes)`` (see
+  :doc:`decorator`). Undeclared user code receiving a vector is a build
+  error.
+* ``TransferFunction`` / ``DiscreteTransferFunction`` (SISO), the
+  ``StateSpace`` family, sources, lookup tables, ``TransportDelay``,
+  ``Relay``, ``Fcn`` and ``XYGraph`` are scalar-only in this release.
+  Connecting a vector to them is a build error that names the port and
+  suggests ``Demux``.
 
 ``Simulator.resolve_signals()`` returns the resolved ``(shape, dtype)`` of
-every port without running the model; the GUI Inspector shows the same
-information next to each port.
+every port without running the model (``resolution.inner[<subsystem id>]``
+holds the inner scopes); the GUI Inspector shows the same information next to
+each port, also while editing inside a subsystem, and vector connections are
+drawn as bold lines (Settings menu).
 
 .. _user-function:
 

@@ -33,9 +33,10 @@ import numpy.typing as npt
 
 from ..core.block import Block
 from ..exceptions import BlockSpecError
+from ._vector_state import VectorStateMixin, X0Like
 
 
-class RateLimiter(Block):
+class RateLimiter(VectorStateMixin, Block):
     """アクチュエータの変化率 (slew rate) を制限する離散ブロック。
 
     サンプル時刻 ``t_k = k * sample_time`` で:
@@ -70,7 +71,7 @@ class RateLimiter(Block):
         sample_time: float,
         rising_slew_rate: float = 1.0,
         falling_slew_rate: float = -1.0,
-        x0: float = 0.0,
+        x0: X0Like = 0.0,
         id: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -100,12 +101,12 @@ class RateLimiter(Block):
         )
         self.rising_slew_rate = float(rising_slew_rate)
         self.falling_slew_rate = float(falling_slew_rate)
-        self.x0 = np.array([float(x0)])
+        self._init_vector_state(x0)
         self._params: dict[str, Any] = {
             "sample_time": float(sample_time),
             "rising_slew_rate": self.rising_slew_rate,
             "falling_slew_rate": self.falling_slew_rate,
-            "x0": float(x0),
+            "x0": self._x0_param(),
         }
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
@@ -144,6 +145,34 @@ class RateLimiter(Block):
         elif delta < max_down:
             delta = max_down
         return np.array([float(x[0]) + delta])
+
+    # ---- ADR-0079 §(5): ベクトル状態 kernel (要素ごとの slew 制限) ----
+
+    def _limited_k(self, xs: npt.NDArray[Any], u: npt.NDArray[Any], ts: float) -> npt.NDArray[Any]:
+        max_up = self.rising_slew_rate * ts
+        max_down = self.falling_slew_rate * ts
+        delta = np.clip(self._u_state(u) - xs, max_down, max_up)
+        return np.asarray(xs + delta)
+
+    def _output_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        ts = self._resolved_sample_time
+        if ts is None or ts <= 0.0:
+            return xs
+        return self._limited_k(xs, u[0], ts)
+
+    def _update_k(
+        self, t: float, xs: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        ts = self._resolved_sample_time
+        if ts is None or ts <= 0.0:
+            raise BlockSpecError(
+                f"RateLimiter {self.id!r}: sample_time has not been resolved. "
+                "Add this block to a Simulator and call run() (or invoke "
+                "_resolve_sample_times) before calling update() directly."
+            )
+        return self._limited_k(xs, u[0], ts)
 
 
 class Relay(Block):

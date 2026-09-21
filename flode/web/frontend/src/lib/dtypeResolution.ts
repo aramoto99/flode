@@ -17,9 +17,16 @@ const RESOLVE_DEBOUNCE_MS = 300;
 let current: DtypesResponse | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
+// ポート検索用の索引 (canvas は全エッジで引くので線形探索を避ける、ADR-0079 §(9))
+let portIndex: Map<string, DtypesPortEntry> | null = null;
+
+function portKey(blockId: string, direction: "in" | "out", portIndex_: number): string {
+  return `${blockId}:${direction}:${portIndex_}`;
+}
 
 function notify(): void {
   version += 1;
+  portIndex = null;
   listeners.forEach((l) => l());
 }
 
@@ -55,16 +62,16 @@ export function _resetDtypeFetchStateForTest(): void {
 function findPort(
   blockId: string,
   direction: "in" | "out",
-  portIndex: number,
+  portIndex_: number,
 ): DtypesPortEntry | null {
   if (!current) return null;
-  const entry = current.ports.find(
-    (p) =>
-      p.block_id === blockId &&
-      p.direction === direction &&
-      p.port_index === portIndex,
-  );
-  return entry ?? null;
+  if (portIndex === null) {
+    portIndex = new Map();
+    for (const p of current.ports) {
+      portIndex.set(portKey(p.block_id, p.direction, p.port_index), p);
+    }
+  }
+  return portIndex.get(portKey(blockId, direction, portIndex_)) ?? null;
 }
 
 /** 指定ポートの解決済み dtype (無ければ null)。 */

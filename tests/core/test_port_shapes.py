@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from flode import Simulator
-from flode.blocks import Constant, Gain, Integrator, Scope
+from flode.blocks import Constant, Gain, Scope, TransferFunction
 from flode.core.block import Block, _normalize_port_shapes
 from flode.core.signals import resolve_for_execution
 from flode.exceptions import BlockSpecError, SignalShapeError
@@ -159,8 +159,8 @@ class TestPortShapeMismatch:
     def test_vector_to_scalar_mismatch_raises(self) -> None:
         sim = Simulator(t_end=0.1, dt=0.01)
         vsrc = sim.add(_VectorSrc())
-        # Integrator は scalar 入力を宣言 (状態ブロックのベクトル化は Stage 2)
-        integ = sim.add(Integrator(x0=0.0))
+        # TransferFunction は SISO のまま scalar 入力を宣言 (ADR-0079 D-10)
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0]))
         sim.connect(vsrc, integ)
         with pytest.raises(SignalShapeError, match="shape.mismatch"):
             sim.run()

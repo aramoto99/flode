@@ -7,10 +7,9 @@ subclass without writing a class by hand. It infers port counts and
 
 .. note::
 
-   **Phase 1 supports the function form only.** Applying ``@block`` to a
-   class raises ``NotImplementedError``. Direct ``Block`` subclassing
-   remains the recommended approach for class-based blocks in Phase 1.
-   Class-form support is planned for Phase 2.
+   ``@block`` also accepts a class that defines ``output`` (and
+   ``derivative`` / ``update`` when it has states); the ``PythonFunction``
+   GUI block accepts the function form only.
 
 Function signature convention
 ------------------------------
@@ -141,6 +140,39 @@ structure is derived without executing the code:
 Only the function form is accepted in the block; class-form ``@block`` is
 rejected with a message. See :ref:`the block library <user-function>` for the
 security model of ``PythonFunction``.
+
+Vector ports (``port_shapes_in`` / ``port_shapes_out``)
+-------------------------------------------------------
+
+User blocks are scalar-only unless they declare their port shapes (see
+:ref:`vector-signals`). Declared vector ports receive the ndarray of that
+shape instead of a ``float``::
+
+    @block(port_shapes_in=((3,),), port_shapes_out=((3,),))
+    def double(t: float, u: float) -> float:   # u is an ndarray of shape (3,)
+        return 2.0 * u
+
+- With a ``tuple[...]`` annotation each element is the value of that port
+  (``float`` for scalar ports, ndarray for vector ports); with ``inputs=N``
+  the function receives the legacy 1-D array when every port is scalar and a
+  tuple of ndarrays otherwise.
+- The returned values must have the declared output shapes.
+- Class-form blocks may instead implement
+  ``infer_output_shapes(self, in_shapes) -> tuple[shape, ...]`` to derive the
+  output shapes from the resolved input shapes (element-wise user blocks)::
+
+      @block
+      class Square:
+          def output(self, t: float, u: float) -> float:
+              return u * u
+
+          def infer_output_shapes(self, in_shapes):
+              return (in_shapes[0],)
+
+- Vector states: declare ``states=prod(shape)`` and pass an ``x0`` array of
+  that size; ``x`` is always the flat state vector.
+- The same declarations work inside a ``PythonFunction`` block as long as
+  they are literals (``port_shapes_in=((3,),)``).
 
 Port names (``input_names`` / ``output_names``)
 -----------------------------------------------

@@ -29,10 +29,16 @@ import {
   DIAGRAM_EDGE_STYLE,
   DIAGRAM_EDGE_TYPE,
   DIAGRAM_MARKER_END,
+  edgeStyleForShape,
   type BlockNode,
 } from "../lib/diagramConverter";
 import { collectPythonCodes, ensurePythonSpecs } from "../lib/pythonFunctionSpec";
-import { useDtypeResolutionFetcher } from "../lib/dtypeResolution";
+import {
+  formatShape,
+  shapeForPort,
+  useDtypeResolution,
+  useDtypeResolutionFetcher,
+} from "../lib/dtypeResolution";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { generateUniqueId } from "../lib/idGenerator";
 import {
@@ -137,6 +143,9 @@ export function DiagramCanvas({
   // SM-D Stage 1 (SPEC-0028 §5.5): dtype 解決結果のモデルレベル fetch。
   // Inspector (SignalDtypeSection) と Display の表示整形が同じ store を読む
   useDtypeResolutionFetcher();
+  // ADR-0079 §(9): 解決結果の更新で配線の太さを再描画する (shapeForPort は store を読む)
+  useDtypeResolution();
+  const vectorEdgesBold = useAppStore((s) => s.vectorEdgesBold);
   useEffect(() => {
     const codes = collectPythonCodes(editingModel);
     if (codes.length > 0) void ensurePythonSpecs(codes);
@@ -527,6 +536,13 @@ export function DiagramCanvas({
   const decoratedEdges = edges.map((e) => {
     const gkey = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
     const via = vias.get(gkey);
+    // ADR-0079 §(9): 解決済み shape が rank >= 1 なら太線 (root スコープのみ、
+    // Subsystem 内部は Stage 2 では細線のまま)。frontend で shape は計算しない。
+    const shape =
+      editingPath.length === 0
+        ? shapeForPort(e.source, "out", Number(e.sourceHandle ?? 0))
+        : null;
+    const style = edgeStyleForShape(shape, vectorEdgesBold);
     return {
       ...e,
       // diagramConverter で設定した type ("branchable") を尊重 (= リファレンスツール風 90°
@@ -535,6 +551,8 @@ export function DiagramCanvas({
       // controlled mode では ``selected`` を prop に流し込まないと .selected
       // クラスが付かず、CSS のハイライトが効かない (= ユーザーから選択不可に見える)。
       selected: selectedEdgeIds.includes(e.id),
+      style,
+      label: shape !== null && shape.length > 0 && vectorEdgesBold ? formatShape(shape) : undefined,
       data: via ? { ...(e.data ?? {}), via } : e.data,
     };
   });

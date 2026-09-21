@@ -96,10 +96,17 @@ class TestSubsystemSmACompat:
 
 
 class TestInportOutportPortShape:
-    def test_inport_default_scalar(self) -> None:
+    def test_inport_default_inherits(self) -> None:
+        """ADR-0079 §(6): 既定 ``port_shape=None`` = 外側から継承 (Block 契約上は ())。"""
         ip = Inport(port_idx=0)
-        assert ip.port_shape == ()
+        assert ip.port_shape is None
         assert ip.port_shapes_out == ((),)
+        assert "port_shape" not in ip._params
+
+    def test_inport_explicit_scalar_is_a_declaration(self) -> None:
+        ip = Inport(port_idx=0, port_shape=())
+        assert ip.port_shape == ()
+        assert ip._params["port_shape"] == []
 
     def test_inport_vector(self) -> None:
         ip = Inport(port_idx=0, port_shape=(5,))
@@ -109,10 +116,11 @@ class TestInportOutportPortShape:
         assert isinstance(ip._external_value, np.ndarray)
         assert ip._external_value.shape == (5,)
 
-    def test_outport_default_scalar(self) -> None:
+    def test_outport_default_inherits(self) -> None:
         op = Outport(port_idx=0)
-        assert op.port_shape == ()
+        assert op.port_shape is None
         assert op.port_shapes_in == ((),)
+        assert "port_shape" not in op._params
 
     def test_outport_vector(self) -> None:
         op = Outport(port_idx=0, port_shape=(3,))
@@ -203,15 +211,13 @@ class TestSubsystemSmBRoundTrip:
 # ---------------------------------------------------------------------------
 
 
-class TestSubsystemSmBRunRejected:
-    def test_sm_b_subsystem_run_raises_block_spec_error(self) -> None:
-        """SM-B port を持つ ``Subsystem`` を ``run`` すると build 時に明示エラー。
+class TestSubsystemSmBRun:
+    def test_declared_vector_port_subsystem_runs(self) -> None:
+        """ADR-0079 §(6) (v0.63.0): ベクトルポートを宣言した ``Subsystem`` が ``run`` できる。
 
-        ADR-0039: ``port_shapes_in`` は派生 property のため、内部 Inport の
-        ``port_shape=(3,)`` から ``((3,),)`` として派生する。SM-B 判定は維持される。
-        Subsystem の SM-B 内部実行は ``_step_inner_v`` (Phase 4) を待つ。それまでは
-        silent 破損 (SM-A scalar coercion で値が消える) を避けるため
-        ``BlockSpecError`` で拒否する (code-reviewer SHOULD 修正)。
+        v0.62.0 までは ``_step_inner_v`` 未実装のため build 時に拒否していた。内部 Inport の
+        ``port_shape=(3,)`` は宣言として外側の in shape と一致検査され、内部は SM-T path
+        (``_step_inner_core_v``) で回る。
         """
         sim = Simulator(t_end=0.05, dt=0.01)
         c0 = sim.add(Constant(value=1.0, id="c0"))
@@ -221,15 +227,20 @@ class TestSubsystemSmBRunRejected:
 
         m = sim.add(Mux(n=3, id="m"))
         sub = Subsystem(id="sub")
-        # ADR-0039: 内部 Inport の port_shape=(3,) から派生で port_shapes_in=((3,),)
-        sub.add(Inport(port_idx=0, port_shape=(3,)))
+        sub.add(Inport(port_idx=0, port_shape=(3,), id="ip"))
+        sub.add(Gain(k=2.0, id="g"))
+        sub.add(Outport(port_idx=0, id="op"))
+        sub.connect("ip", "g")
+        sub.connect("g", "op")
         sim.add(sub)
+        sc = sim.add(Scope(id="sc"))
         sim.connect(c0, m, dst_idx=0)
         sim.connect(c1, m, dst_idx=1)
         sim.connect(c2, m, dst_idx=2)
         sim.connect(m, "sub")
-        with pytest.raises(BlockSpecError, match="not supported in Phase 3"):
-            sim.run()
+        sim.connect("sub", sc)
+        sim.run()
+        np.testing.assert_allclose(np.asarray(sc.values)[0], [2.0, 4.0, 6.0])
 
 
 # ---------------------------------------------------------------------------

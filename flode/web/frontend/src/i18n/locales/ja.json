@@ -31,6 +31,7 @@
   "menu.settings.language": "言語",
   "menu.settings.language.en": "English",
   "menu.settings.language.ja": "日本語",
+  "menu.settings.vector_edges": "ベクトル信号の配線を太線で表示",
   "menu.help": "ヘルプ",
   "menu.file.new": "新規",
   "menu.file.open": "開く…",

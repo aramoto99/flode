@@ -268,10 +268,10 @@ class TestHigherRankShapes:
         resolve_for_execution(sim)
 
     def test_matrix_port_to_scalar_mismatch_raises(self) -> None:
-        """(3, 4) → () (スカラ専用の Integrator) の接続は shape.mismatch で BlockSpecError。"""
+        """(3, 4) → () (SISO の TransferFunction) の接続は shape.mismatch で BlockSpecError。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         src = sim.add(_MatrixPortBlock())
-        integ = sim.add(Integrator(x0=0.0))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0]))
         sim.connect(src, integ)
         with pytest.raises(BlockSpecError, match="shape.mismatch"):
             resolve_for_execution(sim)
@@ -447,7 +447,7 @@ class TestMultiOutputShapeCheck:
         """2出力ブロックの port[1] (= SM-B (3,)) がスカラ専用入力に接続 → mismatch。"""
         sim = Simulator(t_end=0.1, dt=0.01)
         src = sim.add(_TwoOutputMixedBlock())
-        integ = sim.add(Integrator(x0=0.0))
+        integ = sim.add(TransferFunction(numerator=[1.0], denominator=[1.0, 1.0]))
         sim.connect(src, integ, src_idx=1, dst_idx=0)
         with pytest.raises(BlockSpecError, match="shape.mismatch"):
             resolve_for_execution(sim)

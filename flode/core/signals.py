@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import deque
+from collections import ChainMap, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -416,6 +416,9 @@ class SignalResolution:
     diagnostics: tuple[SignalDiagnostic, ...]
     summary: SignalSummary
     shapes: Mapping[PortKey, Shape | None] = field(default_factory=dict)
+    #: ADR-0079 §(6) D-8: Subsystem ごとの内部スコープの解決結果 (key = Subsystem の
+    #: block id、ネストは ``inner`` の ``inner``)。root のキー空間は不変。
+    inner: Mapping[str, SignalResolution] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.shapes and self.ports:
@@ -462,6 +465,8 @@ class SignalResolution:
             ],
             "diagnostics": [d.to_payload() for d in self.diagnostics],
             "summary": self.summary.to_payload(),
+            # ADR-0079 §(6): Subsystem 内部スコープ (Inspector が editingPath で辿る)
+            "inner": {sub_id: res.to_payload() for sub_id, res in sorted(self.inner.items())},
         }
 
 
@@ -575,6 +580,12 @@ _CONTROL_PORT_INDEX: Final[Mapping[str, int]] = {"Switch": 1, "MultiportSwitch":
 #:   宣言と異なる上流 shape は ``shape.mismatch``
 #: - ``opaque``: ユーザーコード境界 (Subsystem / PythonFunction / Fcn / ``@block``)。
 #:   Stage 1 は入出力とも ``()`` を要求し、ベクトル流入は ``shape.opaque_scalar_island``
+#: - ``state``: ベクトル状態ブロック (``VectorStateMixin``、ADR-0079 §(5) 7a')。
+#:   ``x0`` が rank-0 なら状態 shape = 入力の合流 shape (スカラ拡張)、非 rank-0 なら
+#:   入力は ``()`` か ``x0`` の shape に一致。出力 shape = 状態 shape
+#: - ``subsystem``: 階層再帰 (ADR-0079 §(6) D-8)。外側 in shape を内部 Inport に注入して
+#:   内部スコープを再帰解決し、内部 Outport の in shape を外側 out shape にする。
+#:   enable / trigger slot は ``()`` 固定
 #: - ``sink``: 任意 shape を受理 (Scope / Display / Terminator)
 #: - ``sink_scalar``: ``()`` のみ受理 (XYGraph / Trigger / Enable)
 ShapeCategory = Literal[
@@ -583,6 +594,9 @@ ShapeCategory = Literal[
     "select",
     "fanout",
     "declared",
+    "inferred",
+    "state",
+    "subsystem",
     "opaque",
     "sink",
     "sink_scalar",
@@ -623,8 +637,10 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
     # -- 宣言どおり (shape を変えるブロックと、スカラ専用の状態 / ソース系) --
     "Mux": "declared",
     "Demux": "declared",
+    # Inport の出力は _resolve_graph の seed (外側 in shape / 明示宣言)、Outport は
+    # 任意 shape を受け、明示宣言との一致は _SubsystemResolver が検査する (§(6))
     "Inport": "declared",
-    "Outport": "declared",
+    "Outport": "sink",
     "Constant": "declared",
     "Step": "declared",
     "Sine": "declared",
@@ -632,27 +648,30 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
     "Clock": "declared",
     "PulseGenerator": "declared",
     "RandomSource": "declared",
-    "Integrator": "declared",
     "StateSpace": "declared",
     "TransferFunction": "declared",
     "MimoTransferFunction": "declared",
-    "Derivative": "declared",
     "LookupTable1D": "declared",
     "LookupTable2D": "declared",
     "LookupTableND": "declared",
     "Prelookup": "declared",
     "InterpolationUsingPrelookup": "declared",
-    "RateLimiter": "declared",
     "Relay": "declared",
     "TransportDelay": "declared",
-    "UnitDelay": "declared",
-    "DiscreteIntegrator": "declared",
     "DiscreteStateSpace": "declared",
     "DiscreteTransferFunction": "declared",
-    "RateTransition": "declared",
-    "ZeroOrderHoldDirect": "declared",
-    # -- ユーザーコード境界 (Stage 1 は () の island) --
-    "Subsystem": "opaque",
+    # -- ベクトル状態 (blocks/_vector_state.py の mixin と Stage 2 の 7 クラス) --
+    "VectorStateMixin": "state",
+    "Integrator": "state",
+    "Derivative": "state",
+    "UnitDelay": "state",
+    "DiscreteIntegrator": "state",
+    "RateTransition": "state",
+    "ZeroOrderHoldDirect": "state",
+    "RateLimiter": "state",
+    # -- 階層再帰 (Stage 2) --
+    "Subsystem": "subsystem",
+    # -- ユーザーコード境界 (宣言 API があれば declared、無ければ () の island) --
     "PythonFunction": "opaque",
     "Fcn": "opaque",
     # -- シンク --
@@ -670,6 +689,8 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
 #: 直接走査する。
 _SHAPE_SOURCES: Final[Mapping[str, Callable[[Block], bool]]] = {
     "Gain": lambda b: np.ndim(getattr(b, "k", 0.0)) > 0,
+    # ADR-0079 §(5): 非 rank-0 の x0 を持つ状態ブロック
+    "VectorStateMixin": lambda b: tuple(getattr(b, "_x0_shape", ())) != (),
 }
 
 
@@ -696,15 +717,25 @@ def _classify(block: Block) -> tuple[Category, bool]:
 def _classify_shape(block: Block) -> ShapeCategory:
     """ブロックを shape 分類する (ADR-0079 D-6)。
 
-    ``@block`` デコレータ生成クラス (``_flode_structure`` を持つ) はユーザーコード
-    境界なので ``opaque``。規則未登録クラスは **宣言どおり** (``declared``) —
-    ``port_shapes_in/out`` を静的宣言する ADR-0017 の契約そのもので、宣言が
-    全 ``()`` のカスタム SM-A ブロックにベクトルが流入すれば ``shape.mismatch``
-    になる (fail-closed)。
+    ユーザーコード境界 (``@block`` 生成クラス = ``_flode_structure`` を持つ、
+    ``PythonFunction`` / ``Fcn``) は宣言 API (ADR-0079 §(3) 6c) の有無で決まる:
+    ``infer_output_shapes`` hook があれば ``inferred``、非 ``()`` の
+    ``port_shapes_in/out`` 宣言があれば ``declared``、無ければ ``opaque``
+    (= 入出力とも ``()`` の island)。
+    規則未登録クラスは **宣言どおり** (``declared``) — ``port_shapes_in/out`` を
+    静的宣言する ADR-0017 の契約そのもので、宣言が全 ``()`` のカスタム SM-A
+    ブロックにベクトルが流入すれば ``shape.mismatch`` になる (fail-closed)。
     """
-    if hasattr(type(block), "_flode_structure"):
-        return "opaque"
-    for name in _mro_names(block):
+    names = _mro_names(block)
+    user_code = hasattr(type(block), "_flode_structure") or "PythonFunction" in names
+    if user_code:
+        if callable(getattr(block, "infer_output_shapes", None)):
+            return "inferred"
+        declared = any(s != SCALAR_SHAPE for s in block.port_shapes_in) or any(
+            s != SCALAR_SHAPE for s in block.port_shapes_out
+        )
+        return "declared" if declared else "opaque"
+    for name in names:
         category = _SHAPE_RULES.get(name)
         if category is not None:
             return category
@@ -774,12 +805,18 @@ def has_declared_dtype(sim: Simulator) -> bool:
 def has_shape_source(sim: Simulator) -> bool:
     """モデルに非 ``()`` shape の起点があるか — 経路選択の pre-filter (ADR-0079 §(1))。
 
-    root スコープの ``port_shapes_in/out`` 宣言と ``_SHAPE_SOURCES`` の
-    パラメータ条件 (行列 / ベクトル ``Gain.k`` 等) を O(V) で走査する。起点が
-    1 つもなければ推論結果も全 ``()`` になる (非 ``()`` は起点からしか生まれない)
-    ため、``False`` のモデルを解決器なしで SM-A path に流しても健全。
+    ``port_shapes_in/out`` 宣言と ``_SHAPE_SOURCES`` のパラメータ条件 (行列 /
+    ベクトル ``Gain.k``、非 rank-0 の ``x0`` 等) を O(V) で走査する。Stage 2
+    (ADR-0079 §(6)) からは Subsystem の内部ブロックも再帰的に見る (内部だけに
+    起点があるモデルも plan 経路で実行する)。起点が 1 つもなければ推論結果も
+    全 ``()`` になる (非 ``()`` は起点からしか生まれない) ため、``False`` の
+    モデルを解決器なしで SM-A path に流しても健全。
     """
-    for b in sim.blocks:
+    return _any_shape_source(sim.blocks)
+
+
+def _any_shape_source(blocks: Iterable[Block]) -> bool:
+    for b in blocks:
         if any(s != SCALAR_SHAPE for s in b.port_shapes_in):
             return True
         if any(s != SCALAR_SHAPE for s in b.port_shapes_out):
@@ -790,6 +827,9 @@ def has_shape_source(sim: Simulator) -> bool:
                 if predicate(b):
                     return True
                 break
+        inner = getattr(b, "_inner_blocks", None)
+        if inner is not None and _any_shape_source(inner):
+            return True
     return False
 
 
@@ -1106,7 +1146,7 @@ def _check_in_shapes(
     raw_in = list(raw[:n_in])
     bid = block.id
 
-    if category in ("elementwise", "gain", "fanout", "sink"):
+    if category in ("elementwise", "gain", "fanout", "sink", "inferred"):
         return raw_in
 
     if category == "select":
@@ -1156,6 +1196,79 @@ def _check_in_shapes(
             if raw_in[i] is None:
                 effective[i] = uniform
         return effective
+
+    if category == "state":
+        x0_shape = _x0_shape_of(block)
+        if x0_shape == SCALAR_SHAPE:
+            # 7a': 状態 shape は入力の合流 shape (elementwise と同じ受理)
+            return raw_in
+        effective_state: list[Shape | None] = []
+        for i, s in enumerate(raw_in):
+            if s is not None and s != SCALAR_SHAPE and s != x0_shape and sink is not None:
+                sink(
+                    _diag(
+                        "shape.mismatch",
+                        f"Input {bid!r}.in[{i}] of {type(block).__name__} receives "
+                        f"shape {_shape_str(s)} but x0 has shape {_shape_str(x0_shape)}; "
+                        f"a vector x0 fixes the state shape, so the input must be a "
+                        f"scalar or exactly {_shape_str(x0_shape)}. Use Mux/Demux to "
+                        f"adapt the signal, or pass a scalar x0.",
+                        block_id=bid,
+                        direction="in",
+                        port_index=i,
+                        expected_shape=x0_shape,
+                        actual_shape=s,
+                    )
+                )
+            effective_state.append(x0_shape if s is None else s)
+        return effective_state
+
+    if category == "subsystem":
+        inports, _outports = _inner_ports(block)
+        _n_data, enable_idx, trigger_idx = _subsystem_slots(block)
+        effective_sub: list[Shape | None] = list(raw_in)
+        for i, s in enumerate(raw_in):
+            if i in (enable_idx, trigger_idx):
+                # ADR-0079 §(6): Trigger / Enable の制御 slot は () 固定
+                if s is not None and s != SCALAR_SHAPE and sink is not None:
+                    kind = "enable" if i == enable_idx else "trigger"
+                    sink(
+                        _diag(
+                            "shape.control_port_not_scalar",
+                            f"Control input {bid!r}.in[{i}] ({kind} port of "
+                            f"Subsystem) must be a scalar, got shape {_shape_str(s)}. "
+                            f"Select one element with Demux.",
+                            block_id=bid,
+                            direction="in",
+                            port_index=i,
+                            expected_shape=SCALAR_SHAPE,
+                            actual_shape=s,
+                        )
+                    )
+                effective_sub[i] = SCALAR_SHAPE
+                continue
+            inport = inports.get(i)
+            declared_in = getattr(inport, "port_shape", None) if inport is not None else None
+            if declared_in is None:
+                continue  # 継承: 外側 shape をそのまま内部へ
+            declared_in = tuple(declared_in)
+            if s is not None and s != declared_in and sink is not None:
+                sink(
+                    _diag(
+                        "shape.mismatch",
+                        f"Input {bid!r}.in[{i}] receives shape {_shape_str(s)} but the "
+                        f"inner Inport {getattr(inport, 'id', None)!r} declares "
+                        f"port_shape={_shape_str(declared_in)}. Remove the declaration "
+                        f"to inherit the outer shape, or adapt with Mux/Demux.",
+                        block_id=bid,
+                        direction="in",
+                        port_index=i,
+                        expected_shape=declared_in,
+                        actual_shape=s,
+                    )
+                )
+            effective_sub[i] = declared_in
+        return effective_sub
 
     if category == "sink_scalar":
         for i, s in enumerate(raw_in):
@@ -1247,6 +1360,90 @@ def _check_in_shapes(
     return effective_declared
 
 
+def _inner_ports(sub: Block) -> tuple[dict[int, Block], dict[int, Block]]:
+    """Subsystem の内部 Inport / Outport を ``port_idx`` で引く (build 不要、MRO 名判定)。"""
+    inports: dict[int, Block] = {}
+    outports: dict[int, Block] = {}
+    for b in getattr(sub, "_inner_blocks", ()):
+        names = _mro_names(b)
+        idx = getattr(b, "port_idx", None)
+        if not isinstance(idx, int):
+            continue
+        if "Inport" in names:
+            inports[idx] = b
+        elif "Outport" in names:
+            outports[idx] = b
+    return inports, outports
+
+
+def _subsystem_slots(sub: Block) -> tuple[int, int | None, int | None]:
+    """``(データ Inport 数, enable slot, trigger slot)`` — ADR-0058 の slot 順序
+    ``[data..., enable, trigger]`` を build なしで再現する。"""
+    inner = list(getattr(sub, "_inner_blocks", ()))
+    n_data = sum(1 for b in inner if "Inport" in _mro_names(b))
+    has_enable = any("Enable" in _mro_names(b) for b in inner)
+    has_trigger = any("Trigger" in _mro_names(b) for b in inner)
+    enable_idx = n_data if has_enable else None
+    trigger_idx = (n_data + (1 if has_enable else 0)) if has_trigger else None
+    return n_data, enable_idx, trigger_idx
+
+
+def _inferred_out_shapes(
+    block: Block, in_shapes: Sequence[Shape | None], sink: DiagSink | None
+) -> list[Shape | None]:
+    """``infer_output_shapes(in_shapes)`` hook (ADR-0079 §(3) 6c) を呼ぶ。
+
+    未確定の入力は ``()`` として渡す (hook は確定 shape だけを見る)。戻り値は
+    ``n_outputs`` 個の shape。hook の例外・不正な戻り値は ``shape.unresolved``
+    (error 級ではないが full mode では materialize されず) ではなく、実装ミス
+    として ``BlockSpecError`` にする。
+    """
+    n_in = block.n_inputs
+    concrete = tuple(s if s is not None else SCALAR_SHAPE for s in in_shapes[:n_in])
+    hook = block.infer_output_shapes  # type: ignore[attr-defined]
+    try:
+        result = hook(concrete)
+    except BlockSpecError:
+        raise
+    except Exception as e:  # noqa: BLE001 - ユーザー hook の例外を仕様違反として包む
+        raise BlockSpecError(
+            f"Block {block.id!r} ({type(block).__name__}).infer_output_shapes raised "
+            f"{type(e).__name__}: {e}",
+            block_id=block.id,
+        ) from e
+    try:
+        shapes = [tuple(int(d) for d in s) for s in result]
+    except TypeError as e:
+        raise BlockSpecError(
+            f"Block {block.id!r}.infer_output_shapes must return a sequence of shapes "
+            f"(tuples of int), got {result!r}",
+            block_id=block.id,
+        ) from e
+    if len(shapes) != block.n_outputs:
+        raise BlockSpecError(
+            f"Block {block.id!r}.infer_output_shapes returned {len(shapes)} shape(s), "
+            f"expected {block.n_outputs}",
+            block_id=block.id,
+        )
+    return list(shapes)
+
+
+def _x0_shape_of(block: Block) -> Shape:
+    """ベクトル状態ブロックの ``x0`` 宣言 shape (``()`` = スカラ拡張可)。"""
+    return tuple(int(d) for d in getattr(block, "_x0_shape", ()))
+
+
+def _state_out_shape(
+    block: Block, in_shapes: Sequence[Shape | None], sink: DiagSink | None
+) -> Shape | None:
+    """``state`` 規則の出力 shape (= 実効 state shape、ADR-0079 §(5) 7a')。"""
+    x0_shape = _x0_shape_of(block)
+    if x0_shape != SCALAR_SHAPE:
+        return x0_shape
+    # rank-0 の x0: 入力の合流 shape に従う (未確定なら None → materialize で ())
+    return _merge_many_shapes(in_shapes, sink, block)
+
+
 def _gain_out_shape(block: Block, in_shape: Shape | None, sink: DiagSink | None) -> Shape | None:
     """``Gain`` の出力 shape (``multiplication`` × ``k`` の shape、ADR-0079 §(3))。
 
@@ -1331,6 +1528,15 @@ def _infer_out_shapes(
     if category == "fanout":
         first = in_shapes[0] if in_shapes else None
         return [first] * n_out
+    if category == "state":
+        return [_state_out_shape(block, in_shapes, sink)] * n_out
+    if category == "inferred":
+        return _inferred_out_shapes(block, in_shapes, sink)
+    if category == "subsystem":
+        # 階層再帰は _resolve_graph が _resolve_subsystem で行う (ここは到達しない)
+        raise BlockSpecError(
+            f"internal error: subsystem {block.id!r} must be resolved via _resolve_subsystem"
+        )
     if category == "opaque":
         return [SCALAR_SHAPE] * n_out
     if category in ("sink", "sink_scalar"):
@@ -1414,6 +1620,95 @@ def _resolve_impl(sim: Simulator, *, mode: ResolveMode = "auto") -> SignalResolu
         _RESOLVING_WITHOUT_USER_CODE.reset(guard_token)
 
 
+class _SubsystemResolver:
+    """Subsystem 内部スコープの再帰解決 (ADR-0079 §(6) D-8、8a: 外 → 内 → 外 の 1 パス)。
+
+    外側の反復が Subsystem に到達するたびに、その時点の外側 in shape で内部を
+    解決する。入力 shape が同じなら結果も同じなので、``(id(sub), in_shapes)`` で
+    キャッシュして反復コストを抑える。最終パスの結果が ``results`` に残る。
+    """
+
+    def __init__(self, sim: Simulator, *, island: bool, static: bool) -> None:
+        self.sim = sim
+        self.island = island
+        self.static = static
+        self.results: dict[str, SignalResolution] = {}
+        self._cache: dict[tuple[int, tuple[Shape | None, ...]], SignalResolution] = {}
+
+    def resolve(
+        self,
+        sub: Block,
+        in_shapes: Sequence[Shape | None],
+        outer_shapes: Mapping[PortKey, Shape | None],
+        sink: DiagSink | None,
+    ) -> list[Shape | None]:
+        """内部を解決し、外側の出力 shape (Outport の in shape) を返す。"""
+        inports, outports = _inner_ports(sub)
+        n_data, _e, _t = _subsystem_slots(sub)
+        key = (id(sub), tuple(in_shapes[:n_data]))
+        res = self._cache.get(key)
+        if res is None:
+            inner_blocks = list(getattr(sub, "_inner_blocks", ()))
+            exec_order = getattr(sub, "_exec_order", None)
+            order = (
+                list(exec_order)
+                if (not self.static and exec_order is not None)
+                else _static_order(inner_blocks)
+            )
+            seeds: dict[int, Shape | None] = {}
+            for idx, inport in inports.items():
+                declared = getattr(inport, "port_shape", None)
+                if declared is not None:
+                    seeds[id(inport)] = tuple(declared)
+                elif idx < len(in_shapes):
+                    seeds[id(inport)] = in_shapes[idx]
+                else:
+                    seeds[id(inport)] = None
+            res = _resolve_graph(
+                self.sim,
+                inner_blocks,
+                order,
+                island=self.island,
+                static=self.static,
+                inport_seeds=seeds,
+                outer_shapes=outer_shapes,
+                force_float64=True,
+                sub_resolver=self,
+            )
+            self._cache[key] = res
+        if sink is not None:
+            # 最終パス: この Subsystem の内部結果を公開 (診断は内部側に残す)
+            self.results[_block_id(sub)] = res
+        out: list[Shape | None] = []
+        for port_idx in range(sub.n_outputs):
+            outport = outports.get(port_idx)
+            if outport is None:
+                out.append(None)
+                continue
+            s_out = res.shapes.get((_block_id(outport), "in", 0))
+            declared_out = getattr(outport, "port_shape", None)
+            if declared_out is not None:
+                declared_out = tuple(declared_out)
+                if s_out is not None and s_out != declared_out and sink is not None:
+                    sink(
+                        _diag(
+                            "shape.mismatch",
+                            f"Outport {_block_id(outport)!r} of Subsystem {sub.id!r} declares "
+                            f"port_shape={_shape_str(declared_out)} but its inner source "
+                            f"resolves to {_shape_str(s_out)}. Remove the declaration to "
+                            f"inherit, or adapt with Mux/Demux inside the subsystem.",
+                            block_id=sub.id,
+                            direction="out",
+                            port_index=port_idx,
+                            expected_shape=declared_out,
+                            actual_shape=s_out,
+                        )
+                    )
+                s_out = declared_out
+            out.append(s_out)
+        return out
+
+
 def _resolve_graph(
     sim: Simulator,
     blocks: list[Block],
@@ -1421,13 +1716,26 @@ def _resolve_graph(
     *,
     island: bool,
     static: bool,
+    inport_seeds: Mapping[int, Shape | None] | None = None,
+    outer_shapes: Mapping[PortKey, Shape | None] | None = None,
+    force_float64: bool = False,
+    sub_resolver: _SubsystemResolver | None = None,
 ) -> SignalResolution:
     """不動点反復 + 最終パスの本体。``island`` = Stage 1 意味論 (Q5/Q6/Q7)。
 
     dtype と shape を **同じ反復** で更新する (ADR-0079 D-1)。診断は収束後の
     最終パスでのみ収集し、重複を避ける。
+
+    Subsystem の内部スコープにも同じ関数を使う (ADR-0079 §(6)):
+    ``inport_seeds`` は内部 Inport (``id()`` キー) の出力 shape (= 外側の in shape)、
+    ``outer_shapes`` は外側スコープの解決済み shape (From が上位スコープの Goto を
+    参照するときの検索先)、``force_float64`` は dtype island (SPEC-0028 Q6:
+    内部 dtype は全ポート float64)。
     """
     diagnostics: list[SignalDiagnostic] = []
+    if sub_resolver is None:
+        sub_resolver = _SubsystemResolver(sim, island=island, static=static)
+    seeds = inport_seeds or {}
     if static:
         diagnostics.append(
             _diag(
@@ -1449,6 +1757,23 @@ def _resolve_graph(
             out_of[(_block_id(b), "out", j)] = UNKNOWN
             shape_of[(_block_id(b), "out", j)] = None
 
+    # 上位スコープの shape も検索対象にする (From → 上位 Goto の透過)
+    shape_lookup: Mapping[PortKey, Shape | None] = (
+        ChainMap(shape_of, dict(outer_shapes)) if outer_shapes else shape_of
+    )
+
+    def _out_shapes_for(
+        b: Block, shape_cat: ShapeCategory, raw_shapes: list[Shape | None], sink: DiagSink | None
+    ) -> list[Shape | None]:
+        if id(b) in seeds and b.n_outputs == 1:
+            # 内部 Inport: 外側 in shape (または明示宣言) を出力 shape にする
+            return [seeds[id(b)]]
+        if shape_cat == "subsystem":
+            assert sub_resolver is not None
+            in_eff = _check_in_shapes(b, shape_cat, raw_shapes, None)
+            return sub_resolver.resolve(b, in_eff, shape_lookup, sink)
+        return _infer_out_shapes(b, shape_cat, raw_shapes, sink)
+
     max_iterations = 2 * len(blocks) + _ITERATION_MARGIN
     converged = False
     for _ in range(max_iterations):
@@ -1458,15 +1783,20 @@ def _resolve_graph(
             category, _missing = _classify(b)
             required = _required_input_dtype(b, island=island)
             in_dtypes = _apply_input_requirement(b, raw, None, required)
-            for j, d in enumerate(_infer_outputs(b, category, in_dtypes, None, island=island)):
+            inferred = (
+                ["float64"] * b.n_outputs
+                if force_float64
+                else _infer_outputs(b, category, in_dtypes, None, island=island)
+            )
+            for j, d in enumerate(inferred):
                 key = (_block_id(b), "out", j)
                 if out_of[key] != d:
                     out_of[key] = d
                     changed = True
-            raw_shapes = _gather_raw_shapes(b, shape_of)
+            raw_shapes = _gather_raw_shapes(b, shape_lookup)
             shape_cat = shape_cats[id(b)]
-            _check_in_shapes(b, shape_cat, raw_shapes, None)
-            for j, s in enumerate(_infer_out_shapes(b, shape_cat, raw_shapes, None)):
+            # 入力側の検査 (_check_in_shapes) は診断付きの最終パスだけで行う
+            for j, s in enumerate(_out_shapes_for(b, shape_cat, raw_shapes, None)):
                 key = (_block_id(b), "out", j)
                 if shape_of[key] != s:
                     shape_of[key] = s
@@ -1524,7 +1854,9 @@ def _resolve_graph(
         category, rule_missing = _classify(b)
         required = _required_input_dtype(b, island=island)
         in_dtypes = _apply_input_requirement(b, raw, sink, required)
-        raw_shapes = _gather_raw_shapes(b, shape_of)
+        if force_float64:
+            in_dtypes = ["float64"] * len(in_dtypes)
+        raw_shapes = _gather_raw_shapes(b, shape_lookup)
         shape_cat = shape_cats[id(b)]
         in_shapes = _check_in_shapes(b, shape_cat, raw_shapes, sink)
         # 仮想入力 (From の Goto 参照) は in ポートとして数えない
@@ -1592,16 +1924,17 @@ def _resolve_graph(
                     )
                 )
         # 語彙外の丸め診断は _promote_many 経由で出るため再推論する
-        _infer_outputs(b, category, in_dtypes, sink, island=island)
+        if not force_float64:
+            _infer_outputs(b, category, in_dtypes, sink, island=island)
         # 合流拒否 / Gain 次元不整合の診断も再推論で収集する。full mode では
         # 未接続 / 未確定の入力は () に materialize 済みなので、その **実効 shape**
         # で再推論する (例: 行列 Gain の未接続入力 = () は次元不整合 → error。
         # code-reviewer MUST 2026-09-21: 未接続を info で () に丸めて実行時
-        # ValueError にしない)
-        final_raw = (
+        # ValueError にしない)。Subsystem はここで内部結果を確定・公開する。
+        final_raw: list[Shape | None] = (
             [s if s is not None else SCALAR_SHAPE for s in raw_shapes] if island else raw_shapes
         )
-        _infer_out_shapes(b, shape_cat, final_raw, sink)
+        _out_shapes_for(b, shape_cat, final_raw, sink)
         if shape_cat == "sink" and b.n_inputs > 0:
             known_in = [s if s is not None else SCALAR_SHAPE for s in in_shapes]
             _sink_diagnostics(b, known_in, sink)
@@ -1678,8 +2011,26 @@ def _resolve_graph(
         vector_ports=vector_ports,
     )
     return SignalResolution(
-        ports=ports, diagnostics=tuple(diagnostics), summary=summary, shapes=shapes
+        ports=ports,
+        diagnostics=tuple(diagnostics),
+        summary=summary,
+        shapes=shapes,
+        inner=dict(sub_resolver.results)
+        if inport_seeds is None
+        else _own_inner(sub_resolver, blocks),
     )
+
+
+def _own_inner(
+    sub_resolver: _SubsystemResolver, blocks: list[Block]
+) -> dict[str, SignalResolution]:
+    """このスコープ直下の Subsystem の内部結果だけを取り出す (ネストは各階層が持つ)。"""
+    own: dict[str, SignalResolution] = {}
+    for b in blocks:
+        bid = _block_id(b)
+        if bid in sub_resolver.results and "Subsystem" in _mro_names(b):
+            own[bid] = sub_resolver.results[bid]
+    return own
 
 
 def _empty_resolution(diagnostic: SignalDiagnostic) -> SignalResolution:
@@ -1706,6 +2057,30 @@ _FATAL_EXECUTION_CODES: Final[frozenset[str]] = frozenset(
 )
 
 
+def _collect_fatal(res: SignalResolution) -> list[SignalDiagnostic]:
+    """error 級 / 実行不能 code の診断を、Subsystem 内部 (``inner``) も含めて集める。"""
+    fatal = [
+        d for d in res.diagnostics if d.severity == "error" or d.code in _FATAL_EXECUTION_CODES
+    ]
+    for sub_id, inner in sorted(res.inner.items()):
+        for d in _collect_fatal(inner):
+            fatal.append(
+                SignalDiagnostic(
+                    severity=d.severity,
+                    code=d.code,
+                    message=f"(inside Subsystem {sub_id!r}) {d.message}",
+                    block_id=d.block_id,
+                    direction=d.direction,
+                    port_index=d.port_index,
+                    from_dtype=d.from_dtype,
+                    to_dtype=d.to_dtype,
+                    expected_shape=d.expected_shape,
+                    actual_shape=d.actual_shape,
+                )
+            )
+    return fatal
+
+
 def resolve_for_execution(sim: Simulator) -> SignalResolution:
     """実行用の信号面解決 (``run()`` 経路、SPEC-0028 §3.2 / §3.4、ADR-0079 D-11)。
 
@@ -1720,9 +2095,7 @@ def resolve_for_execution(sim: Simulator) -> SignalResolution:
     実行の前提であり、Stage 0 の「例外を握り潰す」AC-5 は適用しない。
     """
     res = _resolve_impl(sim, mode="full")
-    fatal = [
-        d for d in res.diagnostics if d.severity == "error" or d.code in _FATAL_EXECUTION_CODES
-    ]
+    fatal = _collect_fatal(res)
     if not fatal:
         return res
     first = fatal[0]
