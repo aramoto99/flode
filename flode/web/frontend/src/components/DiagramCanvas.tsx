@@ -42,6 +42,17 @@ import {
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
 import { generateUniqueId } from "../lib/idGenerator";
 import {
+  describeLibraryError,
+  describeWriteDisabledReason,
+  entryWriteDisabledReason,
+} from "../lib/libraryErrors";
+import {
+  blockFromLibraryEntry,
+  buildProvenance,
+} from "../lib/libraryProvenance";
+import { useLibrariesQuery } from "../lib/librariesQuery";
+import { createRightButtonGesture } from "../lib/rightButtonGesture";
+import {
   resolveBlocksAtPath,
   resolveBranchWaypointsAtPath,
 } from "../lib/pathResolver";
@@ -50,6 +61,8 @@ import {
   validatePortShapeConnection,
 } from "../lib/portShapeValidate";
 import { BlockNodeView } from "./BlockNodeView";
+import { LibraryEntryDialog } from "./LibraryDialogs";
+import { PopupMenu, PopupMenuItem } from "./ui/inspector";
 import {
   BranchableEdge,
   type BranchStartParams,
@@ -63,12 +76,13 @@ import {
   addConnectionToEditing,
   removeBlockFromEditing,
   removeConnectionFromEditing,
+  setBlockProvenanceInEditing,
   spliceEdgeWithBlock,
   updateBlockPosition,
   updateBlockPositions,
   useAppStore,
 } from "../store/appStore";
-import type { BranchWaypointDict, FlwModel } from "../types/api";
+import type { BlockEntry, BranchWaypointDict, FlwModel } from "../types/api";
 import {
   type BlockGeom,
   type EdgeGeom,
@@ -94,6 +108,22 @@ const EDGE_TYPES = { branchable: BranchableEdge } as const;
 // 「空エリアドラッグ → 矩形選択 / ノード上ドラッグ → ノード移動」(リファレンスツール + 一般的な
 // editor 慣習)。配列参照を毎 render で新しくしないために module-level 定数。
 const PAN_BUTTONS = [1, 2];
+
+/** ブロックの右クリックメニューの対象 (メニューを開いた時点の snapshot)。 */
+interface NodeMenuState {
+  x: number;
+  y: number;
+  block: BlockEntry;
+}
+
+/** ライブラリ登録ダイアログの対象。登録は非同期なので、開いた時点の場所を控える。 */
+interface RegisterTarget {
+  block: BlockEntry;
+  /** ブロックがある階層 (top-level なら空)。 */
+  path: readonly string[];
+  /** 開いていたファイル (登録完了時に別ファイルなら由来を付けない)。 */
+  filePath: string | null;
+}
 
 /**
  * v0.21.0: legacy ``modelId`` prop を撤去し、``editingModel`` を store から
@@ -184,6 +214,10 @@ export function DiagramCanvas({
     flowX: number;
     flowY: number;
   } | null>(null);
+  // SPEC-0032 §1.2: ブロックの右クリックメニューとライブラリ登録ダイアログ
+  const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  const [registerTarget, setRegisterTarget] = useState<RegisterTarget | null>(null);
+  const { data: libraryData } = useLibrariesQuery();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlow = useReactFlow();
   const storeApi = useStoreApi();
@@ -211,109 +245,104 @@ export function DiagramCanvas({
   useEffect(() => {
     const wrapper = reactFlowWrapper.current;
     if (!wrapper) return;
-    let dragState: {
-      newId: string;
-      startClientX: number;
-      startClientY: number;
-      origX: number;
-      origY: number;
-    } | null = null;
+    // 状態遷移 (閾値・複製・メニュー・取りこぼし時の打ち切り) は
+    // lib/rightButtonGesture.ts の状態機械が持つ。ここは DOM イベントの配線だけ。
+    const gesture = createRightButtonGesture({
+      findBlock: (id) => {
+        const state = useAppStore.getState();
+        if (!state.editingModel) return null;
+        let view;
+        try {
+          view = resolveBlocksAtPath(state.editingModel, state.editingPath);
+        } catch {
+          return null;
+        }
+        const block = view.blocks.find((b) => b.id === id);
+        if (!block) return null;
+        return {
+          block,
+          pos: view.layout[id] ?? { x: 0, y: 0 },
+          ids: new Set(view.blocks.map((b) => b.id)),
+        };
+      },
+      // 追加と、続くカーソルへの追従 (``updateBlockPosition`` の mergeKey) を同じ
+      // undo 履歴 1 件にまとめる = 右ドラッグ複製は Ctrl+Z 1 回で消える
+      addBlock: (block, pos) =>
+        addBlockToEditing(block, pos, { mergeKey: `move:${block.id}` }),
+      moveBlock: updateBlockPosition,
+      getZoom: () => reactFlow.getZoom(),
+      getSelectedIds: () => useAppStore.getState().selectedNodeIds,
+      select: (id) => useAppStore.getState().selectNode(id),
+      openMenu: (at, block) => setNodeMenu({ x: at.x, y: at.y, block }),
+      // 複製ドラッグ中はノードの CSS transition を切って、マウスにピッタリ追従させる
+      // (= ヌルッと遅れて見える symptom の抑制)。body 全体に class を付ける。
+      setCopying: (active) => document.body.classList.toggle("flode-copying", active),
+    });
+
+    /** イベント対象を含むブロックノードの要素 (キャンバス内のものだけ)。 */
+    const nodeElementOf = (target: EventTarget | null): HTMLElement | null => {
+      if (!(target instanceof Element) || !wrapper.contains(target)) return null;
+      return target.closest<HTMLElement>(".react-flow__node");
+    };
 
     const onMouseDown = (e: MouseEvent): void => {
       // リファレンスツール仕様 (= ユーザー指摘):
-      // - ``Ctrl + 右クリックドラッグ``: ノード複製
-      // - 単純な右クリック (Ctrl なし) ドラッグ: 同様にノード複製 (= alternative
-      //   shortcut、リファレンスツールでも両方使える)
+      // - 右クリックドラッグ (Ctrl の有無を問わない): ノード複製
+      // - 動かさずに離す (= 右クリック): コンテキストメニュー (SPEC-0032 §1.2)
       // - ``Ctrl + 左クリック`` (= ドラッグでなく単発クリック): 2 ノード間の
       //   auto-connect (= 別経路 ``onCanvasClick`` 等で処理、本ハンドラの対象外)
-      const isRightDrag = e.button === 2;
-      if (!isRightDrag) return;
-      const target = e.target as HTMLElement | null;
-      const nodeEl = target?.closest(".react-flow__node") as HTMLElement | null;
-      if (!nodeEl) return;
-      const origId = nodeEl.getAttribute("data-id");
-      const state = useAppStore.getState();
-      const model = state.editingModel;
-      if (!origId || !model) return;
-      const path = state.editingPath;
-      let view;
-      try {
-        view = resolveBlocksAtPath(model, path);
-      } catch {
+      const nodeId = nodeElementOf(e.target)?.getAttribute("data-id");
+      if (!nodeId) return;
+      if (gesture.down(e, nodeId)) {
+        // React Flow / OS のデフォルト挙動 (pan / context menu) を抑制
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    // contextmenu: ブロック上では OS のメニューを抑制する。マウスの右クリックに伴う
+    // ものは状態機械が読み飛ばし、キーボード (ContextMenu キー / Shift+F10) や
+    // タッチ長押し起点のものだけメニューを開く。window で受けるのは、キャンバス外で
+    // ボタンを離した場合にも「マウス起点の contextmenu 待ち」を解消するため。
+    const onContextMenu = (e: MouseEvent): void => {
+      let nodeEl = nodeElementOf(e.target);
+      // キーボード起点で focus がブロック以外 (キャンバスの余白など) にあるときは、
+      // 選択中のブロックが 1 つならそれを対象にする
+      const selected = useAppStore.getState().selectedNodeIds;
+      const inCanvas = e.target instanceof Node && wrapper.contains(e.target);
+      if (nodeEl === null && inCanvas && e.button !== 2 && selected.length === 1) {
+        nodeEl = wrapper.querySelector<HTMLElement>(
+          `.react-flow__node[data-id="${CSS.escape(selected[0]!)}"]`,
+        );
+      }
+      if (nodeEl === null) {
+        gesture.contextMenu(null, { x: e.clientX, y: e.clientY });
         return;
       }
-      const origBlock = view.blocks.find((b) => b.id === origId);
-      if (!origBlock) return;
-      const origPos = view.layout[origId] ?? { x: 0, y: 0 };
-
-      // ID 衝突しない新 ID を採番 + パラメータをディープコピー (= 同じ参照だと
-      // 後の編集が双方に反映されてしまう)
-      const existingIds = new Set(view.blocks.map((b) => b.id));
-      const newId = generateUniqueId(origBlock.type, existingIds);
-      const clonedParams = JSON.parse(JSON.stringify(origBlock.params)) as Record<
-        string,
-        unknown
-      >;
-      addBlockToEditing(
-        { id: newId, type: origBlock.type, params: clonedParams },
-        origPos,
-      );
-
-      // React Flow / OS のデフォルト挙動 (pan / context menu) を抑制
       e.preventDefault();
-      e.stopPropagation();
-
-      // ドラッグ中はノードの CSS transition を切って、マウスにピッタリ追従させる
-      // (= ヌルッと遅れて見える symptom の抑制)。body 全体に class を付ける。
-      document.body.classList.add("flode-copying");
-
-      dragState = {
-        newId,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        origX: origPos.x,
-        origY: origPos.y,
-      };
-    };
-
-    const onMouseMove = (e: MouseEvent): void => {
-      if (!dragState) return;
-      const zoom = reactFlow.getZoom() || 1;
-      const dx = (e.clientX - dragState.startClientX) / zoom;
-      const dy = (e.clientY - dragState.startClientY) / zoom;
-      updateBlockPosition(dragState.newId, {
-        x: dragState.origX + dx,
-        y: dragState.origY + dy,
-      });
-    };
-
-    const onMouseUp = (): void => {
-      if (!dragState) return;
-      // 複製を選択状態にして、そのまま左クリックで微調整できるようにする
-      const newId = dragState.newId;
-      dragState = null;
-      document.body.classList.remove("flode-copying");
-      useAppStore.getState().selectNode(newId);
-    };
-
-    // contextmenu (= 右クリック) の OS メニュー抑制 (mousedown だけでは漏れることがある)
-    const onContextMenu = (e: MouseEvent): void => {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest(".react-flow__node")) {
-        e.preventDefault();
-      }
+      // キーボード起点ではポインタ位置が意味を持たないので、ブロックの左下に出す
+      const rect = nodeEl.getBoundingClientRect();
+      const at =
+        e.button === 2
+          ? { x: e.clientX, y: e.clientY }
+          : { x: rect.left, y: rect.bottom };
+      gesture.contextMenu(nodeEl.getAttribute("data-id"), at);
     };
 
     wrapper.addEventListener("mousedown", onMouseDown, true);
-    wrapper.addEventListener("contextmenu", onContextMenu);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("mousemove", gesture.move);
+    window.addEventListener("mouseup", gesture.up);
+    // 右ボタンを押したままウィンドウを離れた場合 (mouseup を受け取れない) の打ち切り
+    window.addEventListener("blur", gesture.cancel);
     return () => {
       wrapper.removeEventListener("mousedown", onMouseDown, true);
-      wrapper.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("mousemove", gesture.move);
+      window.removeEventListener("mouseup", gesture.up);
+      window.removeEventListener("blur", gesture.cancel);
       // unmount 中にドラッグが続いていた場合の保険
+      gesture.cancel();
       document.body.classList.remove("flode-copying");
     };
   }, [reactFlow]);
@@ -678,6 +707,21 @@ export function DiagramCanvas({
     });
   };
 
+  // SPEC-0032 §1.3-4: 書き込めないときはメニューを無効化し、理由をツールチップに出す
+  const registerDisabledTitle = describeWriteDisabledReason(
+    t,
+    entryWriteDisabledReason(libraryData?.user_library),
+  );
+  // 登録ダイアログの分類候補 (マイブロックの既存分類)
+  const registeredCategories = [
+    ...new Set(
+      (libraryData?.libraries.find((lib) => lib.origin === "user")?.entries ?? [])
+        .map((e) => e.category_suffix)
+        .filter((c) => c !== ""),
+    ),
+  ].sort();
+  const closeNodeMenu = (): void => setNodeMenu(null);
+
   const onDragOver = (event: React.DragEvent): void => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -713,11 +757,18 @@ export function DiagramCanvas({
       // (= 古い座標で別モデルにブロックが追加されるのを防ぐ)。v0.21.0:
       // ``selectedFilePath`` を snapshot して比較。
       const dropFilePath = useAppStore.getState().selectedFilePath;
-      void getLibraryEntry(ref.library, ref.entry)
+      // 階層 (Subsystem の drill-down) も控える: 取得中に別の階層へ移っていたら、
+      // drop した座標は別のキャンバスのものなので配置しない
+      const dropPathKey = JSON.stringify(useAppStore.getState().editingPath);
+      const refLibrary = ref.library;
+      void getLibraryEntry(refLibrary, ref.entry)
         .then((detail) => {
           const state = useAppStore.getState();
-          if (state.selectedFilePath !== dropFilePath) {
-            // ユーザーが drop 中に別ファイルに切り替えた → drop を破棄
+          if (
+            state.selectedFilePath !== dropFilePath ||
+            JSON.stringify(state.editingPath) !== dropPathKey
+          ) {
+            // ユーザーが drop 中に別ファイル / 別階層に切り替えた → drop を破棄
             return;
           }
           const m = state.editingModel;
@@ -729,22 +780,20 @@ export function DiagramCanvas({
           } catch {
             return;
           }
-          // ADR-0080 §A1-1: 本体は種別非依存の ``block`` (= ``Block.to_dict()`` 出力)。
-          const blockType = detail.block.type;
-          const newId = generateUniqueId(blockType, existingIds);
-          // params は ``Block.to_dict()`` の出力をそのまま使う (= byte-identical)。
-          addBlockToEditing(
-            { id: newId, type: blockType, params: detail.block.params },
-            position,
-          );
-          useAppStore.getState().selectNode(newId);
+          // ADR-0080 §A1-1 / §A3 / §Q8: 本体は種別非依存の ``block``。id はエントリの
+          // 表示名由来、由来 (revision / uid) は本体と同じ詳細レスポンスから作る。
+          const placed = blockFromLibraryEntry(refLibrary, detail, existingIds);
+          addBlockToEditing(placed, position);
+          useAppStore.getState().selectNode(placed.id);
         })
         .catch((err: Error) => {
           // ADR-0030 SHOULD: API / fetch 失敗はシステムエラー → severity=error
           // (port 形状エラー等のユーザー操作で訂正可能なものは warning)。
           pushToast({
             severity: "error",
-            message: t("diagram.library_drop_failed", { message: err.message }),
+            message: t("diagram.library_drop_failed", {
+              message: describeLibraryError(t, err),
+            }),
           });
         });
       return;
@@ -1068,6 +1117,61 @@ export function DiagramCanvas({
             strokeDasharray="4 3"
           />
         </svg>
+      )}
+      {nodeMenu && (
+        <PopupMenu
+          x={nodeMenu.x}
+          y={nodeMenu.y}
+          onClose={closeNodeMenu}
+          testId="block-context-menu"
+        >
+          <PopupMenuItem
+            label={t("diagram.menu.add_to_library")}
+            disabled={registerDisabledTitle !== undefined}
+            title={registerDisabledTitle}
+            testId="block-menu-add-to-library"
+            onClick={() => {
+              const state = useAppStore.getState();
+              setRegisterTarget({
+                block: nodeMenu.block,
+                path: state.editingPath,
+                filePath: state.selectedFilePath,
+              });
+              setNodeMenu(null);
+            }}
+          />
+        </PopupMenu>
+      )}
+      {registerTarget && (
+        <LibraryEntryDialog
+          target={{ kind: "register", block: registerTarget.block }}
+          categories={registeredCategories}
+          onClose={() => setRegisterTarget(null)}
+          onDone={(response) => {
+            const { block, path, filePath } = registerTarget;
+            setRegisterTarget(null);
+            // 登録元ブロックに由来を付ける (undo 1 回、dirty)。登録中に別ファイルへ
+            // 切り替わっていたら付けない (同じ id の無関係なブロックに付けない)。
+            if (useAppStore.getState().selectedFilePath === filePath) {
+              setBlockProvenanceInEditing(
+                path,
+                block.id,
+                buildProvenance(
+                  response.library,
+                  response.library_uid,
+                  response.entry.id,
+                  response.entry.revision,
+                ),
+              );
+            }
+            pushToast({
+              severity: "success",
+              message: t("diagram.library_registered", {
+                name: response.entry.display_name,
+              }),
+            });
+          }}
+        />
       )}
       {quickAdd && (
         <QuickAdd

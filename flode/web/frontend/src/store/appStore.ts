@@ -44,6 +44,7 @@ import {
 import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
 import type {
   BlockEntry,
+  BlockProvenance,
   BlockMetadata,
   BranchWaypoint,
   BranchWaypointDict,
@@ -1576,9 +1577,18 @@ function pruneOrphanWaypointsAtScope(
   return applyBranchWaypointsAtPath(model, path, () => pruned);
 }
 
+/**
+ * 現在の階層にブロックを追加する。
+ *
+ * @param block 追加するブロック entry。
+ * @param position キャンバス (flow) 座標での位置。
+ * @param options ``mergeKey``: 直後に続く同じ key の操作と undo 履歴 1 件にまとめる
+ *   (右ドラッグ複製 = 「追加 + カーソルへの追従」を undo 1 回で戻すために使う)。
+ */
 export function addBlockToEditing(
   block: BlockEntry,
   position: { x: number; y: number },
+  options?: { mergeKey?: string },
 ): void {
   const path = currentPath();
   const isInport = block.type === INPORT_TYPE;
@@ -1688,7 +1698,7 @@ export function addBlockToEditing(
     }
 
     return updated;
-  });
+  }, options);
 }
 
 export function removeBlockFromEditing(blockId: string): void {
@@ -2451,6 +2461,39 @@ export function pasteClipboard(offset = { x: 20, y: 20 }): void {
 
 function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
+}
+
+/**
+ * ADR-0080 §A3-4: ブロックに由来を付ける (ライブラリ登録に成功した登録元ブロック用)。
+ *
+ * ``applyEditingModel`` 1 回 = undo 1 回で戻り、dirty になる。登録は非同期なので、
+ * 現在の階層ではなく**登録を始めた時点の階層** ``path`` を明示的に受け取る。対象が
+ * 既に無い (削除・改名・階層ごと削除) 場合は何もしない。
+ *
+ * @param path 対象ブロックがある階層 (top-level なら ``[]``)。
+ * @param blockId 対象ブロックの id。
+ * @param provenance 付与する由来。
+ */
+export function setBlockProvenanceInEditing(
+  path: readonly string[],
+  blockId: string,
+  provenance: BlockProvenance,
+): void {
+  useAppStore.getState().applyEditingModel((m) => {
+    try {
+      if (!resolveBlocksAtPath(m, path).blocks.some((b) => b.id === blockId)) {
+        return m;
+      }
+    } catch {
+      return m; // 階層ごと無くなっていた
+    }
+    return applyAtPath(m, path, (view) => ({
+      ...view,
+      blocks: view.blocks.map((b) =>
+        b.id === blockId ? { ...b, provenance } : b,
+      ),
+    }));
+  });
 }
 
 // ADR-0021 §(9): Subsystem の mask_values 更新 (= ParameterPanel mask edit からの呼び出し)

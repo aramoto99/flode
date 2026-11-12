@@ -1,9 +1,26 @@
 // ADR-0008 / ADR-0011 で定義された REST + WebSocket メッセージの型定義。
 
+/**
+ * ブロックの由来 (ADR-0080 §A3)。ライブラリから配置した / ライブラリに登録した
+ * ブロックの entry 直下に付く任意キー。情報であり、モデルの意味論には影響しない。
+ */
+export interface BlockProvenance {
+  /** 由来ライブラリの名前。 */
+  library: string;
+  /** 由来ライブラリの ``uid``。uid を持たないライブラリ由来では**キーごと省略**する。 */
+  library_uid?: string;
+  /** 由来エントリの id。 */
+  entry: string;
+  /** 配置 / 登録した時点のエントリ revision。 */
+  revision: number;
+}
+
 export interface BlockEntry {
   id: string;
   type: string;
   params: Record<string, unknown>;
+  /** ADR-0080 §A3: 由来。無いときはキーごと省略する (空文字や null を書かない)。 */
+  provenance?: BlockProvenance;
 }
 
 export interface ConnectionEntry {
@@ -264,6 +281,9 @@ export interface LibraryEntryMetadata {
   python_block_paths: string[];
 }
 
+/** ライブラリの出所 (ADR-0080 §A1-6)。 */
+export type LibraryOrigin = "builtin" | "user" | "imported" | "path";
+
 export interface LibraryMetadata {
   name: string;
   /** ライブラリの同一性を表す識別子 (ADR-0080 §A3-3)。持たなければ ``null``。 */
@@ -273,7 +293,27 @@ export interface LibraryMetadata {
   description: string;
   description_i18n: Partial<Record<Locale, string>>;
   version: string;
+  origin: LibraryOrigin;
+  /** GUI からエントリを登録・編集・削除できるか (ユーザーライブラリのみ true になりうる)。 */
+  writable: boolean;
+  /** 書き込めない理由のエラーコード (書き込めるなら空文字)。 */
+  write_disabled_reason: string;
   entries: LibraryEntryMetadata[];
+}
+
+/**
+ * ユーザーライブラリ (マイブロック) の状態。ファイルが未作成の間は ``libraries`` に
+ * 現れないので、登録できるかどうかはこちらで判断する。
+ */
+export interface UserLibraryStatus {
+  name: string;
+  /** ``user_library_dir`` が設定されているか。 */
+  enabled: boolean;
+  /** ファイルが読み込まれているか。 */
+  exists: boolean;
+  writable: boolean;
+  /** 書き込めない理由のエラーコード (書き込めるなら空文字)。 */
+  write_disabled_reason: string;
 }
 
 export interface LibraryLoadError {
@@ -287,6 +327,60 @@ export interface LibraryRegistryResponse {
   /** ライブラリ schema 版 (``"libraries.v4"``、ADR-0080)。 */
   schema_version: string;
   supported_locales: Locale[];
+  user_library: UserLibraryStatus;
+}
+
+/** ``POST /libraries/user/entries`` の本文 (ADR-0080 §A5)。 */
+export interface RegisterLibraryEntryRequest {
+  /** 登録するブロック entry (``{id, type, params}``)。 */
+  block: Pick<BlockEntry, "id" | "type" | "params">;
+  display_name: string;
+  description?: string;
+  category_suffix?: string;
+  /** 上書きする既存エントリの id (``expected_revision`` と併用)。 */
+  overwrite_entry_id?: string;
+  expected_revision?: number;
+  /** 同名があっても別名 (``PID (2)`` 等) で新規保存する。 */
+  save_as_new?: boolean;
+}
+
+/** エントリのメタデータ編集 (``PATCH``) の本文。送ったフィールドだけ更新される。 */
+export interface LibraryEntryMetadataPatch {
+  display_name?: string;
+  description?: string;
+  category_suffix?: string;
+}
+
+/** 登録 / メタデータ編集の応答。 */
+export interface UserLibraryEntryResponse {
+  library: string;
+  library_uid: string | null;
+  entry: LibraryEntryMetadata;
+}
+
+/** 取り込み (``POST /libraries/import``) の応答。dry-run でも同じ形。 */
+export interface LibraryImportReport {
+  dry_run: boolean;
+  library: {
+    name: string;
+    uid: string | null;
+    display_name: string;
+    entry_count: number;
+  };
+  /** Python コードを含むエントリ (入れ子も検出、ブロックパス付き)。 */
+  python_entries: Array<{
+    id: string;
+    display_name: string;
+    python_block_paths: string[];
+  }>;
+  /** このサーバで解決できないブロック型 (dry-run のみ。本番は 422 で拒否)。 */
+  unknown_types: string[];
+  /**
+   * ライブラリ名の衝突。無ければ ``null``。``reason``: ``"reserved"`` (予約名) /
+   * ``"exists"`` (同名が読み込み済み) / ``"uid_exists"`` (同じ uid のライブラリが
+   * 読み込み済み。``conflicts_with`` があればその衝突相手の名前)。
+   */
+  conflict: { name: string; reason: string; conflicts_with?: string } | null;
 }
 
 /** ``GET /api/v1/libraries/{lib}/{entry}`` の response。本体 ``block`` 同梱。 */

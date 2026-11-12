@@ -20,6 +20,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { PopupMenu, PopupMenuItem, PopupMenuSeparator } from "./ui/inspector";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -223,17 +225,8 @@ export function FileBrowser(): JSX.Element {
   // handleKeyDown 本体は handleDelete / handleNewFolder の宣言後 (= 下方) で
   // 定義する (= TDZ 回避)。
 
-  // クリック outside で context menu を閉じる
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = (): void => setContextMenu(null);
-    window.addEventListener("click", handler);
-    window.addEventListener("blur", handler);
-    return () => {
-      window.removeEventListener("click", handler);
-      window.removeEventListener("blur", handler);
-    };
-  }, [contextMenu]);
+  // context menu を閉じる (外側クリック / Escape / blur の検知は PopupMenu が行う)
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, path: string, isDirectory: boolean) => {
@@ -776,7 +769,7 @@ export function FileBrowser(): JSX.Element {
             void handleNewFolder(parent);
             setContextMenu(null);
           }}
-          onClose={() => setContextMenu(null)}
+          onClose={closeContextMenu}
         />
       )}
     </div>
@@ -1178,72 +1171,36 @@ function ContextMenu({
   onDelete,
   onNewFile,
   onNewFolder,
+  onClose,
 }: ContextMenuProps): JSX.Element {
   const { t } = useTranslation();
   const isRoot = path === "";
   return (
-    <div
-      role="menu"
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-50 min-w-[160px] border border-slate-300 bg-white py-0.5 shadow-md"
-      style={{ left: x, top: y }}
-    >
-      <MenuItem
+    <PopupMenu x={x} y={y} onClose={onClose}>
+      <PopupMenuItem
         label={t("filebrowser.menu.new_file", "New file")}
         onClick={onNewFile}
       />
-      <MenuItem
+      <PopupMenuItem
         label={t("filebrowser.menu.new_folder", "New folder")}
         onClick={onNewFolder}
       />
       {!isRoot && (
         <>
-          <div className="my-0.5 border-t border-slate-200" />
-          <MenuItem
+          <PopupMenuSeparator />
+          <PopupMenuItem
             label={t("filebrowser.menu.rename", "Rename (F2)")}
             onClick={onRename}
             disabled={isDirectory}
           />
-          <MenuItem
+          <PopupMenuItem
             label={t("filebrowser.menu.delete", "Delete")}
             onClick={onDelete}
             destructive
           />
         </>
       )}
-    </div>
-  );
-}
-
-interface MenuItemProps {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  destructive?: boolean;
-}
-
-function MenuItem({
-  label,
-  onClick,
-  disabled = false,
-  destructive = false,
-}: MenuItemProps): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${
-        disabled
-          ? "text-slate-400"
-          : destructive
-            ? "text-rose-600 hover:bg-rose-50"
-            : "text-slate-700 hover:bg-blue-600 hover:text-white"
-      }`}
-    >
-      {label}
-    </button>
+    </PopupMenu>
   );
 }
 

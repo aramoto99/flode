@@ -26,7 +26,9 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -470,6 +472,216 @@ export function RowActionButton({
 }
 
 // ---------------------------------------------------------------------------
+// Notice box / popup menu (ADR-0080)
+// ---------------------------------------------------------------------------
+
+/**
+ * dialog / panel 内の注意書き (枠つき 1 段落)。``tone="error"`` は操作の失敗・確定
+ * 不可の理由、``tone="warning"`` は続行できるが読んでほしい警告。
+ */
+export function NoticeBox({
+  tone,
+  children,
+  testId,
+}: {
+  tone: "error" | "warning";
+  children: React.ReactNode;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <div
+      role={tone === "error" ? "alert" : "note"}
+      data-testid={testId}
+      className={`border px-2 py-1 text-[11px] leading-snug whitespace-pre-wrap ${
+        tone === "error"
+          ? "border-rose-300 bg-rose-50 text-rose-700"
+          : "border-amber-300 bg-amber-50 text-amber-800"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** popup menu を画面端から離す最小の余白 (px)。 */
+const POPUP_MENU_VIEWPORT_MARGIN = 4;
+
+/**
+ * 右クリックメニュー等の popup menu (ネイティブのコンテキストメニュー風)。
+ *
+ * ``(x, y)`` (viewport 座標) を左上にして開き、画面からはみ出す場合は内側に寄せる。
+ * 外側の mousedown / Escape / window の blur・resize で ``onClose`` を呼ぶ。項目は
+ * ``PopupMenuItem`` / ``PopupMenuSeparator`` を並べる。
+ */
+export function PopupMenu({
+  x,
+  y,
+  onClose,
+  children,
+  ariaLabel,
+  testId,
+}: {
+  x: number;
+  y: number;
+  onClose: () => void;
+  children: React.ReactNode;
+  ariaLabel?: string;
+  testId?: string;
+}): JSX.Element {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  // 描画後の実寸で画面内に収める。layout effect で行い、補正前の位置が 1 フレーム
+  // 見えてしまう (チラつく) のを防ぐ
+  useLayoutEffect(() => {
+    if (node === null) return;
+    const rect = node.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - POPUP_MENU_VIEWPORT_MARGIN;
+    const maxTop = window.innerHeight - rect.height - POPUP_MENU_VIEWPORT_MARGIN;
+    setPos({
+      left: Math.max(POPUP_MENU_VIEWPORT_MARGIN, Math.min(x, maxLeft)),
+      top: Math.max(POPUP_MENU_VIEWPORT_MARGIN, Math.min(y, maxTop)),
+    });
+  }, [node, x, y]);
+
+  useEffect(() => {
+    if (node === null) return;
+    const onPointer = (e: MouseEvent): void => {
+      if (e.target instanceof Node && node.contains(e.target)) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    // capture: キャンバス等が mousedown の伝播を止めていても閉じられるようにする
+    window.addEventListener("mousedown", onPointer, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onClose);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("mousedown", onPointer, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onClose);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [node, onClose]);
+
+  return (
+    <div
+      ref={setNode}
+      role="menu"
+      aria-label={ariaLabel}
+      data-testid={testId}
+      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-50 min-w-[160px] border border-slate-300 bg-white py-0.5 shadow-md"
+      style={pos}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * ``PopupMenu`` の 1 項目。``disabled`` のときは ``title`` に無効の理由を渡す
+ * (hover のツールチップに出る)。``destructive`` は削除など破壊系 (rose)。
+ */
+export function PopupMenuItem({
+  label,
+  onClick,
+  disabled = false,
+  destructive = false,
+  title,
+  testId,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+  title?: string;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      // disabled 属性だと hover の title が出ないブラウザがあるため aria-disabled で表す
+      aria-disabled={disabled}
+      title={title}
+      data-testid={testId}
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
+      className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${
+        disabled
+          ? "cursor-not-allowed text-slate-400"
+          : destructive
+            ? "text-rose-600 hover:bg-rose-50"
+            : "text-slate-700 hover:bg-blue-600 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** ``PopupMenu`` の区切り線。 */
+export function PopupMenuSeparator(): JSX.Element {
+  return <div role="separator" className="my-0.5 border-t border-slate-200" />;
+}
+
+/**
+ * popup menu を開く小型ボタン (18×18px、横三点 ⋯)。セクション見出し・検索欄の横など、
+ * 右クリックメニューと同じ内容を**見える入口**からも開けるようにするために置く。
+ * ``ariaLabel`` は a11y ラベルと hover tooltip を兼ねる。
+ *
+ * ``open`` にこのボタンのメニューが開いているかを渡すと、開いている間にもう一度
+ * 押したとき閉じるだけになる (トグル)。``PopupMenu`` は外側の mousedown で閉じるので、
+ * 押下の時点で開いていたかを覚えておき、その click では開き直さない。
+ */
+export function MenuButton({
+  ariaLabel,
+  onOpen,
+  open = false,
+  testId,
+}: {
+  ariaLabel: string;
+  /** ボタン左下の viewport 座標を渡す (= menu を開く位置)。 */
+  onOpen: (pos: { x: number; y: number }) => void;
+  /** このボタンのメニューが開いているか。 */
+  open?: boolean;
+  testId?: string;
+}): JSX.Element {
+  const wasOpenOnPress = useRef(false);
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      title={ariaLabel}
+      data-testid={testId}
+      onMouseDown={() => {
+        wasOpenOnPress.current = open;
+      }}
+      onClick={(e) => {
+        const wasOpen = wasOpenOnPress.current;
+        wasOpenOnPress.current = false;
+        if (wasOpen) return; // 押下時の mousedown で PopupMenu が閉じている
+        const rect = e.currentTarget.getBoundingClientRect();
+        onOpen({ x: rect.left, y: rect.bottom });
+      }}
+      className="flex h-[18px] w-[18px] shrink-0 items-center justify-center border border-transparent text-slate-500 hover:border-slate-400 hover:bg-white hover:text-slate-800"
+    >
+      <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+        <circle cx="5" cy="12" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="19" cy="12" r="2" />
+      </svg>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab bar
 // ---------------------------------------------------------------------------
 
@@ -600,6 +812,7 @@ export function TextInput({
   maxLength,
   disabled = false,
   placeholder,
+  listId,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -618,10 +831,13 @@ export function TextInput({
   disabled?: boolean;
   /** 未設定時の placeholder。 */
   placeholder?: string;
+  /** 候補を出す ``<datalist>`` の id (自由入力 + 既存値の候補表示)。 */
+  listId?: string;
 }): JSX.Element {
   return (
     <input
       type="text"
+      list={listId}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
@@ -637,6 +853,49 @@ export function TextInput({
       data-testid={testId}
       aria-label={ariaLabel}
       className={`${mono ? INPUT_MONO_CLS : INPUT_CLS} ${widthClass} ${
+        disabled ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
+      }`}
+    />
+  );
+}
+
+/**
+ * 複数行の文字列入力 (説明文など)。``ExpressionEditor`` (mono・blur で commit) と違い、
+ * 通常フォントの controlled input で、入力のたびに ``onChange`` を呼ぶ。
+ */
+export function TextArea({
+  value,
+  onChange,
+  rows = 3,
+  maxLength,
+  disabled = false,
+  placeholder,
+  testId,
+  ariaLabel,
+  widthClass = "w-full",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  /** 入力長の上限 (HTML の maxLength は UTF-16 code unit 単位)。 */
+  maxLength?: number;
+  disabled?: boolean;
+  placeholder?: string;
+  testId?: string;
+  ariaLabel?: string;
+  widthClass?: string;
+}): JSX.Element {
+  return (
+    <textarea
+      value={value}
+      rows={rows}
+      maxLength={maxLength}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      data-testid={testId}
+      aria-label={ariaLabel}
+      className={`${INPUT_CLS} resize-y py-0.5 leading-snug ${widthClass} ${
         disabled ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
       }`}
     />

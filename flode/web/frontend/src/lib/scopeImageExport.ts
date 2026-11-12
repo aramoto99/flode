@@ -5,6 +5,7 @@
 // すると凡例が欠ける。html2canvas 等の依存を増やさない方針 (ADR-0023) に沿って、
 // plot canvas を描画したうえで凡例を手描きで合成する。
 
+import { downloadBlob } from "./downloadFile";
 import { resolveSignalColor } from "./scopeSettings";
 import type { SignalSettings } from "../types/api";
 
@@ -101,12 +102,7 @@ export async function copyOrDownloadCanvas(
     // fall through to download
   }
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename);
   return "downloaded";
 }
 

@@ -169,6 +169,49 @@ export function validateBlockId(
   return validateBlockIdDetailed(candidate, siblingIds, currentId)?.code ?? null;
 }
 
+// ADR-0080 §Q8: id に使えない文字 1 つ分 (XID_Continue 以外、または明示拒否カテゴリ)
+const NON_ID_CHAR_PATTERN = /[^\p{XID_Continue}]|[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zs}\p{Zl}\p{Zp}]/gu;
+/** 名前由来 id の衝突時に付ける連番の開始値 (``PID`` → ``PID_2``)。 */
+const NAME_ID_FIRST_SUFFIX = 2;
+/** 名前由来 id の連番探索の上限 (``generateUniqueId`` と同じ安全弁)。 */
+const NAME_ID_MAX_ATTEMPTS = 10000;
+
+/**
+ * ライブラリエントリの表示名から block id を採番する (SPEC-0032 §1.4-2 / ADR-0080 §Q8)。
+ *
+ * 表示名は自由文字列なので、block id 規則 (ADR-0071) に通らない文字を ``_`` に置換する。
+ * 既存 id と衝突 (全角 / 半角違いの紛らわしい衝突を含む) したら ``PID_2``, ``PID_3`` …。
+ * 置換後も規則に通らない名前 (数字始まり・記号だけ・長すぎる等) は、従来の型名由来
+ * (``Subsystem_0``) に fallback する。
+ *
+ * @param displayName エントリの表示名。
+ * @param typePath fallback 用のブロック型。
+ * @param existingIds 配置先スコープの既存 block id 集合。
+ */
+export function generateIdFromName(
+  displayName: string,
+  typePath: string,
+  existingIds: ReadonlySet<string>,
+): string {
+  // 置換で生じた ``_`` の連続は 1 つに畳み、末尾の ``_`` は削る
+  // (``"low-pass (2nd)"`` → ``low_pass_2nd``)。先頭の ``_`` は残す (id として有効)。
+  const base = normalizeBlockId(displayName.trim())
+    .replace(NON_ID_CHAR_PATTERN, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/_+$/, "");
+  // 記号だけの名前 (置換後に ``_`` しか残らない) は名前として意味を成さない
+  if (base.replace(/_/g, "") !== "") {
+    let candidate = base;
+    for (let n = NAME_ID_FIRST_SUFFIX; n < NAME_ID_MAX_ATTEMPTS; n++) {
+      const error = validateBlockId(candidate, existingIds);
+      if (error === null) return candidate;
+      if (error !== "duplicate" && error !== "confusable_duplicate") break;
+      candidate = `${base}_${n}`;
+    }
+  }
+  return generateUniqueId(typePath, existingIds);
+}
+
 /** Python keyword との一致 (valid だが warning を出す、ADR-0071 §(4))。 */
 export function isReservedWord(candidate: string): boolean {
   return PYTHON_KEYWORDS.has(candidate);

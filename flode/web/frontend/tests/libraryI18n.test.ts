@@ -35,6 +35,9 @@ const STD_LIBRARY: LibraryMetadata = {
   description: "Built-in.",
   description_i18n: { en: "Built-in.", ja: "組み込み。" },
   version: "1.0.0",
+  origin: "builtin",
+  writable: false,
+  write_disabled_reason: "library_read_only",
   entries: [PID_ENTRY],
 };
 

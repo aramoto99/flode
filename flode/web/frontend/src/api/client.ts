@@ -11,13 +11,17 @@ import type {
   FailurePayload,
   FlwModel,
   LibraryEntryDetail,
+  LibraryEntryMetadataPatch,
+  LibraryImportReport,
   LibraryRegistryResponse,
   PythonFunctionIntrospectResponse,
   PythonFunctionParamEdit,
   PythonFunctionRewriteResponse,
+  RegisterLibraryEntryRequest,
   ResolvedPortShapes,
   SimulationResults,
   SimulationState,
+  UserLibraryEntryResponse,
 } from "../types/api";
 
 const API_BASE = "/api/v1";
@@ -61,7 +65,8 @@ function _structuredOrNull(detail: unknown): FailurePayload | null {
   return null;
 }
 
-async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
+/** ``fetch`` して、失敗 (non-2xx) なら ``ApiError`` を投げる。成功時は Response を返す。 */
+async function _fetchResponse(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
@@ -85,6 +90,11 @@ async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
       ?? response.statusText;
     throw new ApiError(response.status, `${response.status} ${message}`, structured, rawDetail);
   }
+  return response;
+}
+
+async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await _fetchResponse(path, init);
   return response.json() as Promise<T>;
 }
 
@@ -239,4 +249,99 @@ export async function getLibraryEntry(
   return _fetch<LibraryEntryDetail>(
     `/libraries/${encodeURIComponent(libraryName)}/${encodeURIComponent(entryId)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0080: ライブラリ書き込み API。失敗時は ``ApiError.structured`` に
+// ``{category: "library", template_key: "error.library.<code>", template_args}`` が
+// 入る (表示文言への変換は lib/libraryErrors.ts)。
+// ---------------------------------------------------------------------------
+
+const USER_ENTRIES_PATH = "/libraries/user/entries";
+
+/** ブロックをユーザーライブラリ (マイブロック) に登録する (新規 / 上書き / 別名保存)。 */
+export async function registerLibraryEntry(
+  request: RegisterLibraryEntryRequest,
+): Promise<UserLibraryEntryResponse> {
+  return _fetch<UserLibraryEntryResponse>(USER_ENTRIES_PATH, {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+/** ユーザーライブラリのエントリの表示名・説明・分類を編集する (revision は上がらない)。 */
+export async function updateLibraryEntryMetadata(
+  entryId: string,
+  patch: LibraryEntryMetadataPatch,
+): Promise<UserLibraryEntryResponse> {
+  return _fetch<UserLibraryEntryResponse>(
+    `${USER_ENTRIES_PATH}/${encodeURIComponent(entryId)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+/** ユーザーライブラリのエントリを削除する (``expectedRevision`` 不一致は 409)。 */
+export async function deleteLibraryEntry(
+  entryId: string,
+  expectedRevision: number,
+): Promise<void> {
+  await _fetch(
+    `${USER_ENTRIES_PATH}/${encodeURIComponent(entryId)}?expected_revision=${expectedRevision}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * ライブラリファイルを取り込む。``content`` はファイル本文の文字列 (multipart は使えない)。
+ * ``dryRun`` が真なら何も書き込まず検証結果だけ返る。``filename`` は表示専用。
+ */
+export async function importLibrary(
+  content: string,
+  options: { dryRun: boolean; filename?: string },
+): Promise<LibraryImportReport> {
+  return _fetch<LibraryImportReport>("/libraries/import", {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      dry_run: options.dryRun,
+      ...(options.filename !== undefined ? { filename: options.filename } : {}),
+    }),
+  });
+}
+
+/** 取り込みライブラリを削除する (``origin === "imported"`` のみ)。 */
+export async function deleteImportedLibrary(libraryName: string): Promise<void> {
+  await _fetch(`/libraries/${encodeURIComponent(libraryName)}`, {
+    method: "DELETE",
+  });
+}
+
+/** 全ライブラリをディスクから読み直す (手で置いたファイルの反映)。 */
+export async function reloadLibraries(): Promise<LibraryRegistryResponse> {
+  return _fetch<LibraryRegistryResponse>("/libraries/reload", { method: "POST" });
+}
+
+/** サーバが ``Content-Disposition`` を返さなかったときの書き出しファイル名の拡張子。 */
+const LIBRARY_FILE_SUFFIX = ".flwlib.json";
+
+/**
+ * ライブラリ全体の書き出し内容を取得する。
+ *
+ * @returns サーバが決めたファイル名 (``Content-Disposition``) とファイル本文。
+ */
+export async function exportLibrary(
+  libraryName: string,
+): Promise<{ filename: string; text: string }> {
+  const response = await _fetchResponse(
+    `/libraries/${encodeURIComponent(libraryName)}/export`,
+  );
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  // フォールバックの名前はライブラリ名 (信頼できない文字列) から作るので、パス区切りや
+  // ファイル名に使えない文字・制御文字を ``_`` に置換する
+  const fallback = `${libraryName.replace(/[\\/:*?"<>|\p{Cc}\p{Cf}]/gu, "_")}${LIBRARY_FILE_SUFFIX}`;
+  return {
+    filename: match?.[1] ?? fallback,
+    text: await response.text(),
+  };
 }

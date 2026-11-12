@@ -13,8 +13,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
 export const E2E_WORKSPACE_DIR = path.join(__dirname, ".workspace");
 
-export default function globalSetup(): void {
+export default function globalSetup(): () => void {
   rmSync(E2E_WORKSPACE_DIR, { recursive: true, force: true });
   mkdirSync(E2E_WORKSPACE_DIR, { recursive: true });
   cpSync(FIXTURES_DIR, E2E_WORKSPACE_DIR, { recursive: true });
+  // teardown: playwright.config.ts が作った実行ごとの一時ディレクトリ (backend の
+  // config.toml とユーザーライブラリの置き場、ADR-0080) を片付ける。消せなくても
+  // (backend がまだファイルを掴んでいる等) OS の一時領域なのでテストは失敗させない。
+  return () => {
+    const stateDir = process.env.FLODE_E2E_STATE_DIR;
+    if (!stateDir) return;
+    try {
+      rmSync(stateDir, { recursive: true, force: true });
+    } catch {
+      // 残っても無害 (OS の一時ディレクトリ)
+    }
+  };
 }
