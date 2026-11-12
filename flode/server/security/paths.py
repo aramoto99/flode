@@ -46,6 +46,40 @@ LPT0-LPT9) に準拠。Linux / macOS でも cross-platform portability を維持
 """
 
 
+def is_windows_reserved_name(name: str) -> bool:
+    """``name`` (拡張子を除いた部分) が Windows の予約デバイス名か (大文字小文字を無視)。"""
+    return name.split(".", 1)[0].lower() in _WIN_RESERVED_NAMES
+
+
+def ensure_direct_child(target: Path, directory: Path) -> Path:
+    """``target`` が ``directory`` の**直下**のファイルを指すことを確認する (ADR-0080 §A4-3)。
+
+    サーバが自分で組み立てた書き込み・削除対象の path に対する最後の確認で、
+    クライアント由来の文字列を解決する用途ではない (それは
+    :func:`resolve_workspace_path`)。symlink を辿った結果の親ディレクトリが
+    ``directory`` と一致しなければ拒否するので、対象または途中のディレクトリが
+    symlink で外を指していれば通らない。
+
+    Args:
+        target: 確認する path (存在しなくてもよい)。
+        directory: 起動時に解決して固定したディレクトリ (絶対 path)。
+
+    Returns:
+        ``target`` を解決した絶対 path。
+
+    Raises:
+        PathTraversalError: 解決後の親ディレクトリが ``directory`` と一致しない、
+            または path を解決できない。
+    """
+    try:
+        resolved = target.resolve(strict=False)
+    except (OSError, RuntimeError) as e:  # RuntimeError: symlink の循環
+        raise PathTraversalError(f"Cannot resolve path: {type(e).__name__}") from e
+    if resolved.parent != directory:
+        raise PathTraversalError("Path resolves outside its fixed directory")
+    return resolved
+
+
 def resolve_workspace_path(workspace_root: Path, raw: str) -> Path:
     """``raw`` (URL encoded relative path) を ``workspace_root`` 配下に解決する。
 
@@ -124,8 +158,7 @@ def resolve_workspace_path(workspace_root: Path, raw: str) -> Path:
         if seg.endswith((" ", ".")):
             raise PathTraversalError(f"Path segment with trailing space or dot: {seg!r}")
         # 拡張子前の base 部分のみで予約名判定 (= ``CON.flw.json`` も拒否)。
-        base = seg.split(".", 1)[0].lower()
-        if base in _WIN_RESERVED_NAMES:
+        if is_windows_reserved_name(seg):
             raise PathTraversalError(f"Windows reserved name: {seg!r}")
 
     # Step 6: resolve under workspace_root

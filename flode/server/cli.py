@@ -394,6 +394,58 @@ def resolve_python_block_policy(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class LibraryWritePolicy:
+    """ライブラリ書き込み API の可否 (ADR-0080 §A4-1)。
+
+    Attributes:
+        allowed: 書き込みを許可するか。
+        reason: 許可しない理由 (``allowed=True`` なら空文字)。
+    """
+
+    allowed: bool
+    reason: str
+
+
+def resolve_library_write_policy(host: str) -> LibraryWritePolicy:
+    """bind host からライブラリ書き込み API の可否を決める (純粋関数、ADR-0080 §A4-1)。
+
+    ``allowed = is_loopback_host(host)``。:func:`resolve_python_block_policy` と違い、
+    非 loopback で許可に切り替えるフラグは設けない: 書き込み先はホーム配下で全モデル・
+    全セッションに効き、コード入りエントリを持ち込む経路にもなるため。
+
+    Args:
+        host: uvicorn に渡す bind host。
+    """
+    if is_loopback_host(host):
+        return LibraryWritePolicy(allowed=True, reason="")
+    return LibraryWritePolicy(
+        allowed=False,
+        reason=f"server is bound to non-loopback address {host!r}",
+    )
+
+
+def resolve_user_library_dir(host: str, configured: Path | None, *, explicit: bool) -> Path | None:
+    """bind host から、ユーザーライブラリを読み込むディレクトリを決める (純粋関数)。
+
+    ユーザーライブラリの既定の置き場はホーム配下で、GET で誰でも読める。非 loopback bind
+    では、利用者が設定ファイルに置き場を**明示していない限り**読み込まない (既定値での
+    自動読み込みで、意図せずマイブロックを公開しない)。明示されていれば読み込むが、
+    書き込みは :func:`resolve_library_write_policy` により許可されない (= 読み取り専用)。
+
+    Args:
+        host: uvicorn に渡す bind host。
+        configured: 設定から解決したディレクトリ (無効化されていれば ``None``)。
+        explicit: 設定ファイルに ``[settings] user_library_dir`` が書かれているか。
+
+    Returns:
+        読み込むディレクトリ。読み込まないなら ``None``。
+    """
+    if configured is None or explicit or is_loopback_host(host):
+        return configured
+    return None
+
+
 def _build_settings_from_args(
     args: argparse.Namespace,
 ) -> tuple[Settings, str, int, bool, int, bool]:
@@ -442,6 +494,25 @@ def _build_settings_from_args(
     resolver = SettingsResolver(cli=cli_dict, file_config=file_cfg)
     settings = resolver.build_settings(default_workspace=Path.cwd().resolve())
     host, port = resolver.build_server_bind()
+    # ADR-0080 §A4-1: ライブラリの書き込み可否と、ユーザーライブラリを読み込むかどうかは
+    # どちらも bind host で決まる。ここで 1 回決めて Settings に載せる。
+    library_policy = resolve_library_write_policy(host)
+    user_library_dir = resolve_user_library_dir(
+        host, settings.user_library_dir, explicit=resolver.user_library_dir_is_explicit()
+    )
+    if user_library_dir is None and settings.user_library_dir is not None:
+        _logger.info(
+            "The user library is not loaded: the server is bound to non-loopback address %r "
+            "and [settings] user_library_dir is not set explicitly. Set it in the config "
+            "file to serve that directory read-only.",
+            host,
+        )
+    settings = dataclasses.replace(
+        settings,
+        user_library_dir=user_library_dir,
+        library_write_allowed=library_policy.allowed,
+        library_write_reason=library_policy.reason,
+    )
     open_browser, port_retries = resolver.build_launch_options()
     allow_python_blocks = resolver.build_allow_python_blocks()
     return settings, host, port, open_browser, port_retries, allow_python_blocks
@@ -517,6 +588,7 @@ def main(argv: list[str] | None = None) -> None:
         host, cli_flag=bool(args.allow_python_blocks), file_allow=allow_python
     )
     # 適用は create_app() に一本化 (= Settings 経由、埋め込み利用でも同じ経路)。
+    # ライブラリの書き込み可否と置き場は _build_settings_from_args が bind host から決定済み。
     settings = dataclasses.replace(
         settings, python_blocks_allowed=policy.allowed, python_blocks_reason=policy.reason
     )

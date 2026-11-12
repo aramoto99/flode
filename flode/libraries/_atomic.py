@@ -140,6 +140,68 @@ def _fsync_directory(directory: Path) -> None:
         os.close(fd)
 
 
+def write_text_exclusive(path: str | Path, text: str) -> None:
+    """``text`` を UTF-8 で ``path`` に**排他作成**で書き込む (ADR-0080 §A6-4)。
+
+    既存ファイルを決して上書きしない (取り込みライブラリの保存用)。書き込みに失敗
+    したら、作りかけのファイルを消してから失敗を伝える。
+
+    Args:
+        path: 書き込み先 (存在してはならない)。
+        text: 書き込む内容。
+
+    Raises:
+        FileExistsError: ``path`` が既に存在する (呼び出し側が名前を変えて再試行する)。
+        LibraryWriteError: それ以外の書き込み失敗。
+    """
+    target = Path(path)
+    try:
+        data = text.encode(_ENCODING)
+        with open(target, "xb") as f:
+            try:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            except OSError:
+                f.close()
+                _remove_quietly(target)
+                raise
+    except FileExistsError:
+        raise
+    except (OSError, UnicodeEncodeError) as e:
+        raise LibraryWriteError(f"Cannot write library file {str(target)!r}: {e}") from e
+    _fsync_directory(target.parent)
+
+
+def move_to_backup(path: str | Path) -> Path:
+    """``path`` を ``<name>.bak`` にリネームして退避する (ADR-0080 §A6-2)。
+
+    既存の ``.bak`` は置き換える (1 世代)。``os.replace`` の再試行規則は
+    :func:`atomic_write_text` と同じ。
+
+    Args:
+        path: 退避するファイル。
+
+    Returns:
+        退避先 (``<name>.bak``) の path。
+
+    Raises:
+        LibraryWriteBusyError: 他プロセスがファイルを開いていて、再試行しても
+            リネームできなかった。
+        LibraryWriteError: それ以外の失敗 (ファイル不在・権限不足など)。
+    """
+    source = Path(path)
+    destination = backup_path_for(source)
+    try:
+        _replace_with_retry(source, destination)
+    except LibraryWriteError:
+        raise
+    except OSError as e:
+        raise LibraryWriteError(f"Cannot move library file {str(source)!r} aside: {e}") from e
+    _fsync_directory(source.parent)
+    return destination
+
+
 def atomic_write_text(path: str | Path, text: str, *, backup: bool = True) -> None:
     """``text`` を UTF-8 で ``path`` にアトミックに書き込む (ADR-0080 §A6-1)。
 

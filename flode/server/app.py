@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..blocks.pythonfunc import set_python_block_policy
 from .errors import register_error_handlers
-from .library_registry import build_library_registry
+from .library_store import LibraryStore
 from .registry import build_block_registry
 from .routes import (
     blocks_router,
@@ -54,6 +54,12 @@ def create_app(*, settings: Settings) -> FastAPI:
         bundle_builtin_libraries=settings.bundle_builtin_libraries,
         python_blocks_allowed=settings.python_blocks_allowed,
         python_blocks_reason=settings.python_blocks_reason,
+        # ADR-0080: ここに列挙し忘れると、CLI が決めた値が黙って既定 (無効) に戻る
+        user_library_dir=(
+            None if settings.user_library_dir is None else Path(settings.user_library_dir)
+        ),
+        library_write_allowed=settings.library_write_allowed,
+        library_write_reason=settings.library_write_reason,
     )
     # SPEC-0023 / ADR-0073 §論点 4 (H): PythonFunction の hard gate をプロセス policy に
     # 適用する唯一の場所。CLI は bind host から決めた値を Settings に入れて渡す。
@@ -69,10 +75,14 @@ def create_app(*, settings: Settings) -> FastAPI:
         app.state.simulation_manager = manager
         # ADR-0019 §1.5: Block class registry を起動時に 1 回 walk して app.state にキャッシュ。
         app.state.block_registry = build_block_registry()
-        # ADR-0029: Library registry を起動時に 1 回 build して app.state にキャッシュ。
-        app.state.library_registry = build_library_registry(
-            settings.library_paths,
+        # ADR-0029 / ADR-0080 §A5: Library registry を起動時に build する。registry の
+        # 所有者は LibraryStore で、書き込み API の成功時と手動の再読み込み時に差し替える。
+        app.state.library_store = LibraryStore(
+            library_paths=settings.library_paths,
             bundle_builtin=settings.bundle_builtin_libraries,
+            user_library_dir=settings.user_library_dir,
+            write_allowed=settings.library_write_allowed,
+            write_reason=settings.library_write_reason,
         )
         try:
             yield

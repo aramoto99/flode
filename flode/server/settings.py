@@ -30,6 +30,16 @@ class Settings:
             決めた値を入れる (loopback → True、非 loopback はフラグ必須)。``create_app`` を
             直接使う埋め込み利用者は **公開 bind なら必ず False にする** こと。
         python_blocks_reason: 拒否理由 (エラーメッセージに埋め込む、``allowed=False`` 時のみ)。
+        user_library_dir: ユーザーライブラリの置き場 (ADR-0080 §A4-3)。解決済みの
+            絶対 path。``None`` (既定) はユーザーライブラリ無効で、サーバはこの
+            ディレクトリを読みも書きもしない。CLI は ``[settings] user_library_dir``
+            (既定 ``~/.flode/libraries``) を起動時に 1 回解決して入れる。
+        library_write_allowed: ライブラリ書き込み API の可否 (ADR-0080 §A4-1)。
+            既定 ``False`` (fail-closed)。CLI は bind host が loopback のときだけ
+            ``True`` にする。``create_app`` を直接使う埋め込み利用者は **公開 bind
+            では True にしない** こと。
+        library_write_reason: 書き込みを許可しない理由 (エラーメッセージに埋め込む、
+            ``library_write_allowed=False`` 時のみ)。
     """
 
     workspace_root: Path
@@ -40,3 +50,6 @@ class Settings:
     bundle_builtin_libraries: bool = True
     python_blocks_allowed: bool = True
     python_blocks_reason: str = ""
+    user_library_dir: Path | None = None
+    library_write_allowed: bool = False
+    library_write_reason: str = ""

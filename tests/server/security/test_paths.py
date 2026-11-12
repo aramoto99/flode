@@ -12,7 +12,11 @@ from pathlib import Path
 import pytest
 
 from flode.exceptions import PathTraversalError
-from flode.server.security import resolve_workspace_path
+from flode.server.security import (
+    ensure_direct_child,
+    is_windows_reserved_name,
+    resolve_workspace_path,
+)
 
 # ---------------------------------------------------------------------------
 # 拒否系
@@ -338,3 +342,66 @@ class TestReturnValue:
         # ``strict=False`` で存在しない path も resolve 可能
         result = resolve_workspace_path(tmp_path, "does-not-exist/yet.flw.json")
         assert result == (tmp_path.resolve() / "does-not-exist" / "yet.flw.json")
+
+
+# ---------------------------------------------------------------------------
+# ensure_direct_child / is_windows_reserved_name (ADR-0080 §A4-3)
+# ---------------------------------------------------------------------------
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    """symlink を作る。作れない環境 (権限の無い Windows など) ではテストを skip する。"""
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"cannot create symlinks in this environment: {e}")
+
+
+class TestEnsureDirectChild:
+    def test_direct_child_is_returned_resolved(self, tmp_path: Path) -> None:
+        directory = tmp_path.resolve()
+        assert ensure_direct_child(directory / "user.flwlib.json", directory) == (
+            directory / "user.flwlib.json"
+        )
+
+    def test_nonexistent_directory_is_fine(self, tmp_path: Path) -> None:
+        directory = tmp_path.resolve() / "not" / "yet"
+        assert ensure_direct_child(directory / "x.json", directory) == directory / "x.json"
+
+    @pytest.mark.parametrize("relative", ["sub/x.json", "../x.json", "."])
+    def test_not_a_direct_child_is_rejected(self, tmp_path: Path, relative: str) -> None:
+        directory = tmp_path.resolve()
+        with pytest.raises(PathTraversalError):
+            ensure_direct_child(directory / relative, directory)
+
+    def test_symlinked_file_pointing_outside_is_rejected(self, tmp_path: Path) -> None:
+        directory = tmp_path.resolve() / "libs"
+        directory.mkdir()
+        outside = tmp_path.resolve() / "outside.json"
+        outside.write_text("{}", encoding="utf-8")
+        _symlink_or_skip(directory / "user.flwlib.json", outside)
+        with pytest.raises(PathTraversalError):
+            ensure_direct_child(directory / "user.flwlib.json", directory)
+
+    def test_symlinked_directory_pointing_outside_is_rejected(self, tmp_path: Path) -> None:
+        directory = tmp_path.resolve() / "libs"
+        directory.mkdir()
+        outside = tmp_path.resolve() / "elsewhere"
+        outside.mkdir()
+        _symlink_or_skip(directory / "imported", outside)
+        with pytest.raises(PathTraversalError):
+            ensure_direct_child(directory / "imported" / "x.json", directory / "imported")
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("con", True),
+        ("NUL", True),
+        ("com1.flwlib.json", True),
+        ("console", False),
+        ("lib-con", False),
+    ],
+)
+def test_is_windows_reserved_name(name: str, expected: bool) -> None:
+    assert is_windows_reserved_name(name) is expected

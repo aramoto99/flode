@@ -98,8 +98,18 @@ _MIGRATION_ERRORS: tuple[type[Exception], ...] = (
 )
 
 # 本体の構築 (深い検証) が壊れた入力で出しうる例外。migration と同じ集合に、
-# 際限なく深い入れ子で起きる ``RecursionError`` を加える。
-_BODY_BUILD_ERRORS: tuple[type[Exception], ...] = (*_MIGRATION_ERRORS, RecursionError)
+# 際限なく深い入れ子で起きる ``RecursionError`` と、ブロックのコンストラクタが
+# 不正な引数で出しうる ``LookupError`` (範囲外の添字) / ``ArithmeticError`` (ゼロ除算・
+# オーバーフロー) / ``MemoryError`` (巨大な配列の確保) を加える。深い検証は外部から
+# 届いた本体を扱う (REST の登録・取り込み) ので、これらを ``LibraryFileError`` に揃えて
+# 500 にしない。
+_BODY_BUILD_ERRORS: tuple[type[Exception], ...] = (
+    *_MIGRATION_ERRORS,
+    RecursionError,
+    LookupError,
+    ArithmeticError,
+    MemoryError,
+)
 
 #: エントリ本体で許す Subsystem の入れ子の最大深さ (本体直下の ``blocks`` を深さ 1 と数える)。
 #: 浅い検証の再帰走査が ``RecursionError`` に達する前に ``LibraryFileError`` で拒否する。

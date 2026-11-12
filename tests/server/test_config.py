@@ -505,3 +505,113 @@ class TestAllowPythonBlocks:
         p = tmp_path / "config.toml"
         generate_config_template(p, force=False)
         assert "allow_python_blocks" in p.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# ADR-0080: [settings] user_library_dir
+# ---------------------------------------------------------------------------
+
+
+class TestUserLibraryDir:
+    def test_default_is_home_flode_libraries(self, tmp_path: Path, isolated_home: Path) -> None:
+        settings = SettingsResolver(cli={}, file_config={}).build_settings(
+            default_workspace=tmp_path
+        )
+        assert settings.user_library_dir == (isolated_home / ".flode" / "libraries").resolve()
+        # 解決するだけで、ディレクトリは作らない (初回の書き込みで作る)
+        assert not (isolated_home / ".flode").exists()
+
+    def test_empty_string_disables(self, tmp_path: Path) -> None:
+        resolver = SettingsResolver(cli={}, file_config={"settings": {"user_library_dir": ""}})
+        assert resolver.build_settings(default_workspace=tmp_path).user_library_dir is None
+
+    def test_custom_directory_is_resolved(self, tmp_path: Path) -> None:
+        target = tmp_path / "libs"
+        resolver = SettingsResolver(
+            cli={}, file_config={"settings": {"user_library_dir": str(target / ".." / "libs")}}
+        )
+        assert resolver.build_settings(default_workspace=tmp_path).user_library_dir == (
+            target.resolve()
+        )
+
+    def test_tilde_is_expanded(self, tmp_path: Path, isolated_home: Path) -> None:
+        resolver = SettingsResolver(
+            cli={}, file_config={"settings": {"user_library_dir": "~/mylibs"}}
+        )
+        assert resolver.build_settings(default_workspace=tmp_path).user_library_dir == (
+            (isolated_home / "mylibs").resolve()
+        )
+
+    def test_pointing_at_file_is_startup_error(self, tmp_path: Path) -> None:
+        a_file = tmp_path / "not_a_dir"
+        a_file.write_text("x", encoding="utf-8")
+        resolver = SettingsResolver(
+            cli={}, file_config={"settings": {"user_library_dir": str(a_file)}}
+        )
+        with pytest.raises(FlodeError, match="user_library_dir"):
+            resolver.build_settings(default_workspace=tmp_path)
+
+    def test_type_mismatch_raises(self, tmp_path: Path) -> None:
+        resolver = SettingsResolver(cli={}, file_config={"settings": {"user_library_dir": 3}})
+        with pytest.raises(FlodeError, match="user_library_dir"):
+            resolver.build_settings(default_workspace=tmp_path)
+
+    def test_write_policy_is_never_read_from_file(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """書き込み可否は CLI が bind host から決める。設定ファイルからは上書きできない。"""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
+            resolver = SettingsResolver(
+                cli={}, file_config={"settings": {"library_write_allowed": True}}
+            )
+        assert "library_write_allowed" in caplog.text
+        settings = resolver.build_settings(default_workspace=tmp_path)
+        assert settings.library_write_allowed is False
+
+    def test_known_key_does_not_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
+            SettingsResolver(cli={}, file_config={"settings": {"user_library_dir": ""}})
+        assert "user_library_dir" not in caplog.text
+
+    def test_template_mentions_key(self, tmp_path: Path) -> None:
+        cfg = tmp_path / "config.toml"
+        generate_config_template(cfg, force=False)
+        assert load_config_file(cfg)["settings"]["user_library_dir"] == "~/.flode/libraries"
+
+
+class TestSettingsLibraryDefaults:
+    def test_direct_settings_are_fail_closed(self, tmp_path: Path) -> None:
+        """``Settings`` を直接作る埋め込み利用・テストは、既定でホーム配下に触れない。"""
+        settings = Settings(workspace_root=tmp_path)
+        assert settings.user_library_dir is None
+        assert settings.library_write_allowed is False
+        assert settings.library_write_reason == ""
+
+    @pytest.mark.parametrize(
+        ("file_config", "expected"),
+        [
+            ({}, False),
+            ({"settings": {}}, False),
+            ({"settings": {"user_library_dir": "~/x"}}, True),
+            ({"settings": {"user_library_dir": ""}}, True),
+        ],
+    )
+    def test_user_library_dir_is_explicit(
+        self, file_config: dict[str, object], expected: bool
+    ) -> None:
+        """既定値で決まったのか、設定ファイルに書かれていたのかを区別できる (非 loopback の判定用)。"""
+        resolver = SettingsResolver(cli={}, file_config=file_config)  # type: ignore[arg-type]
+        assert resolver.user_library_dir_is_explicit() is expected
+
+
+def test_server_tests_never_see_the_real_home() -> None:
+    """conftest の保険: ``~`` の展開は ``Path.home()`` 経由でも環境変数経由でも一時ディレクトリ。"""
+    import os
+
+    assert Path(os.path.expanduser("~")) == Path.home()
+    assert Path("~").expanduser() == Path.home()
+    assert "pytest" in str(Path.home())

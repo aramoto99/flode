@@ -38,9 +38,17 @@ _logger = logging.getLogger("flode.server.config")
 # ``Settings.workspace_root`` は TOML では ``workspace`` キーとして書く (= path 全体
 # を root に統一するための alias)。それ以外のフィールド名は dataclass と TOML で同じ。
 _WORKSPACE_TOML_KEY = "workspace"
-_SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dataclasses.fields(Settings)) - {
-    "workspace_root"
-}
+# ADR-0080 §A4-1: ライブラリ書き込みの可否は CLI が bind host から決める値で、設定
+# ファイルから上書きする経路を作らない。既知キーから外し、書かれていたら
+# 「未知のキー」 として WARNING を出す (黙って無視しない)。
+_CLI_DECIDED_FIELD_NAMES: frozenset[str] = frozenset(
+    {"library_write_allowed", "library_write_reason"}
+)
+_SETTINGS_FIELD_NAMES: frozenset[str] = (
+    frozenset(f.name for f in dataclasses.fields(Settings))
+    - {"workspace_root"}
+    - _CLI_DECIDED_FIELD_NAMES
+)
 
 _KNOWN_SECTIONS = ("server", "settings")
 _KNOWN_SERVER_KEYS: frozenset[str] = frozenset(
@@ -65,6 +73,9 @@ _DEFAULT_OPEN_BROWSER = True
 _DEFAULT_PORT_RETRIES = 50
 # SPEC-0023 / ADR-0073 §論点 4: 非 loopback bind での PythonFunction 実行は既定で禁止。
 _DEFAULT_ALLOW_PYTHON_BLOCKS = False
+# ADR-0080 §A4-3 / SPEC-0032 §1.1: ユーザーライブラリの既定の置き場。
+# 設定ファイルで空文字にするとユーザーライブラリを無効化できる。
+_DEFAULT_USER_LIBRARY_DIR = "~/.flode/libraries"
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +215,16 @@ class SettingsResolver:
                 は dataclass の default を持たないため、CLI 層から補完する必要がある。
 
         Returns:
-            完全に構築された ``Settings``。
+            完全に構築された ``Settings``。``user_library_dir`` は設定 (既定
+            ``~/.flode/libraries``) を解決しただけの値で、bind host は考慮していない。
+
+        Note:
+            「非 loopback bind では、明示されていない限りユーザーライブラリを読み込まない」
+            ゲートと、ライブラリ書き込みの可否 (``library_write_allowed``) は、ここではなく
+            CLI (``cli.resolve_user_library_dir`` / ``cli.resolve_library_write_policy``) が
+            bind host から掛ける。``build_settings`` を直接使って公開 bind のサーバを組む
+            場合は、呼び出し側が ``user_library_dir`` を落とす責任を持つ
+            (:meth:`user_library_dir_is_explicit` で明示の有無を判定できる)。
 
         Raises:
             FlodeError: 型違反、または workspace path が存在しない / file 指定など。
@@ -243,6 +263,7 @@ class SettingsResolver:
             allow_origins=allow_origins,
             library_paths=library_paths,
             bundle_builtin_libraries=bundle_builtin,
+            user_library_dir=self._resolve_user_library_dir(),
         )
 
     def build_server_bind(self) -> tuple[str, int]:
@@ -325,6 +346,16 @@ class SettingsResolver:
             default=_DEFAULT_ALLOW_PYTHON_BLOCKS,
         )
 
+    def user_library_dir_is_explicit(self) -> bool:
+        """``[settings] user_library_dir`` が設定ファイルに明示されているかを返す。
+
+        既定値で決まった置き場 (ホーム配下) と、利用者が明示した置き場を区別するために使う:
+        非 loopback bind では、明示されていない限りユーザーライブラリを読み込まない
+        (ADR-0080 §A4-1、判定は ``cli.resolve_user_library_dir``)。空文字 (= 無効化) も
+        明示に数える。
+        """
+        return self._lookup("user_library_dir", section="settings") is not None
+
     # --- internals -----------------------------------------------------------
 
     def _lookup(self, key: str, *, section: str) -> Any:
@@ -366,6 +397,35 @@ class SettingsResolver:
                 f"workspace must point to a directory, not a file."
             )
         return ws_resolved
+
+    def _resolve_user_library_dir(self) -> Path | None:
+        """``[settings] user_library_dir`` を解決する (ADR-0080 §A4-3)。
+
+        ``~`` を展開し、起動時に 1 回だけ絶対 path に解決して固定する。ディレクトリは
+        存在しなくてよい (初回の書き込みで作る)。
+
+        Returns:
+            解決済みの絶対 path。空文字 (= 無効化) なら ``None``。
+
+        Raises:
+            FlodeError: 型違反、または path がファイルを指している。
+        """
+        raw = self._lookup("user_library_dir", section="settings")
+        if raw is None:
+            raw = _DEFAULT_USER_LIBRARY_DIR
+        if not isinstance(raw, str):
+            raise FlodeError(
+                f"Invalid type for [settings].user_library_dir: expected str, "
+                f"got {type(raw).__name__}"
+            )
+        if not raw:
+            return None
+        resolved = _expand_home(raw).resolve()
+        if resolved.is_file():
+            raise FlodeError(
+                f"[settings].user_library_dir must be a directory, but it is a file: {resolved}"
+            )
+        return resolved
 
     def _resolve_int_field(self, key: str, *, section: str, default: int) -> int:
         raw = self._lookup(key, section=section)
@@ -487,6 +547,14 @@ library_paths = []
 
 # Whether to auto-register the bundled std.flwlib.json (default: true, ADR-0029).
 bundle_builtin_libraries = true
+
+# Directory of your own block library ("My Blocks"). Blocks registered from the
+# GUI are saved to <dir>/user.flwlib.json and imported libraries to
+# <dir>/imported/. Other *.flwlib.json files placed here are loaded read-only.
+# Set to "" to disable the user library (the GUI can then no longer register,
+# import or delete library blocks). Writing is only allowed while the server is
+# bound to a loopback address (127.0.0.1 / localhost / ::1).
+user_library_dir = "~/.flode/libraries"
 """
 
 

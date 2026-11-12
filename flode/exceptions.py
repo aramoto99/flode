@@ -278,7 +278,125 @@ class LibraryEntryNotFoundError(FlodeError, KeyError):
     """REST `GET /api/v1/libraries/{lib}/{entry}` で未登録の id が指定された (ADR-0029)。
 
     ``KeyError`` を継承するため、library / entry を dict 風に扱う code でも互換。
+
+    書き込み API (ユーザーライブラリの編集・削除・上書き) で対象エントリが無い場合は
+    本クラスではなく :class:`LibraryEntryMissingError` (構造化エラー
+    ``library_entry_not_found``) を使う。
     """
+
+
+class LibraryApiError(FlodeError):
+    """ライブラリ書き込み API が要求を拒否した (ADR-0080 §新しいエラーコード)。
+
+    サブクラスごとに機械可読な ``code`` を持ち、サーバ層が構造化エラー
+    (``template_key = "error.library.<code>"``) に変換する。HTTP status への対応は
+    サーバ層 (``flode.server.errors``) が持つ。
+
+    Args:
+        message: 人間可読の説明 (構造化エラーの ``raw_message`` になる)。
+        **details: 構造化エラーの ``template_args`` に載せる JSON 互換の値。
+
+    Attributes:
+        code: エラーコード (クラス属性)。
+        details: ``template_args`` に載せる値。
+    """
+
+    code: str = "library_error"
+
+    def __init__(self, message: str, **details: object) -> None:
+        super().__init__(message)
+        self.details: dict[str, object] = details
+
+
+class LibraryWriteForbiddenError(LibraryApiError):
+    """サーバの設定でライブラリへの書き込みが許可されていない (非 loopback bind 等)。"""
+
+    code = "library_write_forbidden"
+
+
+class UserLibraryDisabledError(LibraryApiError):
+    """ユーザーライブラリが無効 (``user_library_dir`` 未設定) で書き込み先が無い。"""
+
+    code = "user_library_disabled"
+
+
+class LibraryEntryInvalidError(LibraryApiError):
+    """登録・取り込みしようとしたエントリが検証を通らない。
+
+    構築不能・未知の型・許可外の種別・Goto/From の非閉包・メタデータの制約違反を表す。
+    """
+
+    code = "library_entry_invalid"
+
+
+class LibraryFileInvalidError(LibraryApiError):
+    """取り込もうとしたライブラリファイルが読めない (JSON 不正・schema 検証失敗など)。"""
+
+    code = "library_file_invalid"
+
+
+class LibraryEntryNameConflictError(LibraryApiError):
+    """同じ表示名のエントリが既にある (上書き / 別名保存の確認の起点)。"""
+
+    code = "library_entry_name_conflict"
+
+
+class LibraryEntryConflictError(LibraryApiError):
+    """``expected_revision`` がエントリの現在の revision と一致しない。"""
+
+    code = "library_entry_conflict"
+
+
+class LibraryChangedOnDiskError(LibraryApiError):
+    """読み込み後にライブラリファイルが外部で変更された (再読み込みが必要)。"""
+
+    code = "library_changed_on_disk"
+
+
+class UserLibraryCorruptError(LibraryApiError):
+    """既存のユーザーライブラリファイルが壊れているため、上書きを拒否した。"""
+
+    code = "user_library_corrupt"
+
+
+class LibrarySchemaTooNewError(LibraryApiError):
+    """既存のファイルが新しい版の flode で書かれており、古い版へ書き戻さない。"""
+
+    code = "library_schema_too_new"
+
+
+class LibraryNameConflictError(LibraryApiError):
+    """取り込むライブラリの名前が予約名、または既存のライブラリと同じ。"""
+
+    code = "library_name_conflict"
+
+
+class LibraryPathUnsafeError(LibraryApiError):
+    """書き込み・削除の対象が、固定されたライブラリディレクトリの外を指している。"""
+
+    code = "library_path_unsafe"
+
+
+class LibraryReadOnlyError(LibraryApiError):
+    """対象のライブラリは GUI から変更・削除できない (取り込みライブラリ以外の削除など)。"""
+
+    code = "library_read_only"
+
+
+class LibraryNotFoundError(LibraryApiError):
+    """指定された名前のライブラリが registry に無い。"""
+
+    code = "library_not_found"
+
+
+class LibraryEntryMissingError(LibraryApiError):
+    """書き込み API で指定された id のエントリがライブラリに無い。
+
+    :class:`LibraryEntryNotFoundError` (``KeyError`` 互換の読み取り側の例外) とは別物で、
+    こちらは :class:`LibraryApiError` として構造化エラーに変換される。
+    """
+
+    code = "library_entry_not_found"
 
 
 class PathTraversalError(FlodeError):

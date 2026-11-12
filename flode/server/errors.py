@@ -20,6 +20,9 @@ from ..exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
     FlodeError,
+    LibraryApiError,
+    LibraryWriteBusyError,
+    LibraryWriteError,
     ModelLoadError,
     ModelSerializationError,
     PythonBlocksDisabledError,
@@ -408,18 +411,109 @@ def build_failure_payload(
     return payload
 
 
+# ============================================================================
+# ADR-0080: ライブラリ API の構造化エラー
+# ============================================================================
+
+#: ライブラリ API の構造化エラーの ``category``。
+CATEGORY_LIBRARY = "library"
+
+# 書き込み失敗 (``LibraryWriteError`` 系) のエラーコード。これらは core 側
+# (``flode.libraries``) の例外で ``code`` 属性を持たないので、ここで対応付ける。
+_CODE_LIBRARY_WRITE_BUSY = "library_write_busy"
+_CODE_LIBRARY_WRITE_FAILED = "library_write_failed"
+
+# エラーコード → HTTP status (ADR-0080 §新しいエラーコード)。
+_LIBRARY_STATUS_BY_CODE: dict[str, int] = {
+    "library_write_forbidden": 403,
+    "user_library_disabled": 403,
+    "library_path_unsafe": 403,
+    "library_read_only": 403,
+    "library_not_found": 404,
+    "library_entry_not_found": 404,
+    "library_entry_name_conflict": 409,
+    "library_entry_conflict": 409,
+    "library_changed_on_disk": 409,
+    "user_library_corrupt": 409,
+    "library_schema_too_new": 409,
+    "library_name_conflict": 409,
+    "library_entry_invalid": 422,
+    "library_file_invalid": 422,
+    _CODE_LIBRARY_WRITE_FAILED: 500,
+    _CODE_LIBRARY_WRITE_BUSY: 503,
+}
+
+# ログに残すメッセージの最大文字数 (メッセージは外部由来の値を含みうる)。
+_MAX_LOGGED_LIBRARY_MESSAGE_CHARS = 300
+
+
+def build_library_error_detail(
+    exc: LibraryApiError | LibraryWriteError,
+) -> tuple[int, dict[str, Any]]:
+    """ライブラリ API の例外を ``(HTTP status, 構造化エラー detail)`` に変換する。
+
+    detail は frontend が構造化エラーとして拾える形 (ADR-0056 §B-2):
+    ``{category: "library", template_key: "error.library.<code>", template_args,
+    raw_message, code}``。
+
+    Args:
+        exc: ライブラリ API の拒否 (:class:`~flode.exceptions.LibraryApiError`)、または
+            ファイル書き込みの失敗 (:class:`~flode.exceptions.LibraryWriteError`)。
+    """
+    template_args: dict[str, Any]
+    if isinstance(exc, LibraryApiError):
+        code = exc.code
+        template_args = dict(exc.details)
+    else:
+        code = (
+            _CODE_LIBRARY_WRITE_BUSY
+            if isinstance(exc, LibraryWriteBusyError)
+            else _CODE_LIBRARY_WRITE_FAILED
+        )
+        template_args = {}
+    # テンプレートが {{message}} を参照しても literal 表示にならないよう必ず埋める
+    template_args.setdefault("message", str(exc))
+    detail: dict[str, Any] = {
+        "category": CATEGORY_LIBRARY,
+        "template_key": f"error.library.{code}",
+        "template_args": template_args,
+        "raw_message": str(exc),
+        "code": code,
+    }
+    return _LIBRARY_STATUS_BY_CODE.get(code, 500), detail
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """``FlodeError`` 系を JSON レスポンスに変換するハンドラを app に登録する。"""
+
+    @app.exception_handler(LibraryApiError)
+    @app.exception_handler(LibraryWriteError)
+    async def _library_error_handler(
+        request: Request, exc: LibraryApiError | LibraryWriteError
+    ) -> JSONResponse:
+        status_code, detail = build_library_error_detail(exc)
+        log = _logger.error if status_code >= 500 else _logger.warning
+        # メッセージは外部由来の値を含みうるので %r で出す (改行でログ行を偽造させない)
+        log(
+            "Library API %s %r rejected (%d %s): %r",
+            request.method,
+            request.url.path[:_MAX_LOGGED_LIBRARY_MESSAGE_CHARS],
+            status_code,
+            detail["code"],
+            str(exc)[:_MAX_LOGGED_LIBRARY_MESSAGE_CHARS],
+        )
+        return JSONResponse(status_code=status_code, content={"detail": detail})
 
     @app.exception_handler(FlodeError)
     async def _flode_error_handler(_request: Request, exc: FlodeError) -> JSONResponse:
         status_code = _resolve_status(exc)
         trace_id = str(uuid.uuid4())
+        # 例外メッセージはモデル・リクエスト由来の値を含みうるので %r で出す
         _logger.error(
-            "FlodeError [%s] (trace_id=%s): %s",
+            "FlodeError [%s] (trace_id=%s): %r",
             type(exc).__name__,
             trace_id,
-            exc,
+            str(exc),
         )
         body: dict[str, Any] = {
             "error": {

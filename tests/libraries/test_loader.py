@@ -686,6 +686,42 @@ def test_deep_validation_rejects_unbuildable_body() -> None:
         canonicalize_entry_block(body)
 
 
+@pytest.mark.parametrize(
+    "error", [MemoryError(), IndexError("out of range"), ZeroDivisionError("div")]
+)
+def test_deep_validation_wraps_constructor_failures(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """コンストラクタが出しうる失敗 (巨大な配列での ``MemoryError`` など) も
+    ``LibraryFileError`` に揃える (REST の登録・取り込みを 500 にしない)。"""
+    from flode.subsystems import Subsystem
+
+    def explode(**_kwargs: Any) -> None:
+        raise error
+
+    monkeypatch.setattr(Subsystem, "_from_dict", explode)
+    with pytest.raises(LibraryFileError, match=type(error).__name__):
+        canonicalize_entry_block(_subsystem_body())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'{"schema_version": "libraries.v4", "name": "x", "entries": [], "n": '
+        + b"9" * 5000
+        + b"}",
+        b'{"schema_version": "libraries.v4", "name": "\xff\xfe", "entries": []}',
+    ],
+    ids=["huge-int", "bad-utf8"],
+)
+def test_load_library_wraps_every_parse_failure(tmp_path: Path, content: bytes) -> None:
+    """``json.loads`` は桁数上限を超える整数で素の ``ValueError`` を出す。それも包む。"""
+    p = tmp_path / "bad.flwlib.json"
+    p.write_bytes(content)
+    with pytest.raises(LibraryFileError):
+        load_library(p)
+
+
 def test_deep_validation_rejects_invalid_python_source() -> None:
     body = _python_function_body("def not_a_block(:\n")
     with pytest.raises(LibraryFileError, match="cannot be built"):

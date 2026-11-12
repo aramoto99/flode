@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .paths import resolve_workspace_path
+from .paths import ensure_direct_child, is_windows_reserved_name, resolve_workspace_path
 
-__all__ = ["resolve_workspace_path"]
+__all__ = ["ensure_direct_child", "is_windows_reserved_name", "resolve_workspace_path"]

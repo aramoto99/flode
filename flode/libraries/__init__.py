@@ -14,7 +14,9 @@ Subsystem、および PythonFunction) を配布するための JSON ファイル
 * :func:`library_to_dict` / :func:`serialize_library` — :class:`Library` を
   `.flwlib.json` 用の dict / ファイル内容に変換する
 * :func:`canonicalize_entry_block` — エントリ本体の深い検証 (書き込み経路用)
-* :func:`atomic_write_text` — ライブラリファイルのアトミック書き込み
+* :func:`find_goto_from_violations` — エントリ本体の Goto / From 閉包検査 (書き込み経路用)
+* :func:`atomic_write_text` / :func:`write_text_exclusive` / :func:`move_to_backup` —
+  ライブラリファイルのアトミック書き込み・排他作成・退避
 
 .. note::
 
@@ -35,7 +37,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..exceptions import LibraryFileError, LibraryWriteBusyError, LibraryWriteError
-from ._atomic import atomic_write_text
+from ._atomic import atomic_write_text, backup_path_for, move_to_backup, write_text_exclusive
+from ._closure import GotoFromViolation, find_goto_from_violations
 from ._loader import (
     CURRENT_LIBRARY_SCHEMA_VERSION,
     DEFAULT_ENTRY_REVISION,
@@ -54,19 +57,24 @@ _logger = logging.getLogger("flode.libraries")
 __all__ = [
     "CURRENT_LIBRARY_SCHEMA_VERSION",
     "SUPPORTED_LIBRARY_SCHEMA_VERSIONS",
+    "GotoFromViolation",
     "Library",
     "LibraryEntry",
     "LibraryFileError",
     "LibraryWriteBusyError",
     "LibraryWriteError",
     "atomic_write_text",
+    "backup_path_for",
     "canonicalize_entry_block",
     "export_subsystem_to_library",
+    "find_goto_from_violations",
     "library_to_dict",
     "load_library",
+    "move_to_backup",
     "serialize_library",
     "utc_timestamp",
     "validate_library",
+    "write_text_exclusive",
 ]
 
 
@@ -230,7 +238,9 @@ def load_library(path: str | Path) -> Library:
         raise LibraryFileError(f"Cannot read library file {str(p)!r}: {e}") from e
     try:
         data = json.loads(text)
-    except json.JSONDecodeError as e:
+    except ValueError as e:
+        # JSONDecodeError に加えて、int 変換の桁数上限を超える整数 (素の ValueError) も
+        # ここで包む。包み損ねると 1 ファイルで registry の構築 (= サーバ起動) が止まる
         raise LibraryFileError(f"Library file {str(p)!r} is not valid JSON: {e}") from e
     except RecursionError as e:
         raise LibraryFileError(f"Library file {str(p)!r} is nested too deeply") from e

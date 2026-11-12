@@ -180,3 +180,57 @@ def test_unencodable_text_raises_library_write_error(target: Path) -> None:
 def test_missing_directory_raises_library_write_error(tmp_path: Path) -> None:
     with pytest.raises(LibraryWriteError):
         atomic_write_text(tmp_path / "missing" / TARGET_NAME, "x\n")
+
+
+# ----------------------------------------------------------------------------
+# write_text_exclusive / move_to_backup (ADR-0080 §A6-2 / §A6-4)
+# ----------------------------------------------------------------------------
+
+
+def test_write_text_exclusive_creates_file(target: Path) -> None:
+    _atomic.write_text_exclusive(target, "new\n")
+    assert target.read_bytes() == b"new\n"
+
+
+def test_write_text_exclusive_never_overwrites(target: Path) -> None:
+    target.write_bytes(b"original\n")
+    with pytest.raises(FileExistsError):
+        _atomic.write_text_exclusive(target, "new\n")
+    assert target.read_bytes() == b"original\n"
+
+
+def test_write_text_exclusive_missing_directory_is_write_error(tmp_path: Path) -> None:
+    with pytest.raises(LibraryWriteError):
+        _atomic.write_text_exclusive(tmp_path / "missing" / TARGET_NAME, "x\n")
+
+
+def test_write_text_exclusive_removes_partial_file_on_failure(
+    target: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch.object(_atomic.os, "fsync", side_effect=OSError("disk full"))
+    with pytest.raises(LibraryWriteError, match="disk full"):
+        _atomic.write_text_exclusive(target, "x\n")
+    assert _names(target.parent) == []
+
+
+def test_move_to_backup_renames_and_replaces_old_backup(target: Path) -> None:
+    target.write_bytes(b"current\n")
+    backup_path_for(target).write_bytes(b"older\n")
+    assert _atomic.move_to_backup(target) == backup_path_for(target)
+    assert _names(target.parent) == [TARGET_NAME + BACKUP_SUFFIX]
+    assert backup_path_for(target).read_bytes() == b"current\n"
+
+
+def test_move_to_backup_missing_file_is_write_error(target: Path) -> None:
+    with pytest.raises(LibraryWriteError):
+        _atomic.move_to_backup(target)
+
+
+def test_move_to_backup_busy_file_is_busy_error(
+    target: Path, retry_enabled: list[float], mocker: MockerFixture
+) -> None:
+    target.write_bytes(b"current\n")
+    mocker.patch.object(_atomic.os, "replace", side_effect=PermissionError("locked"))
+    with pytest.raises(LibraryWriteBusyError):
+        _atomic.move_to_backup(target)
+    assert target.read_bytes() == b"current\n"
