@@ -185,6 +185,129 @@ class TestBlockTypeResolution:
         with pytest.raises(UnknownBlockTypeError, match="not a Block subclass"):
             resolve_block_class("numpy.float64")
 
+    def test_namespace_package_under_allowed_prefix_is_rejected(self, tmp_path, monkeypatch):
+        """allowlist の prefix 配下でも、``__init__.py`` の無いディレクトリ (namespace
+        package) の中のモジュールは import しない。
+
+        prefix の検査は文字列の前方一致だけなので、パッケージのディレクトリに紛れた
+        Python ファイル (同梱物や依存ツールが置いたもの) まで import 対象になるのを防ぐ。
+        """
+        import sys
+
+        marker = tmp_path / "imported.txt"
+        package = tmp_path / "nsprobe_pkg"
+        (package / "loose").mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "regular.py").write_text("VALUE = 1\n", encoding="utf-8")
+        # ``loose`` には __init__.py が無い = namespace package
+        (package / "loose" / "payload.py").write_text(
+            f"open({str(marker)!r}, 'w').write('imported')\n", encoding="utf-8"
+        )
+        monkeypatch.syspath_prepend(str(tmp_path))
+        register_block_module("nsprobe_pkg.")
+        try:
+            with pytest.raises(UnknownBlockTypeError, match="namespace package"):
+                resolve_block_class("nsprobe_pkg.loose.payload.Anything")
+            with pytest.raises(UnknownBlockTypeError, match="namespace package"):
+                resolve_block_class("nsprobe_pkg.loose.Anything")
+            assert not marker.exists()
+            assert "nsprobe_pkg.loose.payload" not in sys.modules
+            # 通常のパッケージ配下は従来どおり import される (正当な利用を壊さない)
+            with pytest.raises(UnknownBlockTypeError, match="has no attribute"):
+                resolve_block_class("nsprobe_pkg.regular.Missing")
+        finally:
+            for name in [m for m in sys.modules if m.split(".")[0] == "nsprobe_pkg"]:
+                del sys.modules[name]
+
+    def test_frontend_directory_is_not_importable_as_block_module(self):
+        """``flode/web`` は ``__init__.py`` を持たないディレクトリ。配下は解決対象外。"""
+        with pytest.raises(UnknownBlockTypeError, match="namespace package"):
+            resolve_block_class("flode.web.frontend.Anything")
+
+    @pytest.mark.parametrize("module_name", ["dynblocks_probe", "dynblocks_probe.inner"])
+    def test_dynamically_created_module_without_spec_is_resolvable(self, module_name):
+        """``__spec__`` が ``None`` のモジュール (スクリプト・notebook・``types.ModuleType`` で
+        動的に作ったもの) に定義したブロックは、prefix を登録すれば従来どおり解決できる。
+
+        そうしたモジュールは import 済み (``sys.modules`` にある) で、namespace package では
+        ない。``importlib.util.find_spec`` はこの場合 ``ValueError`` を出すので呼ばない。
+        """
+        import sys
+        import types
+
+        names = [
+            ".".join(module_name.split(".")[: i + 1]) for i in range(module_name.count(".") + 1)
+        ]
+        modules = {name: types.ModuleType(name) for name in names}
+        assert all(m.__spec__ is None for m in modules.values())
+        block_cls = type("DynGain", (Gain,), {"__module__": module_name})
+        modules[module_name].DynGain = block_cls
+        register_block_module("dynblocks_probe.")
+        sys.modules.update(modules)
+        try:
+            assert resolve_block_class(f"{module_name}.DynGain") is block_cls
+        finally:
+            for name in names:
+                sys.modules.pop(name, None)
+
+    def test_registered_prefix_may_itself_be_a_namespace_distribution(self, tmp_path, monkeypatch):
+        """利用者が明示的に登録した prefix を構成する階層は namespace package でもよい
+        (PEP 420 の namespace 配布)。検査するのは prefix より下の階層だけ。"""
+        import sys
+
+        marker = tmp_path / "imported.txt"
+        plugins = tmp_path / "acme_nsprobe" / "plugins"  # どちらも __init__.py 無し
+        (plugins / "loose").mkdir(parents=True)
+        (plugins / "blocks.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (plugins / "loose" / "payload.py").write_text(
+            f"open({str(marker)!r}, 'w').write('imported')\n", encoding="utf-8"
+        )
+        monkeypatch.syspath_prepend(str(tmp_path))
+        register_block_module("acme_nsprobe.plugins.")
+        try:
+            # prefix 直下の通常モジュールは import される (クラスが無いので別エラー)
+            with pytest.raises(UnknownBlockTypeError, match="has no attribute"):
+                resolve_block_class("acme_nsprobe.plugins.blocks.Missing")
+            # prefix より下の namespace ディレクトリ配下は import しない
+            with pytest.raises(UnknownBlockTypeError, match="namespace package"):
+                resolve_block_class("acme_nsprobe.plugins.loose.payload.Anything")
+            assert not marker.exists()
+            # prefix の外は allowlist が拒否する
+            with pytest.raises(UnknownBlockTypeError, match="not in an allowed module prefix"):
+                resolve_block_class("acme_nsprobe.other.Anything")
+        finally:
+            for name in [m for m in sys.modules if m.split(".")[0] == "acme_nsprobe"]:
+                del sys.modules[name]
+
+    def test_cached_namespace_package_is_still_rejected(self, tmp_path, monkeypatch):
+        """namespace package が既に import 済み (``sys.modules`` にある) でも拒否は変わらない。"""
+        import importlib
+        import sys
+
+        package = tmp_path / "nscached_pkg"
+        (package / "loose").mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "loose" / "payload.py").write_text("VALUE = 1\n", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        register_block_module("nscached_pkg.")
+        try:
+            importlib.import_module("nscached_pkg.loose")
+            assert "nscached_pkg.loose" in sys.modules
+            with pytest.raises(UnknownBlockTypeError, match="namespace package"):
+                resolve_block_class("nscached_pkg.loose.payload.Anything")
+            assert "nscached_pkg.loose.payload" not in sys.modules
+        finally:
+            for name in [m for m in sys.modules if m.split(".")[0] == "nscached_pkg"]:
+                del sys.modules[name]
+
+    @pytest.mark.parametrize(
+        "type_path",
+        ["flode..blocks.Gain", "flode.blocks.mathops.", "flode.blo cks.Gain", "flode.1x.Gain"],
+    )
+    def test_non_identifier_segments_are_rejected(self, type_path):
+        with pytest.raises(UnknownBlockTypeError, match="identifier"):
+            resolve_block_class(type_path)
+
 
 # ---------------------------------------------------------------
 # Round-trip: load(save(sim)) で等価
