@@ -32,6 +32,7 @@ from ..core.block import (
 )
 from ..core.identifiers import fold_block_id
 from ..core.persistence import LayoutDict, normalize_layout
+from ..core.provenance import attach_provenance
 from ..exceptions import (
     AlgebraicLoopError,
     BlockSpecError,
@@ -958,6 +959,9 @@ class Subsystem(Block):
                 )
             new_block.id = b.id
             new_block._unresolved_params = dict(unresolved)  # type: ignore[attr-defined]
+            # ADR-0080 §A3: 作り直したブロックにライブラリ由来を引き継ぐ (entry 直下の
+            # キーなので ``_unresolved_params`` には含まれない)
+            new_block._provenance = b._provenance
             new_block.input_sources = list(b.input_sources)
             assert b.id is not None  # _build 段階では id は確定済み
             self._inner_blocks_by_id[b.id] = new_block
@@ -1637,11 +1641,15 @@ class Subsystem(Block):
                     )
                 if ordered_layout:
                     params["layout"] = ordered_layout
-            return {
-                "id": self._id,
-                "type": block_type_path(self.__class__),
-                "params": params,
-            }
+            # ADR-0080 §A3-2: 自身のライブラリ由来は末尾キー (内側ブロックの由来は
+            # 各々の to_dict が出力済み)
+            return self._with_provenance(
+                {
+                    "id": self._id,
+                    "type": block_type_path(self.__class__),
+                    "params": params,
+                }
+            )
 
     @classmethod
     def _from_dict(
@@ -1739,6 +1747,8 @@ class Subsystem(Block):
                 # placeholder が含まれていた場合のみ ``_unresolved_params`` を保存
                 if active_mask_values is not None and resolved_params != raw_params:
                     instance._unresolved_params = raw_params
+                # ADR-0080 §A3-2: 内側 entry のライブラリ由来 (情報のみ)
+                attach_provenance(instance, b, parent_id=id)
                 sub.add(instance)
             else:
                 sub.add(b)

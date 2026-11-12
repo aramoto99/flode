@@ -11,6 +11,7 @@ SM-A (各ポート = 1 スカラー) は ``port_shapes = ()`` (rank-0) の特殊
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .identifiers import normalize_block_id, validate_block_id
+from .provenance import PROVENANCE_KEY
 
 # ADR-0017 §(3): SM-A 互換 (rank-0 scalar) を表す port shape
 _SCALAR_SHAPE: tuple[int, ...] = ()
@@ -234,6 +236,14 @@ class Block:
     #: 無視される。
     control_input_ports: tuple[int, ...] = ()
 
+    #: ADR-0080 §A3: ライブラリ由来 (``{"library", "library_uid"?, "entry", "revision", ...}``)。
+    #: ``None`` = 由来なし (既定)。モデル JSON からの復元時にだけ
+    #: ``flode.core.provenance.attach_provenance`` が検証済みの dict を載せる。
+    #: **情報のみ**: 永続化 (``to_dict``) 以外のコード (シミュレーション・承認 digest・
+    #: 信号面解決) はこの属性を読まない。class 属性で既定値を持つので、
+    #: ``Block.__init__`` を経ない生成経路でも ``to_dict`` が安全に参照できる。
+    _provenance: dict[str, Any] | None = None
+
     def __init__(
         self,
         *,
@@ -361,6 +371,22 @@ class Block:
         ``DeprecationWarning`` を発する判断を予定 (ADR-0004)。
         """
         return self._id
+
+    @property
+    def provenance(self) -> dict[str, Any] | None:
+        """ライブラリ由来の記録 (read-only、ADR-0080 §A3)。由来が無ければ ``None``。
+
+        モデル JSON のブロック entry にある ``provenance`` (どのライブラリのどのエントリの
+        第何版から置かれたか) を、ロード時に浅く検証したもの。``to_dict`` / ``save`` で
+        そのまま書き戻される。
+
+        **情報のみで、意味論に影響しない**: シミュレーション結果・``PythonFunction`` の
+        承認 digest・信号面 (shape / dtype) 解決はこの値に依存しない。
+
+        Returns:
+            由来 dict の独立したコピー (変更してもブロックには反映されない)。
+        """
+        return copy.deepcopy(self._provenance)
 
     def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """SM-A scalar-port API でブロック出力 ``y(t, x, u)`` を計算する。
@@ -561,7 +587,8 @@ class Block:
         ``ADR-0003 §(5)`` で既に ``_params`` を保持する。
 
         Returns:
-            ``{"id": ..., "type": "module.ClassName", "params": {...}}``。
+            ``{"id": ..., "type": "module.ClassName", "params": {...}}``。ライブラリ由来を
+            持つブロックだけ、末尾に ``"provenance"`` が付く (ADR-0080 §A3)。
 
         Raises:
             ModelSerializationError: class が ``__main__`` モジュールで定義されている
@@ -594,4 +621,21 @@ class Block:
                 out["port_shapes_in"] = [list(s) for s in self.port_shapes_in]
             if any(s != scalar_shape for s in self.port_shapes_out):
                 out["port_shapes_out"] = [list(s) for s in self.port_shapes_out]
+        return self._with_provenance(out)
+
+    def _with_provenance(self, out: dict[str, Any]) -> dict[str, Any]:
+        """``to_dict`` の出力 ``out`` の **末尾** に由来を足して返す (ADR-0080 §A3-2)。
+
+        由来を持たないブロックでは ``out`` をそのまま返す (= 出力は 1 バイトも変わらない)。
+        ``to_dict`` を ``super()`` 経由でなく独自に組むサブクラス (``Subsystem``) も、
+        最後にこれを通すこと。
+
+        Args:
+            out: 由来以外のキーを組み終えた entry dict (in-place で変更する)。
+
+        Returns:
+            ``out`` 自身。
+        """
+        if self._provenance is not None:
+            out[PROVENANCE_KEY] = copy.deepcopy(self._provenance)
         return out

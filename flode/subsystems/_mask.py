@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..core.provenance import PROVENANCE_KEY
 from ..exceptions import BlockSpecError
 
 _IDENTIFIER_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
@@ -33,6 +34,17 @@ def extract_placeholder_name(value: str) -> str | None:
     """``"$Kp"`` から ``"Kp"`` を取り出す。マッチしないとき ``None``。"""
     m = _PLACEHOLDER_RE.match(value)
     return m.group(1) if m else None
+
+
+def _is_entry_provenance(container: dict[Any, Any], key: Any) -> bool:
+    """``container[key]`` が入れ子ブロック entry のライブラリ由来なら True (ADR-0080 §A3)。
+
+    マスク付き Subsystem の内側に入れ子 Subsystem があると、その ``params["blocks"]`` の
+    entry (``{"id", "type", "params", "provenance"?}``) も placeholder 走査を通る。由来は
+    パラメータではなく情報なので、文字列が ``"$name"`` の形をしていても置換せず、
+    参照としても数えない (壊れた由来でロードを失敗させない)。
+    """
+    return key == PROVENANCE_KEY and "type" in container and "params" in container
 
 
 def substitute_placeholders(params: dict[str, Any], mask_values: dict[str, Any]) -> dict[str, Any]:
@@ -68,7 +80,10 @@ def _substitute_value(value: Any, mask_values: dict[str, Any]) -> Any:
             )
         return mask_values[name]
     if isinstance(value, dict):
-        return {k: _substitute_value(v, mask_values) for k, v in value.items()}
+        return {
+            k: v if _is_entry_provenance(value, k) else _substitute_value(v, mask_values)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_substitute_value(v, mask_values) for v in value]
     if isinstance(value, tuple):
@@ -93,8 +108,9 @@ def _collect(value: Any, names: set[str]) -> None:
         if n is not None:
             names.add(n)
     elif isinstance(value, dict):
-        for v in value.values():
-            _collect(v, names)
+        for k, v in value.items():
+            if not _is_entry_provenance(value, k):
+                _collect(v, names)
     elif isinstance(value, list | tuple):
         for v in value:
             _collect(v, names)

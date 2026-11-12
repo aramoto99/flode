@@ -43,6 +43,7 @@ from .persistence import (
     serialize_connections,
     serialize_t_end,
 )
+from .provenance import attach_provenance
 from .signals import cast_value
 
 if TYPE_CHECKING:  # pragma: no cover - 循環 import 回避
@@ -1870,6 +1871,9 @@ class Simulator:
                     f"Cannot instantiate block {str(b_data['id'])[:80]!r} "
                     f"of type {str(b_data['type'])[:120]!r}: {e}"
                 ) from e
+            # ADR-0080 §A3-2: ライブラリ由来 (情報のみ)。壊れていても捨てるだけで
+            # ロードは続ける
+            attach_provenance(block, b_data)
             sim.add(block)
 
         for c_data in data["connections"]:
