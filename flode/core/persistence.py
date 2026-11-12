@@ -10,9 +10,11 @@ Phase 2 では ``schema_version = "0.1"`` のみサポート。Subsystem 導入�
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import logging
 import math
 import numbers
+import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -192,6 +194,87 @@ def block_type_path(cls: type) -> str:
     return f"{module}.{cls.__name__}"
 
 
+def _require_regular_package_path(module_name: str, type_path: str) -> None:
+    """``module_name`` までの各階層が通常のモジュール / パッケージであることを確かめる。
+
+    allowlist は prefix の前方一致なので、それだけでは許可されたパッケージの
+    ディレクトリに紛れた Python ファイルまで import 対象になる。``__init__.py`` を
+    持たないディレクトリ (PEP 420 の namespace package) はパッケージ作者が公開した
+    モジュール階層ではないので、そこから先は import しない。上の階層から順に確かめ、
+    namespace package に当たった時点で止める (配下のコードは一切実行されない)。
+
+    検査の範囲と限界:
+
+    * ``register_block_module`` で利用者が明示的に登録した prefix **そのものを構成する
+      階層** は検査しない (``"acme.plugins."`` を登録したなら ``acme`` と ``acme.plugins``
+      は PEP 420 の namespace 配布でもよい)。検査するのは prefix より下の階層だけ。
+      既定の prefix ``flode.`` は全階層を検査する。
+    * 既に import 済みのモジュール (``sys.modules`` にある) は、その実体から判定する。
+      ``__spec__`` が ``None`` のモジュール (スクリプトの ``__main__``、notebook、
+      ``types.ModuleType`` で動的に作ったもの) は namespace package ではないので許可する。
+    * この検査が塞ぐのは **namespace ディレクトリ配下だけ**。通常のパッケージの中に
+      あるモジュールは、型名に指定されれば (ブロックと無関係でも) import される。
+
+    Raises:
+        UnknownBlockTypeError: いずれかのセグメントが識別子でない、途中の階層が
+            見つからない、または (検査対象の階層が) namespace package である。
+    """
+    segments = module_name.split(".")
+    if not all(segment.isidentifier() for segment in type_path.split(".")):
+        raise UnknownBlockTypeError(
+            f"Block type {type_path!r} is not a dotted path of Python identifiers"
+        )
+    for depth in range(_exempt_prefix_depth(module_name) + 1, len(segments) + 1):
+        name = ".".join(segments[:depth])
+        if name in sys.modules:
+            # find_spec は __spec__ が None の import 済みモジュールで ValueError を出すので
+            # 呼ばず、実体から判定する
+            module = sys.modules[name]
+            spec = getattr(module, "__spec__", None)
+            is_namespace = (
+                spec is not None
+                and spec.origin is None
+                and getattr(module, "__file__", None) is None
+            )
+        else:
+            try:
+                spec = importlib.util.find_spec(name)
+            except (ImportError, ValueError) as e:
+                raise UnknownBlockTypeError(
+                    f"Cannot import module {module_name!r} for block type {type_path!r}: {e}"
+                ) from e
+            if spec is None:
+                raise UnknownBlockTypeError(
+                    f"Cannot import module {module_name!r} for block type {type_path!r}: "
+                    f"No module named {name!r}"
+                )
+            is_namespace = spec.origin is None
+        if is_namespace:
+            raise UnknownBlockTypeError(
+                f"Block type {type_path!r} is not allowed: {name!r} is a namespace package "
+                f"(a directory without __init__.py), not a regular module"
+            )
+
+
+def _exempt_prefix_depth(module_name: str) -> int:
+    """namespace 検査を免除する先頭の階層数を返す。
+
+    既定の prefix に一致するモジュールは 0 (全階層を検査する)。それ以外は、一致する
+    登録済み prefix のうち最も深いものが完全に含む階層数 (``"acme.plugins."`` なら 2)。
+    """
+    dotted = module_name + "."
+    if any(dotted.startswith(p) or module_name.startswith(p) for p in _DEFAULT_ALLOWED_PREFIXES):
+        return 0
+    return max(
+        (
+            p.count(".")
+            for p in _extra_allowed_prefixes
+            if dotted.startswith(p) or module_name.startswith(p)
+        ),
+        default=0,
+    )
+
+
 def resolve_block_class(type_path: str) -> type:
     """完全修飾名 ``"flode.blocks.Gain"`` から ``Block`` サブクラスを解決する。
 
@@ -218,6 +301,7 @@ def resolve_block_class(type_path: str) -> type:
                 f"Use `flode.core.persistence.register_block_module(prefix)` to "
                 f"add a third-party prefix."
             )
+    _require_regular_package_path(module_name, type_path)
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
