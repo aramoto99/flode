@@ -112,11 +112,19 @@ def _save(sim: Simulator, path: Path) -> dict[str, Any]:
 
 
 def _assert_stable_round_trip(model: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
-    """load → save → load → save が byte 一致し、Subsystem entry が入力と同じであること。"""
+    """load → save → load → save が安定し、Subsystem entry が入力と同じであること。
+
+    2 回の保存結果はキー順まで含めて一致すること (``json.dumps`` の文字列で比較)。
+    ``metadata.created_at`` は保存時刻 (秒精度) で、2 回の save が秒の境目をまたぐと
+    食い違うため比較から外す。
+    """
     sim = Simulator.from_dict(copy.deepcopy(model))
     first = _save(sim, tmp_path / "a.flw.json")
-    Simulator.load(tmp_path / "a.flw.json").save(tmp_path / "b.flw.json")
-    assert (tmp_path / "a.flw.json").read_bytes() == (tmp_path / "b.flw.json").read_bytes()
+    second = _save(Simulator.load(tmp_path / "a.flw.json"), tmp_path / "b.flw.json")
+    without_metadata = [
+        {k: v for k, v in saved.items() if k != "metadata"} for saved in (first, second)
+    ]
+    assert json.dumps(without_metadata[0]) == json.dumps(without_metadata[1])
     # index 1 = 検査対象の Subsystem (前後の Constant / Scope は既定 params が展開される)
     assert first["blocks"][1] == model["blocks"][1]
     return first

@@ -321,8 +321,11 @@ class TestBrokenProvenanceDoesNotBlockLoad:
         assert sim.get_block("g").provenance is None
         saved = _saved(sim, tmp_path / "broken.flw.json")
         assert PROVENANCE_KEY not in _entry(saved, "g")
-        # 由来の無いモデルと同じ出力
+        # 由来の無いモデルと同じ出力。metadata.created_at は保存時刻 (秒精度) なので、
+        # 2 回の save が秒の境目をまたぐと食い違う。比較から外す
         clean = _saved(Simulator.from_dict(_model()), tmp_path / "clean.flw.json")
+        saved.pop("metadata", None)
+        clean.pop("metadata", None)
         assert saved == clean
         sim.run()
         np.testing.assert_allclose(sim.get_block("sc").values[:, 0], 6.0)
