@@ -66,6 +66,15 @@ DELAY_CODE = textwrap.dedent(
 )
 
 
+VECTOR_CODE = textwrap.dedent(
+    """\
+    @block(port_shapes_in=((3,),), port_shapes_out=((3,),))
+    def vec_gain(t: float, u: float) -> float:
+        return 2.0 * u
+    """
+)
+
+
 def _marker_code(marker: Path) -> str:
     """module レベルで副作用 (ファイル追記) を起こすソース。"""
     return textwrap.dedent(
@@ -258,6 +267,26 @@ class TestPersistence:
         types = {b["type"] for b in data["blocks"]}
         assert "flode.blocks.pythonfunc.PythonFunction" in types
         assert all(t.startswith("flode.") for t in types)
+
+    def test_non_scalar_port_shapes_round_trip(self, tmp_path):
+        """非スカラー port shape を宣言したコードでも save → load できる。
+
+        shape の SSOT は ``code`` (静的解析で再導出) なので、ブロック entry に
+        ``port_shapes_*`` を出力しない。出力すると ``__init__`` が受け取れず
+        ``ModelLoadError`` になっていた回帰。
+        """
+        sim = Simulator(t_end=0.1, dt=0.01)
+        sim.add(PythonFunction(code=VECTOR_CODE, id="pf"))
+
+        path = tmp_path / "m.flw.json"
+        sim.save(path)
+        entry = json.loads(path.read_text(encoding="utf-8"))["blocks"][0]
+        assert "port_shapes_in" not in entry
+        assert "port_shapes_out" not in entry
+
+        pf = Simulator.load(path).get_block("pf")
+        assert pf.port_shapes_in == ((3,),)
+        assert pf.port_shapes_out == ((3,),)
 
 
 # ---------------------------------------------------------------------------

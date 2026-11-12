@@ -370,6 +370,10 @@ class PythonFunction(Block):
     # ADR-0079 §(3): SM-A の output と SM-T の output_v を内包インスタンスへ委譲する
     _skip_dual_api_check = True
 
+    # port shape の SSOT は ``code`` (静的解析で ``__init__`` 時に再導出される)。
+    # entry に ``port_shapes_*`` を出力すると ``__init__`` が受け取れず load に失敗する。
+    _serialize_port_shapes = False
+
     def __init__(
         self,
         code: str = DEFAULT_CODE,
