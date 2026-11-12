@@ -1602,7 +1602,7 @@ class Subsystem(Block):
         抑止 build 直後は ``x0`` / ``n_states`` 等の派生値が静的既定に落ちるが、
         次の実行時 build で復元される (run の数値は不変)。
         """
-        from ..core.persistence import block_type_path
+        from ..core.persistence import block_type_path, to_json_dict
 
         # 区間はメソッド全体: _build だけでなく子の to_dict 再帰も含めて
         # 「serialize パスで exec しない」を構造的に保証する (security-reviewer
@@ -1612,6 +1612,20 @@ class Subsystem(Block):
             # AlgebraicLoopError) を save 時にも走らせる。不完全な Subsystem は
             # 素直に保存できないので例外がそのまま伝播する設計。
             self._build()
+            # ADR-0021 §(6): 外側のマスク Subsystem の placeholder を含む入れ子 Subsystem は
+            # ``_unresolved_params`` (placeholder を残した元の params) を持つ。
+            # ``Block.to_dict`` と同じくこちらを優先する。解決済みの内部ブロックから
+            # 組み立てると ``"$Kp"`` が具象値に展開され、外側マスクとの連動が切れる。
+            # 制約: この経路は load 時の形をそのまま出すので、load 後に Python API で
+            # この入れ子の内部構造を変えても保存されない (マスク値変更時の再構築
+            # ``_resolve_mask_placeholders`` も同じく ``_unresolved_params`` から作り直す)。
+            unresolved = getattr(self, "_unresolved_params", None)
+            if unresolved is not None:
+                return {
+                    "id": self._id,
+                    "type": block_type_path(self.__class__),
+                    "params": to_json_dict(unresolved),
+                }
             params: dict[str, Any] = {}
             # ADR-0021 §(7): mask_params / mask_values を canonical 順序で出力
             if self.mask_params:

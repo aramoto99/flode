@@ -305,6 +305,92 @@ class TestMaskJsonRoundTrip:
         assert gain_entry["params"]["k"] == "$Kp"
         assert data2["blocks"][0]["params"]["mask_values"] == {"Kp": 4.0}
 
+    def test_nested_subsystem_placeholder_survives_save(self, tmp_path: Path) -> None:
+        """マスク付き Subsystem の内側にある入れ子 Subsystem でも placeholder が保存で残る。
+
+        入れ子 Subsystem の中の ``"$Kp"`` が save で具象値に展開され、外側マスクとの
+        連動が切れていた回帰。
+        """
+        nested = {
+            "id": "mid",
+            "type": "flode.subsystems.subsystem.Subsystem",
+            "params": {
+                "blocks": [
+                    {
+                        "id": "i",
+                        "type": "flode.subsystems.ports.Inport",
+                        "params": {"port_idx": 0},
+                    },
+                    {"id": "g", "type": "flode.blocks.mathops.Gain", "params": {"k": "$Kp"}},
+                    {
+                        "id": "o",
+                        "type": "flode.subsystems.ports.Outport",
+                        "params": {"port_idx": 0},
+                    },
+                ],
+                "connections": [
+                    {"src": "i", "dst": "g", "src_idx": 0, "dst_idx": 0},
+                    {"src": "g", "dst": "o", "src_idx": 0, "dst_idx": 0},
+                ],
+            },
+        }
+        outer = {
+            "id": "outer",
+            "type": "flode.subsystems.subsystem.Subsystem",
+            "params": {
+                "mask_params": [{"name": "Kp", "type": "float", "default": 2.0, "description": ""}],
+                "mask_values": {"Kp": 3.0},
+                "blocks": [
+                    {
+                        "id": "in",
+                        "type": "flode.subsystems.ports.Inport",
+                        "params": {"port_idx": 0},
+                    },
+                    nested,
+                    {
+                        "id": "out",
+                        "type": "flode.subsystems.ports.Outport",
+                        "params": {"port_idx": 0},
+                    },
+                ],
+                "connections": [
+                    {"src": "in", "dst": "mid", "src_idx": 0, "dst_idx": 0},
+                    {"src": "mid", "dst": "out", "src_idx": 0, "dst_idx": 0},
+                ],
+            },
+        }
+        path = tmp_path / "nested.flw.json"
+        path.write_text(json.dumps(self._full_model_dict(outer)), encoding="utf-8")
+
+        sim = Simulator.load(path)
+        out = tmp_path / "rt.flw.json"
+        sim.save(out)
+
+        saved_outer = json.loads(out.read_text(encoding="utf-8"))["blocks"][0]
+        saved_mid = next(b for b in saved_outer["params"]["blocks"] if b["id"] == "mid")
+        saved_gain = next(b for b in saved_mid["params"]["blocks"] if b["id"] == "g")
+        assert saved_gain["params"]["k"] == "$Kp"
+
+        # 再 load 後もマスク値の変更が入れ子の内側まで届く
+        reloaded = Simulator.load(out).get_block("outer")
+        reloaded.set_mask_value("Kp", 5.0)
+        reloaded._build()
+        assert reloaded.get_block("mid").get_block("g").k == 5.0
+
+        # マスク値変更で入れ子が作り直された後の save でも placeholder が残る
+        resaved = tmp_path / "rt2.flw.json"
+        sim2 = Simulator.load(out)
+        outer_block = sim2.get_block("outer")
+        outer_block.set_mask_value("Kp", 7.0)
+        outer_block._build()
+        sim2.save(resaved)
+
+        resaved_outer = json.loads(resaved.read_text(encoding="utf-8"))["blocks"][0]
+        assert resaved_outer["params"]["mask_values"] == {"Kp": 7.0}
+        resaved_mid = next(b for b in resaved_outer["params"]["blocks"] if b["id"] == "mid")
+        resaved_gain = next(b for b in resaved_mid["params"]["blocks"] if b["id"] == "g")
+        assert resaved_gain["params"]["k"] == "$Kp"
+
     def test_mask_subsystem_simulation(self, tmp_path: Path) -> None:
         """mask 値が反映されてシミュレーション動作する end-to-end。"""
         sub_spec = _build_mask_pi_subsystem_dict(mask_values={"Kp": 3.0})
