@@ -255,6 +255,25 @@ class LibraryFileError(FlodeError):
     """
 
 
+class LibraryWriteError(LibraryFileError):
+    """``.flwlib.json`` の書き込み失敗 (ADR-0080 §A6)。
+
+    権限不足・ディスク不足・書き込み先ディレクトリ不在など、OS レベルの失敗を表す。
+    ``LibraryFileError`` を継承するのは、書き込み API (``export_subsystem_to_library``)
+    の既存契約 「書き込み失敗は ``LibraryFileError``」 を保つため。
+    """
+
+
+class LibraryWriteBusyError(LibraryWriteError):
+    """他プロセスがファイルを開いていて、再試行しても置換できなかった (ADR-0080 §A6-1)。
+
+    Windows ではウイルス対策・インデクサ・エディタがファイルを開いていると
+    ``os.replace`` が ``PermissionError`` になる。規定回数の再試行後も失敗した
+    場合に送出する。時間を置けば成功しうる一時的な失敗であり、既存ファイルは
+    変更されていない。
+    """
+
+
 class LibraryEntryNotFoundError(FlodeError, KeyError):
     """REST `GET /api/v1/libraries/{lib}/{entry}` で未登録の id が指定された (ADR-0029)。
 

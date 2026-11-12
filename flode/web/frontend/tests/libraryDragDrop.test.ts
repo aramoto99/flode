@@ -20,7 +20,13 @@ const PID_DETAIL: LibraryEntryDetail = {
   description: "PID controller",
   description_i18n: {},
   category_suffix: "controllers",
-  subsystem: {
+  kind: "subsystem",
+  revision: 1,
+  updated_at: null,
+  contains_python: false,
+  python_block_paths: [],
+  library_uid: null,
+  block: {
     id: null,
     type: "flode.subsystems.subsystem.Subsystem",
     params: {
@@ -69,15 +75,18 @@ describe("getLibraryEntry mock contract", () => {
     vi.restoreAllMocks();
   });
 
-  it("calls /api/v1/libraries/{lib}/{entry} and returns subsystem body", async () => {
+  it("calls /api/v1/libraries/{lib}/{entry} and returns the block body", async () => {
     const detail = await apiClient.getLibraryEntry("std", "pid_controller");
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
     const url = fetchMock.mock.calls[0]?.[0];
     expect(String(url)).toBe("/api/v1/libraries/std/pid_controller");
-    expect(detail.subsystem.type).toBe("flode.subsystems.subsystem.Subsystem");
-    expect(detail.subsystem.params.n_inputs).toBe(1);
-    expect(detail.subsystem.params.n_outputs).toBe(1);
+    expect(detail.block.type).toBe("flode.subsystems.subsystem.Subsystem");
+    expect(detail.block.params.n_inputs).toBe(1);
+    expect(detail.block.params.n_outputs).toBe(1);
+    // ADR-0080 §A5: 由来に使う revision / library_uid は本体と同じレスポンスに載る
+    expect(detail.revision).toBe(1);
+    expect(detail.library_uid).toBeNull();
   });
 
   it("encodes URL components (handles e.g. spaces / unicode in names)", async () => {
@@ -90,13 +99,13 @@ describe("getLibraryEntry mock contract", () => {
   });
 });
 
-describe("Inline placement: subsystem body becomes BlockEntry params", () => {
+describe("Inline placement: block body becomes BlockEntry params", () => {
   it("preserves placeholder strings (mask params) byte-identical", () => {
     // ADR-0029 §PLACE-A の核となる不変条件: ``getLibraryEntry`` で返ってきた
-    // subsystem.params をそのまま BlockEntry.params にコピーする経路で、
+    // block.params をそのまま BlockEntry.params にコピーする経路で、
     // mask_params / mask_values / blocks / connections が損なわれない。
     const blockEntryParams: Record<string, unknown> = {
-      ...PID_DETAIL.subsystem.params,
+      ...PID_DETAIL.block.params,
     };
     expect(blockEntryParams.mask_params).toEqual([
       { name: "Kp", type: "float", default: 1.0, description: "" },

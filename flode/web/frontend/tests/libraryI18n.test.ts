@@ -20,10 +20,16 @@ const PID_ENTRY: LibraryEntryMetadata = {
     ja: "PID コントローラ (Kp / Ki / Kd)。",
   },
   category_suffix: "controllers",
+  kind: "subsystem",
+  revision: 1,
+  updated_at: null,
+  contains_python: false,
+  python_block_paths: [],
 };
 
 const STD_LIBRARY: LibraryMetadata = {
   name: "std",
+  uid: null,
   display_name: "Standard Library",
   display_name_i18n: { en: "Standard Library", ja: "標準ライブラリ" },
   description: "Built-in.",

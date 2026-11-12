@@ -239,7 +239,10 @@ export interface BlockRegistryResponse {
 // `.flwlib.json` で配布される マスク Subsystem 集合の REST 表現。
 // `/api/v1/libraries` 系から取得する (= /api/v1/blocks とは責務分離)。
 
-/** Library 内 1 entry の metadata (subsystem body は別 endpoint で取得)。 */
+/** ライブラリ entry の種別。本体の ``type`` からサーバが導出する (ADR-0080 §A2)。 */
+export type LibraryEntryKind = "subsystem" | "python_function";
+
+/** Library 内 1 entry の metadata (本体 ``block`` は別 endpoint で取得)。 */
 export interface LibraryEntryMetadata {
   id: string;
   display_name: string;
@@ -249,10 +252,22 @@ export interface LibraryEntryMetadata {
   /** ADR-0029 §CAT-A: ``library.<lib_name>.<suffix>`` の suffix 部分。
    *  空文字なら ``library.<lib_name>`` 直下に出る。 */
   category_suffix: string;
+  /** エントリ種別 (導出値、ファイルには保存されない)。 */
+  kind: LibraryEntryKind;
+  /** エントリ内容の世代 (整数 >= 1、ADR-0080 §A1-2)。 */
+  revision: number;
+  /** 最終更新時刻 (UTC 秒精度 "Z" 表記)。不明なら ``null``。 */
+  updated_at: string | null;
+  /** 本体 (入れ子を含む) に PythonFunction があるか (導出値)。 */
+  contains_python: boolean;
+  /** PythonFunction の部分木内パス (``/`` 区切りの block id 列、本体自身なら空文字)。 */
+  python_block_paths: string[];
 }
 
 export interface LibraryMetadata {
   name: string;
+  /** ライブラリの同一性を表す識別子 (ADR-0080 §A3-3)。持たなければ ``null``。 */
+  uid: string | null;
   display_name: string;
   display_name_i18n: Partial<Record<Locale, string>>;
   description: string;
@@ -269,17 +284,20 @@ export interface LibraryLoadError {
 export interface LibraryRegistryResponse {
   libraries: LibraryMetadata[];
   load_errors: LibraryLoadError[];
-  /** ``"libraries.v1"`` (Phase 4 v0.11.1)。 */
+  /** ライブラリ schema 版 (``"libraries.v4"``、ADR-0080)。 */
   schema_version: string;
   supported_locales: Locale[];
 }
 
-/** ``GET /api/v1/libraries/{lib}/{entry}`` の response。subsystem body 同梱。 */
+/** ``GET /api/v1/libraries/{lib}/{entry}`` の response。本体 ``block`` 同梱。 */
 export interface LibraryEntryDetail extends LibraryEntryMetadata {
-  /** ``Subsystem.to_dict()`` の出力 (= ``{id, type, params}``、ADR-0029 §PLACE-A)。
+  /** 所属ライブラリの ``uid`` (持たなければ ``null``)。本体と同じレスポンスに載る
+   *  ので、一覧キャッシュが古くても本体と食い違わない (ADR-0080 §A5)。 */
+  library_uid: string | null;
+  /** ``Block.to_dict()`` の出力 (= ``{id, type, params}``、ADR-0029 §PLACE-A)。
    *  Inline 展開時に ``params`` 配下を ``BlockEntry`` の ``params`` フィールドへ
    *  そのままコピーする (= byte-identical 維持)。 */
-  subsystem: {
+  block: {
     id: string | null;
     type: string;
     params: Record<string, unknown>;

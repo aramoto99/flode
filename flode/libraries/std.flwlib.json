@@ -1,7 +1,8 @@
 {
-  "schema_version": "libraries.v3",
+  "schema_version": "libraries.v4",
   "name": "std",
   "display_name": "Standard Library",
+  "model_schema_version": "0.15",
   "description": "Built-in mask Subsystem templates shipped with flode.",
   "version": "0.13.0",
   "display_name_i18n": {
@@ -26,7 +27,8 @@
         "en": "PID controller (Kp, Ki, Kd) with single error input.",
         "ja": "PID コントローラ (Kp / Ki / Kd、誤差 1 入力)。"
       },
-      "subsystem": {
+      "revision": 1,
+      "block": {
         "id": null,
         "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
@@ -186,7 +188,8 @@
         "en": "G(s) = K / (tau*s + 1).",
         "ja": "G(s) = K / (tau*s + 1)。"
       },
-      "subsystem": {
+      "revision": 1,
+      "block": {
         "id": null,
         "type": "flode.subsystems.subsystem.Subsystem",
         "params": {
@@ -267,7 +270,8 @@
         "en": "G(s) = K / (a*s^2 + b*s + 1).",
         "ja": "G(s) = K / (a*s^2 + b*s + 1)。"
       },
-      "subsystem": {
+      "revision": 1,
+      "block": {
         "id": null,
         "type": "flode.subsystems.subsystem.Subsystem",
         "params": {

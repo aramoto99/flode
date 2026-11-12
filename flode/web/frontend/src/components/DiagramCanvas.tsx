@@ -706,7 +706,7 @@ export function DiagramCanvas({
         x: event.clientX,
         y: event.clientY,
       });
-      // 非同期 fetch → 解決後に inline 展開 (= drop 瞬間に subsystem 定義をモデル
+      // 非同期 fetch → 解決後に inline 展開 (= drop 瞬間に本体の定義をモデル
       // にコピー、ADR-0029 §PLACE-A)。fetch 中は何も配置しない (= drag 操作と認識的
       // 親和)。失敗時は toast。
       // SHOULD: 非同期完了時にユーザーが別ファイルへ切り替えていたら drop は無視する
@@ -729,11 +729,12 @@ export function DiagramCanvas({
           } catch {
             return;
           }
-          const subType = detail.subsystem.type;
-          const newId = generateUniqueId(subType, existingIds);
-          // params は ``Subsystem.to_dict()`` の出力をそのまま使う (= byte-identical)。
+          // ADR-0080 §A1-1: 本体は種別非依存の ``block`` (= ``Block.to_dict()`` 出力)。
+          const blockType = detail.block.type;
+          const newId = generateUniqueId(blockType, existingIds);
+          // params は ``Block.to_dict()`` の出力をそのまま使う (= byte-identical)。
           addBlockToEditing(
-            { id: newId, type: subType, params: detail.subsystem.params },
+            { id: newId, type: blockType, params: detail.block.params },
             position,
           );
           useAppStore.getState().selectNode(newId);

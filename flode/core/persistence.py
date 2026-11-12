@@ -5,6 +5,23 @@
 
 Phase 2 では ``schema_version = "0.1"`` のみサポート。Subsystem 導入時 (ADR-0009)
 に ``"0.2"`` を追加し、``_MIGRATIONS`` registry に変換関数を登録する。
+
+.. note::
+
+   **ライブラリのボディも同じ migration を通る** (ADR-0080 §A1-4)。``.flwlib.json`` の
+   各エントリ本体は、``model_schema_version`` が古いとき
+   ``{"schema_version": v, "blocks": [body], "connections": []}`` に包まれて
+   ``migrate_to_current`` に渡される (``flode.libraries._loader``)。migration を書く
+   ときは次を前提にすること:
+
+   * top-level に ``simulator`` / ``metadata`` / ``layout`` 等が**無い** dict でも
+     例外を出さない (``data.get(...)`` で読む)
+   * ボディは ``blocks`` の唯一の要素として渡され、migration 後も ``blocks`` が
+     ちょうど 1 要素であることをライブラリ側が要求する (エントリ本体になれるのは
+     Subsystem / PythonFunction だけなので、top-level の ``blocks`` にブロックを
+     挿入・削除する変換はそれらを対象にしないこと)
+   * top-level 限定の変換はボディ自身には効かない (ボディはモデル内で常に
+     トップレベルより下に置かれるので、意味論と一致する)。入れ子への再帰は効く
 """
 
 from __future__ import annotations

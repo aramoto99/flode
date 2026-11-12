@@ -18,7 +18,7 @@ def _write_minimal_library(path: Path, name: str) -> None:
             {
                 "id": "ent",
                 "display_name": "Entry",
-                "subsystem": {
+                "block": {
                     "id": None,
                     "type": "flode.subsystems.subsystem.Subsystem",
                     "params": {
@@ -104,3 +104,33 @@ def test_duplicate_library_name_first_wins(tmp_path: Path) -> None:
     assert list(reg.libraries.keys()) == ["same_name"]
     assert len(reg.load_errors) == 1
     assert "duplicate library name" in reg.load_errors[0].message
+
+
+def test_registry_loads_legacy_v3_file(tmp_path: Path) -> None:
+    """v3 形式 (本体が ``subsystem``) のファイルも registry に読み込める (ADR-0080 §A1-3)。"""
+    f = tmp_path / "old.flwlib.json"
+    _write_minimal_library(f, "old")
+    data = json.loads(f.read_text(encoding="utf-8"))
+    data["schema_version"] = "libraries.v3"
+    data["entries"][0]["subsystem"] = data["entries"][0].pop("block")
+    f.write_text(json.dumps(data), encoding="utf-8")
+    reg = build_library_registry([f], bundle_builtin=False)
+    assert reg.load_errors == []
+    entry = reg.libraries["old"].entries[0]
+    assert entry.kind == "subsystem"
+    assert entry.revision == 1
+
+
+def test_registry_records_disallowed_entry_type_as_load_error(tmp_path: Path) -> None:
+    """許可外の型を本体に持つファイルは丸ごと ``load_errors`` に落ち、他は読み込まれる。"""
+    good = tmp_path / "good.flwlib.json"
+    bad = tmp_path / "bad.flwlib.json"
+    _write_minimal_library(good, "good")
+    _write_minimal_library(bad, "bad")
+    data = json.loads(bad.read_text(encoding="utf-8"))
+    data["entries"][0]["block"]["type"] = "flode.blocks.mathops.Gain"
+    bad.write_text(json.dumps(data), encoding="utf-8")
+    reg = build_library_registry([good, bad], bundle_builtin=False)
+    assert list(reg.libraries) == ["good"]
+    assert len(reg.load_errors) == 1
+    assert "Subsystem or PythonFunction" in reg.load_errors[0].message

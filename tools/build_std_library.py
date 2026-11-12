@@ -2,9 +2,10 @@
 
 PID コントローラ・1 次遅れプラント・2 次プラントの 3 entry をハンドコーディングした
 Subsystem ``params`` dict から :meth:`Subsystem._from_dict` で組み立て直し、
-:meth:`Subsystem.to_dict` で再シリアライズしてから ``.flwlib.json`` ファイルに書き出す。
+:meth:`Subsystem.to_dict` で再シリアライズしてから ``.flwlib.json`` ファイルに書き出す
+(ライブラリ schema v4: 本体は ``entries[*].block``、ADR-0080)。
 
-これにより ``flode/libraries/std.flwlib.json`` の subsystem body は
+これにより ``flode/libraries/std.flwlib.json`` の本体は
 ``Subsystem.to_dict()`` の出力と byte-identical となり、frontend 側で Inline 配置
 した後に ``Simulator.load`` で再構築する経路が丸ごと round-trip 安全になる。
 
@@ -25,11 +26,19 @@ Subsystem ``params`` dict から :meth:`Subsystem._from_dict` で組み立て直
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from flode import Subsystem
+from flode.core.persistence import CURRENT_SCHEMA_VERSION
 from flode.libraries import CURRENT_LIBRARY_SCHEMA_VERSION
+
+_logger = logging.getLogger("flode.tools.build_std_library")
+
+#: 同梱エントリの revision。本体を変更して再生成するときも 1 のままにする
+#: (同梱ライブラリは GUI から上書きされず、世代管理の対象外)。
+STD_ENTRY_REVISION = 1
 
 
 def _build_subsystem(params: dict[str, Any]) -> dict[str, Any]:
@@ -256,18 +265,21 @@ def build_second_order_plant_params() -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    repo_root = Path(__file__).parent.parent
-    out_path = repo_root / "flode" / "libraries" / "std.flwlib.json"
+def build_library_dict() -> dict[str, Any]:
+    """``std.flwlib.json`` の内容 (ライブラリ schema v4) を dict で返す。
 
+    出力は決定的 (``updated_at`` / ``uid`` を持たない) なので、同梱ファイルとの
+    一致をテストで固定できる。
+    """
     pid_dict = _build_subsystem(build_pid_params())
     fop_dict = _build_subsystem(build_first_order_plant_params())
     sop_dict = _build_subsystem(build_second_order_plant_params())
 
-    library = {
+    return {
         "schema_version": CURRENT_LIBRARY_SCHEMA_VERSION,
         "name": "std",
         "display_name": "Standard Library",
+        "model_schema_version": CURRENT_SCHEMA_VERSION,
         "description": "Built-in mask Subsystem templates shipped with flode.",
         "version": "0.13.0",
         "display_name_i18n": {
@@ -292,7 +304,8 @@ def main() -> None:
                     "en": "PID controller (Kp, Ki, Kd) with single error input.",
                     "ja": "PID コントローラ (Kp / Ki / Kd、誤差 1 入力)。",
                 },
-                "subsystem": pid_dict,
+                "revision": STD_ENTRY_REVISION,
+                "block": pid_dict,
             },
             {
                 "id": "first_order_plant",
@@ -307,7 +320,8 @@ def main() -> None:
                     "en": "G(s) = K / (tau*s + 1).",
                     "ja": "G(s) = K / (tau*s + 1)。",
                 },
-                "subsystem": fop_dict,
+                "revision": STD_ENTRY_REVISION,
+                "block": fop_dict,
             },
             {
                 "id": "second_order_plant",
@@ -322,15 +336,23 @@ def main() -> None:
                     "en": "G(s) = K / (a*s^2 + b*s + 1).",
                     "ja": "G(s) = K / (a*s^2 + b*s + 1)。",
                 },
-                "subsystem": sop_dict,
+                "revision": STD_ENTRY_REVISION,
+                "block": sop_dict,
             },
         ],
     }
 
+
+def main() -> None:
+    """``flode/libraries/std.flwlib.json`` を再生成する。"""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    repo_root = Path(__file__).parent.parent
+    out_path = repo_root / "flode" / "libraries" / "std.flwlib.json"
     out_path.write_text(
-        json.dumps(library, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(build_library_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
-    print(f"Wrote {out_path}  ({out_path.stat().st_size} bytes)")
+    _logger.info("Wrote %s  (%d bytes)", out_path, out_path.stat().st_size)
 
 
 if __name__ == "__main__":
