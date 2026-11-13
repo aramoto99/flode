@@ -757,6 +757,9 @@ def _make_block_class(
         "derivative_v": derivative_v,
         "update_v": update_v,
         "_skip_dual_api_check": True,
+        # port shape はデコレータの宣言 (``_flode_structure``) が SSOT。entry に書き出すと
+        # 生成 ``__init__`` が受け取れず読み込みに失敗するため出力しない
+        "_serialize_port_shapes": False,
         "_flode_func": staticmethod(func),
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(
@@ -1354,6 +1357,9 @@ def _make_block_class_from_class(
         "derivative_v": derivative_v,
         "update_v": update_v,
         "_skip_dual_api_check": True,
+        # port shape はデコレータの宣言 (``_flode_structure``) が SSOT。entry に書き出すと
+        # 生成 ``__init__`` が受け取れず読み込みに失敗するため出力しない
+        "_serialize_port_shapes": False,
         "_flode_user_cls": user_cls,
         "_flode_params_spec": tuple(params_spec),
         "_flode_structure": BlockStructure(

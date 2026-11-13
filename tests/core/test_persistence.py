@@ -689,3 +689,114 @@ def test_duplicate_id_in_json_raises(tmp_path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BlockSpecError, match="already exists"):
         Simulator.load(path)
+
+
+# ---------------------------------------------------------------------------
+# モジュールに書いた ``@block`` ブロックの save → load (ADR-0081 U0)
+# ---------------------------------------------------------------------------
+
+_DECORATED_BLOCKS_SOURCE = """\
+from flode import block
+
+
+@block
+def scaled(t: float, u: float, *, k: float = 2.0) -> float:
+    return k * u
+
+
+@block(port_shapes_in=((3,),), port_shapes_out=((3,),))
+def vec_gain(t: float, u: float, *, k: float = 2.0) -> float:
+    return k * u
+
+
+@block
+class low_pass:
+    tau: float = 1.0
+
+    def output(self, t: float, u: float) -> float:
+        return u
+"""
+
+
+@pytest.fixture
+def decorated_blocks_module(tmp_path, monkeypatch):
+    """``@block`` で書いたブロックを持つ import 可能なモジュール (``decoblocks_probe.blocks``)。"""
+    import importlib
+    import sys
+
+    package = tmp_path / "decoblocks_probe"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "blocks.py").write_text(_DECORATED_BLOCKS_SOURCE, encoding="utf-8")
+    # 同名のクラスを 2 つ定義して別名で束縛したモジュール (どちらを指すか決められない)
+    (package / "ambiguous.py").write_text(
+        "from flode.blocks import Gain\n\n"
+        "class Twin(Gain):\n    pass\n\nfirst = Twin\n\n"
+        "class Twin(Gain):  # noqa: F811\n    pass\n\nsecond = Twin\ndel Twin\n",
+        encoding="utf-8",
+    )
+    # 別モジュールで定義されたブロックを import して持つだけのモジュール
+    (package / "reexport.py").write_text(
+        "from decoblocks_probe.blocks import scaled\n", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    register_block_module("decoblocks_probe.")
+    try:
+        yield importlib.import_module("decoblocks_probe.blocks")
+    finally:
+        for name in [m for m in sys.modules if m.split(".")[0] == "decoblocks_probe"]:
+            del sys.modules[name]
+
+
+class TestDecoratedBlockModuleRoundTrip:
+    """モジュールに書いた ``@block`` ブロックを使ったモデルを、保存して読み込める。
+
+    回帰: (A) 関数形式 (と PascalCase でない名前のクラス形式) は型名が生成クラス名に
+    なるのに、モジュール上には元の名前で束縛されるため、読み込みで型を解決できなかった。
+    (B) ``port_shapes_*`` を宣言したブロックは、保存した ``port_shapes_*`` を生成
+    クラスの ``__init__`` が受け取れず、読み込みに失敗していた。
+    """
+
+    @staticmethod
+    def _round_trip(block_obj, tmp_path):
+        sim = Simulator(t_end=0.1, dt=0.01)
+        sim.add(block_obj)
+        path = tmp_path / "model.flw.json"
+        sim.save(path)
+        return Simulator.load(path).get_block(block_obj.id), json.loads(
+            path.read_text(encoding="utf-8")
+        )["blocks"][0]
+
+    @pytest.mark.parametrize("attr", ["scaled", "low_pass"])
+    def test_block_bound_under_a_different_name_round_trips(
+        self, decorated_blocks_module, tmp_path, attr
+    ):
+        cls = getattr(decorated_blocks_module, attr)
+        loaded, _ = self._round_trip(cls(id="b"), tmp_path)
+        assert type(loaded) is cls
+
+    def test_block_with_declared_port_shapes_round_trips(self, decorated_blocks_module, tmp_path):
+        cls = decorated_blocks_module.vec_gain
+        loaded, entry = self._round_trip(cls(id="v", k=3.0), tmp_path)
+        assert type(loaded) is cls
+        assert loaded.port_shapes_in == ((3,),)
+        assert loaded.port_shapes_out == ((3,),)
+        assert loaded._params == {"k": 3.0}
+        # port shape はデコレータの宣言が SSOT なので、ブロック entry には書かない
+        assert "port_shapes_in" not in entry
+        assert "port_shapes_out" not in entry
+
+    def test_two_classes_with_the_same_name_are_rejected_as_ambiguous(
+        self, decorated_blocks_module
+    ):
+        with pytest.raises(UnknownBlockTypeError, match="more than one class named 'Twin'"):
+            resolve_block_class("decoblocks_probe.ambiguous.Twin")
+
+    def test_class_imported_from_another_module_is_not_picked_up(self, decorated_blocks_module):
+        """``reexport`` は ``blocks`` の ``Scaled`` を持つだけ。定義元でないモジュールの
+        型名としては解決しない (型名はクラスを定義したモジュールで決まる)。"""
+        with pytest.raises(UnknownBlockTypeError, match="has no attribute 'Scaled'"):
+            resolve_block_class("decoblocks_probe.reexport.Scaled")
+        assert (
+            resolve_block_class("decoblocks_probe.blocks.Scaled") is decorated_blocks_module.scaled
+        )

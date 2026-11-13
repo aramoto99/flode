@@ -275,6 +275,29 @@ def _exempt_prefix_depth(module_name: str) -> int:
     )
 
 
+def _find_class_defined_in(module: object, module_name: str, class_name: str) -> type | None:
+    """``module`` の属性から、``module_name`` で定義された ``__name__ == class_name`` のクラスを探す。
+
+    ``@block`` の生成クラスのように、クラス名とモジュール上の束縛名が異なる場合に使う。
+    該当が複数あるときは曖昧なので ``UnknownBlockTypeError``。
+
+    Returns:
+        見つかったクラス。無ければ ``None``。
+    """
+    found = {
+        id(obj): obj
+        for obj in vars(module).values()
+        if isinstance(obj, type)
+        and obj.__name__ == class_name
+        and getattr(obj, "__module__", None) == module_name
+    }
+    if len(found) > 1:
+        raise UnknownBlockTypeError(
+            f"Module {module_name!r} defines more than one class named {class_name!r}"
+        )
+    return next(iter(found.values()), None)
+
+
 def resolve_block_class(type_path: str) -> type:
     """完全修飾名 ``"flode.blocks.Gain"`` から ``Block`` サブクラスを解決する。
 
@@ -308,12 +331,14 @@ def resolve_block_class(type_path: str) -> type:
         raise UnknownBlockTypeError(
             f"Cannot import module {module_name!r} for block type {type_path!r}: {e}"
         ) from e
-    try:
-        cls = getattr(module, class_name)
-    except AttributeError as e:
-        raise UnknownBlockTypeError(
-            f"Module {module_name!r} has no attribute {class_name!r}"
-        ) from e
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        # ``@block`` の生成クラスは型名が生成クラス名 (``def scaled`` → ``Scaled``) なのに、
+        # モジュール上には元の名前 (``scaled``) で束縛される。そのモジュールで定義された
+        # 同名のクラスを探す
+        cls = _find_class_defined_in(module, module_name, class_name)
+    if cls is None:
+        raise UnknownBlockTypeError(f"Module {module_name!r} has no attribute {class_name!r}")
     if not isinstance(cls, type) or not issubclass(cls, _Block):
         raise UnknownBlockTypeError(f"{type_path!r} is not a Block subclass (got {cls!r})")
     return cls
