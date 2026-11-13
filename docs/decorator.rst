@@ -7,6 +7,11 @@ subclass without writing a class by hand. It infers port counts and
 
 .. note::
 
+   To make ``@block`` blocks appear in the GUI palette, see
+   :doc:`user_blocks`.
+
+.. note::
+
    ``@block`` also accepts a class that defines ``output`` (and
    ``derivative`` / ``update`` when it has states); the ``PythonFunction``
    GUI block accepts the function form only.
@@ -119,6 +124,52 @@ Design notes
 - The ``u`` argument is evaluated twice per time step in Phase 1 (once in
   ``output()``, once in ``derivative()``). For expensive functions, consider
   direct ``Block`` subclassing with manual caching.
+
+Blocks without outputs (``outputs=0`` / ``-> None``)
+----------------------------------------------------
+
+A block that only writes data somewhere (a file, a network connection) has no
+output port. Declare ``outputs=0`` or annotate the return type ``-> None``
+(for the class form, annotate the ``output`` method)::
+
+    @block(outputs=0, sample_time=0.1)
+    def log_value(t: float, u: float, *, path: str = "log.csv") -> None:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{t},{u}\n")
+
+- The function is called at most once per base time step (and, with a
+  discrete ``sample_time``, only at the block's own sample times), not at
+  every stage of the ODE solver.
+- ``states`` must be 0 and ``direct_feedthrough`` must not be ``False``;
+  write a stateful no-output block as a ``Block`` subclass with a
+  ``record(self, t, u)`` method.
+- ``outputs=0`` together with a non-``None`` return annotation is a
+  ``BlockSpecError``. A returned value is discarded with one warning.
+- It is not called inside a Subsystem, and the ``PythonFunction`` GUI block
+  still requires at least one output.
+
+Palette and Inspector metadata
+------------------------------
+
+Five optional arguments describe the block to the GUI palette and Inspector.
+All of them are stored on the generated class as public attributes
+(``block_category`` and so on) and are used when the block is loaded from a
+workspace (see :doc:`user_blocks`):
+
+- ``category="Filters"``: sub-heading in the palette section.
+- ``display_name`` / ``description``: a string, or a mapping per UI language,
+  ``{"ja": "...", "en": "..."}``.
+- ``choices={"mode": ("abs", "square")}``: parameters shown as a drop-down.
+  The key must be a parameter, the values distinct non-empty strings, and the
+  default must be one of them.
+- ``param_descriptions={"gain": "Multiplier"}``: parameter descriptions. They
+  override the ``Args:`` section of the docstring; the first docstring line is
+  the block description unless ``description`` is given.
+
+Invalid values raise ``BlockSpecError`` when the decorator runs. In the class
+form, fields named ``block_category``, ``block_display_name``,
+``block_description``, ``block_choices``, ``block_param_descriptions``,
+``block_input_names`` and ``block_output_names`` are reserved.
 
 Writing the same source in the GUI (Python Function block)
 ----------------------------------------------------------

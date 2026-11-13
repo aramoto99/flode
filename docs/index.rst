@@ -23,6 +23,7 @@ derived) on the same day. The experimental JAX / GPU path
    quickstart
    blocks
    decorator
+   user_blocks
    analysis
    api
 
