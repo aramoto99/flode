@@ -87,6 +87,82 @@ test.describe("Block context menu", () => {
     await expect(page.getByTestId("block-menu-add-to-library")).toBeVisible();
     await page.keyboard.press("Escape");
   });
+
+  // 回帰: 範囲選択でブロックを複数選ぶと、React Flow が選択範囲の上に透明な四角
+  // (.react-flow__nodesselection-rect) を重ねる。その上の右クリックはブロックに届かず、
+  // ブラウザのメニューが出て flode のメニューも開かなかった。配線とズームボタンの
+  // 右クリックでもブラウザのメニューが出ていた。
+  test("opens on a box-selected block and never shows the browser menu in the canvas", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.getByText(FIXTURE_FILENAME).click({ timeout: 15_000 });
+    const subsystemNode = page.locator('.react-flow__node[data-id="MyGain"]');
+    await expect(subsystemNode).toBeVisible();
+
+    // 全ハンドラの後に contextmenu の defaultPrevented を記録する (false = ブラウザの
+    // メニューが出る)
+    await page.evaluate(() => {
+      const w = window as unknown as { __contextMenuPrevented: boolean[] };
+      w.__contextMenuPrevented = [];
+      window.addEventListener("contextmenu", (e) => w.__contextMenuPrevented.push(e.defaultPrevented));
+    });
+    const takePrevented = (): Promise<boolean[]> =>
+      page.evaluate(() => {
+        const w = window as unknown as { __contextMenuPrevented: boolean[] };
+        const out = w.__contextMenuPrevented;
+        w.__contextMenuPrevented = [];
+        return out;
+      });
+
+    // 3 ブロックをドラッグで囲んで範囲選択する
+    const src = await page.locator('.react-flow__node[data-id="src"]').boundingBox();
+    const sc = await page.locator('.react-flow__node[data-id="sc"]').boundingBox();
+    if (src === null || sc === null) throw new Error("fixture nodes have no bounding box");
+    await page.mouse.move(src.x - 20, src.y - 60);
+    await page.mouse.down();
+    await page.mouse.move(sc.x + sc.width + 20, sc.y + sc.height + 40, { steps: 10 });
+    await page.mouse.up();
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(3);
+    await expect(page.locator(".react-flow__nodesselection-rect")).toHaveCount(1);
+
+    // 選択範囲の上から Subsystem を右クリック → flode のメニュー、ブラウザのメニューは出ない
+    const gain = await subsystemNode.boundingBox();
+    if (gain === null) throw new Error("subsystem node has no bounding box");
+    await page.mouse.click(gain.x + gain.width / 2, gain.y + gain.height / 2, { button: "right" });
+    await expect(page.getByTestId("block-menu-add-to-library")).toBeVisible();
+    expect(await takePrevented()).toEqual([true]);
+    // 複数選択は保たれる
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(3);
+    await page.keyboard.press("Escape");
+
+    // 配線の右クリック
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    // React Flow が配線の当たり判定に使う要素を直接右クリックする (bounding box の中心は
+    // 折れ線の上に乗らないことがあり、pane に当たると回帰を検出できない)
+    const edgeHit = page.locator(".react-flow__edge-interaction").first();
+    const edgeTarget = await edgeHit.evaluate((el) => {
+      const w = window as unknown as { __edgeTargetIsEdge: boolean };
+      w.__edgeTargetIsEdge = false;
+      const onCtx = (e: Event): void => {
+        w.__edgeTargetIsEdge =
+          e.target instanceof Element && e.target.closest(".react-flow__edge") !== null;
+      };
+      window.addEventListener("contextmenu", onCtx, { capture: true, once: true });
+      return el.tagName.toLowerCase();
+    });
+    expect(edgeTarget).toBe("path");
+    await edgeHit.click({ button: "right", force: true });
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __edgeTargetIsEdge: boolean }).__edgeTargetIsEdge,
+      ),
+    ).toBe(true);
+    await expect(page.getByTestId("block-context-menu")).toHaveCount(0);
+    // キャンバス左下のボタン (全体表示) の右クリック
+    await page.locator(".react-flow__controls-fitview").click({ button: "right" });
+    expect(await takePrevented()).toEqual([true, true]);
+  });
 });
 
 test.describe("User library (My Blocks)", () => {

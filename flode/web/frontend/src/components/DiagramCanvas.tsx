@@ -318,13 +318,48 @@ export function DiagramCanvas({
     const nodeElementOf = (target: EventTarget | null): HTMLElement | null =>
       inCanvas(target) ? target.closest<HTMLElement>(".react-flow__node") : null;
 
+    /**
+     * ポインタ位置のブロックノードの要素。範囲選択で複数のブロックを選ぶと React Flow が
+     * 選択範囲の上に透明な四角 (``.react-flow__nodesselection``) を重ね、イベントが
+     * ブロックに届かなくなるため、その場合は座標から下にあるブロックを探す。
+     * 座標で探すのはマウス起点のイベントだけ (キーボード起点の座標はフォーカス付近で、
+     * 下にあるブロックとは関係がない)。
+     */
+    const nodeElementAt = (
+      target: EventTarget | null,
+      x: number,
+      y: number,
+      byPointer: boolean,
+    ): HTMLElement | null => {
+      const direct = nodeElementOf(target);
+      if (direct !== null) return direct;
+      if (
+        !byPointer ||
+        !inCanvas(target) ||
+        target.closest(".react-flow__nodesselection") === null
+      ) {
+        return null;
+      }
+      for (const el of document.elementsFromPoint(x, y)) {
+        const node = el.closest<HTMLElement>(".react-flow__node");
+        if (node !== null && inCanvas(node)) return node;
+      }
+      return null;
+    };
+
+    /** 入力欄など、ブラウザのメニュー (コピー・貼り付け) を残すべき要素か。 */
+    const isEditable = (target: EventTarget | null): boolean =>
+      target instanceof Element &&
+      target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])") !==
+        null;
+
     const onMouseDown = (e: MouseEvent): void => {
       // リファレンスツール仕様 (= ユーザー指摘):
       // - 右クリックドラッグ (Ctrl の有無を問わない): ノード複製
       // - 動かさずに離す (= 右クリック): コンテキストメニュー (SPEC-0032 §1.2)
       // - ``Ctrl + 左クリック`` (= ドラッグでなく単発クリック): 2 ノード間の
       //   auto-connect (= 別経路 ``onCanvasClick`` 等で処理、本ハンドラの対象外)
-      const nodeId = nodeElementOf(e.target)?.getAttribute("data-id");
+      const nodeId = nodeElementAt(e.target, e.clientX, e.clientY, true)?.getAttribute("data-id");
       if (!nodeId) return;
       if (gesture.down(e, nodeId)) {
         // React Flow / OS のデフォルト挙動 (pan / context menu) を抑制
@@ -338,7 +373,7 @@ export function DiagramCanvas({
     // タッチ長押し起点のものだけメニューを開く。window で受けるのは、キャンバス外で
     // ボタンを離した場合にも「マウス起点の contextmenu 待ち」を解消するため。
     const onContextMenu = (e: MouseEvent): void => {
-      let nodeEl = nodeElementOf(e.target);
+      let nodeEl = nodeElementAt(e.target, e.clientX, e.clientY, e.button === 2);
       // キーボード起点で focus がブロック以外 (キャンバスの余白など) にあるときは、
       // 選択中のブロックが 1 つならそれを対象にする
       const selected = useAppStore.getState().selectedNodeIds;
@@ -348,6 +383,9 @@ export function DiagramCanvas({
         );
       }
       if (nodeEl === null) {
+        // キャンバス内 (配線・範囲選択の四角・ズームボタン等) ではブラウザのメニューを
+        // 出さない。入力欄はコピー・貼り付けのために残す
+        if (inCanvas(e.target) && !isEditable(e.target)) e.preventDefault();
         gesture.contextMenu(null, { x: e.clientX, y: e.clientY });
         return;
       }
