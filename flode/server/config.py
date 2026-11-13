@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from ..exceptions import FlodeError
+from ..userblocks import BLOCKS_SECTION, BlocksConfig, default_config_path, parse_blocks_config
 from .settings import Settings
 
 _logger = logging.getLogger("flode.server.config")
@@ -38,11 +39,24 @@ _logger = logging.getLogger("flode.server.config")
 # ``Settings.workspace_root`` は TOML では ``workspace`` キーとして書く (= path 全体
 # を root に統一するための alias)。それ以外のフィールド名は dataclass と TOML で同じ。
 _WORKSPACE_TOML_KEY = "workspace"
-_SETTINGS_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dataclasses.fields(Settings)) - {
-    "workspace_root"
-}
+# ユーザーブロック (ADR-0081) の Settings フィールドは CLI が bind host と ``[blocks]`` 節から
+# 決める派生値なので、``[settings]`` に書けるキーには含めない (書いたら未知キーの warning)。
+_DERIVED_SETTINGS_FIELDS: frozenset[str] = frozenset(
+    {
+        "user_blocks_enabled",
+        "user_blocks_reason",
+        "user_blocks_reload_allowed",
+        "user_blocks_request",
+        "loopback_bind",
+    }
+)
+_SETTINGS_FIELD_NAMES: frozenset[str] = (
+    frozenset(f.name for f in dataclasses.fields(Settings))
+    - {"workspace_root"}
+    - _DERIVED_SETTINGS_FIELDS
+)
 
-_KNOWN_SECTIONS = ("server", "settings")
+_KNOWN_SECTIONS = ("server", "settings", BLOCKS_SECTION)
 _KNOWN_SERVER_KEYS: frozenset[str] = frozenset(
     {"host", "port", "open_browser", "port_retries", "allow_python_blocks"}
 )
@@ -123,8 +137,9 @@ def default_user_config_path() -> Path:
 
     ``--generate-config`` の出力先としても使う。``Path.home()`` を経由するため、
     テストでは ``monkeypatch.setattr(Path, "home", ...)`` で隔離可能。
+    ``flode.load_blocks(use_config=True)`` が読む場所と同じ実装を使う (二重実装しない)。
     """
-    return Path.home() / ".flode" / "config.toml"
+    return default_config_path()
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +340,24 @@ class SettingsResolver:
             default=_DEFAULT_ALLOW_PYTHON_BLOCKS,
         )
 
+    def build_blocks_config(self, *, base_dir: Path) -> BlocksConfig:
+        """``[blocks]`` 節 (``dirs`` / ``modules`` / ``allow_non_loopback``) を返す (ADR-0081)。
+
+        CLI からは指定できない (``--allow-user-blocks`` は別に扱う) ので file > default のみ。
+        検証は ``flode.load_blocks(use_config=True)`` と同じ ``parse_blocks_config`` を使う。
+
+        Args:
+            base_dir: ``dirs`` の相対パスの基準 (通常は config ファイルのフォルダ)。
+
+        Raises:
+            BlockSourceConfigError: 型違反 (``FlodeError`` 派生、起動エラー扱い)。
+        """
+        return parse_blocks_config(self._file.get(BLOCKS_SECTION), base_dir=base_dir)
+
+    def workspace_is_default(self) -> bool:
+        """ワークスペースが CLI / config のどちらでも指定されず既定 (起動時の cwd) になるか。"""
+        return self._lookup(_WORKSPACE_TOML_KEY, section="settings") is None
+
     # --- internals -----------------------------------------------------------
 
     def _lookup(self, key: str, *, section: str) -> Any:
@@ -415,6 +448,9 @@ class SettingsResolver:
                     section_name,
                 )
                 continue
+            if section_name == BLOCKS_SECTION:
+                # 型違反は起動エラー、未知キーの warning も parse_blocks_config が担う
+                continue
             if not isinstance(section_value, dict):
                 _logger.warning(
                     "Section [%s] is not a table (got %s), ignored.",
@@ -487,6 +523,16 @@ library_paths = []
 
 # Whether to auto-register the bundled std.flwlib.json (default: true, ADR-0029).
 bundle_builtin_libraries = true
+
+# === Python blocks (SPEC-0033) ===
+# Blocks written in Python are read from <workspace>/blocks/ automatically.
+# Add more sources here. On a non-loopback bind they are read only with
+# allow_non_loopback = true (or `flode --allow-user-blocks`), and reloading
+# from the GUI is never allowed there.
+# [blocks]
+# dirs = { lab = "~/lab-blocks" }   # name -> folder (read as flode_dirs.<name>)
+# modules = ["mypkg.blocks"]        # installed modules (restart to apply changes)
+# allow_non_loopback = false
 """
 
 

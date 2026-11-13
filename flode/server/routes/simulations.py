@@ -14,15 +14,18 @@ import asyncio
 import dataclasses
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from starlette.concurrency import run_in_threadpool
 
 from ...blocks.pythonfunc import (
     compute_python_digest,
     get_python_block_policy,
     iter_python_functions,
 )
+from ...core.persistence import migrate_to_current, resolve_block_class
 from ...core.simulator import Simulator
 from ...exceptions import (
     FlodeError,
@@ -30,14 +33,29 @@ from ...exceptions import (
     PathTraversalError,
     PythonBlocksDisabledError,
     SimulationStillRunningError,
+    UnknownBlockTypeError,
 )
-from ..errors import CATEGORY_PYTHON_FUNCTION_UNCONFIRMED, build_failure_payload
+from ..errors import (
+    CATEGORY_PYTHON_FUNCTION_UNCONFIRMED,
+    MissingBlockType,
+    build_failure_payload,
+    build_unknown_block_type_payload,
+)
 from ..runtime import SimulationManager
 from ..security import resolve_workspace_path
 
 _logger = logging.getLogger("flode.server.routes.simulations")
 
 router = APIRouter(prefix="/simulations", tags=["simulations"])
+
+#: ``unknown_block_type`` で列挙する一意な型の上限 (超えたら ``truncated``)。
+MAX_LISTED_UNKNOWN_TYPES = 64
+#: ``unknown_block_type`` で列挙するブロックの上限 (超えたら ``truncated``)。
+MAX_LISTED_UNKNOWN_BLOCKS = 256
+#: 列挙のために解決を試みる一意な型名の上限 (解決できる型も含む)。
+MAX_RESOLVED_TYPE_NAMES = 1024
+#: ログに出す型名の件数。
+_LOGGED_UNKNOWN_TYPES = 5
 
 _INLINE_DISPLAY_ID = "<inline>"
 """インライン model 経由のシミュレーションの ``model_id`` 表示値 (ADR-0041 §5)。
@@ -208,6 +226,8 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
             )
         try:
             simulator = Simulator.load(resolved)
+        except UnknownBlockTypeError as e:
+            raise _unknown_block_type_error(_read_model_file(resolved), e) from e
         except ModelLoadError as e:
             raise HTTPException(status_code=400, detail=_exception_detail(e)) from e
         return simulator, model_path
@@ -220,9 +240,115 @@ def _resolve_simulator(request: Request, payload: dict[str, Any]) -> tuple[Simul
         )
     try:
         simulator = Simulator.from_dict(model_inline)
+    except UnknownBlockTypeError as e:
+        raise _unknown_block_type_error(model_inline, e) from e
     except ModelLoadError as e:
         raise HTTPException(status_code=400, detail=_exception_detail(e)) from e
     return simulator, _INLINE_DISPLAY_ID
+
+
+def _read_model_file(path: Path) -> Any:
+    """``unknown_block_type`` の全列挙用にモデルファイルを読み直す (読めなければ ``None``)。"""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _missing_block_types(model: Any) -> tuple[list[MissingBlockType], bool]:
+    """モデル (Subsystem 内部を含む) で解決できない型のブロックを集める (ADR-0081 §4-B)。
+
+    ``Simulator.from_dict`` は最初の 1 件で止まるので、``UnknownBlockTypeError`` が出たときだけ
+    呼んで列挙する。型の解決は ``from_dict`` と同じ ``resolve_block_class`` (管理型表 →
+    予約ルートは import しない → allowlist) なので、新たな import の経路は作らない。
+    Subsystem 内部 (``params.blocks``) は、型が解決できないか ``_from_dict`` を持つ (= コンテナ)
+    ブロックの中だけを見る。走査は明示的なスタックで行い (深い入れ子でも再帰しない)、
+    文書順 (行きがけ順) で並べる。
+
+    列挙数には上限がある: 一意な型 ``MAX_LISTED_UNKNOWN_TYPES``、ブロック
+    ``MAX_LISTED_UNKNOWN_BLOCKS``、解決を試みる一意な型名 ``MAX_RESOLVED_TYPE_NAMES``
+    (無認証のクライアントが大量の型名で import の試行を誘発するのを防ぐ)。
+
+    Returns:
+        ``(欠けているブロック, 上限で打ち切ったか)``。
+    """
+    if not isinstance(model, dict):
+        return [], False
+    # from_dict が同じ dict で既に通しているので、ここでの migration は読むだけの再実行
+    data = migrate_to_current(model)
+    resolved: dict[str, type | None] = {}
+    missing: list[MissingBlockType] = []
+    types: set[str] = set()
+    truncated = False
+    root_blocks = data.get("blocks")
+    stack: list[tuple[Any, tuple[str, ...]]] = [
+        (entry, ()) for entry in reversed(root_blocks if isinstance(root_blocks, list) else [])
+    ]
+    while stack:
+        entry, prefix = stack.pop()
+        if not isinstance(entry, dict):
+            continue
+        raw_id = entry.get("id")
+        block_id = raw_id if isinstance(raw_id, str) else str(raw_id)
+        type_path = entry.get("type")
+        cls: type | None = None
+        if isinstance(type_path, str):
+            if type_path not in resolved:
+                if len(resolved) >= MAX_RESOLVED_TYPE_NAMES:
+                    truncated = True
+                    break
+                try:
+                    resolved[type_path] = resolve_block_class(type_path)
+                except ModelLoadError:
+                    resolved[type_path] = None
+            cls = resolved[type_path]
+        if cls is None:
+            shown_type = type_path if isinstance(type_path, str) else repr(type_path)
+            if len(missing) >= MAX_LISTED_UNKNOWN_BLOCKS or (
+                shown_type not in types and len(types) >= MAX_LISTED_UNKNOWN_TYPES
+            ):
+                truncated = True
+                break
+            types.add(shown_type)
+            missing.append(
+                MissingBlockType(
+                    block_id=block_id,
+                    qualified_id="/".join((*prefix, block_id)),
+                    type_path=shown_type,
+                )
+            )
+        params = entry.get("params")
+        if isinstance(params, dict) and (cls is None or callable(getattr(cls, "_from_dict", None))):
+            inner = params.get("blocks")
+            if isinstance(inner, list):
+                stack.extend((child, (*prefix, block_id)) for child in reversed(inner))
+    return missing, truncated
+
+
+def _unknown_block_type_error(model: Any, exc: UnknownBlockTypeError) -> HTTPException:
+    """解決できない型を並べた 400 ``unknown_block_type`` (列挙できなければ従来の detail)。
+
+    列挙はベストエフォート: 想定外の失敗 (``RecursionError`` を含む) は「列挙できない」とみなして
+    従来の ``start_validation`` の detail に戻す (400 を 500 にしない)。
+    """
+    try:
+        missing, truncated = _missing_block_types(model)
+    except Exception:  # noqa: BLE001 - 列挙は付加情報。どんな失敗でも従来の 400 に戻す
+        _logger.warning("Could not enumerate unloaded block types", exc_info=True)
+        missing, truncated = [], False
+    if not missing:
+        return HTTPException(status_code=400, detail=_exception_detail(exc))
+    types = list(dict.fromkeys(m.type_path for m in missing))
+    _logger.info(
+        "Rejected a model with unloaded block types: %d type(s), %d block(s)%s, e.g. %r",
+        len(types),
+        len(missing),
+        " (truncated)" if truncated else "",
+        types[:_LOGGED_UNKNOWN_TYPES],
+    )
+    return HTTPException(
+        status_code=400, detail=build_unknown_block_type_payload(missing, truncated=truncated)
+    )
 
 
 @router.post("")
@@ -239,7 +365,8 @@ async def start_simulation(request: Request) -> dict[str, str]:
             detail=_start_validation_detail("Body must be a JSON object"),
         )
 
-    simulator, display_id = _resolve_simulator(request, payload)
+    # モデルの構築 (と型が欠けているときの列挙) は event loop を止めないよう threadpool で行う
+    simulator, display_id = await run_in_threadpool(_resolve_simulator, request, payload)
     _enforce_python_gates(simulator, payload)
 
     manager = _manager(request)

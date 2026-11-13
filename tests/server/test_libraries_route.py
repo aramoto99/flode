@@ -78,8 +78,8 @@ def test_get_library_entry_404(client: TestClient) -> None:
 
 
 def test_get_libraries_does_not_affect_blocks_endpoint(client: TestClient) -> None:
-    """libraries 追加で /blocks の schema_version (= blocks.v2) が変わらない。"""
+    """libraries 追加で /blocks の schema_version (= blocks.v3、ADR-0081) が変わらない。"""
     with client:
         r = client.get("/api/v1/blocks")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "blocks.v2"
+    assert r.json()["schema_version"] == "blocks.v3"

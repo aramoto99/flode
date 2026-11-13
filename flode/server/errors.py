@@ -82,6 +82,11 @@ _CATEGORY_UNKNOWN = "unknown"
 CATEGORY_PYTHON_FUNCTION_ERROR = "python_function_error"
 CATEGORY_PYTHON_FUNCTION_DISABLED = "python_function_disabled"
 CATEGORY_PYTHON_FUNCTION_UNCONFIRMED = "python_function_unconfirmed"
+# ADR-0081 §論点 4 / §論点 8: ユーザーブロック関連。
+#   - unknown_block_type: 実行要求のモデルに解決できない型がある (欠けている型を全部列挙)
+#   - user_blocks: 再読み込み API の拒否 (``code`` で理由を区別)
+CATEGORY_UNKNOWN_BLOCK_TYPE = "unknown_block_type"
+CATEGORY_USER_BLOCKS = "user_blocks"
 
 # Phase 1 で fall through する例外 (= unknown 扱い、Phase 2 で新カテゴリ追加候補):
 #   - ``TypeError`` / 素の ``IndexError`` (= simulator.py の add 引数 validation 等。
@@ -406,6 +411,98 @@ def build_failure_payload(
     if duration_sec is not None:
         payload["duration_sec"] = duration_sec
     return payload
+
+
+@dataclasses.dataclass(frozen=True)
+class MissingBlockType:
+    """実行要求のモデル内で解決できなかったブロック 1 つ (ADR-0081 §4-B)。
+
+    Attributes:
+        block_id: そのブロックの ``id`` (Subsystem 内部でも素の id)。
+        qualified_id: ``"outer_sub/inner_sub/id"`` 形式 (表示用、PythonFunction の
+            ``block_labels`` と同じ書式)。
+        type_path: entry の ``type``。
+    """
+
+    block_id: str
+    qualified_id: str
+    type_path: str
+
+
+def build_unknown_block_type_payload(
+    missing: list[MissingBlockType], *, truncated: bool = False
+) -> dict[str, Any]:
+    """``unknown_block_type`` の構造化 detail (400) を組み立てる (ADR-0081 §4-B)。
+
+    ``template_args``:
+        * ``types``: 欠けている型名 (重複なし、出現順)
+        * ``blocks``: ``[{block_id, qualified_id, type}]`` (Subsystem 内部を含む)
+        * ``block_labels``: ``qualified_id`` の列
+        * ``truncated``: 列挙を上限で打ち切ったか (``True`` なら他にもある)
+        * ``message``: 1 行の説明 (英語、``raw_message`` と同じ)
+
+    Args:
+        missing: 欠けているブロック (文書順)。
+        truncated: 列挙を上限で打ち切ったか。
+
+    Returns:
+        ADR-0056 の構造化 detail + ``code``。
+    """
+    types = list(dict.fromkeys(m.type_path for m in missing))
+    block_ids = list(dict.fromkeys(m.block_id for m in missing))
+    labels = [m.qualified_id for m in missing]
+    more = " (and more)" if truncated else ""
+    message = (
+        f"The model uses block types that are not loaded: {', '.join(types)}{more}. "
+        f"Fix or reload the blocks, or remove these blocks: {', '.join(labels)}{more}."
+    )
+    first = missing[0] if missing else None
+    return {
+        "category": CATEGORY_UNKNOWN_BLOCK_TYPE,
+        "template_key": "error.unknown_block_type",
+        "template_args": {
+            "types": types,
+            "blocks": [
+                {"block_id": m.block_id, "qualified_id": m.qualified_id, "type": m.type_path}
+                for m in missing
+            ],
+            "block_labels": labels,
+            "truncated": truncated,
+            "message": message,
+        },
+        "code": CATEGORY_UNKNOWN_BLOCK_TYPE,
+        "block_id": first.block_id if first else None,
+        "block_ids": block_ids,
+        "block_type": first.type_path if first else None,
+        "block_label": first.qualified_id if first else None,
+        "t": None,
+        "raw_message": message,
+        "raw_traceback": None,
+    }
+
+
+def build_user_blocks_error(code: str, message: str, **template_args: Any) -> dict[str, Any]:
+    """再読み込み API の拒否用の構造化 detail (ADR-0056 の形 + ``code``)。
+
+    Args:
+        code: 機械可読な理由 (``reload_in_progress`` / ``user_blocks_disabled`` /
+            ``reload_not_allowed`` / ``invalid_reload_body``)。
+        message: 英語の説明 (``raw_message`` と ``template_args.message``)。
+        **template_args: 追加の ``template_args``。
+    """
+    return {
+        "category": CATEGORY_USER_BLOCKS,
+        "template_key": f"error.user_blocks.{code}",
+        "template_args": {"message": message, **template_args},
+        "code": code,
+        "block_id": None,
+        "block_ids": [],
+        "block_type": None,
+        "block_label": None,
+        "t": None,
+        "raw_message": message,
+        "raw_traceback": None,
+    }
 
 
 def register_error_handlers(app: FastAPI) -> None:

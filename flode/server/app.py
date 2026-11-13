@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,9 +15,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..blocks.pythonfunc import set_python_block_policy
+from .block_catalog import disabled_reason, initial_catalog
 from .errors import register_error_handlers
 from .library_registry import build_library_registry
-from .registry import build_block_registry
 from .routes import (
     blocks_router,
     files_router,
@@ -27,6 +28,8 @@ from .routes import (
 from .runtime import SimulationManager
 from .security.origin import check_state_changing_request
 from .settings import Settings
+
+_logger = logging.getLogger("flode.server.app")
 
 
 def create_app(*, settings: Settings) -> FastAPI:
@@ -54,6 +57,12 @@ def create_app(*, settings: Settings) -> FastAPI:
         bundle_builtin_libraries=settings.bundle_builtin_libraries,
         python_blocks_allowed=settings.python_blocks_allowed,
         python_blocks_reason=settings.python_blocks_reason,
+        user_blocks_enabled=settings.user_blocks_enabled,
+        user_blocks_reason=settings.user_blocks_reason,
+        user_blocks_reload_allowed=settings.user_blocks_reload_allowed,
+        # LoadRequest は frozen (中の tuple / Path も不変) なのでそのまま共有してよい
+        user_blocks_request=settings.user_blocks_request,
+        loopback_bind=settings.loopback_bind,
     )
     # SPEC-0023 / ADR-0073 §論点 4 (H): PythonFunction の hard gate をプロセス policy に
     # 適用する唯一の場所。CLI は bind host から決めた値を Settings に入れて渡す。
@@ -68,7 +77,11 @@ def create_app(*, settings: Settings) -> FastAPI:
         manager = SimulationManager(max_concurrent=settings.max_concurrent)
         app.state.simulation_manager = manager
         # ADR-0019 §1.5: Block class registry を起動時に 1 回 walk して app.state にキャッシュ。
-        app.state.block_registry = build_block_registry()
+        # ADR-0081 §8-A: 設定で許可されていればユーザーブロックも読んで合成する
+        # (読み込み件数・ソースの INFO ログは flode.userblocks が出す)。
+        if not settings.user_blocks_enabled:
+            _logger.info("user blocks are not read: %s", disabled_reason(settings))
+        app.state.block_registry = initial_catalog(settings)
         # ADR-0029: Library registry を起動時に 1 回 build して app.state にキャッシュ。
         app.state.library_registry = build_library_registry(
             settings.library_paths,
@@ -88,6 +101,10 @@ def create_app(*, settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # ADR-0081 §2-A: 再読み込みと registry の差し替えを 1 本に直列化する (非ブロッキングで取り、
+    # 取れなければ 409)。flode.userblocks 側のロックだけだと、先に終わった再読み込みの
+    # 差し替えが後の再読み込みの差し替えを上書きする順序の逆転が起こりうる。
+    app.state.block_reload_lock = threading.Lock()
 
     # CSRF guard (security/origin.py): 書き込み要求は application/json 必須 + Origin 検証。
     # ブラウザ経由の cross-site 要求 (simple request) で loopback サーバーを叩かせない。

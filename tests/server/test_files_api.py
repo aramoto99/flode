@@ -7,13 +7,17 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from flode.server import create_app
+from flode.server.routes import files as files_route
 from flode.server.settings import Settings
+from flode.userblocks import LoadRequest
 
 # ---------------------------------------------------------------------------
 # fixtures
@@ -704,3 +708,186 @@ class TestSearchFiles:
 # v0.21.0 (ADR-0041 §論点 4-A): legacy ``--model-dir`` モード削除に伴い
 # ``workspace_root=None`` (= 503 経路) のテストは無効化。``Settings`` で
 # ``workspace_root`` は必須キーワードになっているため、不正な状態自体が作れない。
+
+
+# ---------------------------------------------------------------------------
+# ADR-0081 §6-A: 非 loopback bind ではワークスペース blocks/ 配下を変更させない
+# ---------------------------------------------------------------------------
+
+
+def _client_for(workspace: Path, *, loopback_bind: bool) -> TestClient:
+    settings = Settings(workspace_root=workspace, loopback_bind=loopback_bind)
+    return TestClient(create_app(settings=settings))
+
+
+class TestUserBlocksFolderProtection:
+    @pytest.fixture
+    def remote(self, workspace: Path) -> TestClient:
+        (workspace / "blocks").mkdir()
+        (workspace / "blocks" / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (workspace / "lib").mkdir()
+        (workspace / "lib" / "evil.py").write_text("x = 2\n", encoding="utf-8")
+        return _client_for(workspace, loopback_bind=False)
+
+    @pytest.mark.parametrize(
+        ("method", "url", "kwargs"),
+        [
+            ("put", "/api/v1/files/content?path=blocks/evil.json", {"json": {"content": {}}}),
+            ("put", "/api/v1/files/content?path=blocks/sub/b.json", {"json": {"content": {}}}),
+            ("post", "/api/v1/files/mkdir?path=blocks/pkg", {}),
+            ("delete", "/api/v1/files?path=blocks/a.py", {}),
+            ("delete", "/api/v1/files?path=blocks", {}),
+            (
+                "post",
+                "/api/v1/files/rename",
+                {"json": {"from": "lib/evil.py", "to": "blocks/e.py"}},
+            ),
+            ("post", "/api/v1/files/rename", {"json": {"from": "blocks/a.py", "to": "lib/a.py"}}),
+            ("post", "/api/v1/files/rename", {"json": {"from": "blocks", "to": "old"}}),
+            ("post", "/api/v1/files/copy?from=lib&to=blocks/lib", {}),
+            ("post", "/api/v1/files/copy?from=lib/evil.py&to=blocks/evil.py", {}),
+        ],
+    )
+    def test_changes_under_blocks_are_403(
+        self, remote: TestClient, workspace: Path, method: str, url: str, kwargs: dict
+    ) -> None:
+        resp = getattr(remote, method)(url, **kwargs)
+        assert resp.status_code == 403, resp.text
+        assert "blocks/" in resp.json()["detail"]
+        assert sorted(p.name for p in (workspace / "blocks").iterdir()) == ["a.py"]
+
+    def test_creating_blocks_folder_is_403(self, workspace: Path) -> None:
+        (workspace / "lib").mkdir()
+        client = _client_for(workspace, loopback_bind=False)
+        assert client.post("/api/v1/files/mkdir?path=blocks").status_code == 403
+        rename = client.post("/api/v1/files/rename", json={"from": "lib", "to": "blocks"})
+        assert rename.status_code == 403
+        assert not (workspace / "blocks").exists()
+
+    def test_reading_and_copying_out_are_allowed(self, remote: TestClient) -> None:
+        assert remote.get("/api/v1/files/tree?path=blocks").status_code == 200
+        assert remote.post("/api/v1/files/copy?from=blocks/a.py&to=lib/a.py").status_code == 204
+
+    def test_other_folders_are_not_affected(self, remote: TestClient) -> None:
+        resp = remote.put("/api/v1/files/content?path=blocksX/m.json", json={"content": {}})
+        assert resp.status_code == 200
+
+    @pytest.mark.parametrize(
+        "path",
+        ["BLOCKS/x.json", "Blocks/x.json", "./blocks/x.json", "a/../blocks/x.json", "blocks:x"],
+    )
+    def test_name_variants_are_403(self, remote: TestClient, workspace: Path, path: str) -> None:
+        resp = remote.put(f"/api/v1/files/content?path={path}", json={"content": {}})
+        assert resp.status_code == 403, resp.text
+        assert sorted(p.name for p in (workspace / "blocks").iterdir()) == ["a.py"]
+
+    def test_case_variant_is_403_even_where_normcase_keeps_case(
+        self, remote: TestClient, mocker: MockerFixture
+    ) -> None:
+        """POSIX の ``normcase`` は何も変えないが、FS は大文字小文字を区別しない場合がある
+        (macOS 既定の APFS、WSL の /mnt/c、SMB 等)。名前は OS に関係なく casefold で比べる。"""
+        mocker.patch.object(files_route.os.path, "normcase", side_effect=lambda s: s)
+        resp = remote.put("/api/v1/files/content?path=BLOCKS/x.json", json={"content": {}})
+        assert resp.status_code == 403
+
+    def test_link_to_blocks_is_403(self, remote: TestClient, workspace: Path) -> None:
+        _make_dir_link(workspace / "alias", workspace / "blocks")
+        resp = remote.put("/api/v1/files/content?path=alias/x.json", json={"content": {}})
+        assert resp.status_code == 403
+        assert sorted(p.name for p in (workspace / "blocks").iterdir()) == ["a.py"]
+
+    def test_blocks_link_to_other_folder_protects_target(self, workspace: Path) -> None:
+        (workspace / "lib").mkdir()
+        _make_dir_link(workspace / "blocks", workspace / "lib")
+        client = _client_for(workspace, loopback_bind=False)
+        resp = client.put("/api/v1/files/content?path=lib/x.json", json={"content": {}})
+        assert resp.status_code == 403
+        assert list((workspace / "lib").iterdir()) == []
+
+    def test_loopback_keeps_existing_behaviour(self, workspace: Path) -> None:
+        client = _client_for(workspace, loopback_bind=True)
+        resp = client.put("/api/v1/files/content?path=blocks/m.json", json={"content": {}})
+        assert resp.status_code == 200
+        assert client.post("/api/v1/files/mkdir?path=blocks/pkg").status_code == 204
+        assert client.delete("/api/v1/files?path=blocks/pkg").status_code == 204
+
+
+def _make_dir_link(link: Path, target: Path) -> None:
+    """ディレクトリへのリンクを作る (symlink、Windows で権限が無ければ junction)。"""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    if os.name == "nt":
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+        return
+    pytest.skip("cannot create a directory link in this environment")
+
+
+class TestOtherUserBlockSourcesProtection:
+    """[blocks] dirs / modules の実体がワークスペース配下にある場合も守る (ADR-0081 §6-A 拡張)。"""
+
+    def _client(self, workspace: Path, request: LoadRequest) -> TestClient:
+        settings = Settings(
+            workspace_root=workspace, loopback_bind=False, user_blocks_request=request
+        )
+        return TestClient(create_app(settings=settings))
+
+    def test_dirs_root_inside_workspace_is_403(self, workspace: Path) -> None:
+        (workspace / "lab").mkdir()
+        client = self._client(
+            workspace, LoadRequest(workspace=workspace, dirs=(("lab", workspace / "lab"),))
+        )
+        assert (
+            client.put("/api/v1/files/content?path=lab/x.json", json={"content": {}}).status_code
+            == 403
+        )
+        assert (
+            client.put("/api/v1/files/content?path=LAB/x.json", json={"content": {}}).status_code
+            == 403
+        )
+        assert (
+            client.post("/api/v1/files/rename", json={"from": "lab", "to": "z"}).status_code == 403
+        )
+        assert (
+            client.put("/api/v1/files/content?path=other/x.json", json={"content": {}}).status_code
+            == 200
+        )
+
+    def test_missing_dirs_root_cannot_be_created(self, workspace: Path) -> None:
+        client = self._client(
+            workspace, LoadRequest(workspace=workspace, dirs=(("lab", workspace / "lab"),))
+        )
+        assert client.post("/api/v1/files/mkdir?path=lab").status_code == 403
+        assert not (workspace / "lab").exists()
+
+    def test_module_package_inside_workspace_is_403(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pkg = workspace / "wspkg_probe"
+        (pkg / "blocks").mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "blocks" / "__init__.py").write_text("", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(workspace))
+        client = self._client(
+            workspace, LoadRequest(workspace=workspace, modules=("wspkg_probe.blocks",))
+        )
+        resp = client.put("/api/v1/files/content?path=wspkg_probe/evil.json", json={"content": {}})
+        assert resp.status_code == 403
+        assert (
+            client.put("/api/v1/files/content?path=m.json", json={"content": {}}).status_code == 200
+        )
+
+    def test_single_file_module_protects_only_the_file(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (workspace / "wsmod_probe.py").write_text("", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(workspace))
+        client = self._client(workspace, LoadRequest(workspace=workspace, modules=("wsmod_probe",)))
+        assert client.delete("/api/v1/files?path=wsmod_probe.py").status_code == 403
+        assert (
+            client.put("/api/v1/files/content?path=m.json", json={"content": {}}).status_code == 200
+        )

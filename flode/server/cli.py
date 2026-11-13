@@ -41,6 +41,7 @@ from typing import Any
 
 from ..blocks.pythonfunc import PythonBlockPolicy
 from ..exceptions import FlodeError
+from ..userblocks import LoadRequest
 from .app import create_app
 from .config import (
     SettingsResolver,
@@ -351,6 +352,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "Python blocks are always allowed. SPEC-0023."
         ),
     )
+    # ADR-0081 §論点 6-A: ユーザーブロック (サーバのディスク上の .py) を非 loopback bind でも
+    # 起動時に読む専用許可。--allow-python-blocks とは独立 (どちらも他方を含意しない)。
+    # 恒久設定は [blocks] allow_non_loopback。
+    parser.add_argument(
+        "--allow-user-blocks",
+        action="store_true",
+        help=(
+            "Read Python blocks from <workspace>/blocks/ and the [blocks] config section even "
+            "when binding to a non-loopback address. Their code runs with your privileges at "
+            "startup; reloading them from the GUI stays disabled on such a bind. On a loopback "
+            "bind they are always read. SPEC-0033."
+        ),
+    )
     return parser
 
 
@@ -394,6 +408,50 @@ def resolve_python_block_policy(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class UserBlockPolicy:
+    """ユーザーブロック (ADR-0081 §論点 6) の読み込み可否。
+
+    Attributes:
+        enabled: 起動時に管理ソースを読むか。
+        reason: 読まない理由 (``enabled=False`` のときだけ非空)。
+        reload_allowed: ``POST /blocks/reload`` を受け付けるか (loopback bind のときだけ)。
+    """
+
+    enabled: bool
+    reason: str
+    reload_allowed: bool
+
+
+def resolve_user_block_policy(host: str, *, cli_flag: bool, file_allow: bool) -> UserBlockPolicy:
+    """bind host と専用許可からユーザーブロックの policy を決める (純粋関数、fail-closed)。
+
+    * loopback → 読む・再読み込み可
+    * 非 loopback で ``--allow-user-blocks`` か ``[blocks] allow_non_loopback = true`` → 起動時だけ
+      読む (再読み込みは不可)
+    * それ以外 → 読まない
+
+    ``--allow-python-blocks`` (PythonFunction の許可) はここには関与しない (ADR-0081 §6-A)。
+
+    Args:
+        host: uvicorn に渡す bind host。
+        cli_flag: ``--allow-user-blocks`` が指定されたか。
+        file_allow: ``[blocks] allow_non_loopback`` の値。
+    """
+    if is_loopback_host(host):
+        return UserBlockPolicy(enabled=True, reason="", reload_allowed=True)
+    if cli_flag or file_allow:
+        return UserBlockPolicy(enabled=True, reason="", reload_allowed=False)
+    return UserBlockPolicy(
+        enabled=False,
+        reason=(
+            f"server is bound to non-loopback address {host!r} without --allow-user-blocks "
+            f"or [blocks] allow_non_loopback = true"
+        ),
+        reload_allowed=False,
+    )
+
+
 def _build_settings_from_args(
     args: argparse.Namespace,
 ) -> tuple[Settings, str, int, bool, int, bool]:
@@ -401,6 +459,12 @@ def _build_settings_from_args(
     allow_python_blocks)`` を構築する (SPEC-0004 / SPEC-0021 / SPEC-0023)。
 
     SPEC-0004 §4: ``CLI > 設定ファイル > default`` の優先順位で解決する。
+
+    ユーザーブロック (ADR-0081 §論点 6) の Settings フィールド (``user_blocks_*`` /
+    ``loopback_bind``) もここで埋める: bind host・``--allow-user-blocks``・``[blocks]`` 節から
+    policy を決め、``LoadRequest`` を作る (``--workspace`` も config の ``workspace``
+    も無ければ ``workspace_from_cwd=True``、ADR-0081 §R-1)。読まない policy でも
+    ``LoadRequest`` は入れる (files API で守るルートの計算に使う)。
 
     Returns:
         ``(Settings, host, port, open_browser, port_retries, allow_python_blocks)``。
@@ -444,6 +508,31 @@ def _build_settings_from_args(
     host, port = resolver.build_server_bind()
     open_browser, port_retries = resolver.build_launch_options()
     allow_python_blocks = resolver.build_allow_python_blocks()
+    # [blocks] dirs の相対パスは config ファイルのフォルダ基準 (config 無しなら節も無い)
+    blocks_config = resolver.build_blocks_config(
+        base_dir=config_path.parent if config_path is not None else Path.cwd()
+    )
+    policy = resolve_user_block_policy(
+        host,
+        cli_flag=bool(args.allow_user_blocks),
+        file_allow=blocks_config.allow_non_loopback,
+    )
+    # 読まない場合も request は渡す: 読み込み自体は user_blocks_enabled で止まり、request は
+    # 非 loopback の files API で守るルート (dirs / modules の実体) の計算に使う
+    request = LoadRequest(
+        workspace=settings.workspace_root,
+        workspace_from_cwd=resolver.workspace_is_default(),
+        dirs=blocks_config.dirs,
+        modules=blocks_config.modules,
+    )
+    settings = dataclasses.replace(
+        settings,
+        user_blocks_enabled=policy.enabled,
+        user_blocks_reason=policy.reason,
+        user_blocks_reload_allowed=policy.reload_allowed,
+        user_blocks_request=request,
+        loopback_bind=is_loopback_host(host),
+    )
     return settings, host, port, open_browser, port_retries, allow_python_blocks
 
 
@@ -524,6 +613,13 @@ def main(argv: list[str] | None = None) -> None:
         _logger.warning(
             "PythonFunction blocks are ENABLED on non-loopback host %s: anyone who can "
             "reach this server can execute arbitrary Python with your privileges.",
+            host,
+        )
+    if settings.user_blocks_enabled and not settings.loopback_bind:
+        _logger.warning(
+            "Python blocks in the workspace blocks/ folder and [blocks] are read on "
+            "non-loopback host %s (--allow-user-blocks / allow_non_loopback); reloading them "
+            "from the GUI is disabled on this bind.",
             host,
         )
     app = create_app(settings=settings)

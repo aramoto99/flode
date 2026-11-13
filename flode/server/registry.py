@@ -37,8 +37,14 @@ from ..core.persistence import (
     to_json_value,
 )
 from ..exceptions import BlockSpecError
+from ..userblocks import UserBlockInfo
 
 _logger = logging.getLogger("flode.registry")
+
+#: 組み込みブロックの ``BlockMetadata.source`` (ADR-0081 §8-A)。
+BUILTIN_SOURCE = "builtin"
+#: ユーザーブロックの ``icon`` (glyph は汎用のみ、ADR-0081 §8-D / Q8)。
+_USER_BLOCK_ICON = "default"
 
 
 @dataclass
@@ -112,6 +118,13 @@ class BlockMetadata:
     # DSL は ``len(params.<attr_name>)`` のみ受理 (= 単純属性参照、safe evaluator)。
     # 既存ブロック (固定 n_inputs) は ``None`` (= 旧挙動継続)。
     n_inputs_resolver: str | None = None
+    # ADR-0081 §8-A (blocks.v3): 読み込み元。組み込み (と ``register_block_module`` の
+    # 3rd-party prefix) は ``"builtin"``、ユーザーブロックは ``"workspace"`` /
+    # ``"dir:<name>"`` / ``"module:<module>"``。frontend はこれで型名分岐を通さない描画を選ぶ。
+    source: str = BUILTIN_SOURCE
+    # ポート名 (空 = 無名)。組み込みブロックは常に空。
+    input_names: list[str] = field(default_factory=list)
+    output_names: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -872,6 +885,61 @@ def build_block_registry() -> list[BlockMetadata]:
     return registry
 
 
+def build_user_block_metadata(info: UserBlockInfo) -> BlockMetadata:
+    """ユーザーブロックの読み込み結果から ``BlockMetadata`` を作る (ADR-0081 §2-A 手順 5)。
+
+    ``@block`` 生成クラスの ``__init__`` は ``**kwargs`` で引数一覧が取れないので、
+    ``build_metadata`` (クラスの検査) は使わず、読み込み時に検証済みの ``UserBlockInfo``
+    だけから組み立てる (ユーザーコードを再び呼ばない)。
+
+    * ``category``: 宣言が無ければ ``""`` (= セクション直下、ADR-0081 §8-B)
+    * ``params_spec``: 全引数に既定値がある (P2) ので ``has_default=True``。
+      ``description`` / ``enum_values`` (``choices``) を載せる
+    * ``icon`` は汎用 (``"default"``)、``is_container`` / ``mask_capable`` は ``False``
+    """
+    tags = [
+        "sm_b" if any(s != () for s in (*info.port_shapes_in, *info.port_shapes_out)) else "sm_a"
+    ]
+    if info.n_states > 0:
+        tags.append("stateful")
+    if info.n_inputs == 0 and info.n_outputs > 0:
+        tags.append("source")
+    if info.n_inputs > 0 and info.n_outputs == 0:
+        tags.append("sink")
+    # 静的に読む (ユーザーのメタクラス / descriptor を実行しない)。真偽は ``is True`` だけ認める
+    discrete = inspect.getattr_static(info.block_class, "requires_discrete_rate", False) is True
+    return BlockMetadata(
+        type_path=info.type_path,
+        display_name=info.display_name,
+        category=info.category or "",
+        icon=_USER_BLOCK_ICON,
+        docstring_summary=info.description,
+        docstring_full=info.docstring,
+        params_spec=[
+            ParamSpec(
+                name=p.name,
+                type=p.type,
+                default=p.default,
+                has_default=True,
+                description=p.description,
+                enum_values=list(p.choices) if p.choices is not None else None,
+            )
+            for p in info.params
+        ],
+        default_n_inputs=info.n_inputs,
+        default_n_outputs=info.n_outputs,
+        port_shapes_in_default=[list(s) for s in info.port_shapes_in],
+        port_shapes_out_default=[list(s) for s in info.port_shapes_out],
+        tags=tags,
+        requires_discrete_rate=discrete,
+        display_name_i18n=dict(info.display_name_i18n),
+        docstring_summary_i18n=dict(info.description_i18n),
+        source=info.source,
+        input_names=list(info.input_names),
+        output_names=list(info.output_names),
+    )
+
+
 def metadata_to_dict(
     meta: BlockMetadata, *, include_full_docstring: bool = False
 ) -> dict[str, Any]:
@@ -911,6 +979,10 @@ def metadata_to_dict(
         "mask_capable": meta.mask_capable,
         # SPEC-0030: sample_time の同期モード (-1/"dt") が有効なブロックか
         "requires_discrete_rate": meta.requires_discrete_rate,
+        # ADR-0081 §8-A (blocks.v3、追加のみ): 読み込み元とポート名
+        "source": meta.source,
+        "input_names": list(meta.input_names),
+        "output_names": list(meta.output_names),
     }
     # SPEC-0018 / ADR-0068 §A-1: 動的 n_inputs resolver (optional)。
     # ``None`` のとき payload に乗せない (= 既存 builtin の後方互換)。

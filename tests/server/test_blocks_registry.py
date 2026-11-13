@@ -32,8 +32,9 @@ class TestListBlocks:
         resp = client.get("/api/v1/blocks")
         assert resp.status_code == 200
         data = resp.json()
-        # ADR-0028 (v0.11.0): schema_version を ``"blocks.v1"`` → ``"blocks.v2"`` に bump
-        assert data["schema_version"] == "blocks.v2"
+        # ADR-0028 (v0.11.0): ``"blocks.v1"`` → ``"blocks.v2"``、
+        # ADR-0081: ``"blocks.v2"`` → ``"blocks.v3"`` (追加のみ)
+        assert data["schema_version"] == "blocks.v3"
         assert data["supported_locales"] == ["en", "ja"]
         # built-in は 30+ (sources/math/cont/disc/logic/routing/sinks) +
         # subsystems 3 = 33 以上

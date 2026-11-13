@@ -505,3 +505,101 @@ class TestAllowPythonBlocks:
         p = tmp_path / "config.toml"
         generate_config_template(p, force=False)
         assert "allow_python_blocks" in p.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# ADR-0081: [blocks] (dirs / modules / allow_non_loopback)
+# ---------------------------------------------------------------------------
+
+
+class TestBlocksSection:
+    def test_known_section_does_not_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
+            SettingsResolver(
+                cli={}, file_config={"blocks": {"modules": [], "allow_non_loopback": True}}
+            )
+        assert "blocks" not in caplog.text
+
+    def test_parses_section(self, tmp_path: Path) -> None:
+        (tmp_path / "lab").mkdir()
+        r = SettingsResolver(
+            cli={},
+            file_config={
+                "blocks": {
+                    "dirs": {"lab": "lab"},
+                    "modules": ["mypkg.blocks"],
+                    "allow_non_loopback": True,
+                }
+            },
+        )
+        cfg = r.build_blocks_config(base_dir=tmp_path)
+        assert cfg.dirs == (("lab", (tmp_path / "lab").resolve()),)
+        assert cfg.modules == ("mypkg.blocks",)
+        assert cfg.allow_non_loopback is True
+
+    def test_missing_section_is_empty(self, tmp_path: Path) -> None:
+        cfg = SettingsResolver(cli={}, file_config={}).build_blocks_config(base_dir=tmp_path)
+        assert (cfg.dirs, cfg.modules, cfg.allow_non_loopback) == ((), (), False)
+
+    @pytest.mark.parametrize(
+        "section",
+        [
+            "not a table",
+            {"allow_non_loopback": "yes"},
+            {"dirs": ["lab"]},
+            {"dirs": {"_hidden": "lab"}},
+            {"modules": "mypkg"},
+        ],
+    )
+    def test_type_violation_raises(self, tmp_path: Path, section: object) -> None:
+        r = SettingsResolver(cli={}, file_config={"blocks": section})
+        with pytest.raises(FlodeError):
+            r.build_blocks_config(base_dir=tmp_path)
+
+    def test_unknown_key_warns(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        r = SettingsResolver(cli={}, file_config={"blocks": {"bogus": 1}})
+        with caplog.at_level(logging.WARNING):
+            r.build_blocks_config(base_dir=tmp_path)
+        assert "bogus" in caplog.text
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "user_blocks_enabled",
+            "user_blocks_reason",
+            "user_blocks_reload_allowed",
+            "user_blocks_request",
+            "loopback_bind",
+        ],
+    )
+    def test_derived_settings_fields_are_not_config_keys(
+        self, key: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="flode.server.config"):
+            SettingsResolver(cli={}, file_config={"settings": {key: True}})
+        assert f"Unknown key '{key}'" in caplog.text
+
+    def test_workspace_is_default(self) -> None:
+        assert SettingsResolver(cli={}, file_config={}).workspace_is_default() is True
+        assert (
+            SettingsResolver(cli={"workspace": Path("x")}, file_config={}).workspace_is_default()
+            is False
+        )
+        r = SettingsResolver(cli={}, file_config={"settings": {"workspace": "x"}})
+        assert r.workspace_is_default() is False
+
+    def test_template_section_is_commented_out(self, tmp_path: Path) -> None:
+        p = tmp_path / "config.toml"
+        generate_config_template(p, force=False)
+        text = p.read_text(encoding="utf-8")
+        assert "# [blocks]" in text
+        assert "allow_non_loopback" in text
+        assert "blocks" not in load_config_file(p)
+
+    def test_default_config_path_is_shared_with_load_blocks(self, isolated_home: Path) -> None:
+        """server の暗黙 config と ``flode.load_blocks(use_config=True)`` は同じファイルを読む。"""
+        from flode.server.config import default_user_config_path
+        from flode.userblocks import default_config_path
+
+        assert default_user_config_path() == default_config_path()
+        assert default_user_config_path() == isolated_home / ".flode" / "config.toml"

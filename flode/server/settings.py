@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..userblocks import LoadRequest
+
 
 @dataclass
 class Settings:
@@ -30,6 +32,20 @@ class Settings:
             決めた値を入れる (loopback → True、非 loopback はフラグ必須)。``create_app`` を
             直接使う埋め込み利用者は **公開 bind なら必ず False にする** こと。
         python_blocks_reason: 拒否理由 (エラーメッセージに埋め込む、``allowed=False`` 時のみ)。
+        user_blocks_enabled: ワークスペース ``blocks/`` と config ``[blocks]`` のユーザーブロックを
+            起動時に読むか (ADR-0081 §論点 6)。**既定 ``False`` (fail-closed)**: ``create_app`` を
+            直接使う場合は明示しない限り読まない。CLI は bind host と ``--allow-user-blocks`` /
+            ``[blocks] allow_non_loopback`` から決めた値を入れる。
+        user_blocks_reason: 読まない理由 (``GET /blocks`` の ``user_blocks.reason``)。
+        user_blocks_reload_allowed: ``POST /blocks/reload`` を受け付けるか。``loopback_bind`` が
+            ``False`` なら値に関係なく受け付けない (非 loopback では許可があっても 403)。
+        user_blocks_request: 読み込む管理ソース。``None`` で ``user_blocks_enabled=True`` なら
+            ``workspace_root`` の ``blocks/`` だけを読む (``dirs`` / ``modules`` なし)。
+            ``user_blocks_enabled=False`` でも、非 loopback の files API で守るルート
+            (``dirs`` / ``modules`` の実体) の計算に使う (CLI は常に入れる)。
+        loopback_bind: bind host が loopback であることを呼び出し側が確認済みか。**既定 ``False``
+            (fail-closed)**: ``False`` の間は ``GET /blocks`` の絶対パスを伏せ、files API による
+            ワークスペース ``blocks/`` 配下の変更と再読み込みを 403 にする。
     """
 
     workspace_root: Path
@@ -40,3 +56,8 @@ class Settings:
     bundle_builtin_libraries: bool = True
     python_blocks_allowed: bool = True
     python_blocks_reason: str = ""
+    user_blocks_enabled: bool = False
+    user_blocks_reason: str = ""
+    user_blocks_reload_allowed: bool = False
+    user_blocks_request: LoadRequest | None = None
+    loopback_bind: bool = False

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from flode import Simulator
 from flode.blocks import Constant, Gain, Scope
@@ -340,3 +341,187 @@ class TestUnboundedTEnd:
         # state.t_end は数値 (= 0.05)
         assert isinstance(state["t_end"], int | float)
         assert state["t_end"] == pytest.approx(0.05)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0081 §4-B: 解決できない型は全部列挙して unknown_block_type (400)
+# ---------------------------------------------------------------------------
+
+
+def _model_with_missing_types(tmp_path: Path) -> dict:
+    """トップレベルに 2 件、Subsystem 内部に 1 件の解決できない型を持つモデル。"""
+    from flode.subsystems import Inport, Outport, Subsystem
+
+    sub = Subsystem(
+        blocks=[
+            Inport(port_idx=0, id="ip"),
+            Gain(k=1.0, id="inner"),
+            Outport(port_idx=0, id="op"),
+        ],
+        connections=[
+            {"src": "ip", "src_port": 0, "dst": "inner", "dst_port": 0},
+            {"src": "inner", "src_port": 0, "dst": "op", "dst_port": 0},
+        ],
+        id="sub",
+    )
+    sim = Simulator(t_end=0.05, dt=0.01)
+    sim.add(Constant(value=1.0, id="src"))
+    sim.add(Gain(k=2.0, id="g1"))
+    sim.add(Gain(k=2.0, id="g2"))
+    sim.add(sub)
+    sim.connect("src", "g1")
+    sim.connect("g1", "g2")
+    sim.connect("g2", "sub")
+    p = tmp_path / "_missing_seed.flw.json"
+    sim.save(p)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    p.unlink()
+    for entry in data["blocks"]:
+        if entry["id"] == "g1":
+            entry["type"] = "flode_ws.filters.GoneBlock"
+        elif entry["id"] == "g2":
+            entry["type"] = "no.such.Block"
+        elif entry["id"] == "sub":
+            for inner in entry["params"]["blocks"]:
+                if inner["id"] == "inner":
+                    inner["type"] = "flode_ws.filters.GoneBlock"
+    return data
+
+
+class TestUnknownBlockType:
+    def _assert_all_listed(self, response) -> None:
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail["category"] == "unknown_block_type"
+        assert detail["code"] == "unknown_block_type"
+        assert detail["template_key"] == "error.unknown_block_type"
+        args = detail["template_args"]
+        assert args["types"] == ["flode_ws.filters.GoneBlock", "no.such.Block"]
+        assert args["blocks"] == [
+            {"block_id": "g1", "qualified_id": "g1", "type": "flode_ws.filters.GoneBlock"},
+            {"block_id": "g2", "qualified_id": "g2", "type": "no.such.Block"},
+            {
+                "block_id": "inner",
+                "qualified_id": "sub/inner",
+                "type": "flode_ws.filters.GoneBlock",
+            },
+        ]
+        assert args["block_labels"] == ["g1", "g2", "sub/inner"]
+        assert detail["block_ids"] == ["g1", "g2", "inner"]
+        assert detail["block_id"] == "g1"
+        assert "flode_ws.filters.GoneBlock" in detail["raw_message"]
+
+    def test_inline_lists_every_missing_type(self, client: TestClient, tmp_path: Path) -> None:
+        response = client.post(
+            "/api/v1/simulations", json={"model": _model_with_missing_types(tmp_path)}
+        )
+        self._assert_all_listed(response)
+
+    def test_model_path_lists_every_missing_type(
+        self, client: TestClient, workspace: Path, tmp_path: Path
+    ) -> None:
+        (workspace / "broken.flw.json").write_text(
+            json.dumps(_model_with_missing_types(tmp_path)), encoding="utf-8"
+        )
+        response = client.post("/api/v1/simulations", json={"model_path": "broken.flw.json"})
+        self._assert_all_listed(response)
+
+    def test_resolve_dtypes_lists_every_missing_type(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        response = client.post(
+            "/api/v1/models/resolve-dtypes", json={"model": _model_with_missing_types(tmp_path)}
+        )
+        self._assert_all_listed(response)
+
+    def test_other_load_errors_keep_start_validation(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        model = _build_simple_model_dict(tmp_path)
+        model["schema_version"] = "9.9"
+        response = client.post("/api/v1/simulations", json={"model": model})
+        assert response.status_code == 400
+        assert response.json()["detail"]["category"] == "start_validation"
+
+
+def _bare_model(blocks: list, tmp_path: Path) -> dict:
+    model = _build_simple_model_dict(tmp_path)
+    model["blocks"] = blocks
+    model["connections"] = []
+    model.pop("layout", None)
+    return model
+
+
+class TestUnknownBlockTypeLimits:
+    def test_many_types_are_truncated(self, client: TestClient, tmp_path: Path) -> None:
+        from flode.server.routes.simulations import MAX_LISTED_UNKNOWN_TYPES
+
+        n = MAX_LISTED_UNKNOWN_TYPES + 10
+        model = _bare_model(
+            [{"id": f"b{i}", "type": f"no.such.Block{i}", "params": {}} for i in range(n)], tmp_path
+        )
+        response = client.post("/api/v1/simulations", json={"model": model})
+        assert response.status_code == 400
+        args = response.json()["detail"]["template_args"]
+        assert len(args["types"]) == MAX_LISTED_UNKNOWN_TYPES
+        assert args["truncated"] is True
+
+    def test_many_blocks_are_truncated(self, client: TestClient, tmp_path: Path) -> None:
+        from flode.server.routes.simulations import MAX_LISTED_UNKNOWN_BLOCKS
+
+        n = MAX_LISTED_UNKNOWN_BLOCKS + 10
+        model = _bare_model(
+            [{"id": f"b{i}", "type": "no.such.Block", "params": {}} for i in range(n)], tmp_path
+        )
+        response = client.post("/api/v1/simulations", json={"model": model})
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert len(detail["template_args"]["blocks"]) == MAX_LISTED_UNKNOWN_BLOCKS
+        assert detail["template_args"]["truncated"] is True
+        assert len(detail["block_ids"]) == MAX_LISTED_UNKNOWN_BLOCKS
+
+    def test_small_model_is_not_truncated(self, client: TestClient, tmp_path: Path) -> None:
+        model = _bare_model([{"id": "b", "type": "no.such.Block", "params": {}}], tmp_path)
+        response = client.post("/api/v1/simulations", json={"model": model})
+        assert response.json()["detail"]["template_args"]["truncated"] is False
+
+    @pytest.mark.parametrize("endpoint", ["/api/v1/simulations", "/api/v1/models/resolve-dtypes"])
+    def test_deeply_nested_model_is_4xx(
+        self, client: TestClient, endpoint: str, tmp_path: Path
+    ) -> None:
+        inner: dict = {"id": "leaf", "type": "flode_ws.gone.Missing", "params": {}}
+        for i in range(300):
+            inner = {
+                "id": f"s{i}",
+                "type": "flode.subsystems.subsystem.Subsystem",
+                "params": {"blocks": [inner], "connections": []},
+            }
+        response = client.post(endpoint, json={"model": _bare_model([inner], tmp_path)})
+        assert 400 <= response.status_code < 500, response.text
+
+    def test_scan_is_not_recursive(self, tmp_path: Path) -> None:
+        """列挙の走査自体は再帰しない (Python の再帰上限を超える深さでも全段を見る)。"""
+        from flode.server.routes.simulations import _missing_block_types
+
+        inner: dict = {"id": "leaf", "type": "flode_ws.gone.Missing", "params": {}}
+        for i in range(3000):
+            inner = {
+                "id": f"s{i}",
+                "type": "flode.subsystems.subsystem.Subsystem",
+                "params": {"blocks": [inner]},
+            }
+        missing, truncated = _missing_block_types(_bare_model([inner], tmp_path))
+        assert [m.type_path for m in missing] == ["flode_ws.gone.Missing"]
+        assert missing[0].qualified_id.endswith("/s0/leaf")
+        assert truncated is False
+
+    def test_enumeration_failure_falls_back(
+        self, client: TestClient, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
+        from flode.server.routes import simulations as sim_route
+
+        mocker.patch.object(sim_route, "resolve_block_class", side_effect=RuntimeError("x"))
+        model = _bare_model([{"id": "b", "type": "no.such.Block", "params": {}}], tmp_path)
+        response = client.post("/api/v1/simulations", json={"model": model})
+        assert response.status_code == 400
+        assert response.json()["detail"]["category"] == "start_validation"

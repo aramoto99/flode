@@ -15,8 +15,16 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ..exceptions import BlockLoadError
-from ._config import BlocksConfig, build_request, parse_blocks_config, read_blocks_config
+from ._config import (
+    BLOCKS_SECTION,
+    BlocksConfig,
+    build_request,
+    default_config_path,
+    parse_blocks_config,
+    read_blocks_config,
+)
 from ._loader import (
+    WORKSPACE_BLOCKS_DIR,
     current_report,
     load_sources,
     reload_sources,
@@ -97,6 +105,8 @@ def unload_blocks() -> None:
 
 
 __all__ = [
+    "BLOCKS_SECTION",
+    "WORKSPACE_BLOCKS_DIR",
     "BlockLoadReport",
     "BlocksConfig",
     "LoadError",
@@ -106,6 +116,7 @@ __all__ = [
     "UserBlockInfo",
     "UserParamSpec",
     "current_report",
+    "default_config_path",
     "load_blocks",
     "load_sources",
     "parse_blocks_config",

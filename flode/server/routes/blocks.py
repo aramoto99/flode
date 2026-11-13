@@ -1,17 +1,32 @@
-"""Block class registry エンドポイント (ADR-0019 §(1))。
+"""Block class registry エンドポイント (ADR-0019 §(1) / ADR-0081 §論点 8)。
 
 ブロックパレット UI が利用する。サーバ起動時に build される
-``app.state.block_registry`` (= ``list[BlockMetadata]``) を返却 / 検索する。
+``app.state.block_registry`` (= ``BlockCatalog``、組み込み + ユーザーブロック) を返却 / 検索する。
+``POST /blocks/reload`` はユーザーブロックを読み込み直し、新しい ``BlockCatalog`` を
+1 回の代入で差し替える。
 """
 
 from __future__ import annotations
 
+import logging
+import threading
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from ...exceptions import BlockSpecError, UnknownBlockTypeError
+from ...exceptions import BlockReloadInProgressError, BlockSpecError, UnknownBlockTypeError
+from ...userblocks import reload_sources
+from ..block_catalog import (
+    BlockCatalog,
+    compose_catalog,
+    initial_catalog,
+    registry_payload,
+    reload_allowed,
+    reload_payload,
+    reload_rejection_reason,
+)
+from ..errors import build_user_blocks_error
 from ..registry import (
     BlockMetadata,
     introspect_python_source,
@@ -19,6 +34,9 @@ from ..registry import (
     resolve_port_shapes,
     rewrite_python_source,
 )
+from ..settings import Settings
+
+_logger = logging.getLogger("flode.server.routes.blocks")
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
 
@@ -28,40 +46,139 @@ MAX_INTROSPECT_ITEMS = 64
 MAX_INTROSPECT_CODE_CHARS = 256 * 1024
 
 
-def _registry(request: Request) -> list[BlockMetadata]:
-    """app.state から registry を取り出す型安全 helper。"""
-    reg = getattr(request.app.state, "block_registry", None)
-    if reg is None:  # lifespan 起動前の test fixture 等
-        from ..registry import build_block_registry
+def _catalog(request: Request) -> BlockCatalog:
+    """app.state から registry (``BlockCatalog``) を取り出す型安全 helper。
 
-        reg = build_block_registry()
-        request.app.state.block_registry = reg
+    lifespan を通らない (test fixture 等) 場合は lifespan と同じ手順で作る。
+    """
+    catalog = getattr(request.app.state, "block_registry", None)
+    if catalog is None:  # lifespan 起動前の test fixture 等
+        catalog = initial_catalog(request.app.state.settings)
+        request.app.state.block_registry = catalog
     # ``-O`` モード対策で assert を使わない実行時 check (ADR-0019 code-reviewer MUST)。
-    if not isinstance(reg, list):
+    if not isinstance(catalog, BlockCatalog):
         raise HTTPException(status_code=500, detail="block_registry state is corrupted")
-    return reg
+    return catalog
+
+
+def _registry(request: Request) -> tuple[BlockMetadata, ...]:
+    """現在の registry のブロック一覧 (読み取りは 1 回の参照取得で完結する)。"""
+    return _catalog(request).blocks
 
 
 @router.get("")
 def list_blocks(request: Request) -> dict[str, Any]:
-    """全 Block class metadata を返す (パレット表示用、ADR-0019、ADR-0028)。
+    """全 Block class metadata を返す (パレット表示用、ADR-0019、ADR-0028、ADR-0081)。
 
     完全な docstring はサイズが大きくなるため省略 (``docstring_summary`` のみ)。
     詳細は ``GET /api/v1/blocks/{type_path}`` で個別取得する。
 
-    ADR-0028 (v0.11.0): ``schema_version = "blocks.v2"`` に bump、
-    ``supported_locales`` フィールドを追加。各 block metadata に
-    ``display_name_i18n`` / ``docstring_summary_i18n`` を同梱する (= 旧 frontend が
-    読まない optional フィールドなので後方互換)。
+    ADR-0081 (blocks.v3、追加のみ): 各ブロックに ``source`` / ``input_names`` /
+    ``output_names``、トップレベルに ``sources`` / ``load_errors`` / ``user_blocks``。
+    形は ``flode.server.block_catalog.registry_payload`` を参照。
     """
-    # 遅延 import で循環回避
-    from ..registry_translations import SUPPORTED_LOCALES
+    return registry_payload(_catalog(request), request.app.state.settings)
 
-    return {
-        "blocks": [metadata_to_dict(m, include_full_docstring=False) for m in _registry(request)],
-        "schema_version": "blocks.v2",
-        "supported_locales": list(SUPPORTED_LOCALES),
-    }
+
+@router.get("/reload")
+def reload_blocks_get_method_not_allowed() -> None:
+    """``POST /api/v1/blocks/reload`` の GET 方向の 405 stub (catch-all への誤マッチ防止)。"""
+    raise HTTPException(
+        status_code=405,
+        detail="Use POST /api/v1/blocks/reload with the JSON body {} to reload user blocks.",
+    )
+
+
+@router.post("/reload")
+async def reload_blocks(request: Request) -> dict[str, Any]:
+    """ワークスペース ``blocks/`` と config ``dirs`` のユーザーブロックを読み込み直す (ADR-0081 §2)。
+
+    本文は ``{}`` 固定 (``application/json`` 必須にして CSRF guard の content-type 検査を必ず
+    通す。パス・モジュール名は受け取らない)。config ``modules`` は読み直さない (Q5a)。
+    実行中のシミュレーションは旧クラスのまま走り切る (SPEC-0033 P8) ので拒否しない。
+
+    Returns:
+        ``GET /blocks`` と同じ形 + ``added`` / ``removed`` / ``changed`` /
+        ``restart_required_sources`` / ``errors`` (``load_errors`` と同じ)。
+
+    Raises:
+        HTTPException: 403 (``user_blocks_disabled`` / ``reload_not_allowed``)、
+            400 (``invalid_reload_body``)、409 (``reload_in_progress``)。detail は
+            ADR-0056 の構造化形式 + ``code``。読み込み後の registry 組み立てが想定外に失敗した
+            場合は 500 (管理型表は新しい世代、registry は旧世代のまま。ログに記録する)。
+    """
+    settings: Settings = request.app.state.settings
+    if not reload_allowed(settings):
+        code = "user_blocks_disabled" if not settings.user_blocks_enabled else "reload_not_allowed"
+        raise HTTPException(
+            status_code=403,
+            detail=build_user_blocks_error(
+                code,
+                reload_rejection_reason(settings),
+                non_loopback=not settings.loopback_bind,
+            ),
+        )
+    bad_body = HTTPException(
+        status_code=400,
+        detail=build_user_blocks_error(
+            "invalid_reload_body", "the request body must be the JSON object {}"
+        ),
+    )
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise bad_body from e
+    if not isinstance(body, dict) or body:
+        raise bad_body
+
+    lock: threading.Lock = request.app.state.block_reload_lock
+
+    def _reload() -> BlockCatalog:
+        # server ロックの取得・解放はワーカースレッドの中で完結させる。
+        # 事実確認 (anyio 4 の asyncio backend、``run_sync_in_worker_thread``): Starlette の
+        # ``run_in_threadpool`` は ``anyio.to_thread.run_sync(func)`` を
+        # ``abandon_on_cancel=False`` で呼び、待機は ``CancelScope(shield=True)`` の中で行う。
+        # anyio のキャンセルスコープ経由のキャンセルではスレッドの完了を待つが、
+        # ``asyncio.Task.cancel()`` による素のキャンセル (サーバ終了時等) は shield を通り抜けて
+        # ``await future`` が即座に ``CancelledError`` になり、スレッドは走り続ける。
+        # 解放をイベントループ側の ``finally`` に置くと、その隙に次の再読み込みが割り込み、
+        # 遅れて終わった古い方の差し替えが新しい方を上書きしうる。スレッド内で取って放せば、
+        # 差し替えまで終わるまで次の再読み込みは必ず 409 になる。
+        if not lock.acquire(blocking=False):
+            raise BlockReloadInProgressError("the server is already reloading user blocks")
+        try:
+            current = _catalog(request)
+            report = reload_sources()
+            try:
+                catalog = compose_catalog(current.builtin, report, settings)
+            except Exception:
+                # U2 の管理型表 (実行時の型解決) は既に新しい世代に替わっているが、registry
+                # (パレット) は旧世代のまま残る。U2 側を戻す手段は無いので記録して 500 にする。
+                # 次の再読み込みが成功すれば両者は一致する。
+                _logger.exception(
+                    "user blocks were reloaded but building the registry failed; the block "
+                    "registry was not replaced (the palette may be out of date until the "
+                    "next successful reload)"
+                )
+                raise
+            # コミット点 (ADR-0081 §2-A 手順 6): 新しい registry を 1 回の代入で差し替える
+            request.app.state.block_registry = catalog
+            return catalog
+        finally:
+            lock.release()
+
+    try:
+        catalog = await run_in_threadpool(_reload)
+    except BlockReloadInProgressError as e:
+        _logger.info("user blocks reload rejected: %s", e)
+        raise HTTPException(
+            status_code=409,
+            detail=build_user_blocks_error(
+                "reload_in_progress",
+                "user blocks are already being reloaded; try again when it finishes",
+            ),
+        ) from e
+    return reload_payload(catalog, settings)
 
 
 @router.get("/resolve-port-shapes")

@@ -26,6 +26,7 @@ import errno
 import hashlib
 import json
 import logging
+import os
 import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -39,6 +40,7 @@ from rapidfuzz import fuzz
 
 from ...core.persistence import migrate_to_current
 from ...exceptions import ModelLoadError, PathTraversalError, SchemaVersionError
+from ..block_catalog import BlockCatalog, user_block_roots
 from ..security import resolve_workspace_path
 
 # ADR-0043 §論点 5-A: 検索時に hard-coded で除外するディレクトリ。
@@ -131,6 +133,114 @@ def _resolve(workspace_root: Path, raw: str) -> Path:
             status_code=403,
             detail="Path traversal rejected (see server log for details).",
         ) from e
+
+
+def _name_key(part: str) -> str:
+    """パスの 1 要素を比較用に正規化する。
+
+    大文字小文字を区別しない FS (Windows、macOS 既定の APFS、WSL の ``/mnt/c``、SMB、exFAT 等)
+    があるので OS に関係なく ``casefold`` で比べる (区別する FS では ``Blocks/`` も拒否する
+    過剰拒否になるが、安全側として許容する)。NTFS の代替データストリーム (``blocks:x``) も
+    ``blocks`` とみなす。
+    """
+    return part.split(":", 1)[0].casefold()
+
+
+def _is_lexically_under(rel_parts: tuple[str, ...], root_parts: tuple[str, ...]) -> bool:
+    """ワークスペース相対の要素列で ``rel_parts`` が ``root_parts`` 自体かその配下か。"""
+    if not root_parts or len(rel_parts) < len(root_parts):
+        return False
+    return all(_name_key(a) == _name_key(b) for a, b in zip(rel_parts, root_parts, strict=False))
+
+
+def _same_existing_path(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _touches_protected_root(resolved: Path, workspace_root: Path, roots: tuple[Path, ...]) -> bool:
+    """``resolved`` が管理ソースのルート (``roots``) 自体かその配下か (ADR-0081 §6-A)。
+
+    2 通りで判定し、どちらかに当たれば対象とする:
+
+    1. 名前: ワークスペース相対の要素列を ``_name_key`` で比べる (ルートがまだ無くても効く)。
+    2. 実体: ルートが存在するなら、対象 (存在しなければ最も近い既存の祖先) からワークスペースの
+       ルートまでの各祖先と ``os.path.samefile`` で比べる (リンク・junction・大文字小文字の
+       違いに依存しない)。
+    """
+    workspace = workspace_root.resolve()
+    try:
+        rel_parts = resolved.relative_to(workspace).parts
+    except ValueError:
+        rel_parts = ()
+    existing = [root for root in roots if root.exists()]
+    for root in roots:
+        try:
+            root_parts = root.resolve().relative_to(workspace).parts
+        except ValueError:
+            root_parts = ()
+        if _is_lexically_under(rel_parts, root_parts):
+            return True
+        # ルートがリンク等で解決後にワークスペース外を指す場合に備えて、解決前の表記でも見る
+        try:
+            raw_parts = root.relative_to(workspace_root).parts
+        except ValueError:
+            raw_parts = ()
+        if _is_lexically_under(rel_parts, raw_parts):
+            return True
+    if not existing:
+        return False
+    current = resolved
+    while not current.exists() and current != current.parent:
+        current = current.parent
+    for ancestor in (current, *current.parents):
+        if any(_same_existing_path(ancestor, root) for root in existing):
+            return True
+        if _same_existing_path(ancestor, workspace):
+            break
+    return False
+
+
+def _protected_roots(request: Request) -> tuple[Path, ...]:
+    """files API で守るルート (起動時の ``BlockCatalog`` から。無ければ設定だけから作る)。
+
+    非 loopback では再読み込みできないので、起動時の世代のルートがそのまま有効。
+    lifespan を通らないテスト等では、ユーザーコードを読まずに設定だけから作る。
+    """
+    catalog = getattr(request.app.state, "block_registry", None)
+    if isinstance(catalog, BlockCatalog):
+        return catalog.protected_roots
+    return user_block_roots(request.app.state.settings, None)
+
+
+def _reject_user_block_changes(request: Request, *paths: Path) -> None:
+    """非 loopback bind では管理ソースのルート配下を変更させない (ADR-0081 §6-A)。
+
+    対象はワークスペースの ``blocks/``、config ``dirs`` のフォルダ、``modules`` の実体
+    (``user_block_roots``)。リモートから .py を置いて (またはコピー・改名で持ち込んで)
+    次回起動時に実行させる経路を塞ぐ。loopback bind (``Settings.loopback_bind=True``) では従来どおり。
+    """
+    settings = request.app.state.settings
+    if settings.loopback_bind:
+        return
+    workspace_root = _workspace_root(request)
+    roots = _protected_roots(request)
+    if any(_touches_protected_root(p, workspace_root, roots) for p in paths):
+        _logger.warning(
+            "Rejected %s %s: user block sources cannot be changed on a non-loopback bind",
+            request.method,
+            request.url.path,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Python block sources (the workspace blocks/ folder and the [blocks] dirs / "
+                "modules) cannot be changed through the server when it is bound to a "
+                "non-loopback address. Edit them on the server machine."
+            ),
+        )
 
 
 def _format_mtime(mtime_ns: int) -> str:
@@ -386,6 +496,7 @@ def put_content(
     """
     workspace_root = _workspace_root(request)
     resolved = _resolve(workspace_root, path)
+    _reject_user_block_changes(request, resolved)
     if resolved.exists() and resolved.is_dir():
         raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
 
@@ -445,6 +556,7 @@ def rename(request: Request, body: RenameBody) -> dict[str, str]:
     workspace_root = _workspace_root(request)
     src = _resolve(workspace_root, body.from_)
     dst = _resolve(workspace_root, body.to)
+    _reject_user_block_changes(request, src, dst)
 
     if not src.exists():
         raise HTTPException(status_code=404, detail=f"Source not found: {body.from_}")
@@ -482,6 +594,7 @@ def delete(request: Request, path: str) -> Response:
     """
     workspace_root = _workspace_root(request)
     resolved = _resolve(workspace_root, path)
+    _reject_user_block_changes(request, resolved)
 
     if _is_same_as_workspace_root(resolved, workspace_root):
         raise HTTPException(status_code=400, detail="Cannot delete workspace root")
@@ -537,6 +650,7 @@ def mkdir(request: Request, path: str) -> Response:
     """
     workspace_root = _workspace_root(request)
     resolved = _resolve(workspace_root, path)
+    _reject_user_block_changes(request, resolved)
 
     if _is_same_as_workspace_root(resolved, workspace_root):
         raise HTTPException(status_code=400, detail="Cannot mkdir workspace root")
@@ -584,6 +698,8 @@ def copy_path(
     workspace_root = _workspace_root(request)
     src = _resolve(workspace_root, from_)
     dst = _resolve(workspace_root, to)
+    # コピー元が blocks/ でも読むだけなので許す (コピー先だけを守る)
+    _reject_user_block_changes(request, dst)
 
     if _is_same_as_workspace_root(src, workspace_root):
         raise HTTPException(status_code=400, detail="Cannot copy workspace root")
