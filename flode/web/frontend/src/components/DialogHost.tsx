@@ -108,18 +108,24 @@ function ConfirmDialog({ dialog }: { dialog: PendingDialog }): JSX.Element {
   const opts = dialog.options as ConfirmOptions;
   const onOk = (): void => resolveCurrentDialog(true);
   const onCancel = (): void => resolveCurrentDialog(false);
-  // Enter で OK
+  const isDanger = opts.variant === "danger";
+  // Enter で OK。ただし:
+  // - キーリピート (直前の操作で押した Enter の長押し) では確定しない
+  // - 破壊的な確認 (danger) は Enter では確定しない。初期 focus をキャンセルに置くので、
+  //   Enter はキャンセル、確定は明示的なクリック (または Tab で移ってから) になる
+  // - ボタンに focus がある Enter はそのボタンの click に任せる (二重に処理しない)
   useEffect(() => {
+    if (isDanger) return;
     const h = (e: KeyboardEvent): void => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        onOk();
-      }
+      if (e.key !== "Enter" || e.repeat) return;
+      if (e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      onOk();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
-  const OkButton = opts.variant === "danger" ? DangerButton : PrimaryButton;
+  }, [isDanger]);
+  const OkButton = isDanger ? DangerButton : PrimaryButton;
   return (
     <DialogShell
       title={opts.title ?? t("dialog.confirm.title", "Confirm")}
@@ -129,7 +135,7 @@ function ConfirmDialog({ dialog }: { dialog: PendingDialog }): JSX.Element {
         <DialogFooter
           right={
             <>
-              <SecondaryButton onClick={onCancel}>
+              <SecondaryButton onClick={onCancel} autoFocus={isDanger}>
                 {opts.cancelLabel ?? t("dialog.button.cancel", "Cancel")}
               </SecondaryButton>
               <OkButton onClick={onOk}>

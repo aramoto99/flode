@@ -9,6 +9,7 @@
 // いずれも ``ui/inspector.tsx`` の primitives だけで組む (ui-design-system 準拠)。
 
 import { useQueryClient } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +23,7 @@ import {
   describeNameConflict,
   libraryErrorArgs,
   libraryErrorCode,
+  sanitizeDisplayText,
 } from "../lib/libraryErrors";
 import { LIBRARIES_QUERY_KEY } from "../lib/librariesQuery";
 import type {
@@ -51,11 +53,29 @@ const MAX_DESCRIPTION_CHARS = 1000;
 const MAX_CATEGORY_SUFFIX_CHARS = 64;
 
 const LABEL_WIDTH = 96;
+// 取り込むファイル由来の文字列 (型名・エントリ名・ブロックパス) の表示上限
+const MAX_FILE_TEXT_CHARS = 80;
+/** 取り込みダイアログに列挙する項目 (未知の型 / Python を含むエントリ) の最大件数。 */
+const MAX_LISTED_ITEMS = 20;
+/** Python を含むエントリ 1 件に添えるブロックパスの最大件数。 */
+const MAX_LISTED_PATHS = 5;
+
+/** 取り込むファイル由来の文字列を表示用に整える。 */
+function fileText(value: unknown): string {
+  return sanitizeDisplayText(value, MAX_FILE_TEXT_CHARS);
+}
 const CATEGORY_DATALIST_ID = "library-entry-category-options";
 
 /** code point 数 (サーバの文字数上限と同じ数え方)。 */
 function charCount(text: string): number {
   return [...text].length;
+}
+
+/** 一覧を最大 ``limit`` 件まで「a, b, c ほか n 件」の形にまとめる。 */
+function listWithLimit(t: TFunction, items: readonly string[], limit: number): string {
+  const shown = items.slice(0, limit).join(", ");
+  const rest = items.length - limit;
+  return rest > 0 ? t("library.and_more", { names: shown, n: rest }) : shown;
 }
 
 /** ``LibraryEntryDialog`` の用途。 */
@@ -466,14 +486,16 @@ export function ImportLibraryDialog({
       >
         <PropertyGrid>
           <PropertyRow label={t("library.import_dialog.file")} labelWidth={LABEL_WIDTH}>
-            <span className="truncate text-[11px] text-slate-800" title={filename}>
-              {filename}
+            <span className="truncate text-[11px] text-slate-800" title={fileText(filename)}>
+              {fileText(filename)}
             </span>
           </PropertyRow>
           <PropertyRow label={t("library.import_dialog.library")} labelWidth={LABEL_WIDTH}>
             <span className="truncate text-[11px] text-slate-800">
-              {report.library.display_name || report.library.name}
-              <span className="ml-1 font-mono text-slate-500">({report.library.name})</span>
+              {fileText(report.library.display_name || report.library.name)}
+              <span className="ml-1 font-mono text-slate-500">
+                ({fileText(report.library.name)})
+              </span>
             </span>
           </PropertyRow>
           <PropertyRow label={t("library.import_dialog.entries")} labelWidth={LABEL_WIDTH}>
@@ -498,7 +520,7 @@ export function ImportLibraryDialog({
         {report.unknown_types.length > 0 && (
           <NoticeBox tone="error" testId="library-import-unknown-types">
             {t("library.import_dialog.unknown_types", {
-              types: report.unknown_types.join(", "),
+              types: listWithLimit(t, report.unknown_types.map(fileText), MAX_LISTED_ITEMS),
             })}
           </NoticeBox>
         )}
@@ -510,16 +532,27 @@ export function ImportLibraryDialog({
               })}
             </p>
             <ul className="mt-1 list-disc pl-4">
-              {report.python_entries.map((entry) => (
-                <li key={entry.id} data-testid={`library-import-python-${entry.id}`}>
-                  {entry.display_name || entry.id}
-                  {entry.python_block_paths.some((p) => p !== "") && (
-                    <span className="ml-1 font-mono text-[10px]">
-                      ({entry.python_block_paths.filter((p) => p !== "").join(", ")})
-                    </span>
-                  )}
+              {report.python_entries.slice(0, MAX_LISTED_ITEMS).map((entry, i) => {
+                const paths = entry.python_block_paths.filter((p) => p !== "").map(fileText);
+                return (
+                  // key は位置 (id は信頼できないファイル由来で、重複しうる)
+                  <li key={i} data-testid={`library-import-python-${i}`}>
+                    {fileText(entry.display_name || entry.id)}
+                    {paths.length > 0 && (
+                      <span className="ml-1 break-all font-mono text-[10px]">
+                        ({listWithLimit(t, paths, MAX_LISTED_PATHS)})
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+              {report.python_entries.length > MAX_LISTED_ITEMS && (
+                <li data-testid="library-import-python-more">
+                  {t("library.and_more_only", {
+                    n: report.python_entries.length - MAX_LISTED_ITEMS,
+                  })}
                 </li>
-              ))}
+              )}
             </ul>
           </NoticeBox>
         )}

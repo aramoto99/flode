@@ -21,6 +21,31 @@ export interface ResolvedPortCounts {
   nOutputs: number;
 }
 
+/** Subsystem の入力スロットの種別 (ADR-0058 §論点 4)。 */
+export type InputSlotKind = "data" | "enable" | "trigger";
+
+/**
+ * Subsystem の内部ブロックから、外面の入力スロットの並びを返す。
+ * 順序は ``[data (Inport の数)..., enable, trigger]`` (ADR-0058 §論点 4)。
+ * ポート数の解決 (``resolvePortCounts``) とライブラリ差し替えの互換判定
+ * (``lib/libraryReplacement.ts``) がこの 1 箇所を参照する。
+ *
+ * @param innerBlocks Subsystem の ``params.blocks``。
+ */
+export function resolveSubsystemInputSlots(innerBlocks: unknown[]): InputSlotKind[] {
+  const slots: InputSlotKind[] = new Array<InputSlotKind>(
+    countByType(innerBlocks, INPORT_TYPE),
+  ).fill("data");
+  if (countByType(innerBlocks, ENABLE_TYPE) > 0) slots.push("enable");
+  if (countByType(innerBlocks, TRIGGER_TYPE) > 0) slots.push("trigger");
+  return slots;
+}
+
+/** Subsystem の内部ブロックから、外面の出力ポート数 (Outport の数) を返す。 */
+export function countSubsystemOutputs(innerBlocks: unknown[]): number {
+  return countByType(innerBlocks, OUTPORT_TYPE);
+}
+
 /**
  * LogicalOperator の単項演算子 (Python 側 ``logic.py`` の ``_UNARY_OPS`` と一致させる)。
  * 単項演算子は ``n_inputs=1`` 固定で、それ以外は ``n_inputs >= 2``。
@@ -112,11 +137,10 @@ export function resolvePortCounts(
   if (typePath.endsWith(".Subsystem")) {
     const inner = params.blocks;
     if (Array.isArray(inner)) {
-      const inports = countByType(inner, INPORT_TYPE);
-      const outports = countByType(inner, OUTPORT_TYPE);
-      const hasTrigger = countByType(inner, TRIGGER_TYPE) > 0 ? 1 : 0;
-      const hasEnable = countByType(inner, ENABLE_TYPE) > 0 ? 1 : 0;
-      return { nInputs: inports + hasEnable + hasTrigger, nOutputs: outports };
+      return {
+        nInputs: resolveSubsystemInputSlots(inner).length,
+        nOutputs: countSubsystemOutputs(inner),
+      };
     }
     return { nInputs: defaultIn, nOutputs: defaultOut };
   }

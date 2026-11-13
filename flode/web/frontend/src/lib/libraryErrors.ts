@@ -146,11 +146,23 @@ const MAX_ARG_CHARS = 300;
  * ノードで行う (HTML としては解釈させない)。
  */
 function asString(value: unknown): string {
+  return sanitizeDisplayText(value, MAX_ARG_CHARS);
+}
+
+/**
+ * 信頼できない値 (サーバの応答・取り込むファイル・モデルファイル由来) を表示用の
+ * 文字列にする: 制御文字・書式文字 (双方向制御を含む)・行区切りを空白に畳み、
+ * ``maxChars`` を超える分は「…」で切る。描画は常にテキストノードで行うこと。
+ *
+ * @param value 表示したい値 (``null`` / ``undefined`` は空文字)。
+ * @param maxChars 最大長 (code unit)。
+ */
+export function sanitizeDisplayText(value: unknown, maxChars: number): string {
   if (value === undefined || value === null) return "";
   const text = (typeof value === "string" ? value : String(value))
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim();
-  return text.length > MAX_ARG_CHARS ? `${text.slice(0, MAX_ARG_CHARS)}…` : text;
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 }
 
 /** ``goto_from_not_closed`` の違反一覧を「パス (tag): 理由」の列に整形する。 */

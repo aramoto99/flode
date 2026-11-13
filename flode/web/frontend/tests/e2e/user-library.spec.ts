@@ -61,6 +61,34 @@ test.describe("Right-button drag on a block", () => {
   });
 });
 
+test.describe("Block context menu", () => {
+  // 回帰: 階層を移動した後に、ブロックの右クリックメニュー (と右ドラッグ複製) が
+  // 効かなくなる不具合があった。
+  test("still opens after drilling into a Subsystem and coming back", async ({ page }) => {
+    await page.goto("/");
+    await page.getByText(FIXTURE_FILENAME).click({ timeout: 15_000 });
+    const subsystemNode = page.locator('.react-flow__node[data-id="MyGain"]');
+    await expect(subsystemNode).toBeVisible();
+
+    // 移動前: メニューが出る
+    await subsystemNode.click({ button: "right" });
+    await expect(page.getByTestId("block-menu-add-to-library")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("block-context-menu")).toHaveCount(0);
+
+    // drill-down → 戻る
+    await subsystemNode.dblclick();
+    await expect(page.locator('.react-flow__node[data-id="k"]')).toBeVisible();
+    await page.getByRole("button", { name: "Top", exact: true }).click();
+    await expect(subsystemNode).toBeVisible();
+
+    // 移動後: 同じようにメニューが出る
+    await subsystemNode.click({ button: "right" });
+    await expect(page.getByTestId("block-menu-add-to-library")).toBeVisible();
+    await page.keyboard.press("Escape");
+  });
+});
+
 test.describe("User library (My Blocks)", () => {
   test("register a Subsystem, see it in My Blocks, and place it by drop", async ({
     page,
@@ -144,5 +172,147 @@ test.describe("User library (My Blocks)", () => {
       category_suffix: "e2e",
       revision: 1,
     });
+  });
+
+  // SPEC-0032 §1.9: 上書き登録 → 配置済みブロックに更新マーカー → 確認つきの差し替え →
+  // 中身が新版になる → Ctrl+Z 1 回で元に戻る。
+  test("overwrite an entry, see the update marker, replace from the Inspector, undo", async ({
+    page,
+  }) => {
+    const name = "E2E Rev";
+    const placedId = "E2E_Rev";
+    await page.goto("/");
+    await page.getByText(FIXTURE_FILENAME).click({ timeout: 15_000 });
+    const sourceNode = page.locator('.react-flow__node[data-id="MyGain"]');
+    await expect(sourceNode).toBeVisible();
+    const topButton = page.getByRole("button", { name: "Top", exact: true });
+
+    /** MyGain を ``name`` でマイブロックに登録する (ダイアログを開いて送信まで)。 */
+    const submitRegistration = async (): Promise<void> => {
+      await sourceNode.click({ button: "right" });
+      await page.getByTestId("block-menu-add-to-library").click();
+      await page.getByTestId("library-entry-name").fill(name);
+      await page.getByTestId("library-entry-submit").click();
+    };
+
+    // --- rev 1 を登録して配置 ---
+    await submitRegistration();
+    await expect(page.getByTestId("library-entry-dialog")).toHaveCount(0);
+    await page.getByLabel("Library", { exact: true }).click();
+    const entry = page.getByTestId("palette-section-my-blocks").getByText(name, { exact: true });
+    await entry.dragTo(page.getByTestId("rf__wrapper"), { targetPosition: { x: 80, y: 40 } });
+    const placedNode = page.locator(`.react-flow__node[data-id="${placedId}"]`);
+    await expect(placedNode).toBeVisible();
+    const marker = page.getByTestId(`library-update-marker-${placedId}`);
+    await expect(marker).toHaveCount(0);
+
+    // 配置直後の Inspector: 由来行と「最新」
+    await expect(page.getByTestId("library-provenance-source")).toHaveText(
+      `My Blocks / ${name} (rev 1)`,
+    );
+    await expect(page.getByTestId("library-provenance-status")).toHaveText("Up to date");
+    await expect(page.getByTestId("library-provenance-replace")).toHaveCount(0);
+
+    // --- 登録元の中身を変えて (内部 Gain k: 3 → 5)、同名で上書き登録 → rev 2 ---
+    await sourceNode.dblclick();
+    await page.locator('.react-flow__node[data-id="k"]').click();
+    await page.getByTestId("param-input-k").fill("5");
+    await page.getByTestId("param-input-k").blur();
+    await topButton.click();
+    await expect(sourceNode).toBeVisible();
+    await submitRegistration();
+    // 同名 → 確認ダイアログ (既定は別名)。ここでは上書きを選ぶ
+    await expect(page.getByTestId("library-name-conflict-dialog")).toBeVisible();
+    await expect(page.getByTestId("library-conflict-overwrite")).toHaveText(
+      "Overwrite (rev 1 → 2)",
+    );
+    await page.getByTestId("library-conflict-overwrite").click();
+    await expect(page.getByTestId("library-name-conflict-dialog")).toHaveCount(0);
+    // 上書きの通知は新規登録と別の文言 (版が分かる)
+    await expect(page.getByText(`Updated "${name}" in My Blocks to rev 2.`)).toBeVisible();
+
+    // --- 配置済みブロックに更新マーカー (登録元は rev 2 になったので付かない) ---
+    await expect(marker).toBeVisible();
+    await expect(marker).toHaveAttribute("title", /rev 1 → 2/);
+    await expect(page.getByTestId("library-update-marker-MyGain")).toHaveCount(0);
+    await snapshot(page, "update-marker.png");
+
+    // --- Inspector: 更新あり + [差し替え] ---
+    await placedNode.click();
+    await expect(page.getByTestId("library-provenance-status")).toHaveText(
+      "Update available (rev 1 → 2)",
+    );
+    await snapshot(page, "inspector-provenance-update.png");
+    await page.getByTestId("library-provenance-replace").click();
+    const confirmDialog = page.getByTestId("library-replace-dialog");
+    await expect(confirmDialog).toContainText("edits you made inside this block will be lost");
+    // 差し替え元 (ライブラリの表示名・内部名・種別・エントリ) と版が明記される
+    await expect(page.getByTestId("library-replace-source")).toHaveText("My Blocks(user)");
+    await expect(page.getByTestId("library-replace-kind")).toContainText("your own library");
+    await expect(confirmDialog).toContainText(name);
+    await expect(confirmDialog).toContainText("rev 1 → rev 2");
+    // 既定はキャンセル (破壊的な操作を Enter で確定させない)
+    await expect(page.getByTestId("library-replace-cancel")).toBeFocused();
+    await snapshot(page, "replace-confirm-dialog.png");
+    await page.getByTestId("library-replace-confirm").click();
+
+    await expect(page.getByTestId("library-provenance-status")).toHaveText("Up to date");
+    await expect(page.getByTestId("library-provenance-source")).toHaveText(
+      `My Blocks / ${name} (rev 2)`,
+    );
+    await expect(marker).toHaveCount(0);
+    // id と位置はそのまま (ノードは同じ id で存在し続ける)
+    await expect(placedNode).toBeVisible();
+
+    // --- 中身が新版 (k = 5) になっている ---
+    await placedNode.dblclick();
+    await page.locator('.react-flow__node[data-id="k"]').click();
+    await expect(page.getByTestId("param-input-k")).toHaveValue("5");
+    await topButton.click();
+    await expect(placedNode).toBeVisible();
+
+    // --- Ctrl+Z 1 回で差し替え前 (rev 1、更新あり) に戻る ---
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await page.keyboard.press("Control+z");
+    await expect(marker).toBeVisible();
+    await placedNode.click();
+    await expect(page.getByTestId("library-provenance-status")).toHaveText(
+      "Update available (rev 1 → 2)",
+    );
+    await placedNode.dblclick();
+    await page.locator('.react-flow__node[data-id="k"]').click();
+    await expect(page.getByTestId("param-input-k")).toHaveValue("3");
+  });
+
+  // ADR-0080 Amendments 2: 自分の書き出し物は同じ環境に取り込めない (uid が重複する)。
+  // 書き出しファイルを取得し、取り込みの確認ダイアログが衝突を表示して確定できない
+  // ことを確かめる (別環境への取り込み → 警告表示は unit で確認している)。
+  test("an exported My Blocks file cannot be imported back into the same environment", async ({
+    page,
+  }) => {
+    const exported = await page.request.get("/api/v1/libraries/user/export");
+    expect(exported.ok()).toBe(true);
+    expect(exported.headers()["content-disposition"]).toMatch(/attachment; filename="user-/);
+    const text = await exported.text();
+    const library = JSON.parse(text) as { name: string; uid: string };
+    // 予約名 user のままでは受け取った側が取り込めないので改名されている
+    expect(library.name).toMatch(/^user-[0-9a-f]{8}$/);
+    expect(library.uid.startsWith(library.name.slice("user-".length))).toBe(true);
+
+    await page.goto("/");
+    await page.getByLabel("Library", { exact: true }).click();
+    await expect(page.getByTestId("palette-section-my-blocks")).toBeVisible();
+    await page.getByTestId("palette-import-file").setInputFiles({
+      name: "exported.flwlib.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(text, "utf-8"),
+    });
+    await expect(page.getByTestId("library-import-dialog")).toBeVisible();
+    await expect(page.getByTestId("library-import-conflict")).toContainText("same library ID");
+    await expect(page.getByTestId("library-import-confirm")).toBeDisabled();
+    await page.getByTestId("library-import-cancel").click();
+    await expect(page.getByTestId("library-import-dialog")).toHaveCount(0);
+    // 取り込まれていない (取り込みライブラリのセクションが増えていない)
+    await expect(page.getByTestId(`palette-library-header-${library.name}`)).toHaveCount(0);
   });
 });

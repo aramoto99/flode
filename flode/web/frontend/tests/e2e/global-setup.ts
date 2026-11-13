@@ -1,4 +1,5 @@
 import { cpSync, mkdirSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,8 +24,13 @@ export default function globalSetup(): () => void {
   return () => {
     const stateDir = process.env.FLODE_E2E_STATE_DIR;
     if (!stateDir) return;
+    // 再帰削除するのは、playwright.config.ts が作る形 (OS の一時ディレクトリ直下の
+    // ``flode-e2e-*``) のときだけ。環境変数が外から別の場所に向けられていても消さない
+    const resolved = path.resolve(stateDir);
+    const insideTmp = path.dirname(resolved) === path.resolve(os.tmpdir());
+    if (!insideTmp || !path.basename(resolved).startsWith("flode-e2e-")) return;
     try {
-      rmSync(stateDir, { recursive: true, force: true });
+      rmSync(resolved, { recursive: true, force: true });
     } catch {
       // 残っても無害 (OS の一時ディレクトリ)
     }

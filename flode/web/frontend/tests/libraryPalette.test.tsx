@@ -429,11 +429,13 @@ describe("BlockPalette: import flow", () => {
     const warning = screen.getByTestId("library-import-python-warning");
     expect(warning.textContent).toContain("1 block(s) with Python code");
     expect(warning.textContent).toContain("Only import files from sources you trust");
-    expect(screen.getByTestId("library-import-python-ctrl").textContent).toContain("Controller");
-    expect(screen.getByTestId("library-import-python-ctrl").textContent).toContain("inner/code");
+    expect(screen.getByTestId("library-import-python-0").textContent).toContain("Controller");
+    expect(screen.getByTestId("library-import-python-0").textContent).toContain("inner/code");
 
     fireEvent.click(screen.getByTestId("library-import-confirm"));
     await waitFor(() => expect(api.importLibrary).toHaveBeenCalledTimes(2));
+    // 確認した内容と取り込む内容が同じ: dry-run と本番で同一の文字列を送る
+    expect(api.importLibrary.mock.calls[1]?.[0]).toBe(api.importLibrary.mock.calls[0]?.[0]);
     expect(api.importLibrary).toHaveBeenLastCalledWith('{"name": "acme2"}', {
       dryRun: false,
       filename: "acme2.flwlib.json",
@@ -881,5 +883,73 @@ describe("BlockPalette: details", () => {
     expect(document.querySelector("a[download]")).toBeNull();
     expect(revokeObjectURL).not.toHaveBeenCalled();
     click.mockRestore();
+  });
+});
+
+describe("ImportLibraryDialog: untrusted strings from the file", () => {
+  it("strips control / bidi characters, clips long names and caps the lists", () => {
+    const manyTypes = Array.from({ length: 25 }, (_, i) => `acme.T${i}`);
+    manyTypes[0] = `evil\u202E\n${"x".repeat(500)}`;
+    const manyEntries = Array.from({ length: 23 }, (_, i) => ({
+      id: `e${i}`,
+      display_name: i === 0 ? `Ctrl\u200B\u202Eler ${"y".repeat(300)}` : `Entry ${i}`,
+      python_block_paths: i === 1 ? Array.from({ length: 9 }, (_, k) => `p${k}/code`) : ["code"],
+    }));
+    renderWithProvider(
+      <ImportLibraryDialog
+        filename={"a\u202E.json"}
+        content="{}"
+        report={{
+          dry_run: true,
+          library: { name: "acme\u202E", uid: null, display_name: "Acme\nCorp", entry_count: 23 },
+          python_entries: manyEntries,
+          unknown_types: manyTypes,
+          conflict: null,
+        }}
+        onImported={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const whole = screen.getByTestId("library-import-dialog").textContent ?? "";
+    expect(whole).not.toMatch(/[\u202E\u200B]/);
+    expect(whole).toContain("Acme Corp");
+
+    const types = screen.getByTestId("library-import-unknown-types").textContent ?? "";
+    expect(types).toContain("acme.T19");
+    expect(types).not.toContain("acme.T20");
+    expect(types).toContain("and 5 more");
+    expect(types).not.toContain("x".repeat(100));
+
+    // Python を含むエントリは 20 件まで + 「ほか 3 件」
+    expect(screen.getByTestId("library-import-python-19")).toBeTruthy();
+    expect(screen.queryByTestId("library-import-python-20")).toBeNull();
+    expect(screen.getByTestId("library-import-python-more").textContent).toContain("3 more");
+    expect((screen.getByTestId("library-import-python-0").textContent ?? "").length).toBeLessThan(120);
+    // ブロックパスも件数に上限
+    const paths = screen.getByTestId("library-import-python-1").textContent ?? "";
+    expect(paths).toContain("p4/code");
+    expect(paths).not.toContain("p5/code");
+    expect(paths).toContain("and 4 more");
+  });
+});
+
+describe("PopupMenu: Escape", () => {
+  it("closes only the menu and does not reach other Escape handlers", async () => {
+    await renderPalette(registry());
+    const outer = vi.fn();
+    window.addEventListener("keydown", outer);
+    try {
+      fireEvent.click(await screen.findByTestId("palette-menu-button"));
+      expect(screen.getByTestId("palette-menu")).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(screen.queryByTestId("palette-menu")).toBeNull();
+      // アプリ全体の Escape (選択解除・階層を上へ 等) には届かない
+      expect(outer).not.toHaveBeenCalled();
+      // メニューが閉じた後の Escape は通常どおり届く
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(outer).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("keydown", outer);
+    }
   });
 });

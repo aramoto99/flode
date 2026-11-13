@@ -268,8 +268,12 @@ export function PythonFunctionEditor({
         finishApply(nextCode, s);
         return;
       }
+      // 解析の応答を待つ間に別経路 (ライブラリからの差し替え・undo 等) でコードが
+      // 変わっていたら、古い編集で上書きしない (rewrite 経路と同じ base 一致検証)
+      const baseCode = code;
       void introspectSingle(nextCode)
         .then((r) => {
+          if (liveCode() !== baseCode) return;
           if (!r.resolved) {
             const { lineno, message } = r.error;
             setCodeError(
@@ -289,7 +293,7 @@ export function PythonFunctionEditor({
           );
         });
     },
-    [code, finishApply, t],
+    [code, finishApply, liveCode, t],
   );
 
   /** 失敗 / 破棄時に draft を現行コードの spec へ戻す (ADR-0074: 値ロールバック)。 */

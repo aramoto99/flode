@@ -390,6 +390,29 @@ export function BlockNodeView({
           );
         })}
       </div>
+      {/* SPEC-0032 §1.4-5: ライブラリ側に新しい版があることを示す控えめなマーカー
+          (右上の角、上向き矢印)。色だけに頼らず形と tooltip で伝える。差し替えは
+          Inspector の由来行から行う。 */}
+      {typeof data.libraryUpdateTitle === "string" && (
+        <span
+          role="img"
+          aria-label={data.libraryUpdateTitle}
+          title={data.libraryUpdateTitle}
+          data-testid={`library-update-marker-${id}`}
+          className="absolute -right-1.5 -top-1.5 flex h-3 w-3 items-center justify-center border border-amber-600 bg-white text-amber-700"
+        >
+          <svg
+            viewBox="0 0 12 12"
+            className="h-2 w-2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path d="M6 10V2M2.5 5.5 6 2l3.5 3.5" />
+          </svg>
+        </span>
+      )}
       {/* ID ラベル: absolute で React Flow のノード境界 BOX の **下** に escape させる。
           SPEC-0022: dblclick / F2 (renameRequest) で inline rename に切り替わる。 */}
       <BlockIdLabel blockId={id} />

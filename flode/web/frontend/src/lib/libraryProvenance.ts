@@ -5,6 +5,8 @@ import type {
   BlockEntry,
   BlockProvenance,
   LibraryEntryDetail,
+  LibraryEntryMetadata,
+  LibraryMetadata,
 } from "../types/api";
 import { PYTHON_FUNCTION_TYPE, SUBSYSTEM_TYPE } from "./blockTypes";
 import { generateIdFromName } from "./idGenerator";
@@ -68,4 +70,117 @@ export function blockFromLibraryEntry(
  */
 export function isRegistrableBlockType(typePath: string): boolean {
   return typePath === SUBSYSTEM_TYPE || typePath === PYTHON_FUNCTION_TYPE;
+}
+
+// ---------------------------------------------------------------------------
+// 由来の解決 (SPEC-0032 §1.4-4 / ADR-0080 §A3-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * モデルファイルから読んだ値を由来として検証する。モデルファイルは他人から受け取り
+ * うるので、形が合わないもの (型違い・空文字・revision が正の整数でない) は由来なし
+ * として扱う (エラーにはしない。由来は情報であり、読込・実行を妨げない)。
+ *
+ * @param raw ブロック entry の ``provenance`` の値。
+ * @returns 検証済みの由来。形が合わなければ ``null``。
+ */
+export function readProvenance(raw: unknown): BlockProvenance | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  // 自身のプロパティだけを読む (``__proto__`` 経由で継承した値を由来として扱わない)
+  const own = (key: string): unknown =>
+    Object.prototype.hasOwnProperty.call(raw, key)
+      ? (raw as Record<string, unknown>)[key]
+      : undefined;
+  const library = own("library");
+  const uid = own("library_uid");
+  const entry = own("entry");
+  const revision = own("revision");
+  if (typeof library !== "string" || library === "") return null;
+  if (typeof entry !== "string" || entry === "") return null;
+  // 安全な整数の範囲外 (1e308 等) は revision として扱わない
+  if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) {
+    return null;
+  }
+  if (uid !== undefined && (typeof uid !== "string" || uid === "")) return null;
+  return buildProvenance(library, uid, entry, revision);
+}
+
+/** 由来の解決に使う、ライブラリ一覧の索引 (一覧が変わるたびに 1 回だけ作る)。 */
+export interface LibraryIndex {
+  byUid: ReadonlyMap<string, IndexedLibrary>;
+  byName: ReadonlyMap<string, IndexedLibrary>;
+}
+
+interface IndexedLibrary {
+  library: LibraryMetadata;
+  entries: ReadonlyMap<string, LibraryEntryMetadata>;
+}
+
+/** ライブラリ一覧から索引を作る (ブロックごとに一覧を線形探索しないため)。 */
+export function buildLibraryIndex(libraries: readonly LibraryMetadata[]): LibraryIndex {
+  const byUid = new Map<string, IndexedLibrary>();
+  const byName = new Map<string, IndexedLibrary>();
+  for (const library of libraries) {
+    const indexed: IndexedLibrary = {
+      library,
+      entries: new Map(library.entries.map((e) => [e.id, e])),
+    };
+    byName.set(library.name, indexed);
+    // uid は registry 内で一意 (ADR-0080 Amendments 2)。万一重複していたら先勝ち
+    if (library.uid && !byUid.has(library.uid)) byUid.set(library.uid, indexed);
+  }
+  return { byUid, byName };
+}
+
+/**
+ * 由来の状態。
+ * - ``none``: 由来を持たない (または形が不正)
+ * - ``missing``: 由来先のライブラリまたはエントリが見つからない (エラーではない)
+ * - ``current``: 由来の revision = ライブラリの revision
+ * - ``update``: ライブラリの方が新しい (更新あり)
+ * - ``ahead``: 由来の方が新しい (ライブラリを古い版に戻した等。SPEC-0032 §1.8:
+ *   「ライブラリより新しい版」と表示し、差し替えは可能)
+ */
+export type ProvenanceStatus =
+  | { kind: "none" }
+  | { kind: "missing"; provenance: BlockProvenance }
+  | {
+      kind: "current" | "update" | "ahead";
+      provenance: BlockProvenance;
+      library: LibraryMetadata;
+      entry: LibraryEntryMetadata;
+    };
+
+/**
+ * ブロックの由来を、ライブラリ一覧の索引に突き合わせて解決する。
+ *
+ * 突合規則 (ADR-0080 §A3-3): 由来に ``library_uid`` があれば **uid が一致する
+ * ライブラリのみ**を由来先とみなす (名前は問わない = 書き出しで改名されたライブラリも
+ * 追える。名前が同じでも uid が違えば別物 = 他人の ``user/pid`` を自分のものと誤認
+ * しない)。``library_uid`` が無ければ名前で突合する。
+ *
+ * @param rawProvenance ブロック entry の ``provenance`` (未検証でよい)。
+ * @param index ``buildLibraryIndex`` の結果。
+ */
+export function resolveProvenance(
+  rawProvenance: unknown,
+  index: LibraryIndex,
+): ProvenanceStatus {
+  const provenance = readProvenance(rawProvenance);
+  if (provenance === null) return { kind: "none" };
+  const indexed =
+    provenance.library_uid !== undefined
+      ? index.byUid.get(provenance.library_uid)
+      : index.byName.get(provenance.library);
+  const entry = indexed?.entries.get(provenance.entry);
+  if (indexed === undefined || entry === undefined) {
+    return { kind: "missing", provenance };
+  }
+  const kind =
+    entry.revision > provenance.revision
+      ? "update"
+      : entry.revision < provenance.revision
+        ? "ahead"
+        : "current";
+  return { kind, provenance, library: indexed.library, entry };
 }

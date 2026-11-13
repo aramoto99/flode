@@ -66,6 +66,10 @@ export interface BlockNodeData extends Record<string, unknown> {
   // v0.15.0: ブロック左右反転フラグ (業界標準ブロック線図ツールの "Flip Block" 相当)。
   // layout entry の ``flipped`` から流す。BlockNodeView で port position を反転 + visual scaleX(-1)。
   flipped?: boolean;
+  // SPEC-0032 §1.4-5: 由来先ライブラリに新しい版があるときの更新マーカーの説明文
+  // (ツールチップ / a11y ラベル)。未設定ならマーカーを出さない。DiagramCanvas が
+  // ライブラリ一覧と突き合わせて設定する。
+  libraryUpdateTitle?: string;
 }
 
 export type BlockNode = Node<BlockNodeData>;

@@ -49,8 +49,9 @@ import {
 import {
   blockFromLibraryEntry,
   buildProvenance,
+  resolveProvenance,
 } from "../lib/libraryProvenance";
-import { useLibrariesQuery } from "../lib/librariesQuery";
+import { useLibrariesQuery, useLibraryIndex } from "../lib/librariesQuery";
 import { createRightButtonGesture } from "../lib/rightButtonGesture";
 import {
   resolveBlocksAtPath,
@@ -218,6 +219,35 @@ export function DiagramCanvas({
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
   const [registerTarget, setRegisterTarget] = useState<RegisterTarget | null>(null);
   const { data: libraryData } = useLibrariesQuery();
+  const { index: libraryIndex, ready: librariesReady } = useLibraryIndex();
+  // SPEC-0032 §1.4-5: 由来先ライブラリの方が新しいブロックの更新マーカー (block id →
+  // 説明文)。現在の階層のブロックだけが対象 (Subsystem 内部の更新は親へ伝播させず、
+  // drill-down 先で出す)。ライブラリ一覧が未取得の間は出さない。モデル・階層・一覧が
+  // 変わったときだけ作り直す。
+  const updateTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    if (!editingModel || !librariesReady) return titles;
+    let blocks: BlockEntry[];
+    try {
+      blocks = resolveBlocksAtPath(editingModel, editingPath).blocks;
+    } catch {
+      return titles;
+    }
+    for (const b of blocks) {
+      if (b.provenance === undefined) continue;
+      const status = resolveProvenance(b.provenance, libraryIndex);
+      if (status.kind === "update") {
+        titles.set(
+          b.id,
+          t("diagram.library_update_marker", {
+            from: status.provenance.revision,
+            to: status.entry.revision,
+          }),
+        );
+      }
+    }
+    return titles;
+  }, [editingModel, editingPath, libraryIndex, librariesReady, t]);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlow = useReactFlow();
   const storeApi = useStoreApi();
@@ -243,8 +273,6 @@ export function DiagramCanvas({
   // 介入する。OS のコンテキストメニュー抑制は ``onPaneContextMenu`` /
   // ``onNodeContextMenu`` ですでに preventDefault されている。
   useEffect(() => {
-    const wrapper = reactFlowWrapper.current;
-    if (!wrapper) return;
     // 状態遷移 (閾値・複製・メニュー・取りこぼし時の打ち切り) は
     // lib/rightButtonGesture.ts の状態機械が持つ。ここは DOM イベントの配線だけ。
     const gesture = createRightButtonGesture({
@@ -279,11 +307,16 @@ export function DiagramCanvas({
       setCopying: (active) => document.body.classList.toggle("flode-copying", active),
     });
 
+    // キャンバスのラッパ要素はイベントのたびに ref から読み、リスナー自体は window に
+    // 付ける。マウント時点でキャンバス要素が無い場合や作り直された場合でも、右ボタン
+    // 操作が効かなくならないようにするため (階層移動の後にメニューが開かなくなる
+    // 不具合があった。E2E ``user-library.spec.ts`` で固定)。
+    const inCanvas = (target: EventTarget | null): target is Element =>
+      target instanceof Element && (reactFlowWrapper.current?.contains(target) ?? false);
+
     /** イベント対象を含むブロックノードの要素 (キャンバス内のものだけ)。 */
-    const nodeElementOf = (target: EventTarget | null): HTMLElement | null => {
-      if (!(target instanceof Element) || !wrapper.contains(target)) return null;
-      return target.closest<HTMLElement>(".react-flow__node");
-    };
+    const nodeElementOf = (target: EventTarget | null): HTMLElement | null =>
+      inCanvas(target) ? target.closest<HTMLElement>(".react-flow__node") : null;
 
     const onMouseDown = (e: MouseEvent): void => {
       // リファレンスツール仕様 (= ユーザー指摘):
@@ -309,9 +342,8 @@ export function DiagramCanvas({
       // キーボード起点で focus がブロック以外 (キャンバスの余白など) にあるときは、
       // 選択中のブロックが 1 つならそれを対象にする
       const selected = useAppStore.getState().selectedNodeIds;
-      const inCanvas = e.target instanceof Node && wrapper.contains(e.target);
-      if (nodeEl === null && inCanvas && e.button !== 2 && selected.length === 1) {
-        nodeEl = wrapper.querySelector<HTMLElement>(
+      if (nodeEl === null && inCanvas(e.target) && e.button !== 2 && selected.length === 1) {
+        nodeEl = (reactFlowWrapper.current ?? document).querySelector<HTMLElement>(
           `.react-flow__node[data-id="${CSS.escape(selected[0]!)}"]`,
         );
       }
@@ -329,14 +361,14 @@ export function DiagramCanvas({
       gesture.contextMenu(nodeEl.getAttribute("data-id"), at);
     };
 
-    wrapper.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("mousemove", gesture.move);
     window.addEventListener("mouseup", gesture.up);
     // 右ボタンを押したままウィンドウを離れた場合 (mouseup を受け取れない) の打ち切り
     window.addEventListener("blur", gesture.cancel);
     return () => {
-      wrapper.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mousemove", gesture.move);
       window.removeEventListener("mouseup", gesture.up);
@@ -548,10 +580,14 @@ export function DiagramCanvas({
     scopeWaypoints = {};
   }
   const selectedSet = new Set(selectedNodeIds);
-  const decoratedNodes = baseNodes.map((n) => ({
-    ...n,
-    selected: selectedSet.has(n.id),
-  }));
+  const decoratedNodes = baseNodes.map((n) => {
+    const libraryUpdateTitle = updateTitles.get(n.id);
+    return {
+      ...n,
+      data: libraryUpdateTitle === undefined ? n.data : { ...n.data, libraryUpdateTitle },
+      selected: selectedSet.has(n.id),
+    };
+  });
   // ADR-0057 (改訂): 分岐点 ● の算出 (自動 + 手動の幹線上再構成 + クランプ) を
   // resolveJunctions に一本化する (= 幾何 SSOT)。返り値の vias (= 手動グループの
   // 正規化済 via {x,y}) を edge / rubber-band へ、junctionDots を <JunctionDots> へ
@@ -1164,11 +1200,18 @@ export function DiagramCanvas({
                 ),
               );
             }
+            // revision が 2 以上 = 既存エントリの上書き (新規・別名保存は rev 1)
             pushToast({
               severity: "success",
-              message: t("diagram.library_registered", {
-                name: response.entry.display_name,
-              }),
+              message:
+                response.entry.revision > 1
+                  ? t("diagram.library_overwritten", {
+                      name: response.entry.display_name,
+                      revision: response.entry.revision,
+                    })
+                  : t("diagram.library_registered", {
+                      name: response.entry.display_name,
+                    }),
             });
           }}
         />

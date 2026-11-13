@@ -323,11 +323,14 @@ export function SecondaryButton({
   children,
   onClick,
   disabled,
+  autoFocus = false,
   testId,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
+  /** 開いた時点でこのボタンに focus を置く (破壊的な確認の既定をキャンセルにする用)。 */
+  autoFocus?: boolean;
   testId?: string;
 }): JSX.Element {
   return (
@@ -335,6 +338,9 @@ export function SecondaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      // eslint-disable-next-line jsx-a11y/no-autofocus -- ダイアログを開いた直後の
+      // 既定の選択肢を示すため (ユーザー操作起点でのみ true になる)
+      autoFocus={autoFocus}
       data-testid={testId}
       className={`border border-slate-400 px-2.5 py-0.5 text-[11px] ${
         disabled
@@ -551,16 +557,22 @@ export function PopupMenu({
       onClose();
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Escape はメニューを閉じるだけにする。capture で受けて伝播を止めないと、
+      // アプリ全体の Escape (選択解除・階層を上へ) や focus のある要素の Escape
+      // (File Browser 等) まで同時に動いてしまう
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
     };
     // capture: キャンバス等が mousedown の伝播を止めていても閉じられるようにする
     window.addEventListener("mousedown", onPointer, true);
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("blur", onClose);
     window.addEventListener("resize", onClose);
     return () => {
       window.removeEventListener("mousedown", onPointer, true);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("blur", onClose);
       window.removeEventListener("resize", onClose);
     };

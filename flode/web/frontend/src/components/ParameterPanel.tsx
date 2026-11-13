@@ -47,6 +47,7 @@ import {
   SELECT_CLS,
   TextInput,
 } from "./ui/inspector";
+import { LibraryProvenanceSection } from "./LibraryProvenanceSection";
 
 interface ParameterPanelProps {
   modelId: string;
@@ -98,7 +99,12 @@ export function ParameterPanel({
     return (
       <PythonFunctionEditor
         block={block}
-        header={<BlockHeader key={block.id} block={block} />}
+        header={
+          <>
+            <BlockHeader key={block.id} block={block} />
+            <LibraryProvenanceSection block={block} />
+          </>
+        }
       />
     );
   }
@@ -313,6 +319,8 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       {/* key={block.id}: 選択切替・rename 確定時に rename editor 状態
           (editing/draft) を確実にリセットする (code-reviewer SHOULD-2) */}
       <BlockHeader key={block.id} block={block} />
+      {/* SPEC-0032 §1.4-3: ライブラリ由来のブロックなら由来と更新状態を出す */}
+      <LibraryProvenanceSection block={block} />
 
       <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
         <PropertyGrid>
@@ -731,6 +739,7 @@ function MaskValuesEditor({
       className="flex h-full flex-col bg-white text-[11px]"
     >
       <BlockHeader key={block.id} block={block} subtitle={t("inspector.mask.suffix")} />
+      <LibraryProvenanceSection block={block} />
 
       <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
         <PropertyGrid>
