@@ -2357,3 +2357,74 @@ def test_identifiers_never_accept_joiners(client: TestClient, user_dir: Path) ->
     shown["entries"][0]["display_name"] = PERSIAN
     assert _import(client, shown, dry_run=True).status_code == 200
     assert not user_dir.exists()
+
+
+# ----------------------------------------------------------------------------
+# uid 重複の解決は出所の信頼度で決まる (取り込みライブラリは手置きに勝てない)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("restart", [False, True], ids=["reload", "restart"])
+def test_hand_placed_library_reclaims_its_uid_from_an_imported_one(
+    tmp_path: Path, user_dir: Path, restart: bool
+) -> None:
+    """手置きライブラリがまだ読み込まれていない間に同じ uid のファイルを取り込ませても、
+
+    手置き側が読み込まれた時点 (再読み込み・再起動) で取り込み側の uid が無効になる。
+    """
+    trusted = library_dict("trusted", {"e": subsystem_body()}, uid="contested-uid")
+    impostor = library_dict("impostor", {"e": subsystem_body([gain_block()])}, uid="contested-uid")
+    with _open_client(tmp_path, user_library_dir=user_dir) as client:
+        # 取り込み時点では uid の持ち主が読み込まれていないので通る (従来どおり)
+        assert _import(client, impostor).status_code == 200
+        assert _libraries(client)["impostor"]["uid"] == "contested-uid"
+        _write_json(user_dir / "trusted.flwlib.json", trusted)
+        if not restart:
+            listing = client.post(f"{API}/reload").json()
+    if restart:
+        with _open_client(tmp_path, user_library_dir=user_dir) as client:
+            listing = client.get(API).json()
+    libs = {lib["name"]: lib for lib in listing["libraries"]}
+    assert [lib["name"] for lib in listing["libraries"]] == ["std", "impostor", "trusted"]
+    assert libs["trusted"]["uid"] == "contested-uid"
+    assert libs["impostor"]["uid"] is None  # 由来の突合で trusted に化けられない
+    (note,) = listing["load_errors"]
+    assert Path(note["path"]).parent.name == "imported"
+    assert "'impostor'" in note["message"] and "'trusted'" in note["message"]
+
+
+def test_detail_and_import_follow_the_resolved_uid(tmp_path: Path, user_dir: Path) -> None:
+    trusted = library_dict("trusted", {"e": subsystem_body()}, uid="contested-uid")
+    impostor = library_dict("impostor", {"e": subsystem_body()}, uid="contested-uid")
+    with _open_client(tmp_path, user_library_dir=user_dir) as client:
+        assert _import(client, impostor).status_code == 200
+        _write_json(user_dir / "trusted.flwlib.json", trusted)
+        client.post(f"{API}/reload")
+        # 配置時の由来は詳細レスポンスの library_uid から作られる
+        assert client.get(f"{API}/impostor/e").json()["library_uid"] is None
+        assert client.get(f"{API}/trusted/e").json()["library_uid"] == "contested-uid"
+        # 以後の取り込みは、uid の正当な持ち主との衝突として拒否される
+        another = library_dict("another", {"e": subsystem_body()}, uid="contested-uid")
+        assert _import(client, another, dry_run=True).json()["conflict"] == {
+            "name": "trusted",
+            "reason": "uid_exists",
+        }
+        _error(_import(client, another), 409, "library_name_conflict")
+
+
+def test_user_library_write_keeps_uid_resolution(tmp_path: Path, user_dir: Path) -> None:
+    """書き込み後の registry 差し替え (1 ファイル再読込) でも、同じ規則のままである。"""
+    _write_json(
+        user_dir / USER_FILE, library_dict("user", {"mine": subsystem_body()}, uid="my-uid")
+    )
+    _write_json(
+        user_dir / "imported" / "copy-00000000.flwlib.json",
+        library_dict("copy", {"e": subsystem_body()}, uid="my-uid"),
+    )
+    with _open_client(tmp_path, user_library_dir=user_dir) as client:
+        assert _register(client).status_code == 200
+        libs = _libraries(client)
+        assert (libs["user"]["uid"], libs["copy"]["uid"]) == ("my-uid", None)
+        # 注記は増殖しない (書き込みのたびに同じ注記を積まない)
+        assert _register(client, "Another").status_code == 200
+        assert len(client.get(API).json()["load_errors"]) == 1

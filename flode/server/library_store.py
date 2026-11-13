@@ -76,6 +76,7 @@ from .library_registry import (
     LibraryRegistry,
     build_library_registry,
     reserved_entry_id_rejection,
+    resolve_uid_conflicts,
     sort_by_origin,
 )
 from .security.paths import ensure_direct_child, is_windows_reserved_name
@@ -980,14 +981,7 @@ class LibraryStore:
                 # 起動で load_error を出し続ける)。作ったファイルを巻き戻してから伝える
                 self._discard_written_file(path)
                 raise
-            old = self._registry
-            origins = {**old.origins, saved.name: ORIGIN_IMPORTED}
-            self._registry = dataclasses.replace(
-                old,
-                libraries=sort_by_origin({**old.libraries, saved.name: saved}, origins),
-                load_errors=list(old.load_errors),
-                origins=origins,
-            )
+            saved = self._install(saved, ORIGIN_IMPORTED)
         _logger.info(
             "library store: imported library as %s (entries=%d, with python=%d)",
             path.name,
@@ -1241,16 +1235,37 @@ class LibraryStore:
             # 以後の書き込みがすべて 409 になるので、ディスクの状態に揃えてから伝える
             self._rebuild()
             raise
-        old = self._registry
-        origins = {**old.origins, USER_LIBRARY_NAME: ORIGIN_USER}
-        self._registry = LibraryRegistry(
-            libraries=sort_by_origin({**old.libraries, USER_LIBRARY_NAME: saved}, origins),
-            load_errors=list(old.load_errors),
-            origins=origins,
-            user_library_problem="",
-        )
+        saved = self._install(saved, ORIGIN_USER)
         self._user_fingerprint = fingerprint
         return saved
+
+    def _install(self, library: Library, origin: str) -> Library:
+        """読み直した 1 ライブラリを載せた新しい registry に差し替える (copy-on-write)。
+
+        起動時・再読み込み時と同じ規則で並べ、``uid`` の重複を解決する
+        (``resolve_uid_conflicts``: 出所の信頼度で決める)。どの経路で registry を組んでも
+        結果が同じになるようにするため。
+
+        Args:
+            library: 書き込んだ直後にディスクから読み直したライブラリ。
+            origin: その出所 (``"user"`` / ``"imported"``)。
+
+        Returns:
+            registry に載ったライブラリ (``uid`` の解決後)。
+        """
+        old = self._registry
+        origins = {**old.origins, library.name: origin}
+        libraries, notes = resolve_uid_conflicts(
+            sort_by_origin({**old.libraries, library.name: library}, origins), origins
+        )
+        self._registry = LibraryRegistry(
+            libraries=libraries,
+            load_errors=[*old.load_errors, *notes],
+            origins=origins,
+            # ユーザーライブラリを書けた = 健全。それ以外の差し替えでは状態を変えない
+            user_library_problem="" if origin == ORIGIN_USER else old.user_library_problem,
+        )
+        return libraries[library.name]
 
     @staticmethod
     def _check_imported_metadata(library: Library) -> None:

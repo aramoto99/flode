@@ -62,6 +62,16 @@ _ORIGIN_ORDER: dict[str, int] = {
     ORIGIN_PATH: 3,
 }
 
+# uid が重複したときに uid を保つ側を決める信頼度 (小さいほど優先)。並び順とは別物で、
+# 取り込みライブラリ (GUI から持ち込まれたファイル) を、利用者が自分で置いた
+# ライブラリより下に置く (:func:`resolve_uid_conflicts`)。
+_UID_TRUST_ORDER: dict[str, int] = {
+    ORIGIN_BUILTIN: 0,
+    ORIGIN_USER: 1,
+    ORIGIN_PATH: 2,
+    ORIGIN_IMPORTED: 3,
+}
+
 
 @dataclass
 class LibraryLoadError:
@@ -201,9 +211,9 @@ def build_library_registry(
         * library 名の衝突は警告ログ + ``load_errors`` に記録した上で **先勝ち** で解決する。
         * 予約エントリ id (:data:`RESERVED_ENTRY_IDS`) を持つファイルは読み込まず、
           ``load_errors`` に記録する (REST の ``/{name}/export`` と URL が重なるため)。
-        * ``uid`` は registry 内で一意: 先に読んだライブラリと同じ ``uid`` を持つ後発は、
+        * ``uid`` は registry 内で一意: 重複したら出所の信頼度が低い側 (同じなら後発) を
           ``uid`` を持たないライブラリとして読み込み、``load_errors`` に記録する
-          (ライブラリ自体は使える。由来の突合で先発に化けないようにする)。
+          (:func:`resolve_uid_conflicts`。ライブラリ自体は使える)。
         * 名前 ``user`` は予約名: 既定パス (``<user_library_dir>/user.flwlib.json``) 以外の
           ファイルが宣言したら拒否する (ユーザーライブラリが無効・未作成でも予約する)。
           既定パスのファイルが ``user`` 以外を宣言していたら壊れたファイルとして拒否する。
@@ -221,7 +231,6 @@ def build_library_registry(
     files.extend((f, ORIGIN_PATH) for f in _expand_paths(library_paths))
 
     seen: set[Path] = set()
-    uid_owners: dict[str, str] = {}
     for f, origin in files:
         key = _resolved(f)
         if key in seen:
@@ -249,21 +258,70 @@ def build_library_registry(
             _logger.warning("library_registry: %r (%r)", rejection, str(f))
             registry.load_errors.append(LibraryLoadError(path=str(f), message=rejection))
             continue
-        if lib.uid is not None:
-            owner = uid_owners.setdefault(lib.uid, lib.name)
-            if owner != lib.name:
-                # uid は由来の突合キー。後発が先発と同じ uid を名乗ると、先発由来の
-                # ブロックの差し替え先に化けられるので、後発を uid 無しとして読み込む
-                note = (
-                    f"library {lib.name!r} declares the same uid as {owner!r}, which was "
-                    f"loaded first; the uid of {lib.name!r} is ignored"
-                )
-                _logger.warning("library_registry: %r (%r)", note, str(f))
-                registry.load_errors.append(LibraryLoadError(path=str(f), message=note))
-                lib = replace(lib, uid=None)
         registry.libraries[lib.name] = lib
         registry.origins[lib.name] = origin
+    registry.libraries, notes = resolve_uid_conflicts(registry.libraries, registry.origins)
+    registry.load_errors.extend(notes)
     return registry
+
+
+def resolve_uid_conflicts(
+    libraries: dict[str, Library], origins: dict[str, str]
+) -> tuple[dict[str, Library], list[LibraryLoadError]]:
+    """``uid`` の重複を解決し、``uid`` を registry 内で一意にする。
+
+    ``uid`` は由来の突合キーなので、同じ ``uid`` を名乗るライブラリが複数あると、片方が
+    もう片方由来のブロックの差し替え先に化けられる。重複したら 1 つだけが ``uid`` を保ち、
+    残りは ``uid`` を持たないライブラリとして扱う (ライブラリ自体は使える)。
+
+    ``uid`` を保つ側は**読み込み順ではなく出所の信頼度**で決める:
+    ``builtin`` > ``user`` > ``path`` (手置き・``library_paths``) > ``imported``。
+    取り込みライブラリは読み込み順では手置きより先だが、GUI から持ち込まれたファイルが
+    利用者自身の置いたライブラリの ``uid`` を奪えないようにするため、最も低く置く。
+    同じ信頼度同士は先勝ち (``libraries`` の並び順)。
+
+    registry を組み立てるすべての経路 (起動・再読み込み・書き込み後の差し替え) が
+    この関数を通す。
+
+    Args:
+        libraries: 名前 → ライブラリ (読み込み順)。書き換えない。
+        origins: 名前 → 出所。
+
+    Returns:
+        ``(uid を解決したライブラリ (並びは入力と同じ), 無効化の注記)``。注記は
+        ``load_errors`` に載せる形で、``path`` は ``uid`` を無効化された側のファイル。
+    """
+    owners: dict[str, str] = {}
+    for name, lib in libraries.items():
+        if lib.uid is None:
+            continue
+        current = owners.get(lib.uid)
+        # 厳密に信頼度が高いときだけ持ち主を替える (同じ信頼度なら先に読んだ側のまま)
+        if current is None or _uid_trust(origins, name) < _uid_trust(origins, current):
+            owners[lib.uid] = name
+    resolved: dict[str, Library] = {}
+    notes: list[LibraryLoadError] = []
+    for name, lib in libraries.items():
+        if lib.uid is None or owners[lib.uid] == name:
+            resolved[name] = lib
+            continue
+        owner = owners[lib.uid]
+        note = (
+            f"library {name!r} ({origins.get(name, ORIGIN_PATH)}) declares the same uid as "
+            f"{owner!r} ({origins.get(owner, ORIGIN_PATH)}), which takes precedence; "
+            f"the uid of {name!r} is ignored"
+        )
+        path = "" if lib.source_path is None else str(lib.source_path)
+        # ライブラリ名はファイル由来。%r で出す (改行でログ行を偽造させない)
+        _logger.warning("library_registry: %r (%r)", note, path)
+        notes.append(LibraryLoadError(path=path, message=note))
+        resolved[name] = replace(lib, uid=None)
+    return resolved, notes
+
+
+def _uid_trust(origins: dict[str, str], name: str) -> int:
+    """``uid`` の重複解決での優先度 (小さいほど優先)。"""
+    return _UID_TRUST_ORDER[origins.get(name, ORIGIN_PATH)]
 
 
 def reserved_entry_id_rejection(library: Library) -> str | None:

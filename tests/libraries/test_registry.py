@@ -365,3 +365,81 @@ def test_libraries_without_uid_do_not_collide(tmp_path: Path) -> None:
     _write_library_with_uid(b, "b", None)
     reg = build_library_registry([a, b], bundle_builtin=False)
     assert reg.load_errors == []
+
+
+# uid が重複したとき uid を保つ側は、読み込み順ではなく出所の信頼度で決まる:
+# builtin > user > path (手置き・library_paths) > imported。同じ信頼度なら先勝ち。
+
+
+@pytest.mark.parametrize("trusted_location", ["user_dir", "user_dir_subdir", "library_paths"])
+def test_imported_library_never_takes_a_uid_from_a_hand_placed_one(
+    tmp_path: Path, trusted_location: str
+) -> None:
+    """取り込みライブラリは先に読まれるが、手置きのライブラリと同じ uid を名乗っても勝てない。"""
+    user_dir = tmp_path / "libraries"
+    (user_dir / "imported").mkdir(parents=True)
+    (user_dir / "sub").mkdir()
+    trusted_path = {
+        "user_dir": user_dir / "trusted.flwlib.json",
+        "user_dir_subdir": user_dir / "sub" / "trusted.flwlib.json",
+        "library_paths": tmp_path / "trusted.flwlib.json",
+    }[trusted_location]
+    _write_library_with_uid(trusted_path, "trusted", "contested")
+    _write_library_with_uid(
+        user_dir / "imported" / "aaa-00000000.flwlib.json", "impostor", "contested"
+    )
+    reg = build_library_registry(
+        [tmp_path / "trusted.flwlib.json"] if trusted_location == "library_paths" else [],
+        bundle_builtin=False,
+        user_library_dir=user_dir,
+    )
+    # 読み込み順は imported が先 (並びは変えない)。uid を保つのは手置き側
+    assert list(reg.libraries) == ["impostor", "trusted"]
+    assert (reg.origins["impostor"], reg.origins["trusted"]) == ("imported", "path")
+    assert reg.libraries["trusted"].uid == "contested"
+    assert reg.libraries["impostor"].uid is None
+    (note,) = reg.load_errors
+    assert Path(note.path).name == "aaa-00000000.flwlib.json"
+    assert "'impostor'" in note.message and "'trusted'" in note.message and "uid" in note.message
+
+
+def test_user_library_outranks_path_and_imported_for_uid(tmp_path: Path) -> None:
+    user_dir = tmp_path / "libraries"
+    (user_dir / "imported").mkdir(parents=True)
+    _write_library_with_uid(user_dir / "user.flwlib.json", "user", "contested")
+    _write_library_with_uid(user_dir / "imported" / "x.flwlib.json", "imp", "contested")
+    _write_library_with_uid(user_dir / "hand.flwlib.json", "hand", "contested")
+    reg = build_library_registry([], bundle_builtin=False, user_library_dir=user_dir)
+    assert {n: lib.uid for n, lib in reg.libraries.items()} == {
+        "user": "contested",
+        "imp": None,
+        "hand": None,
+    }
+    assert sorted(Path(e.path).name for e in reg.load_errors) == [
+        "hand.flwlib.json",
+        "x.flwlib.json",
+    ]
+    assert all("'user'" in e.message for e in reg.load_errors)
+
+
+def test_same_trust_level_keeps_first_loaded_uid(tmp_path: Path) -> None:
+    """同じ信頼度同士 (imported 同士) は従来どおり先勝ち。"""
+    user_dir = tmp_path / "libraries"
+    (user_dir / "imported").mkdir(parents=True)
+    _write_library_with_uid(user_dir / "imported" / "a.flwlib.json", "first", "same")
+    _write_library_with_uid(user_dir / "imported" / "b.flwlib.json", "second", "same")
+    reg = build_library_registry([], bundle_builtin=False, user_library_dir=user_dir)
+    assert (reg.libraries["first"].uid, reg.libraries["second"].uid) == ("same", None)
+    (note,) = reg.load_errors
+    assert Path(note.path).name == "b.flwlib.json"
+
+
+def test_uid_note_cannot_forge_log_lines(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    a = tmp_path / "a.flwlib.json"
+    b = tmp_path / "b.flwlib.json"
+    _write_library_with_uid(a, "first", "same")
+    _write_library_with_uid(b, "evil\n2026-01-01 [INFO] forged", "same")
+    with caplog.at_level("WARNING", logger="flode.library_registry"):
+        build_library_registry([a, b], bundle_builtin=False)
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages and all("\n" not in m for m in messages)
