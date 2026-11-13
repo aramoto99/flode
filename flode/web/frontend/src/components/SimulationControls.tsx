@@ -60,7 +60,13 @@ export function SimulationControls(_props: {
         className={`inline-block h-2 w-2 rounded-full ${statusColor}`}
         aria-hidden
       />
-      <span className="font-medium tracking-wide">{statusLabel}</span>
+      <span
+        className="font-medium tracking-wide"
+        data-testid="simulation-status"
+        data-status={status}
+      >
+        {statusLabel}
+      </span>
       {progress && parsedTEnd && (
         <>
           {!parsedTEnd.isUnbounded && (

@@ -45,8 +45,16 @@ import {
 } from "../lib/blockTypes";
 import { dtypeForPort, useDtypeResolution } from "../lib/dtypeResolution";
 import { getCachedPythonSpec } from "../lib/pythonFunctionSpec";
-import type { BlockNodeData } from "../lib/diagramConverter";
+import type { BlockNodeData, UserBlockNodeInfo } from "../lib/diagramConverter";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
+import { cleanServerText, MAX_LABEL_CHARS, MAX_PATH_CHARS } from "../lib/untrustedText";
+import {
+  EXCESS_PORT_STROKE,
+  PLACEHOLDER_STROKE,
+  placeholderTypeLabel,
+  userPortNames,
+} from "../lib/userBlockModel";
+import { toLocale, userBlockDisplayName } from "../lib/userBlocks";
 import type { BlockEntry } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
 import { INPUT_CLS } from "./ui/inspector";
@@ -213,8 +221,22 @@ export function BlockNodeView({
   selected,
   id,
 }: BlockNodeViewProps): JSX.Element {
+  const { t } = useTranslation();
   const nIn = (data.nInputs as number | undefined) ?? 1;
   const nOut = (data.nOutputs as number | undefined) ?? 1;
+  // ADR-0081 §8-D / §論点 4: ユーザーブロック・プレースホルダは汎用矩形で描き、
+  // 型名による分岐 (ShapeOutline の kind / ShapeContent の末尾一致) を通さない
+  const userBlock = data.userBlock as UserBlockNodeInfo | undefined;
+  const declaredIn = userBlock?.declaredInputs ?? null;
+  const declaredOut = userBlock?.declaredOutputs ?? null;
+  const nodeTitle =
+    userBlock === undefined
+      ? data.blockType
+      : userBlock.kind === "placeholder"
+        ? t("canvas.placeholder.tooltip", {
+            type: cleanServerText(data.blockType, MAX_PATH_CHARS),
+          })
+        : cleanServerText(data.blockType, MAX_PATH_CHARS);
   // v0.33.0: per-block color 撤廃。slate-600 固定 (全カテゴリ統一)。
   const color = "#475569";
   // v0.15.0: リファレンスツールの "Flip Block" 相当の左右反転。SVG ShapeOutline のみ
@@ -243,7 +265,7 @@ export function BlockNodeView({
   const shape = liveSize
     ? { ...baseShape, width: liveSize.w, height: liveSize.h }
     : { ...baseShape, width: dynamicWidth, height: dynamicHeight };
-  const param = summarizePrimaryParam(data);
+  const param = userBlock === undefined ? summarizePrimaryParam(data) : null;
 
   // React Flow v12: ハンドル数が動的に変わるノードでは、ハンドルの DOM 配置だけを
   // 変えても React Flow 内部のレジストリ (= ハンドル → ノード相対位置の cache) が
@@ -261,8 +283,11 @@ export function BlockNodeView({
   // ADR-0058 §論点 4 / §論点 11: Subsystem の trigger / enable slot 識別を
   // ``params.blocks`` filter ベースで一度だけ算出。下記の slot 描画 / 中央
   // indicator / handle position 全てが共有する。
+  // ユーザーブロックは Subsystem の制御スロットを持たない (引数名が blocks でも見ない)
   const controlSlots = resolveControlSlots(
-    data.params as Record<string, unknown> | undefined,
+    userBlock === undefined
+      ? (data.params as Record<string, unknown> | undefined)
+      : undefined,
   );
 
   // ノード bounding box は shape のみで構成し、ID ラベルは ``absolute top: 100%`` で
@@ -273,7 +298,8 @@ export function BlockNodeView({
   return (
     <div
       className="group relative"
-      title={data.blockType}
+      title={nodeTitle}
+      data-user-block={userBlock?.kind}
       style={{ width: shape.width, height: shape.height }}
     >
       {/* React Flow NodeResizer: 選択時のみハンドル表示。
@@ -325,18 +351,32 @@ export function BlockNodeView({
             transform: flipped ? "scaleX(-1)" : undefined,
           }}
         >
-          <ShapeOutline shape={shape} selected={selected ?? false} />
+          <ShapeOutline
+            shape={shape}
+            selected={selected ?? false}
+            placeholder={userBlock?.kind === "placeholder"}
+          />
         </div>
-        <ShapeContent
-          shape={shape}
-          typePath={data.blockType}
-          blockId={id}
-          color={color}
-          param={param}
-          paramsRaw={(data.params as Record<string, unknown>) ?? {}}
-          flipped={flipped}
-          controlSlots={controlSlots}
-        />
+        {userBlock !== undefined ? (
+          <UserBlockContent
+            info={userBlock}
+            typePath={data.blockType}
+            nIn={nIn}
+            nOut={nOut}
+            flipped={flipped}
+          />
+        ) : (
+          <ShapeContent
+            shape={shape}
+            typePath={data.blockType}
+            blockId={id}
+            color={color}
+            param={param}
+            paramsRaw={(data.params as Record<string, unknown>) ?? {}}
+            flipped={flipped}
+            controlSlots={controlSlots}
+          />
+        )}
         {Array.from({ length: nIn }, (_, i) => {
           const ph = inputHandlePosition(
             shape,
@@ -355,7 +395,10 @@ export function BlockNodeView({
             : -1;
           const isEnableSlot = controlSlots.hasEnable && i === enableSlotIdx;
           const isControlSlot = isTriggerSlot || isEnableSlot;
-          const showGlyph = isControlSlot || !connectedInputs.has(i);
+          // ADR-0081 §論点 3: registry のポート数を超えたポートは接続済みでも
+          // エラー色の chevron を出し続ける (自動では消さない配線の位置を示す)
+          const excess = declaredIn !== null && i >= declaredIn;
+          const showGlyph = isControlSlot || excess || !connectedInputs.has(i);
           return (
             <Handle
               key={`in-${i}`}
@@ -363,12 +406,14 @@ export function BlockNodeView({
               position={finalPos}
               id={String(i)}
               style={arrowHandleStyle(ph.pos)}
+              data-excess-port={excess ? "true" : undefined}
+              title={excess ? t("canvas.excess_port") : undefined}
             >
               {showGlyph &&
                 (isControlSlot ? (
                   <span style={triggerGlyphStyle} />
                 ) : (
-                  <span style={chevronStyleFor(finalPos, flipped)} />
+                  <span style={chevronStyleFor(finalPos, flipped, excess)} />
                 ))}
             </Handle>
           );
@@ -376,7 +421,8 @@ export function BlockNodeView({
         {Array.from({ length: nOut }, (_, i) => {
           const ph = outputHandlePosition(shape, i, nOut);
           const finalPos = flipped ? flipPosition(ph.position) : ph.position;
-          const showChevron = !connectedOutputs.has(i);
+          const excess = declaredOut !== null && i >= declaredOut;
+          const showChevron = excess || !connectedOutputs.has(i);
           return (
             <Handle
               key={`out-${i}`}
@@ -384,8 +430,12 @@ export function BlockNodeView({
               position={finalPos}
               id={String(i)}
               style={arrowHandleStyle(ph.pos)}
+              data-excess-port={excess ? "true" : undefined}
+              title={excess ? t("canvas.excess_port") : undefined}
             >
-              {showChevron && <span style={chevronStyleFor(finalPos, flipped)} />}
+              {showChevron && (
+                <span style={chevronStyleFor(finalPos, flipped, excess)} />
+              )}
             </Handle>
           );
         })}
@@ -473,14 +523,17 @@ export function BlockIdLabel({ blockId }: { blockId: string }): JSX.Element {
 function ShapeOutline({
   shape,
   selected,
+  placeholder = false,
 }: {
   shape: BlockShape;
   selected: boolean;
+  /** ADR-0081 §4-B: 読み込めないブロック (警告色の細い破線の枠)。 */
+  placeholder?: boolean;
 }): JSX.Element {
   const { width: w, height: h, kind } = shape;
   // リファレンスツール風: 細黒線 + 白背景 + フラット (drop-shadow なし)。selected は薄青、
   // container だけ僅かに色を変える程度で、通常時は完全モノトーン。
-  const stroke = selected ? "#2563eb" : "#1e293b";
+  const stroke = selected ? "#2563eb" : placeholder ? PLACEHOLDER_STROKE : "#1e293b";
   // リファレンスツール風: 通常も Subsystem も白背景、container 識別は二重枠で行う
   const fill = "white";
   const strokeWidth = selected ? 1.5 : 1;
@@ -489,6 +542,7 @@ function ShapeOutline({
     fill,
     stroke,
     strokeWidth,
+    ...(placeholder ? { strokeDasharray: PLACEHOLDER_DASH } : {}),
   };
 
   return (
@@ -565,6 +619,103 @@ function ShapeOutline({
         <rect x={1} y={1} width={w - 2} height={h - 2} {...commonProps} />
       )}
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0081 §8-D / §論点 4: ユーザーブロック・プレースホルダの面
+// ---------------------------------------------------------------------------
+
+/** プレースホルダの枠の破線パターン (細い警告色の破線)。 */
+const PLACEHOLDER_DASH = "4 2";
+
+/**
+ * ユーザーブロックの面: 中央に表示名、ポート脇にポート名 (無名は出さない)。
+ * プレースホルダの面: 「不明なブロック」+ 型名 (末尾を残して切る)。直前に見たメタデータが
+ * あればそのポート名も出す。
+ *
+ * 文字列はユーザーの .py・モデルファイル由来なので整形済みの値をテキストノードとしてだけ
+ * 描く。ポート名の幅は PythonFunction と同じ幾何不変式 (ラベル 30% + 中央 36% + ラベル 30%)。
+ */
+function UserBlockContent({
+  info,
+  typePath,
+  nIn,
+  nOut,
+  flipped,
+}: {
+  info: UserBlockNodeInfo;
+  typePath: string;
+  nIn: number;
+  nOut: number;
+  flipped: boolean;
+}): JSX.Element {
+  const { t, i18n } = useTranslation();
+  const placeholder = info.kind === "placeholder";
+  const labels: SubsystemPortLabelInfo = { inputs: [], outputs: [], nDataIn: nIn, nOut };
+  userPortNames(info.meta?.input_names)
+    .slice(0, nIn)
+    .forEach((label, portIdx) => {
+      if (label !== "") labels.inputs.push({ portIdx, label });
+    });
+  userPortNames(info.meta?.output_names)
+    .slice(0, nOut)
+    .forEach((label, portIdx) => {
+      if (label !== "") labels.outputs.push({ portIdx, label });
+    });
+  const hasLabels = labels.inputs.length > 0 || labels.outputs.length > 0;
+  const title =
+    !placeholder && info.meta !== undefined
+      ? userBlockDisplayName(info.meta, toLocale(i18n?.language))
+      : placeholderTypeLabel(typePath);
+  return (
+    <>
+      <div
+        data-testid="user-block-face"
+        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-1 leading-tight"
+      >
+        {placeholder && (
+          <span
+            data-testid="placeholder-label"
+            className="text-[9px] text-amber-700"
+          >
+            {t("canvas.placeholder.label")}
+          </span>
+        )}
+        <span
+          data-testid="user-block-title"
+          className={`truncate text-slate-800 ${
+            placeholder ? "font-mono text-[9px]" : "text-[10px] font-medium"
+          } ${hasLabels ? "max-w-[36%]" : "max-w-full"}`}
+          title={title}
+        >
+          {title}
+        </span>
+      </div>
+      {hasLabels && (
+        <PortSideLabels
+          labels={labels}
+          flipped={flipped}
+          testIdPrefix="userblock"
+          maxWidth="30%"
+        />
+      )}
+      {info.removedParams.length > 0 && (
+        // ADR-0081 §論点 3: ブロックから消えた引数が entry に残っている (次の保存・実行で
+        // 削除される)。右上の小さな警告色の印、内容は tooltip
+        <span
+          data-testid="user-block-removed-params"
+          className="absolute right-0.5 top-0 text-[9px] font-bold leading-none text-amber-700"
+          title={t("canvas.removed_params", {
+            names: info.removedParams
+              .map((p) => cleanServerText(p, MAX_LABEL_CHARS))
+              .join(", "),
+          })}
+        >
+          !
+        </span>
+      )}
+    </>
   );
 }
 
@@ -1298,26 +1449,33 @@ function flipPosition(p: Position): Position {
   return p;
 }
 
+// ADR-0081 §論点 3: 超過ポート (registry のポート数を超えた側) の chevron はエラー色
+const EXCESS_CHEVRON_BORDER = `1.75px solid ${EXCESS_PORT_STROKE}`;
+
 function chevronStyleFor(
   position: Position,
   flipped: boolean,
+  excess = false,
 ): React.CSSProperties {
   // 反転時はブロックの信号フローが右→左になるので chevron も ``>`` → ``<``。
   // borderTop+borderRight の corner を rotate(45deg) で ``>`` に、(-135deg) で ``<`` に。
   const rot = flipped ? "rotate(-135deg)" : "rotate(45deg)";
+  const base: React.CSSProperties = excess
+    ? { ...CHEVRON_STYLE, borderTop: EXCESS_CHEVRON_BORDER, borderRight: EXCESS_CHEVRON_BORDER }
+    : CHEVRON_STYLE;
   if (position === Position.Left) {
     return {
-      ...CHEVRON_STYLE,
+      ...base,
       transform: `translate(-150%, -50%) ${rot}`,
     };
   }
   if (position === Position.Right) {
     return {
-      ...CHEVRON_STYLE,
+      ...base,
       transform: `translate(50%, -50%) ${rot}`,
     };
   }
-  return CHEVRON_STYLE;
+  return base;
 }
 
 // ---------------------------------------------------------------------------

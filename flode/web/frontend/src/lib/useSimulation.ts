@@ -19,6 +19,7 @@ import { useAppStore } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
 import i18n from "../i18n";
 import { dialog } from "./dialogService";
+import { precheckRun, prepareModelForBackend } from "./modelForBackend";
 import { startWithPythonGate } from "./pythonTrust";
 
 /**
@@ -78,9 +79,18 @@ export function useSimulation(): {
 
   const run = async (): Promise<void> => {
     const state = useAppStore.getState();
-    const model = state.editingModel;
-    if (!model) return;
+    const editing = state.editingModel;
+    if (!editing) return;
     if (state.selectedFilePath === null) return;
+    // ADR-0081 §4-B: 読み込めないブロック・超過ポートの配線があれば要求を送らず
+    // ログタブに理由を出す (backend の 400 unknown_block_type と同じ表示)
+    const precheck = precheckRun(editing);
+    if (precheck !== null) {
+      state.setLastFailure(precheck, "start");
+      return;
+    }
+    // ADR-0081 §論点 3: 実行要求の組み立て時に消えた引数を除去 (保存と同じ関数)
+    const model = prepareModelForBackend(editing);
     try {
       // Run 前に最新を保存 (= 「保存してから実行」セマンティクス、editingFileEtag
       // を使った楽観ロックで race を検知)。

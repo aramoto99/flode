@@ -36,6 +36,7 @@ import {
 } from "../api/filesApi";
 import { dialog } from "../lib/dialogService";
 import { emptyModel } from "../lib/emptyModel";
+import { prepareModelForBackend } from "../lib/modelForBackend";
 import { useAppStore } from "../store/appStore";
 import { DirtyConfirmDialog } from "./Modal";
 import { PopupMenu, PopupMenuItem, PopupMenuSeparator } from "./ui/inspector";
@@ -734,9 +735,10 @@ export function FileBrowser(): JSX.Element {
             const model = state.editingModel;
             if (path !== null && model !== null) {
               try {
+                // ADR-0081 §論点 3: 保存時に消えた引数を除去 (実行要求と同じ関数)
                 const saved = await putFileContent(
                   path,
-                  model,
+                  prepareModelForBackend(model),
                   state.editingFileEtag ?? undefined,
                 );
                 setEditingFileMeta(saved.mtime, saved.etag);

@@ -1,8 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { listBlockMetadata } from "./api/client";
 import { getWorkspaceInfo } from "./api/filesApi";
+import { indexRegistry } from "./lib/portShapeValidate";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "./lib/queryKeys";
+import { isPlaceholderType } from "./lib/userBlockModel";
 
 import { ActivityBar } from "./components/ActivityBar";
 import { BlockPalette } from "./components/BlockPalette";
@@ -165,17 +170,29 @@ export default function App(): JSX.Element {
   // ADR-0045 §(3-C): モデルが Scope/XYGraph ブロックを構造的に持つかどうか。
   // ``visibleScopeEntries`` は scope buffer データ依存 (= sim 開始までは空) なので、
   // 初期 SplitTree 選定の根拠としては editingModel.blocks の方が確実。
+  // ADR-0081: 読み込めないブロック (プレースホルダ) は型名が .Scope 等で終わっても数えない
+  const { data: registry } = useQuery({
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
+    queryFn: listBlockMetadata,
+    staleTime: 60 * 60 * 1000,
+  });
+  const registryMap = useMemo(
+    () => (registry !== undefined ? indexRegistry(registry.blocks) : undefined),
+    [registry],
+  );
   const hasScopeBlocks = useMemo(() => {
     if (!editingModel) return false;
     try {
       const view = resolveBlocksAtPath(editingModel, editingPath);
       return view.blocks.some(
-        (b) => b.type.endsWith(".Scope") || b.type.endsWith(".XYGraph"),
+        (b) =>
+          (b.type.endsWith(".Scope") || b.type.endsWith(".XYGraph")) &&
+          !isPlaceholderType(b.type, registryMap),
       );
     } catch {
       return false;
     }
-  }, [editingModel, editingPath]);
+  }, [editingModel, editingPath, registryMap]);
 
   // ADR-0045 §(6): React Portal で DiagramCanvas を WorkspaceSplit の Diagram
   // slot div に投影する。useState の setter は安定 (= React 保証) なので

@@ -25,10 +25,12 @@ import {
   withDependentParams,
 } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
+import { isPlaceholderType, removedParamNames } from "../lib/userBlockModel";
 import {
   cleanServerText,
   MAX_DESCRIPTION_CHARS,
   MAX_PATH_CHARS,
+  stripBidiControls,
 } from "../lib/untrustedText";
 import {
   choiceLabels,
@@ -135,7 +137,9 @@ function BlockHeader({
   const { t } = useTranslation();
   // SPEC-0022 §機能要件 1-1: id 表示をクリックで rename 編集に切り替える
   const editor = useBlockRenameEditor(block.id);
-  const shortType = block.type.split(".").at(-1) ?? block.type;
+  // ADR-0081: 型名はモデルファイル由来 (プレースホルダでは registry にも無い) なので整形する
+  const typeText = cleanServerText(block.type, MAX_PATH_CHARS);
+  const shortType = typeText.split(".").at(-1) ?? typeText;
   return (
     <div className="border-b border-slate-300 bg-gradient-to-b from-slate-100 to-slate-50 px-2 py-1">
       <div className="flex items-center justify-between gap-2">
@@ -165,7 +169,7 @@ function BlockHeader({
         )}
         <span
           className="shrink-0 truncate font-mono text-[10px] text-slate-500"
-          title={block.type}
+          title={typeText}
         >
           {subtitle ? `${shortType} · ${subtitle}` : shortType}
         </span>
@@ -224,15 +228,18 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
 
   const editingModel = useAppStore((s) => s.editingModel);
   const editingPath = useAppStore((s) => s.editingPath);
-  const flippedNow = useMemo(() => {
-    if (!editingModel) return false;
+  const scopeView = useMemo(() => {
+    if (!editingModel) return null;
     try {
-      const view = resolveBlocksAtPath(editingModel, editingPath);
-      return Boolean(view.layout[block.id]?.flipped);
+      return resolveBlocksAtPath(editingModel, editingPath);
     } catch {
-      return false;
+      return null;
     }
-  }, [editingModel, editingPath, block.id]);
+  }, [editingModel, editingPath]);
+  const flippedNow = Boolean(scopeView?.layout[block.id]?.flipped);
+  // ADR-0081 §4-B: registry 取得前はプレースホルダ判定をしない
+  const loadedRegistry = registryData !== undefined ? registryMap : undefined;
+  const isPlaceholder = isPlaceholderType(block.type, loadedRegistry);
 
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -242,13 +249,45 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   // ADR-0081: ユーザーブロック (組み込み以外の読み込み元) だけ、説明・選択肢の文字列を
   // 信頼できない文字列として整形して出す。組み込みの表示は変えない。
   const userMeta = blockMeta && isUserBlock(blockMeta) ? blockMeta : undefined;
+  // ADR-0081 §論点 3: ブロックから消えた引数 (entry に残っている。保存時・実行時に除去)
+  const removedParams = new Set(
+    userMeta !== undefined ? removedParamNames(block.params, userMeta) : [],
+  );
+  // ADR-0081 §論点 3: registry のポート数を超えた index に繋がっている配線
+  const excessPorts =
+    userMeta !== undefined && scopeView !== null
+      ? scopeView.connections.flatMap((c) => [
+          ...(c.dst === block.id && c.dst_idx >= userMeta.default_n_inputs
+            ? [`in[${c.dst_idx}]`]
+            : []),
+          ...(c.src === block.id && c.src_idx >= userMeta.default_n_outputs
+            ? [`out[${c.src_idx}]`]
+            : []),
+        ])
+      : [];
 
   // ブロック切替時に draft を最新値で初期化
   // SPEC-0016 v0.39.1 amendment: registry.params_spec で宣言されているが
   // block.params にない param も default 値で draft に入れて Inspector で
   // 編集可能にする (= 旧モデルでも新 param が表示される)。
   useEffect(() => {
-    if (block.id === prevBlockIdRef.current) return;
+    if (block.id === prevBlockIdRef.current) {
+      // ADR-0081 §論点 3: registry が後から届いた / 再読み込みで引数が増えた場合、
+      // entry に無い引数の draft を registry の既定値で埋める (入力中の値は上書きしない)
+      if (!blockMeta) return;
+      setDraft((d) => {
+        let out: Record<string, string> | null = null;
+        for (const p of blockMeta.params_spec) {
+          if (p.name in d || p.name in block.params) continue;
+          if (p.has_default && isPrimitiveParam(p.default)) {
+            out = out ?? { ...d };
+            out[p.name] = formatForDraft(p.default);
+          }
+        }
+        return out ?? d;
+      });
+      return;
+    }
     prevBlockIdRef.current = block.id;
     const next: Record<string, string> = {};
     const seen = new Set<string>();
@@ -349,6 +388,11 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     updateBlockParams(block.id, nextParams, registryMap);
   };
 
+  // ADR-0081 §4-B: 読み込めないブロックは params を読み取り専用で出し、理由を示す
+  if (isPlaceholder) {
+    return <PlaceholderParamsView block={block} />;
+  }
+
   return (
     <div
       data-testid="parameter-panel"
@@ -387,6 +431,27 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             <div className="px-2 py-1 text-[11px] text-slate-500">
               {t("inspector.no_editable")}
             </div>
+          )}
+          {excessPorts.length > 0 && (
+            <PropertyHint
+              testId="param-excess-ports"
+              tone="error"
+              labelWidth={0}
+              text={t("inspector.excess_ports", { ports: excessPorts.join(", ") })}
+            />
+          )}
+          {readOnlyEntries.some(([k]) => removedParams.has(k)) && (
+            <PropertyHint
+              testId="param-removed-read-only"
+              tone="warning"
+              labelWidth={0}
+              text={t("inspector.param.removed_list", {
+                names: readOnlyEntries
+                  .filter(([k]) => removedParams.has(k))
+                  .map(([k]) => k)
+                  .join(", "),
+              })}
+            />
           )}
           {editableEntries.map(([k, v]) => {
             const valueType = typeof v;
@@ -623,6 +688,28 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   text={paramDescription}
                 />
               )}
+              {removedParams.has(k) && (
+                <PropertyHint
+                  testId={`param-removed-${k}`}
+                  tone="warning"
+                  labelWidth={88}
+                  text={t("inspector.param.removed")}
+                />
+              )}
+              {userMeta !== undefined &&
+                paramSpec !== undefined &&
+                paramSpec.has_default &&
+                jsonKind(paramSpec.default) !== "null" &&
+                jsonKind(paramSpec.default) !== jsonKind(v) && (
+                  <PropertyHint
+                    testId={`param-type-mismatch-${k}`}
+                    tone="warning"
+                    labelWidth={88}
+                    text={t("inspector.param.type_mismatch", {
+                      expected: jsonKind(paramSpec.default),
+                    })}
+                  />
+                )}
               {sampleTimeMode === "explicit" && (
                 // 「指定」時の周期入力は横並びではなく下のインデント行に出す
                 // (dt_base 明示指定 → 値 の既存パターン、オーナー指摘 2026-09-12)
@@ -694,6 +781,65 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
 
       <div className="border-t border-slate-200 bg-slate-50 px-3 py-1 text-[10px] text-slate-500">
         {t("inspector.autosave_hint")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * JSON 値の種類 (ADR-0081 §論点 3 の型不一致の警告用。整数と小数は区別しない)。
+ *
+ * @param v - params の値 / registry の既定値。
+ */
+function jsonKind(v: unknown): "null" | "array" | "number" | "boolean" | "string" | "object" {
+  if (v === null || v === undefined) return "null";
+  if (Array.isArray(v)) return "array";
+  if (typeof v === "number") return "number";
+  if (typeof v === "boolean") return "boolean";
+  if (typeof v === "string") return "string";
+  return "object";
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0081 §4-B: プレースホルダ (読み込めないブロック) の Inspector
+// ---------------------------------------------------------------------------
+
+/**
+ * registry に型が無いブロックの Inspector。params はモデルの値をそのまま読み取り専用で
+ * 出し (編集・既定値補完はしない、entry を書き換えない)、理由と直し方を示す。
+ * 移動・削除・コピー・貼り付けはキャンバス側で通常どおりできる。
+ */
+function PlaceholderParamsView({ block }: { block: BlockEntry }): JSX.Element {
+  const { t } = useTranslation();
+  // モデルファイル由来なので双方向制御文字を除く (改行は保つ)
+  const paramsJson = useMemo(
+    () => stripBidiControls(JSON.stringify(block.params, null, 2)),
+    [block.params],
+  );
+  return (
+    <div
+      data-testid="parameter-panel-placeholder"
+      className="flex h-full flex-col bg-white text-[11px]"
+    >
+      <BlockHeader key={block.id} block={block} />
+      <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
+        <PropertyGrid>
+          <PropertyHint
+            testId="placeholder-reason"
+            tone="warning"
+            labelWidth={0}
+            text={t("inspector.placeholder.reason", {
+              type: cleanServerText(block.type, MAX_PATH_CHARS),
+            })}
+          />
+          <SectionDivider label={t("inspector.placeholder.section")} />
+          <pre
+            data-testid="placeholder-params"
+            className="overflow-auto border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[10px] text-slate-700"
+          >
+            {paramsJson}
+          </pre>
+        </PropertyGrid>
       </div>
     </div>
   );

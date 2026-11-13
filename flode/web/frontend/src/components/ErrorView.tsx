@@ -13,10 +13,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { cleanServerText, MAX_LABEL_CHARS, MAX_PATH_CHARS } from "../lib/untrustedText";
+import {
+  EXCESS_PORT_TEMPLATE_KEY,
+  UNKNOWN_BLOCK_TYPE_TEMPLATE_KEY as UNKNOWN_BLOCK_TYPE_KEY,
+} from "../lib/userBlockModel";
 import { useAppStore } from "../store/appStore";
 import type { FailurePayload } from "../types/api";
-
-const UNKNOWN_BLOCK_TYPE_KEY = "error.unknown_block_type";
 
 /** Phase 1 で frontend が認識する template_key 一覧。未知 key は ``error.unknown``
  *  に fallback する (ADR-0056 §D-3)。 */
@@ -33,13 +35,15 @@ const _KNOWN_TEMPLATE_KEYS = new Set([
   "error.python_function_unconfirmed",
   // ADR-0081 §4-B: 実行要求のモデルに読み込まれていないブロックの型がある
   UNKNOWN_BLOCK_TYPE_KEY,
+  // ADR-0081 §論点 3: ユーザーブロックの registry のポート数を超えた配線 (frontend の実行前チェック)
+  EXCESS_PORT_TEMPLATE_KEY,
 ]);
 
 /**
- * ``error.unknown_block_type`` の ``template_args`` (型名・ブロック id はユーザーのモデル /
- * .py 由来) を信頼できない文字列として整形する。他のカテゴリの引数は変えない。
+ * ADR-0081 の ``template_args`` (型名・ブロック id・ポートはユーザーのモデル / .py 由来) を
+ * 信頼できない文字列として整形する。他のカテゴリの引数は変えない。
  */
-function _cleanUnknownBlockTypeArgs(
+function _cleanUserBlockArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   const cleanList = (v: unknown, max: number): string[] =>
@@ -48,6 +52,7 @@ function _cleanUnknownBlockTypeArgs(
     ...args,
     types: cleanList(args.types, MAX_PATH_CHARS),
     block_labels: cleanList(args.block_labels, MAX_LABEL_CHARS),
+    ports: cleanList(args.ports, MAX_LABEL_CHARS),
   };
 }
 
@@ -112,9 +117,10 @@ export function ErrorView(): JSX.Element {
   // ``templateKey`` は runtime 解決の string なので known key union への cast を経由
   // させて t() の 2 引数 overload (= key + opts) を選ばせる。
   const isUnknownBlockType = templateKey === UNKNOWN_BLOCK_TYPE_KEY;
+  const isUserBlockFailure = isUnknownBlockType || templateKey === EXCESS_PORT_TEMPLATE_KEY;
   const opts = {
-    ...(isUnknownBlockType
-      ? _cleanUnknownBlockTypeArgs(lastFailure.template_args)
+    ...(isUserBlockFailure
+      ? _cleanUserBlockArgs(lastFailure.template_args)
       : lastFailure.template_args),
     // unknown fallback では raw_message が必須。
     raw_message:

@@ -15,6 +15,8 @@ import {
   TRIGGER_TYPE,
 } from "./blockTypes";
 import { getCachedPythonSpec } from "./pythonFunctionSpec";
+import { isPlaceholderType, userBlockMetaOf, type RegistryIndex } from "./userBlockModel";
+import { isUserBlock } from "./userBlocks";
 
 export interface ResolvedPortCounts {
   nInputs: number;
@@ -45,6 +47,13 @@ export function resolvePortCounts(
 ): ResolvedPortCounts {
   const defaultIn = meta?.default_n_inputs ?? 1;
   const defaultOut = meta?.default_n_outputs ?? 1;
+
+  // ADR-0081 X-1: ユーザーブロックのポート数はパラメータに依存しない (registry の数)。
+  // 型名の末尾一致による組み込みの特別扱い (下の分岐) を通さない
+  // (例: 型名 ``flode_ws.filters.Sum`` を組み込み Sum として数えない)。
+  if (meta !== undefined && isUserBlock(meta)) {
+    return { nInputs: defaultIn, nOutputs: defaultOut };
+  }
 
   // ----- Math -----
   // Sum: super().__init__(n_inputs=len(signs), n_outputs=1)  (mathops.py:47)
@@ -143,11 +152,22 @@ export function resolvePortCounts(
  * PythonFunction は新コードの解析結果が cache に無いとポート数が「default に
  * 見える」だけで確定していないため、その状態で剪定すると結線を誤って落とす。
  * 解析済み (= PythonCodeDialog が Apply 前に cache へ投入) のときだけ true。
+ *
+ * ADR-0081 §論点 3 / §4-B: ユーザーブロック (registry の ``source !== "builtin"``) と
+ * プレースホルダ (registry 取得済みで型が無い) は剪定しない。ユーザーブロックのポート数は
+ * パラメータに依存せず、剪定すると引数を 1 つ編集しただけで超過配線が消えてしまう。
+ *
+ * @param typePath - 対象ブロックの型名。
+ * @param nextParams - 編集後の params。
+ * @param registry - block registry の索引 (未取得・未指定なら従来どおりの判定)。
  */
 export function canPruneOnParamChange(
   typePath: string,
   nextParams: Record<string, unknown>,
+  registry?: RegistryIndex,
 ): boolean {
+  if (userBlockMetaOf(typePath, registry) !== undefined) return false;
+  if (isPlaceholderType(typePath, registry)) return false;
   if (typePath !== PYTHON_FUNCTION_TYPE) return true;
   const spec = getCachedPythonSpec(nextParams.code);
   return spec !== undefined && spec.resolved;

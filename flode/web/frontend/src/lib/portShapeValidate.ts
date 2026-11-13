@@ -9,6 +9,7 @@ import {
   TRIGGER_TYPE,
 } from "./blockTypes";
 import { hasDynamicPorts, resolvePortCounts } from "./dynamicPorts";
+import { isPlaceholderType, userBlockMetaOf } from "./userBlockModel";
 
 export function shapeEquals(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -45,6 +46,15 @@ export function getDefaultPortShapes(
   block: BlockEntry,
   registry: ReadonlyMap<string, BlockMetadata>,
 ): { in: number[][]; out: number[][] } {
+  // ADR-0081 X-1: ユーザーブロックは registry の ``port_shapes_*_default`` をそのまま使い、
+  // 型名の末尾一致による組み込みの特別扱い (Subsystem / 動的ポート) を通さない
+  const userMeta = userBlockMetaOf(block.type, registry);
+  if (userMeta !== undefined) {
+    return {
+      in: userMeta.port_shapes_in_default,
+      out: userMeta.port_shapes_out_default,
+    };
+  }
   // ADR-0039: Subsystem は内部 Inport/Outport から派生
   if (block.type.endsWith(".Subsystem")) {
     return derivePortShapesFromInner(block);
@@ -196,6 +206,11 @@ export function validatePortShapeConnection(
     dst?: { in: number[][]; out: number[][] };
   },
 ): PortConnectionCheck {
+  // ADR-0081 §4-B: プレースホルダ (registry 取得済みで型が無い) はポート数も shape も
+  // 分からないので検証しない (配線を拒否しない。実行は実行前チェックで止める)
+  if (isPlaceholderType(src.type, registry) || isPlaceholderType(dst.type, registry)) {
+    return { ok: true };
+  }
   const srcShapes = overrideShapes?.src ?? getDefaultPortShapes(src, registry);
   const dstShapes = overrideShapes?.dst ?? getDefaultPortShapes(dst, registry);
 

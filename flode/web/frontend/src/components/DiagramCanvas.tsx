@@ -58,6 +58,12 @@ import {
 } from "./BranchableEdge";
 import { JunctionDots } from "./JunctionDots";
 import { resolveJunctions } from "../lib/branchJunctions";
+import {
+  isPlaceholderType,
+  lastSeenBlockMetadata,
+  rememberBlockMetadata,
+  userBlockMetaOf,
+} from "../lib/userBlockModel";
 import { QuickAdd } from "./QuickAdd";
 import {
   addBlockToEditing,
@@ -120,10 +126,14 @@ export function DiagramCanvas({
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });
-  const registryMap = useMemo(
-    () => indexRegistry(registry?.blocks ?? []),
-    [registry],
-  );
+  const registryMap = useMemo(() => {
+    const blocks = registry?.blocks ?? [];
+    // ADR-0081 §4-B: 見たユーザーブロックのメタデータを記憶し、再読み込みで型が
+    // 消えた直後もプレースホルダを直前の形で描く。render 中 (useMemo) の副作用だが、
+    // module 内の記憶への冪等な上書きだけなので、StrictMode の二重実行でも結果は同じ
+    rememberBlockMetadata(blocks);
+    return indexRegistry(blocks);
+  }, [registry]);
 
   const editingModel = useAppStore((s) => s.editingModel);
   const selectedNodeIds = useAppStore((s) => s.selectedNodeIds);
@@ -143,7 +153,8 @@ export function DiagramCanvas({
   usePythonSpecVersion();
   // SM-D Stage 1 (SPEC-0028 §5.5): dtype 解決結果のモデルレベル fetch。
   // Inspector (SignalDtypeSection) と Display の表示整形が同じ store を読む
-  useDtypeResolutionFetcher();
+  // ADR-0081 §4-B: registry を渡し、プレースホルダを含むモデルでは要求しない (保留)
+  useDtypeResolutionFetcher(registry !== undefined ? registryMap : undefined);
   // ADR-0079 §(9): 解決結果の更新で配線の太さを再描画する (shapeForPort は store を読む)
   useDtypeResolution();
   const vectorEdgesBold = useAppStore((s) => s.vectorEdgesBold);
@@ -509,7 +520,12 @@ export function DiagramCanvas({
     connections: pathView.connections,
     layout: pathView.layout,
   };
-  const { nodes: baseNodes, edges } = modelToDiagram(scopeModel, registryMap);
+  // ADR-0081 §4-B: registry 取得前はプレースホルダ判定をしない (undefined を渡す)
+  const { nodes: baseNodes, edges } = modelToDiagram(
+    scopeModel,
+    registry !== undefined ? registryMap : undefined,
+    { lastSeen: lastSeenBlockMetadata() },
+  );
   // ADR-0057: 現スコープの手動分岐点 (branch_waypoints)。pathView 解決が成功して
   // いるので通常 throw しないが、editingPath の非同期変化等のコーナーケースで例外が
   // 出てもレンダーをクラッシュさせず楽観無視する (= ADR-0057 §(5) load 時方針)。
@@ -543,7 +559,9 @@ export function DiagramCanvas({
       editingPath.length === 0
         ? shapeForPort(e.source, "out", Number(e.sourceHandle ?? 0))
         : null;
-    const style = edgeStyleForShape(shape, vectorEdgesBold);
+    // ADR-0081 §論点 3: 超過ポートの配線は modelToDiagram が付けたエラー表示を優先する
+    const style =
+      e.data?.excessPort === true ? e.style : edgeStyleForShape(shape, vectorEdgesBold);
     return {
       ...e,
       // diagramConverter で設定した type ("branchable") を尊重 (= リファレンスツール風 90°
@@ -854,6 +872,10 @@ export function DiagramCanvas({
       return;
     }
     const t = node.data.blockType;
+    // ADR-0081 X-1: ユーザーブロックは型名の末尾一致による組み込みの特別扱いを通さない
+    // (読み込めないプレースホルダも型名が .Scope 等で終わっても Scope パネルを開かない)
+    if (userBlockMetaOf(t, registryMap) !== undefined) return;
+    if (isPlaceholderType(t, registryMap)) return;
     if (t.endsWith(".Scope") || t.endsWith(".XYGraph")) {
       openScopePanel(node.id);
     }

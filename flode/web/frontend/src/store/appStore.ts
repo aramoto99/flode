@@ -61,6 +61,13 @@ import type {
 // ADR-0058 §論点 10: ファイルロード時の schema migration toast 通知用。
 // toastStore は appStore に依存しない (= 循環依存なし、静的 import で OK)。
 import { pushToast } from "./toastStore";
+import { queryClient } from "../lib/queryClient";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
+
+/** block registry の cache を invalidate する (表示中なら再取得される)。 */
+function invalidateBlockRegistry(): void {
+  void queryClient.invalidateQueries({ queryKey: BLOCKS_REGISTRY_QUERY_KEY });
+}
 
 // ADR-0023 §Decision §(3): ScopeBuffer は ``../lib/scopeBuffer`` に SoA 実装を抽出。
 // ここでは re-export して既存 import (= ScopeView / XYGraphView / BlockNodeView 経由) を
@@ -808,6 +815,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ADR-0043 §論点 2: 複数タブ操作 actions
   openFileInTab: (path, model, mtime, etag) => {
+    // ADR-0081 §論点 3: モデルを開いたら block registry を取り直す (staleTime 1 時間の
+    // cache のまま、消えた引数の除去を古い registry で行わないため)
+    invalidateBlockRegistry();
     // ADR-0058 §論点 10: backend persistence.migrate_to_current() が 1 段以上
     // migration を適用したファイルには ``_migrated_from`` メタが付く。ロード直後に
     // toast 通知 + dirty flag で「保存すると新 schema になる」とユーザーに伝え、
@@ -968,6 +978,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   switchTab: (path) =>
     set((state) => {
       if (state.activeTabFilePath === path) return {};
+      // ADR-0081 §論点 3: 別のモデルに切り替えたら block registry を取り直す
+      // (消えた引数の除去を古い registry で行わないため)
+      invalidateBlockRegistry();
       const target = state.tabs.find((t) => t.filePath === path);
       if (!target) return {};
       const currentSnap = makeTabSnapshot(state);
@@ -2299,7 +2312,7 @@ export function updateBlockParams(
         const after = resolvePortCounts(target.type, params, meta);
         let newConnections = view.connections;
         if (
-          canPruneOnParamChange(target.type, params) &&
+          canPruneOnParamChange(target.type, params, registry) &&
           (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs)
         ) {
           newConnections = view.connections.filter((c) => {

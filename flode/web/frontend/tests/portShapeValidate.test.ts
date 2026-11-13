@@ -58,6 +58,24 @@ const META_DEMUX: BlockMetadata = {
   mask_capable: false,
 };
 
+// ADR-0081 §4-B (U5): registry に無い型はプレースホルダとして検証しない (配線を拒否しない)
+// ため、Subsystem の検証を確かめるテストは registry に Subsystem を含める (実 registry と同じ)。
+const META_SUBSYSTEM: BlockMetadata = {
+  type_path: "flode.subsystems.subsystem.Subsystem",
+  display_name: "Subsystem",
+  category: "subsystems",
+  icon: "subsystem",
+  docstring_summary: "",
+  params_spec: [],
+  default_n_inputs: 0,
+  default_n_outputs: 0,
+  port_shapes_in_default: [],
+  port_shapes_out_default: [],
+  tags: [],
+  is_container: true,
+  mask_capable: true,
+};
+
 describe("shapeEquals", () => {
   it("identical scalars are equal", () => {
     expect(shapeEquals([], [])).toBe(true);
@@ -376,7 +394,7 @@ describe("validatePortShapeConnection", () => {
           ],
         },
       };
-      const reg = indexRegistry([META_GAIN]);
+      const reg = indexRegistry([META_GAIN, META_SUBSYSTEM]);
       // index 1 (= enable) と index 2 (= trigger) はどちらも scalar、gain 出力と接続可
       expect(validatePortShapeConnection(gain1, 0, sub, 1, reg).ok).toBe(true);
       expect(validatePortShapeConnection(gain1, 0, sub, 2, reg).ok).toBe(true);

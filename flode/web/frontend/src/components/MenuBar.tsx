@@ -32,6 +32,7 @@ import {
   removeRecentFile,
 } from "../lib/recentFiles";
 import { dialog } from "../lib/dialogService";
+import { prepareModelForBackend } from "../lib/modelForBackend";
 import { useSimulation } from "../lib/useSimulation";
 import {
   copySelectionToClipboard,
@@ -174,7 +175,8 @@ export function MenuBar(): JSX.Element {
       return;
     }
     try {
-      const resp = await putFileContent(newPath, editingModel);
+      // ADR-0081 §論点 3: 保存時に消えた引数を除去 (実行要求と同じ関数)
+      const resp = await putFileContent(newPath, prepareModelForBackend(editingModel));
       const data = await getFileContent(newPath);
       // ADR-0043 §論点 2: Save As は新しい tab を開く挙動 (= VSCode 流儀、
       // 元 tab は dirty/未保存のまま残す)。ユーザーが必要なら元 tab を閉じる。

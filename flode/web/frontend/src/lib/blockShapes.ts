@@ -131,6 +131,97 @@ export function getBlockShape(typePath: string): BlockShape {
   return SHAPE_BY_TYPE[typePath] ?? DEFAULT_RECT;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-0081 §8-D (Q8): ユーザーブロック・プレースホルダの汎用矩形。
+// 型名による分岐 (SHAPE_BY_TYPE) を通さず、ポート数と表示名・ポート名の長さから決める。
+// ---------------------------------------------------------------------------
+
+/** ユーザーブロックの矩形の幅の下限 / 上限 (px)。 */
+export const USER_BLOCK_MIN_WIDTH = 72;
+export const USER_BLOCK_MAX_WIDTH = 200;
+/** 高さの下限 (px)。 */
+export const USER_BLOCK_MIN_HEIGHT = 40;
+/** ポートの縦ピッチ (コンテナと同じ、ポート脇にラベルを並べるため)。 */
+export const USER_BLOCK_PORT_PITCH = 16;
+/** 寸法を揃える単位 (8px モジュール、v0.47.0 の寸法規則)。 */
+const SIZE_MODULE = 8;
+/** 左右の内側余白と、ポート名と表示名の間隔 (px)。 */
+const USER_BLOCK_PADDING = 6;
+const USER_BLOCK_GAP = 6;
+/** 表示名・ポート名のフォントサイズ (px、BlockNodeView と一致させる)。 */
+export const USER_BLOCK_TITLE_FONT_PX = 10;
+export const USER_BLOCK_PORT_FONT_PX = 9;
+/** 文字幅の見積もり (フォントサイズ比)。全角 (CJK 等) は 1、それ以外は 0.6。 */
+const NARROW_CHAR_RATIO = 0.6;
+const WIDE_CHAR_RATIO = 1.0;
+/** これ以上の code point を全角として見積もる (ハングル字母以降の CJK 等)。 */
+const WIDE_CODE_POINT_START = 0x1100;
+
+/** 文字列の描画幅を見積もる (px)。実測はせず、ノードの自動サイズの目安にだけ使う。 */
+export function estimateTextWidth(text: string, fontPx: number): number {
+  let width = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    width += fontPx * (cp >= WIDE_CODE_POINT_START ? WIDE_CHAR_RATIO : NARROW_CHAR_RATIO);
+  }
+  return width;
+}
+
+function roundUpToModule(px: number): number {
+  return Math.ceil(px / SIZE_MODULE) * SIZE_MODULE;
+}
+
+/**
+ * ユーザーブロック (またはプレースホルダ) の矩形のサイズ。
+ *
+ * - 幅: 余白 + 最長の入力ポート名 + 間隔 + 最長の表示名候補 + 間隔 + 最長の出力ポート名 + 余白
+ *   を 8px 単位に切り上げ、``USER_BLOCK_MIN_WIDTH``〜``USER_BLOCK_MAX_WIDTH`` に収める
+ *   (はみ出す文字は描画側で省略する)
+ * - 高さ: ポート数 × ``USER_BLOCK_PORT_PITCH`` + 余白を 8px 単位に切り上げ、下限は
+ *   ``USER_BLOCK_MIN_HEIGHT``
+ *
+ * 表示名は言語で変わるので、候補 (各言語の表示名) の最長で決める (言語を切り替えても
+ * 形が変わらない)。
+ *
+ * @param texts.titles - 表示名の候補 (整形済み)。
+ * @param texts.inputs - 入力ポート名 (整形済み、無名は ``""``)。
+ * @param texts.outputs - 出力ポート名 (整形済み、無名は ``""``)。
+ * @param nInputs - 描くポート数 (入力)。
+ * @param nOutputs - 描くポート数 (出力)。
+ */
+export function getUserBlockShape(
+  texts: {
+    titles: readonly string[];
+    inputs: readonly string[];
+    outputs: readonly string[];
+  },
+  nInputs: number,
+  nOutputs: number,
+): BlockShape {
+  const longest = (list: readonly string[], fontPx: number): number =>
+    list.reduce((m, s) => Math.max(m, estimateTextWidth(s, fontPx)), 0);
+  const titleW = longest(texts.titles, USER_BLOCK_TITLE_FONT_PX);
+  const inW = longest(texts.inputs, USER_BLOCK_PORT_FONT_PX);
+  const outW = longest(texts.outputs, USER_BLOCK_PORT_FONT_PX);
+  const contentW =
+    2 * USER_BLOCK_PADDING +
+    inW +
+    (inW > 0 ? USER_BLOCK_GAP : 0) +
+    titleW +
+    (outW > 0 ? USER_BLOCK_GAP : 0) +
+    outW;
+  const width = Math.min(
+    USER_BLOCK_MAX_WIDTH,
+    Math.max(USER_BLOCK_MIN_WIDTH, roundUpToModule(contentW)),
+  );
+  const maxPorts = Math.max(nInputs, nOutputs);
+  const height = Math.max(
+    USER_BLOCK_MIN_HEIGHT,
+    roundUpToModule(maxPorts * USER_BLOCK_PORT_PITCH + SIZE_MODULE),
+  );
+  return { kind: "rect", width, height };
+}
+
 /**
  * shape kind が既存 ``BlockShapeKind`` のどれかであることを検査する type guard。
  * テスト等で使う。

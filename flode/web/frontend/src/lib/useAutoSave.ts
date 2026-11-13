@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 
 import { putFileContent } from "../api/filesApi";
 import { useAppStore } from "../store/appStore";
+import { prepareModelForBackend } from "./modelForBackend";
 
 export const AUTO_SAVE_DEBOUNCE_MS = 500;
 
@@ -31,14 +32,15 @@ export function useAutoSave(): void {
 
   const flush = async (): Promise<void> => {
     const state = useAppStore.getState();
-    const model = state.editingModel;
-    if (!model) return;
+    if (!state.editingModel) return;
     if (state.selectedFilePath === null) return;
     if (inFlightRef.current) {
       reSendRef.current = true;
       return;
     }
     inFlightRef.current = true;
+    // ADR-0081 §論点 3: 保存時に消えた引数を除去 (実行要求と同じ関数、画面上も除去)
+    const model = prepareModelForBackend(state.editingModel);
     try {
       // ``expectedEtag`` は楽観ロック用 (= ADR-0041 §論点 11-A)。null なら単に
       // 上書きで OK。

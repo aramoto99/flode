@@ -139,22 +139,33 @@ export function PropertyRow({
  * 入力 column に揃えてインデントする (= label column 分の空白を左に取る)。
  * 動的に内容が変わる用途 (例: solver method 選択に応じた解説の切替) に使う。
  * ``labelWidth`` は親 ``PropertyRow`` と揃える。
+ * ``tone`` は ui-design-system のカラーパレットの Warning (``text-amber-700``) /
+ * Error (``text-rose-700``) を選ぶ (既定は補足説明の ``text-slate-500``)。
  */
 export function PropertyHint({
   text,
   labelWidth = 140,
   testId,
+  tone = "default",
 }: {
   text: string;
   labelWidth?: number;
   testId?: string;
+  tone?: "default" | "warning" | "error";
 }): JSX.Element {
+  const toneCls =
+    tone === "warning"
+      ? "text-amber-700"
+      : tone === "error"
+        ? "text-rose-700"
+        : "text-slate-500";
   return (
     <div className="flex items-start gap-2 pb-1">
       <div className="shrink-0" style={{ width: `${labelWidth}px` }} />
       <p
         data-testid={testId}
-        className="min-w-0 flex-1 text-[10px] leading-snug text-slate-500"
+        data-tone={tone}
+        className={`min-w-0 flex-1 text-[10px] leading-snug ${toneCls}`}
       >
         {text}
       </p>

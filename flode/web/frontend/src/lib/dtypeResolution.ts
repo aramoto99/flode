@@ -10,6 +10,11 @@ import { useEffect, useSyncExternalStore } from "react";
 import { resolveModelDtypes } from "../api/client";
 import { useAppStore } from "../store/appStore";
 import type { DtypesPortEntry, DtypesResponse, FlwModel } from "../types/api";
+import {
+  collectPlaceholderBlocks,
+  pruneRemovedParams,
+  type RegistryIndex,
+} from "./userBlockModel";
 
 /** 編集 → 再取得の debounce (SPEC-0028、Stage 0 の Q3 を踏襲)。 */
 const RESOLVE_DEBOUNCE_MS = 300;
@@ -57,6 +62,7 @@ export function _resetDtypeFetchStateForTest(): void {
   _seq += 1; // 進行中の結果を無効化
   _running = false;
   _queued = null;
+  held = false;
 }
 
 function findPort(
@@ -167,24 +173,50 @@ async function _fetchAndPublish(model: FlwModel): Promise<void> {
   }
 }
 
+// ADR-0081 §4-B の 3: プレースホルダ (読み込めないブロック) を含むモデルでは解決を
+// 要求せず「保留」にする (backend は ``unknown_block_type`` で拒否するため)。
+let held = false;
+
+/** 信号面解決を「不明なブロックがあるため保留」にしているか。 */
+export function isDtypeResolutionHeld(): boolean {
+  return held;
+}
+
 /**
  * editingModel の変化を 300ms debounce で fetch し store を更新する。
  * アプリで 1 箇所 (DiagramCanvas) だけ mount する。失敗時は null
  * (読み手はセクション非表示 / 既定整形へフォールバック)。
+ *
+ * ADR-0081: ``registry`` (取得済みの索引、未取得なら undefined) を受け取り、
+ * プレースホルダを含むモデルは要求しない (保留)。それ以外は消えた引数を除いた
+ * モデル (保存・実行と同じ ``pruneRemovedParams``) を送る。
  */
-export function useDtypeResolutionFetcher(): void {
+export function useDtypeResolutionFetcher(registry?: RegistryIndex): void {
   const editingModel = useAppStore((s) => s.editingModel);
   useEffect(() => {
     if (!editingModel) {
       current = null;
+      held = false;
       notify();
       return;
     }
+    if (collectPlaceholderBlocks(editingModel, registry).length > 0) {
+      _seq += 1; // 進行中の結果を無効化 (保留中に古い結果を出さない)
+      current = null;
+      held = true;
+      notify();
+      return;
+    }
+    if (held) {
+      held = false;
+      notify();
+    }
+    const model = pruneRemovedParams(editingModel, registry);
     const timer = window.setTimeout(() => {
-      void _fetchAndPublish(editingModel);
+      void _fetchAndPublish(model);
     }, RESOLVE_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [editingModel]);
+  }, [editingModel, registry]);
 }

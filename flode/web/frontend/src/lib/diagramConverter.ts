@@ -6,10 +6,27 @@
 
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
-import { getBlockShape } from "./blockShapes";
+import { getBlockShape, getUserBlockShape, type BlockShape } from "./blockShapes";
 import { resolvePortCounts } from "./dynamicPorts";
 import type { EdgeEndpointNode } from "./edgeRectIntersect";
-import type { BlockMetadata, FlwModel, LayoutDict, LayoutEntry } from "../types/api";
+import {
+  EXCESS_PORT_STROKE,
+  isPlaceholderType,
+  placeholderTypeLabel,
+  removedParamNames,
+  userBlockMetaOf,
+  userPortNames,
+  type RegistryIndex,
+} from "./userBlockModel";
+import { userBlockDisplayName } from "./userBlocks";
+import type {
+  BlockEntry,
+  BlockMetadata,
+  ConnectionEntry,
+  FlwModel,
+  LayoutDict,
+  LayoutEntry,
+} from "../types/api";
 
 // 業界標準ブロック線図ツール準拠: 連結線の終点に矢印 head を付けて「信号の流れ」を視覚化する。
 // stroke は 1.5 で接地感を増す。``DiagramCanvas`` の ``defaultEdgeOptions``
@@ -66,6 +83,37 @@ export interface BlockNodeData extends Record<string, unknown> {
   // v0.15.0: ブロック左右反転フラグ (業界標準ブロック線図ツールの "Flip Block" 相当)。
   // layout entry の ``flipped`` から流す。BlockNodeView で port position を反転 + visual scaleX(-1)。
   flipped?: boolean;
+  // ADR-0081 §8-D / §論点 4: ユーザーブロック・プレースホルダは型名による分岐を通さず
+  // 汎用矩形で描く。組み込みブロックでは undefined。
+  userBlock?: UserBlockNodeInfo;
+}
+
+/** ADR-0081: ユーザーブロック (``"user"``) / プレースホルダ (``"placeholder"``) の描画情報。 */
+export interface UserBlockNodeInfo {
+  kind: "user" | "placeholder";
+  /** user: registry のメタデータ。placeholder: セッション中に直前に見たメタデータ (無ければ undefined)。 */
+  meta?: BlockMetadata;
+  /**
+   * registry が宣言するポート数 (user のみ)。これ以上の index のポートは超過ポート
+   * (registry のポート数より多く繋がっている) としてエラー表示する。placeholder は null。
+   */
+  declaredInputs: number | null;
+  declaredOutputs: number | null;
+  /** ブロックから消えた引数 (entry に残っている。user のみ、次の保存・実行で除去)。 */
+  removedParams: string[];
+}
+
+/** 超過ポートに繋がった配線のスタイル (エラー色の破線、自動では消さない)。 */
+export const DIAGRAM_EDGE_STYLE_ERROR = {
+  stroke: EXCESS_PORT_STROKE,
+  strokeWidth: 1.5,
+  strokeDasharray: "4 3",
+};
+
+/** ``modelToDiagram`` の追加入力。 */
+export interface ModelToDiagramOptions {
+  /** セッション中に直前に見たユーザーブロックのメタデータ (プレースホルダの形を保つ)。 */
+  lastSeen?: RegistryIndex;
 }
 
 export type BlockNode = Node<BlockNodeData>;
@@ -83,14 +131,117 @@ function gridFallback(idx: number): LayoutEntry {
   };
 }
 
+/** ユーザーブロック / プレースホルダの形とポート数 (組み込みブロックなら null)。 */
+interface UserBlockGeometry {
+  info: UserBlockNodeInfo;
+  shape: BlockShape;
+  nInputs: number;
+  nOutputs: number;
+}
+
+/**
+ * ADR-0081 §論点 3 / §論点 4 / §8-D: ユーザーブロックとプレースホルダの形を決める。
+ *
+ * - ユーザーブロック: ポート数 = max(registry の数, 接続されている最大 index + 1)
+ *   (registry を超えた側は超過ポート)
+ * - プレースホルダ: ポート数 = 接続から導いた数 (直前に見たメタデータがあればその数との大きい方)
+ * - 組み込みブロック・registry 未取得: null (従来の描画)
+ */
+// 形の計算 (文字幅の見積もり) は毎レンダー呼ばれるので、(メタデータ, 型名, ポート数) で
+// メモ化する。メタデータは registry の再取得で別オブジェクトになるので WeakMap で自然に捨てる。
+const shapeCacheByMeta = new WeakMap<BlockMetadata, Map<string, BlockShape>>();
+const shapeCacheNoMeta = new Map<string, BlockShape>();
+/** メタデータ無し (直前の形も知らないプレースホルダ) のキャッシュの上限。 */
+const MAX_NO_META_SHAPES = 256;
+
+function cachedUserBlockShape(
+  type: string,
+  meta: BlockMetadata | undefined,
+  isUser: boolean,
+  nInputs: number,
+  nOutputs: number,
+): BlockShape {
+  const key = `${isUser ? "u" : "p"}\u0000${type}\u0000${nInputs}\u0000${nOutputs}`;
+  let cache: Map<string, BlockShape>;
+  if (meta !== undefined) {
+    cache = shapeCacheByMeta.get(meta) ?? new Map<string, BlockShape>();
+    shapeCacheByMeta.set(meta, cache);
+  } else {
+    if (shapeCacheNoMeta.size >= MAX_NO_META_SHAPES) shapeCacheNoMeta.clear();
+    cache = shapeCacheNoMeta;
+  }
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const titles =
+    isUser && meta !== undefined
+      ? [userBlockDisplayName(meta, "en"), userBlockDisplayName(meta, "ja")]
+      : [placeholderTypeLabel(type)];
+  const shape = getUserBlockShape(
+    {
+      titles,
+      inputs: userPortNames(meta?.input_names).slice(0, nInputs),
+      outputs: userPortNames(meta?.output_names).slice(0, nOutputs),
+    },
+    nInputs,
+    nOutputs,
+  );
+  cache.set(key, shape);
+  return shape;
+}
+
+function userBlockGeometry(
+  block: BlockEntry,
+  extent: { nInputs: number; nOutputs: number },
+  registry: RegistryIndex | undefined,
+  lastSeen: RegistryIndex | undefined,
+): UserBlockGeometry | null {
+  const meta = userBlockMetaOf(block.type, registry);
+  const placeholder = meta === undefined && isPlaceholderType(block.type, registry);
+  if (meta === undefined && !placeholder) return null;
+  const shown = meta ?? lastSeen?.get(block.type);
+  const nInputs = Math.max(shown?.default_n_inputs ?? 0, extent.nInputs);
+  const nOutputs = Math.max(shown?.default_n_outputs ?? 0, extent.nOutputs);
+  const shape = cachedUserBlockShape(block.type, shown, meta !== undefined, nInputs, nOutputs);
+  return {
+    info: {
+      kind: meta !== undefined ? "user" : "placeholder",
+      meta: shown,
+      declaredInputs: meta?.default_n_inputs ?? null,
+      declaredOutputs: meta?.default_n_outputs ?? null,
+      removedParams: meta !== undefined ? removedParamNames(block.params, meta) : [],
+    },
+    shape,
+    nInputs,
+    nOutputs,
+  };
+}
+
+/** 接続済み index の集合から「最大 index + 1」(無ければ 0) を返す。 */
+function extentOf(indices: ReadonlySet<number> | undefined): number {
+  let n = 0;
+  for (const i of indices ?? []) n = Math.max(n, i + 1);
+  return n;
+}
+
+/**
+ * JSON モデル (現スコープ) を React Flow の node / edge に変換する。
+ *
+ * @param model - 現スコープの blocks / connections / layout を持つモデル。
+ * @param registry - block registry の索引。**未取得なら undefined** を渡す (ADR-0081 §4-B:
+ *   取得前はプレースホルダ判定をしない)。
+ * @param options - 直前に見たユーザーブロックのメタデータ等。
+ */
 export function modelToDiagram(
   model: FlwModel,
-  registry?: ReadonlyMap<string, BlockMetadata>,
+  registry?: RegistryIndex,
+  options: ModelToDiagramOptions = {},
 ): {
   nodes: BlockNode[];
   edges: Edge[];
 } {
   const layout = model.layout ?? {};
+  // 超過ポート判定用: ブロック id → registry が宣言するポート数 (ユーザーブロックのみ)
+  const declaredPorts = new Map<string, { nIn: number | null; nOut: number | null }>();
 
   // 業界標準ブロック線図ツール準拠: 接続済み port (= edge の端点) には chevron ``>`` を
   // 表示しないため、各 block の接続済み input / output port_idx 集合を先に収集する。
@@ -106,18 +257,36 @@ export function modelToDiagram(
   const nodes: BlockNode[] = model.blocks.map((b, idx) => {
     const pos = layout[b.id] ?? gridFallback(idx);
     const meta = registry?.get(b.type);
+    // ADR-0081: ユーザーブロック / プレースホルダは型名による分岐 (getBlockShape /
+    // resolvePortCounts の末尾一致) を通さない
+    const user = userBlockGeometry(
+      b,
+      {
+        nInputs: extentOf(connectedInBy.get(b.id)),
+        nOutputs: extentOf(connectedOutBy.get(b.id)),
+      },
+      registry,
+      options.lastSeen,
+    );
+    if (user !== null) {
+      declaredPorts.set(b.id, {
+        nIn: user.info.declaredInputs,
+        nOut: user.info.declaredOutputs,
+      });
+    }
     // ADR-0019: ブロック type ごとに外形サイズが異なる (三角・円・バー・カプセル・五角形タグ・矩形)。
     // ノードの bounding box は **shape のみ**。ID ラベルは BlockNodeView が absolute で
     // ノード境界の外に描く (= NodeResizer の枠線 / handle が shape のみを囲むように)。
-    const baseShape = getBlockShape(b.type);
+    const baseShape = user?.shape ?? getBlockShape(b.type);
     // 動的 port (Sum.signs / Mux.n / Subsystem.n_inputs 等) を反映した実 port 数
-    const ports = resolvePortCounts(b.type, b.params, meta);
+    const ports = user ?? resolvePortCounts(b.type, b.params, meta);
     // 同じ shape kind でも port 数が増えたら高さを伸ばす (ハンドルが密集して重ならない
     // ように)。各ハンドルは ~7px、最低 12px ピッチを確保する。
     const maxPorts = Math.max(ports.nInputs, ports.nOutputs);
     // v0.47.0: Subsystem (container) はポート脇にラベル (9px) が並ぶため 16px
     // ピッチ、それ以外は従来の 12px (ハンドル ~7px に対して十分)。
-    const portPitch = meta?.is_container ? 16 : 12;
+    // ADR-0081 §8-D: ユーザーブロックもポート名を並べるので 16px。
+    const portPitch = meta?.is_container || user !== null ? 16 : 12;
     const minHeightForPorts = maxPorts * portPitch + 8;
     // ユーザーが NodeResizer で手動リサイズした値が layout にあれば優先する
     // (= ADR-0020 §(2) で Phase 4+ 送りとしていた node サイズ永続化)。
@@ -147,24 +316,40 @@ export function modelToDiagram(
         connectedInputs: Array.from(connectedInBy.get(b.id) ?? []),
         connectedOutputs: Array.from(connectedOutBy.get(b.id) ?? []),
         flipped: layoutEntry?.flipped ?? false,
+        ...(user !== null ? { userBlock: user.info } : {}),
       },
       type: "blockNode",
       width: shape.width,
       height: shape.height,
     };
   });
-  const edges: Edge[] = model.connections.map((c, idx) => ({
-    id: `e${idx}-${c.src}-${c.dst}`,
-    source: c.src,
-    target: c.dst,
-    sourceHandle: String(c.src_idx),
-    targetHandle: String(c.dst_idx),
-    // 業界標準ブロック線図ツール準拠: 90° 折れ線 (= step、smoothstep の角丸なし版)、
-    // 黒系細線、終点矢印 head で「信号の流れ」を視覚化
-    type: DIAGRAM_EDGE_TYPE,
-    style: DIAGRAM_EDGE_STYLE,
-    markerEnd: DIAGRAM_MARKER_END,
-  }));
+  const isExcess = (c: ConnectionEntry): boolean => {
+    const dst = declaredPorts.get(c.dst);
+    const src = declaredPorts.get(c.src);
+    return (
+      (dst?.nIn != null && c.dst_idx >= dst.nIn) ||
+      (src?.nOut != null && c.src_idx >= src.nOut)
+    );
+  };
+  const edges: Edge[] = model.connections.map((c, idx) => {
+    const excess = isExcess(c);
+    return {
+      id: `e${idx}-${c.src}-${c.dst}`,
+      source: c.src,
+      target: c.dst,
+      sourceHandle: String(c.src_idx),
+      targetHandle: String(c.dst_idx),
+      // 業界標準ブロック線図ツール準拠: 90° 折れ線 (= step、smoothstep の角丸なし版)、
+      // 黒系細線、終点矢印 head で「信号の流れ」を視覚化
+      type: DIAGRAM_EDGE_TYPE,
+      // ADR-0081 §論点 3: registry のポート数を超えた側の配線はエラー表示 (自動では消さない)
+      style: excess ? DIAGRAM_EDGE_STYLE_ERROR : DIAGRAM_EDGE_STYLE,
+      markerEnd: excess
+        ? { ...DIAGRAM_MARKER_END, color: EXCESS_PORT_STROKE }
+        : DIAGRAM_MARKER_END,
+      ...(excess ? { data: { excessPort: true } } : {}),
+    };
+  });
   return { nodes, edges };
 }
 

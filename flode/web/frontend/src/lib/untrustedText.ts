@@ -28,6 +28,17 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 const BIDI_CONTROLS = /[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
 
 /**
+ * 複数行の信頼できない文字列 (モデルの params の JSON 表示など) から双方向制御文字だけを
+ * 除く (改行・長さは保つ。``JSON.stringify`` は C0 制御文字をエスケープ済み)。
+ *
+ * @param text - 表示する文字列。
+ * @returns 双方向制御文字を除いた文字列。
+ */
+export function stripBidiControls(text: string): string {
+  return text.replace(BIDI_CONTROLS, "");
+}
+
+/**
  * サーバ由来の信頼できない文字列を、画面に 1 行で出せる形に整える。
  *
  * 文字列以外 (``null`` / 数値 / オブジェクト) は空文字にする (JSON の形が想定と違っても

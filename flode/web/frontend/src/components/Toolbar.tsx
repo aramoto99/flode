@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { putFileContent } from "../api/filesApi";
+import { prepareModelForBackend } from "../lib/modelForBackend";
 import { parseToolbarTEnd } from "../lib/timeUtil";
 import { useSimulation } from "../lib/useSimulation";
 import { updateSimulatorConfig, useAppStore } from "../store/appStore";
@@ -34,9 +35,10 @@ export function Toolbar(): JSX.Element {
     mutationFn: async () => {
       if (!editingModel) throw new Error("no model");
       if (selectedFilePath === null) throw new Error("no file selected");
+      // ADR-0081 §論点 3: 保存時に消えた引数を除去 (実行要求と同じ関数)
       const resp = await putFileContent(
         selectedFilePath,
-        editingModel,
+        prepareModelForBackend(editingModel),
         editingFileEtag ?? undefined,
       );
       setEditingFileMeta(resp.mtime, resp.etag);

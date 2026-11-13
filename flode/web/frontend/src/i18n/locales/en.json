@@ -490,5 +490,19 @@
   "inspector.sample_time.mode.base": "Base clock (dt)",
   "inspector.sample_time.mode.upstream": "Inherited",
   "inspector.sample_time.mode.explicit": "Specified",
-  "inspector.sample_time.period_label": "Period (s)"
+  "inspector.sample_time.period_label": "Period (s)",
+  "canvas.placeholder.label": "Unknown block",
+  "canvas.placeholder.tooltip": "The block type {{type}} is not loaded. Fix the .py file (see Load errors in the palette) and reload the blocks.",
+  "canvas.excess_port": "This port no longer exists on the block. Remove the connection, or restore the port in the .py file and reload the blocks.",
+  "inspector.placeholder.reason": "The block type {{type}} is not loaded (see Load errors in the palette). Parameters are kept as they are and shown read-only. Fix the .py file and reload the blocks.",
+  "inspector.placeholder.section": "Parameters (read-only)",
+  "inspector.param.removed": "This parameter was removed from the block. It is deleted when the model is saved or run.",
+  "inspector.param.removed_list": "Parameters removed from the block: {{names}}. They are deleted when the model is saved or run.",
+  "inspector.param.type_mismatch": "The block now expects a {{expected}} value. Running fails until the value is changed.",
+  "inspector.excess_ports": "Connections to ports the block no longer has: {{ports}}. Remove them (or restore the ports and reload) before running.",
+  "canvas.removed_params": "Parameters removed from the block: {{names}}. Their values are deleted when the model is next saved or run.",
+  "user_blocks.params_removed_after_reload": "Parameters were removed from {{count}} block(s) in the open model: {{list}}. Their values are deleted when the model is next saved or run.",
+  "user_blocks.params_removed_on_save": "Deleted parameters that the blocks no longer have from {{count}} block(s): {{list}}.",
+  "inspector.dtype.held":"Signal types are not resolved because the model has blocks that are not loaded.",
+  "error.excess_port_connections": "Connections go to ports that the blocks no longer have: {{ports, block_labels}}. Remove these connections, or restore the ports in the .py file and reload the blocks."
 }

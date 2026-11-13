@@ -490,5 +490,19 @@
   "inspector.sample_time.mode.base": "基準クロック (dt)",
   "inspector.sample_time.mode.upstream": "継承",
   "inspector.sample_time.mode.explicit": "指定",
-  "inspector.sample_time.period_label": "周期 (秒)"
+  "inspector.sample_time.period_label": "周期 (秒)",
+  "canvas.placeholder.label": "不明なブロック",
+  "canvas.placeholder.tooltip": "ブロックの型 {{type}} が読み込まれていません。.py を直して (原因はパレットの読み込みエラー欄)、ブロックを再読み込みしてください。",
+  "canvas.excess_port": "このポートはブロックから無くなりました。配線を削除するか、.py にポートを戻してブロックを再読み込みしてください。",
+  "inspector.placeholder.reason": "ブロックの型 {{type}} が読み込まれていません (原因はパレットの読み込みエラー欄)。パラメータはそのまま保持し、読み取り専用で表示します。.py を直してブロックを再読み込みしてください。",
+  "inspector.placeholder.section": "パラメータ (読み取り専用)",
+  "inspector.param.removed": "この引数はブロックから消えました。モデルの保存時と実行時に削除されます。",
+  "inspector.param.removed_list": "ブロックから消えた引数: {{names}}。モデルの保存時と実行時に削除されます。",
+  "inspector.param.type_mismatch": "ブロックはこの引数に {{expected}} の値を求めています。値を直すまで実行は失敗します。",
+  "inspector.excess_ports": "ブロックに無いポートへの配線があります: {{ports}}。実行する前に配線を削除してください (または .py にポートを戻して再読み込み)。",
+  "canvas.removed_params": "ブロックから消えた引数: {{names}}。次の保存・実行で値が削除されます。",
+  "user_blocks.params_removed_after_reload": "開いているモデルの {{count}} 個のブロックで引数がなくなりました: {{list}}。次の保存・実行で値が削除されます。",
+  "user_blocks.params_removed_on_save": "{{count}} 個のブロックから、ブロックに無くなった引数の値を削除しました: {{list}}。",
+  "inspector.dtype.held":"読み込めないブロックがあるため、信号の型の解決を保留しています。",
+  "error.excess_port_connections": "ブロックに無いポートへの配線があります: {{ports, block_labels}}。配線を削除するか、.py にポートを戻してブロックを再読み込みしてください。"
 }

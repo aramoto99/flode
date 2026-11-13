@@ -15,7 +15,12 @@
 
 import { useTranslation } from "react-i18next";
 
-import { formatShape, hasDeclaredDtype, useDtypeResolution } from "../lib/dtypeResolution";
+import {
+  formatShape,
+  hasDeclaredDtype,
+  isDtypeResolutionHeld,
+  useDtypeResolution,
+} from "../lib/dtypeResolution";
 import { useAppStore } from "../store/appStore";
 import type { DtypesDiagnostic, DtypesPortEntry, DtypesResponse } from "../types/api";
 import { PropertyHint, PropertyRow, SectionDivider } from "./ui/inspector";
@@ -58,7 +63,15 @@ export function SignalDtypeSection({ blockId }: SignalDtypeSectionProps): JSX.El
   // ADR-0079 §(6) (Stage 2): Subsystem 内を編集中は ``inner`` を editingPath で辿る
   // (Stage 1 以前の応答には inner が無いので root 以外は非表示のまま)。
   const data = resolveScope(rootData, editingPath);
-  if (!data) return null;
+  if (!data) {
+    // ADR-0081 §4-B: 読み込めないブロックがあるので解決を保留している
+    return isDtypeResolutionHeld() ? (
+      <PropertyHint
+        testId="signal-dtype-held"
+        text={t("inspector.dtype.held")}
+      />
+    ) : null;
+  }
 
   const rows = data.ports
     .filter((p) => p.block_id === blockId)
