@@ -26,6 +26,9 @@ from .core.decorator import block
 from .core.simulator import Simulator
 from .exceptions import (
     AlgebraicLoopError,
+    BlockLoadError,
+    BlockReloadInProgressError,
+    BlockSourceConfigError,
     BlockSpecError,
     FlodeError,
     LibraryEntryNotFoundError,
@@ -48,10 +51,15 @@ from .libraries import (
     validate_library,
 )
 from .subsystems import Enable, Inport, Outport, Subsystem, Trigger
+from .userblocks import BlockLoadReport, load_blocks, unload_blocks
 
 __all__ = [
     "AlgebraicLoopError",
     "Block",
+    "BlockLoadError",
+    "BlockLoadReport",
+    "BlockReloadInProgressError",
+    "BlockSourceConfigError",
     "BlockSpecError",
     "BodeResponse",
     "Enable",
@@ -83,8 +91,10 @@ __all__ = [
     "export_subsystem_to_library",
     "is_stable",
     "linearize",
+    "load_blocks",
     "load_library",
     "nyquist",
     "root_locus",
+    "unload_blocks",
     "validate_library",
 ]

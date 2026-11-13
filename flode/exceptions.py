@@ -6,6 +6,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .userblocks import BlockLoadReport
+
 
 class FlodeError(Exception):
     """flode が投げる全例外の基底。
@@ -267,6 +272,38 @@ class PathTraversalError(FlodeError):
 
     REST `/api/v1/files/*` で利用者が渡す path を ``resolve_workspace_path`` で
     検証する際に投げられる。HTTP 層では 403 にマップされる。
+    """
+
+
+class BlockLoadError(FlodeError):
+    """ユーザーブロックの読み込みで 1 件以上のエラーがあった (ADR-0081 §論点 9、``strict=True``)。
+
+    すべてのソースを読み終えた後に 1 回だけ送出する。読み込めたブロックは管理型表に
+    登録されたまま残る。
+
+    Args:
+        message: 説明文 (エラー件数と先頭数件の要約)。
+        report: 読み込み結果 (``flode.userblocks.BlockLoadReport``)。
+    """
+
+    def __init__(self, message: str, *, report: BlockLoadReport) -> None:
+        super().__init__(message)
+        self.report: BlockLoadReport = report
+
+
+class BlockReloadInProgressError(FlodeError):
+    """ユーザーブロックの読み込み / 再読み込みが既に進行中 (ADR-0081 §2-A、REST では 409)。
+
+    待ち行列にはしない。進行中の処理が終わってから呼び直す。
+    """
+
+
+class BlockSourceConfigError(FlodeError):
+    """ユーザーブロックの読み込み元指定の型違反 (ADR-0081 §1-B / SPEC-0033 P3)。
+
+    ``dirs`` の名前が識別子でない、``modules`` が文字列の列でない、config の
+    ``[blocks]`` 節の型が違う等。パスの不在やモジュールが無いことはこの例外ではなく
+    読み込みエラー (``BlockLoadReport.errors``) として扱う。
     """
 
 

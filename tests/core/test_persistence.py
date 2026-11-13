@@ -800,3 +800,94 @@ class TestDecoratedBlockModuleRoundTrip:
         assert (
             resolve_block_class("decoblocks_probe.blocks.Scaled") is decorated_blocks_module.scaled
         )
+
+
+# ---------------------------------------------------------------
+# 管理型表 (ADR-0081 §1-D)
+# ---------------------------------------------------------------
+
+
+class _ManagedProbe(Gain):
+    """管理型表の照会テスト用 (どの allowlist にも属さない型名で登録する)。"""
+
+
+@pytest.fixture
+def restore_managed_table():
+    """管理型表と allowlist をテスト前の状態に戻す。"""
+    table_before = dict(_persistence.managed_block_types())
+    allowlist_before = set(_persistence._extra_allowed_prefixes)
+    yield
+    _persistence._replace_managed_block_types(
+        table_before, allowed_modules=[k.rsplit(".", 1)[0] for k in table_before]
+    )
+    _persistence._extra_allowed_prefixes.clear()
+    _persistence._extra_allowed_prefixes.update(allowlist_before)
+
+
+@pytest.mark.usefixtures("restore_managed_table")
+class TestManagedBlockTypes:
+    def test_table_entry_resolves_without_allowlist_or_import(self, mocker):
+        import_module = mocker.spy(_persistence.importlib, "import_module")
+        _persistence._replace_managed_block_types(
+            {"nowhere_pkg.mod.Probe": _ManagedProbe}, allowed_modules=["nowhere_pkg"]
+        )
+
+        assert resolve_block_class("nowhere_pkg.mod.Probe") is _ManagedProbe
+        import_module.assert_not_called()
+
+    def test_table_takes_precedence_over_allowlist(self):
+        _persistence._replace_managed_block_types(
+            {"nowhere_pkg.mod.Gain": _ManagedProbe}, allowed_modules=["nowhere_pkg"]
+        )
+        register_block_module("nowhere_pkg.")
+        assert resolve_block_class("nowhere_pkg.mod.Gain") is _ManagedProbe
+
+    @pytest.mark.parametrize(
+        ("key", "allowed"),
+        [
+            ("flode.blocks.mathops.Gain", ["flode"]),  # 組み込みの型名は常に拒否 (L-1)
+            ("flode.blocks.Gain", []),
+            ("nowhere_pkg.mod.Probe", []),  # 予約ルート外は指定モジュールの配下だけ
+            ("nowhere_pkgx.mod.Probe", ["nowhere_pkg"]),
+            ("NoDots", []),
+        ],
+    )
+    def test_keys_outside_allowed_roots_are_rejected(self, key, allowed):
+        _persistence._replace_managed_block_types(
+            {"flode_ws.a.Kept": _ManagedProbe}, allowed_modules=[]
+        )
+        with pytest.raises(BlockSpecError, match="not allowed in the managed block table"):
+            _persistence._replace_managed_block_types({key: _ManagedProbe}, allowed_modules=allowed)
+        assert dict(_persistence.managed_block_types()) == {"flode_ws.a.Kept": _ManagedProbe}
+
+    @pytest.mark.parametrize("type_path", ["flode_ws.filters.Avg", "flode_dirs.lab.io.Writer"])
+    def test_reserved_root_missing_from_table_is_never_imported(self, type_path, mocker):
+        register_block_module("flode_ws.")
+        register_block_module("flode_dirs.")
+        import_module = mocker.spy(_persistence.importlib, "import_module")
+        find_spec = mocker.spy(_persistence.importlib.util, "find_spec")
+
+        with pytest.raises(UnknownBlockTypeError, match=r"flode\.load_blocks"):
+            resolve_block_class(type_path)
+        import_module.assert_not_called()
+        find_spec.assert_not_called()
+
+    def test_types_outside_the_table_resolve_as_before(self):
+        _persistence._replace_managed_block_types(
+            {"nowhere_pkg.mod.Probe": _ManagedProbe}, allowed_modules=["nowhere_pkg"]
+        )
+        assert resolve_block_class("flode.blocks.mathops.Gain") is Gain
+        with pytest.raises(UnknownBlockTypeError, match="allowed module prefix"):
+            resolve_block_class("nowhere_pkg.mod.Other")
+
+    def test_replace_copies_and_snapshots_are_stable(self):
+        source = {"flode_ws.mod.Probe": _ManagedProbe}
+        _persistence._replace_managed_block_types(source)
+        snapshot = _persistence.managed_block_types()
+        source["flode_ws.mod.Other"] = _ManagedProbe
+        _persistence._clear_managed_block_types()
+
+        assert dict(snapshot) == {"flode_ws.mod.Probe": _ManagedProbe}
+        assert dict(_persistence.managed_block_types()) == {}
+        with pytest.raises(TypeError):
+            snapshot["x"] = _ManagedProbe  # type: ignore[index]

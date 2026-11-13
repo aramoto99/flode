@@ -15,7 +15,8 @@ import logging
 import math
 import numbers
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -72,6 +73,72 @@ def register_block_module(prefix: str) -> None:
 def reset_block_module_allowlist() -> None:
     """``register_block_module`` で追加した prefix をすべてクリアする (テスト用)。"""
     _extra_allowed_prefixes.clear()
+
+
+#: ユーザーブロックの仮想パッケージ用の予約トップレベル名 (ADR-0081 §1-B)。
+#: この配下の型名は管理型表にある時だけ解決し、無ければ import しない (§1-D)。
+RESERVED_USER_BLOCK_ROOTS: tuple[str, ...] = ("flode_ws", "flode_dirs")
+
+# 管理型表 (ADR-0081 §1-D): 管理ソース (ワークスペース ``blocks/`` / config ``dirs`` /
+# config ``modules``) から読み込んだブロックの ``type_path → class`` (完全一致)。
+# 差し替えは新しい読み取り専用 mapping を 1 回の代入で行い、読み手は 1 度だけ参照を取る。
+_managed_block_types: Mapping[str, type] = MappingProxyType({})
+
+
+def managed_block_types() -> Mapping[str, type]:
+    """管理型表の現在のスナップショット (読み取り専用) を返す (ADR-0081 §1-D)。
+
+    Returns:
+        ``type_path → class`` の読み取り専用 mapping。差し替え後も返した値は変わらない。
+    """
+    return _managed_block_types
+
+
+def _is_managed_key_allowed(type_path: str, allowed_modules: tuple[str, ...]) -> bool:
+    """管理型表に載せてよい型名か (予約ルート配下、または指定モジュールの配下。``flode`` は不可)。"""
+    if not isinstance(type_path, str) or "." not in type_path:
+        return False
+    if type_path.split(".", 1)[0] == "flode":
+        return False
+    if _is_reserved_user_block_path(type_path):
+        return True
+    module_name = type_path.rsplit(".", 1)[0]
+    return any(module_name == m or module_name.startswith(m + ".") for m in allowed_modules)
+
+
+def _replace_managed_block_types(
+    table: Mapping[str, type], *, allowed_modules: Iterable[str] = ()
+) -> None:
+    """管理型表を ``table`` の内容で丸ごと置き換える (``flode.userblocks`` 専用)。
+
+    多層防御として、予約ルート (``flode_ws`` / ``flode_dirs``) 配下と ``allowed_modules``
+    (config ``modules``) 配下以外の型名は拒否する。``flode.`` で始まる型名 (組み込み) は
+    常に拒否する (ユーザーコードが ``__module__`` を書き換えて組み込みの型名を乗っ取るのを防ぐ)。
+
+    Args:
+        table: 新しい ``type_path → class``。呼び出し後に ``table`` を変更しても表には
+            影響しない (コピーしてから 1 回の代入で差し替える)。
+        allowed_modules: 予約ルート以外で載せてよいモジュール名 (その配下を含む)。
+
+    Raises:
+        BlockSpecError: 載せてはいけない型名が含まれる (表は変更しない)。
+    """
+    global _managed_block_types
+    allowed = tuple(allowed_modules)
+    rejected = sorted(k for k in table if not _is_managed_key_allowed(k, allowed))
+    if rejected:
+        raise BlockSpecError(f"type names not allowed in the managed block table: {rejected!r}")
+    _managed_block_types = MappingProxyType(dict(table))
+
+
+def _clear_managed_block_types() -> None:
+    """管理型表を空にする (``flode.userblocks.unload_blocks`` とテスト用)。"""
+    _replace_managed_block_types({})
+
+
+def _is_reserved_user_block_path(type_path: str) -> bool:
+    """``type_path`` が予約ルート (``flode_ws`` / ``flode_dirs``) 配下か。"""
+    return type_path.split(".", 1)[0] in RESERVED_USER_BLOCK_ROOTS
 
 
 def _is_allowed_module(module_name: str) -> bool:
@@ -301,9 +368,18 @@ def _find_class_defined_in(module: object, module_name: str, class_name: str) ->
 def resolve_block_class(type_path: str) -> type:
     """完全修飾名 ``"flode.blocks.Gain"`` から ``Block`` サブクラスを解決する。
 
-    セキュリティのため、``flode.*`` および ``register_block_module`` で登録済みの
-    prefix に属する class のみ許可する。この allowlist 外の type_path は
-    ``importlib.import_module`` を呼ばずに即拒否する。
+    解決順 (ADR-0081 §1-D):
+
+    1. 管理型表 (``flode.load_blocks`` / GUI が読み込んだユーザーブロック) に完全一致で
+       あればそのクラスを返す (import しない、allowlist より先)。
+    2. 予約ルート (``flode_ws.`` / ``flode_dirs.``) 配下で表に無い型は import せずに拒否する。
+    3. それ以外は従来どおり。セキュリティのため、``flode.*`` および
+       ``register_block_module`` で登録済みの prefix に属する class のみ許可する。
+       この allowlist 外の type_path は ``importlib.import_module`` を呼ばずに即拒否する。
+
+    Raises:
+        UnknownBlockTypeError: 型名が不正、表にも allowlist にも無い、import できない、
+            または ``Block`` サブクラスでない。
     """
     from .block import Block as _Block  # 遅延 import (循環回避)
 
@@ -311,6 +387,15 @@ def resolve_block_class(type_path: str) -> type:
         raise UnknownBlockTypeError(
             f"Block type must be a fully-qualified class path "
             f"(e.g. 'flode.blocks.Gain'), got {type_path!r}"
+        )
+    managed = _managed_block_types.get(type_path)
+    if managed is not None:
+        return managed
+    if _is_reserved_user_block_path(type_path):
+        raise UnknownBlockTypeError(
+            f"Block type {type_path!r} is not loaded. Its user block file is missing, failed "
+            f"to load, or has not been read yet: reload the blocks in the GUI, or call "
+            f"`flode.load_blocks(...)` before loading the model from Python."
         )
     module_name, class_name = type_path.rsplit(".", 1)
     if not _is_allowed_module(module_name + "."):
