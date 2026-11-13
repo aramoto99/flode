@@ -1003,6 +1003,41 @@ class TestMoreSourceRules:
         assert report.error_count == 0
         assert [e.path for e in _errors(report, "info")] == ["blocks/pkg.py"]
 
+    def test_subfolder_without_init_with_sources_gives_info(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        """``__init__.py`` の無いサブフォルダは読まないが、.py があれば理由を告知する。
+
+        回帰: 告知が無く、サブフォルダに置いたブロックが黙ってパレットに出なかった。
+        """
+        write_block("io/logger.py", "raise RuntimeError('must not run')\n")
+        write_block("data/readme.txt", "not python\n")  # .py が無いフォルダは告知しない
+        write_block("top.py", SUBCLASS_FORM)
+
+        report = _load(workspace)
+
+        assert report.blocks == ("flode_ws.top.Offset",)
+        assert report.error_count == 0
+        infos = _errors(report, "info")
+        assert [e.path for e in infos] == ["blocks/io/"]
+        assert "__init__.py" in infos[0].message
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            pytest.param("helpers/_private.py", id="only-underscore-sources"),
+            pytest.param("my-dir/mod.py", id="invalid-folder-name"),
+        ],
+    )
+    def test_subfolder_without_init_notice_is_not_given_when_init_would_not_help(
+        self, workspace: Path, write_block: WriteFile, rel: str
+    ):
+        write_block(rel, "raise RuntimeError('must not run')\n")
+
+        report = _load(workspace)
+
+        assert [e.path for e in _errors(report, "info") if "__init__.py" in e.message] == []
+
     def test_nan_default_is_not_reported_as_changed(self, workspace: Path, write_block: WriteFile):
         write_block("nan.py", SUBCLASS_FORM.replace("c: float = 1.0", "c: float = float('nan')"))
         _load(workspace)

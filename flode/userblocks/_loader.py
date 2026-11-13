@@ -91,6 +91,10 @@ _INVALID_NAME_MESSAGE = "not a valid Python module name; this file or folder is 
 _SHADOWED_MESSAGE = (
     "a package folder with the same name exists; the package is used and this file is ignored"
 )
+_NO_INIT_MESSAGE = (
+    "this folder has no __init__.py, so the .py files in it are not read; "
+    "add an empty __init__.py to use it as a subpackage"
+)
 #: 組み込みクラス名の収集対象パッケージ (X-1、registry の walk 対象のうちブロックを定義する所)。
 _BUILTIN_BLOCK_PACKAGES = ("flode.blocks", "flode.subsystems")
 
@@ -527,12 +531,29 @@ def _reserved_conflict_error(
 # ---------------------------------------------------------------------------
 
 
+def _contains_source(directory: Path) -> bool:
+    """``directory`` の直下に読み込み対象になりうる ``.py`` があるか (読めなければ False)。
+
+    名前が ``_`` で始まるファイルは元から読まないので数えない。
+    """
+    try:
+        with os.scandir(directory) as it:
+            return any(
+                entry.is_file()
+                and entry.name.endswith(SOURCE_SUFFIX)
+                and not entry.name.startswith("_")
+                for entry in it
+            )
+    except OSError:
+        return False
+
+
 def _scan_tree(root: Path) -> tuple[list[_ScanEntry], list[tuple[str, str]]]:
     """``root`` 以下の読み込み対象を相対パスの昇順で返す。
 
     名前が ``_`` で始まるファイル・フォルダと、``__init__.py`` の無いフォルダは対象外 (§1-C、P1)。
     読まなかった理由を告知すべきもの (無効な名前、ルートの外を指すリンク、パッケージに隠れる
-    同名の ``.py``) は ``(相対パス, 理由)`` で返す。
+    同名の ``.py``、``.py`` を含むのに ``__init__.py`` の無いフォルダ) は ``(相対パス, 理由)`` で返す。
 
     Returns:
         ``(読み込み対象, 告知)``。
@@ -561,6 +582,17 @@ def _scan_tree(root: Path) -> tuple[list[_ScanEntry], list[tuple[str, str]]]:
             path = Path(item.path)
             is_source = item.is_file() and item.name.endswith(SOURCE_SUFFIX)
             if not is_source and item.name not in package_names:
+                # パッケージでないフォルダは読まない (§1-C)。.py を含むなら置き間違いの
+                # 可能性が高いので理由を告知する
+                # ルートの外を指すリンク先は中身を見ない。名前が不正なフォルダは
+                # __init__.py を足しても読めないので案内しない
+                if (
+                    item.is_dir()
+                    and is_module_name_segment(item.name)
+                    and is_within_root(path, root)
+                    and _contains_source(path)
+                ):
+                    notes.append((f"{rel}/", _NO_INIT_MESSAGE))
                 continue
             if not is_within_root(path, root):
                 notes.append((rel, _OUTSIDE_LINK_MESSAGE))
