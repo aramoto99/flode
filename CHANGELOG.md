@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.65.0] - 2026-11-14 — Python で書いたブロックを左ペインに出して使う (ADR-0081)
+
+### Added
+
+- **Python で書いたブロックをパレットで使える** (SPEC-0033)。ワークスペースの `blocks/` に `.py` を置くと、
+  起動時に読み込まれて左ペインの「ワークスペース」セクションに出て、組み込みブロックと同じようにモデルに
+  置いて使える。書き方は `@block` 関数形・`@block` クラス形・`Block` サブクラスのどれでもよい。状態あり・
+  多入出力・入力なし (信号源)・出力なし (書き出し・通信) のブロックに対応する。説明書: `docs/user_blocks.rst`
+- **再読み込み**: `.py` を直したら左ペインの「再読み込み」で反映する (サーバの再起動は不要)。結果
+  (追加・削除・変更) をトーストで知らせる。読み込みエラーはファイル・ブロック単位で隔離し、左ペイン下部の
+  欄に「ファイル:行・種別・メッセージ」と読み込んだファイルの一覧を出す
+- `@block` の新しい引数: `category` (セクション内のサブ見出し) / `display_name` / `description`
+  (文字列、または `{"ja": ..., "en": ...}`) / `choices` (Inspector の選択肢) / `param_descriptions`。
+  docstring の 1 行目と `Args:` も説明として読む。`@block class` に `block_hidden = True` でパレットに出さない
+- `@block(outputs=0)` または戻り値注釈 `-> None` で出力なしのブロックを書ける。計算の刻み 1 回につき最大 1 回
+  (離散なら自分の周期で) 呼ばれ、ソルバの中間段では呼ばれない (状態を持つ出力なしブロックは `Block` を継承する。
+  Subsystem の中に置いた出力なしブロックは呼ばれないので、実行開始時に警告する)
+- キャンバス: ユーザーブロックは表示名と入出力のポート名つきの矩形で描く。`.py` が無い・読めないブロックは
+  「Unknown block」の代わりの箱で、値と配線を保ったまま保存でき、実行前チェックで止めて理由を出す。
+  `.py` から引数を消すと警告し、その値は保存時・実行時に取り除く (再読み込みの直後と実際に取り除いたときに
+  知らせる)。ポートが減って合わなくなった配線は自動では消さずエラー表示する
+- `config.toml` の `[blocks]` 節: `dirs` (名前付きフォルダ) / `modules` (インストール済みパッケージ。変更は
+  再起動で反映) / `allow_non_loopback`。起動フラグ `--allow-user-blocks`
+- Python API: `flode.load_blocks(workspace, *, dirs, modules, use_config, strict)` / `flode.unload_blocks()`
+- REST: `GET /api/v1/blocks` が `blocks.v3` (追加のみ: 各ブロックの `source` / `input_names` / `output_names`、
+  本文の `sources` / `load_errors` / `user_blocks`)、`POST /api/v1/blocks/reload` (本文 `{}` 固定)
+
+### Changed
+
+- **読み込み = その `.py` のコードを実行すること**。手元 (loopback) で起動したときは自動で読み、`--host 0.0.0.0`
+  など LAN に公開するときは `--allow-user-blocks` (または `allow_non_loopback = true`) が無い限り読まない。
+  LAN 公開時は再読み込みと、ファイル操作 API による `blocks/` (とワークスペース内の `dirs` / `modules`) の変更を
+  拒否し、読み込みエラーのメッセージに絶対パスを出さない。`--workspace` を指定せずに起動したフォルダの
+  `blocks/` も読む (ホームディレクトリとドライブ直下は除く)
+- 型を解決できないブロックを含むモデルを `POST /simulations` / `POST /models/resolve-dtypes` に送ると、汎用の
+  `start_validation` ではなく `unknown_block_type` (欠けている型を Subsystem の中まで列挙、上限あり) を返す
+- `create_app` を直接使う場合、新しい `Settings.loopback_bind` の既定が `False` のため、ユーザーブロックを
+  読まず、ファイル操作 API による `blocks/` の変更を拒否する (CLI で手元起動する場合は従来どおり)
+- `@block` 生成クラスは `port_shapes_*` をブロック entry に書き出さない (形状は宣言から復元する)
+- クラス形の `@block` で、フィールド名に `block_category` / `block_display_name` / `block_description` /
+  `block_choices` / `block_param_descriptions` / `block_input_names` / `block_output_names` と注釈付きの
+  `block_hidden` を使うと `BlockSpecError` になる (メタデータ用に予約。他の `block_*` は従来どおり使える)
+- `PythonFunction` ブロックのコードが出力 0 本 (`outputs=0` / `-> None`) だと、分かりやすいエラーで拒否する
+- GUI: File Browser の右クリックメニューを共通のポップアップメニュー部品に載せ替えた。組み込みのカテゴリ一覧に
+  無いカテゴリのブロックを、左ペインで無言で隠さず `uncategorized` の直前に出す
+
+### Fixed
+
+- **モジュールに書いた `@block` ブロックを使ったモデルが、保存後に読み込めなかった**。関数形 (`def scaled` →
+  型名 `Scaled`) と小文字名のクラス形は型名を解決できず、`port_shapes_*` を宣言したブロックは保存した
+  `port_shapes_*` を受け取れなかった
+- 非スカラーの port shape を宣言した `PythonFunction` を含むモデルが、Python API で保存すると読み込めなかった
+- マスク付き `Subsystem` の内側の入れ子 `Subsystem` で、マスクの placeholder (`"$Kp"`) が保存時に具象値へ
+  展開され、マスク値の変更が届かなくなっていた
+- ブロック型の解決が、`flode` 配下の `__init__.py` を持たないディレクトリにあるモジュールを import しえた
+- 離散 `sample_time` の `@block` でベクトル入力を宣言すると、実行時に `BlockSpecError` になっていた
+- GUI: registry が後から届いたとき、Inspector で entry に無い引数の数値入力が空のままだった
+
+### 既知の制約
+
+- `.py` を直して再読み込みしても、すでに取り除かれた引数の値は戻らない (直すのは保存より前に)
+- 関数形の `@block` は `input_names=` / `output_names=` を書かない限りポート名が出ない
+- 引数付きの `@block(...)` は、利用者のコードを mypy の strict モードで検査すると型エラーになる
+
 ## [0.64.1] - 2026-09-21 — Subsystem 内部の Goto を外側の From で受けるベクトル信号の修正
 
 ### Fixed
