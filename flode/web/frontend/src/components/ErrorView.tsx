@@ -12,8 +12,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { cleanServerText, MAX_LABEL_CHARS, MAX_PATH_CHARS } from "../lib/untrustedText";
 import { useAppStore } from "../store/appStore";
 import type { FailurePayload } from "../types/api";
+
+const UNKNOWN_BLOCK_TYPE_KEY = "error.unknown_block_type";
 
 /** Phase 1 で frontend が認識する template_key 一覧。未知 key は ``error.unknown``
  *  に fallback する (ADR-0056 §D-3)。 */
@@ -28,7 +31,25 @@ const _KNOWN_TEMPLATE_KEYS = new Set([
   "error.python_function_error",
   "error.python_function_disabled",
   "error.python_function_unconfirmed",
+  // ADR-0081 §4-B: 実行要求のモデルに読み込まれていないブロックの型がある
+  UNKNOWN_BLOCK_TYPE_KEY,
 ]);
+
+/**
+ * ``error.unknown_block_type`` の ``template_args`` (型名・ブロック id はユーザーのモデル /
+ * .py 由来) を信頼できない文字列として整形する。他のカテゴリの引数は変えない。
+ */
+function _cleanUnknownBlockTypeArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const cleanList = (v: unknown, max: number): string[] =>
+    Array.isArray(v) ? v.map((s) => cleanServerText(s, max)).filter((s) => s !== "") : [];
+  return {
+    ...args,
+    types: cleanList(args.types, MAX_PATH_CHARS),
+    block_labels: cleanList(args.block_labels, MAX_LABEL_CHARS),
+  };
+}
 
 function _resolvedTemplateKey(payload: FailurePayload): string {
   return _KNOWN_TEMPLATE_KEYS.has(payload.template_key)
@@ -90,15 +111,23 @@ export function ErrorView(): JSX.Element {
   // formatter (= i18n/index.ts の interpolation.format) でフォーマットされる。
   // ``templateKey`` は runtime 解決の string なので known key union への cast を経由
   // させて t() の 2 引数 overload (= key + opts) を選ばせる。
+  const isUnknownBlockType = templateKey === UNKNOWN_BLOCK_TYPE_KEY;
   const opts = {
-    ...lastFailure.template_args,
+    ...(isUnknownBlockType
+      ? _cleanUnknownBlockTypeArgs(lastFailure.template_args)
+      : lastFailure.template_args),
     // unknown fallback では raw_message が必須。
     raw_message:
       typeof lastFailure.template_args.raw_message === "string"
         ? lastFailure.template_args.raw_message
         : lastFailure.raw_message,
   };
-  const body: string = t(templateKey as "error.unknown", opts);
+  // ADR-0081 §4-B: 列挙を上限で打ち切ったときは「ほかにもある」を添える
+  const body: string =
+    t(templateKey as "error.unknown", opts) +
+    (isUnknownBlockType && lastFailure.template_args.truncated === true
+      ? ` ${t("error.unknown_block_type_more")}`
+      : "");
   const prefix = t(prefixKey as "error.prefix.runtime_failed");
 
   const copyDetails = () => {

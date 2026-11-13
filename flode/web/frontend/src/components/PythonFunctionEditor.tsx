@@ -19,6 +19,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata, rewritePythonFunction } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 import { parseNumericInput } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
@@ -166,7 +167,7 @@ export function PythonFunctionEditor({
 }): JSX.Element {
   const { t } = useTranslation();
   const { data: registryData } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });

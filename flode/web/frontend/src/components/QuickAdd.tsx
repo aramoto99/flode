@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 import { BlockGlyph } from "../lib/blockGlyphs";
 import {
   localizedDisplayName,
@@ -14,6 +15,7 @@ import {
 } from "../lib/blockI18n";
 import { generateUniqueId, buildDefaultParams } from "../lib/idGenerator";
 import { resolveBlocksAtPath } from "../lib/pathResolver";
+import { isUserBlock, userBlockCategory } from "../lib/userBlocks";
 import { addBlockToEditing, useAppStore } from "../store/appStore";
 
 interface QuickAddProps {
@@ -68,7 +70,7 @@ export function QuickAdd({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { data, isLoading } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });
@@ -224,7 +226,8 @@ export function QuickAdd({
                     i === activeIdx ? "text-blue-100" : "text-slate-400"
                   }`}
                 >
-                  {m.category}
+                  {/* ADR-0081: ユーザーブロックのカテゴリは .py 由来なので整形して出す */}
+                  {isUserBlock(m) ? userBlockCategory(m) : m.category}
                 </span>
               </div>
             </button>

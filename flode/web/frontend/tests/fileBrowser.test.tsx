@@ -281,6 +281,28 @@ describe("FileBrowser context menu", () => {
     expect(deleteFile).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
+
+  // ADR-0081 U4: メニューを inspector.tsx の PopupMenu primitive に移した回帰確認
+  it("renders the menu as role=menu items and closes on an outside click", async () => {
+    const { fileTree } = await getMocks();
+    fileTree.mockResolvedValue({
+      path: "",
+      children: [
+        { name: "m.flw.json", type: "file", size: 10, mtime: "2026-05-10T00:00:00Z" },
+      ],
+    });
+    renderWithProvider(<FileBrowser />);
+    fireEvent.contextMenu(await screen.findByText("m.flw.json"));
+    const menu = screen.getByRole("menu");
+    expect(
+      Array.from(menu.querySelectorAll("[role='menuitem']")).map((b) => b.textContent),
+    ).toEqual(["New file", "New folder", "Rename (F2)", "Delete"]);
+    // メニュー内クリックは外側クリック扱いにならない (項目の onClick で閉じる)
+    fireEvent.click(menu);
+    expect(screen.queryByRole("menu")).toBeTruthy();
+    fireEvent.click(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });
 
 describe("FileBrowser dirty confirm modal", () => {

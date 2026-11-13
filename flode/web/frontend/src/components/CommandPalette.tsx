@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 import {
   type Command,
   buildBlockAddCommands,
@@ -51,7 +52,7 @@ export function CommandPalette({
   // v0.29.2: block-registry を tanstack-query で fetch (= 60 min cache、
   // 既存 BlockPalette / DiagramCanvas と同じ queryKey で cache 共有)
   const { data: blockRegistry } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });

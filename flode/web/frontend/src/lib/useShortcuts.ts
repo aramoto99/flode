@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { listBlockMetadata } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "./queryKeys";
 import {
   copySelectionToClipboard,
   pasteClipboard,
@@ -30,7 +31,7 @@ function isTextEditing(target: EventTarget | null): boolean {
 export function useShortcuts(): void {
   const { run, stop } = useSimulation();
   const { data: registry } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });

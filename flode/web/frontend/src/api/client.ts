@@ -7,6 +7,7 @@
 import type {
   BlockMetadata,
   BlockRegistryResponse,
+  BlockReloadResponse,
   DtypesResponse,
   FailurePayload,
   FlwModel,
@@ -186,6 +187,22 @@ export async function getSimulationResults(
 // ADR-0019 §(1): Block class registry endpoints
 export async function listBlockMetadata(): Promise<BlockRegistryResponse> {
   return _fetch<BlockRegistryResponse>("/blocks");
+}
+
+/**
+ * ADR-0081 §2-A / §8-A: ワークスペース ``blocks/`` と config ``dirs`` のユーザーブロックを
+ * サーバで読み込み直す。本文は ``{}`` 固定 (``application/json`` で CSRF guard の
+ * content-type 検査を必ず通す。パス・モジュール名は送らない)。
+ *
+ * @returns 新しい registry (``GET /blocks`` と同じ形) + 追加・削除・変更の型名一覧。
+ * @throws ApiError 403 (``user_blocks_disabled`` / ``reload_not_allowed``)、
+ *   400 (``invalid_reload_body``)、409 (``reload_in_progress``)、500。
+ */
+export async function reloadBlocks(): Promise<BlockReloadResponse> {
+  return _fetch<BlockReloadResponse>("/blocks/reload", {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 // Phase 4 (ADR-0021 マスクパラメータ UI / ParameterPanel 拡張) で利用予定。

@@ -22,6 +22,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { getLibraryEntry, listBlockMetadata } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 import { pushToast } from "../store/toastStore";
 import {
   modelToDiagram,
@@ -115,7 +116,7 @@ export function DiagramCanvas({
 }: { portalTarget?: HTMLElement | null } = {}): JSX.Element {
   const { t } = useTranslation();
   const { data: registry } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });

@@ -38,6 +38,7 @@ import { dialog } from "../lib/dialogService";
 import { emptyModel } from "../lib/emptyModel";
 import { useAppStore } from "../store/appStore";
 import { DirtyConfirmDialog } from "./Modal";
+import { PopupMenu, PopupMenuItem, PopupMenuSeparator } from "./ui/inspector";
 
 interface ContextMenuState {
   x: number;
@@ -1181,69 +1182,34 @@ function ContextMenu({
 }: ContextMenuProps): JSX.Element {
   const { t } = useTranslation();
   const isRoot = path === "";
+  // 外側クリックでの close は FileBrowser 側の window click handler が担う
+  // (PopupMenu の onClose は渡さない = 従来どおりの閉じ方)。
   return (
-    <div
-      role="menu"
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-50 min-w-[160px] border border-slate-300 bg-white py-0.5 shadow-md"
-      style={{ left: x, top: y }}
-    >
-      <MenuItem
+    <PopupMenu x={x} y={y}>
+      <PopupMenuItem
         label={t("filebrowser.menu.new_file", "New file")}
         onClick={onNewFile}
       />
-      <MenuItem
+      <PopupMenuItem
         label={t("filebrowser.menu.new_folder", "New folder")}
         onClick={onNewFolder}
       />
       {!isRoot && (
         <>
-          <div className="my-0.5 border-t border-slate-200" />
-          <MenuItem
+          <PopupMenuSeparator />
+          <PopupMenuItem
             label={t("filebrowser.menu.rename", "Rename (F2)")}
             onClick={onRename}
             disabled={isDirectory}
           />
-          <MenuItem
+          <PopupMenuItem
             label={t("filebrowser.menu.delete", "Delete")}
             onClick={onDelete}
             destructive
           />
         </>
       )}
-    </div>
-  );
-}
-
-interface MenuItemProps {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  destructive?: boolean;
-}
-
-function MenuItem({
-  label,
-  onClick,
-  disabled = false,
-  destructive = false,
-}: MenuItemProps): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${
-        disabled
-          ? "text-slate-400"
-          : destructive
-            ? "text-rose-600 hover:bg-rose-50"
-            : "text-slate-700 hover:bg-blue-600 hover:text-white"
-      }`}
-    >
-      {label}
-    </button>
+    </PopupMenu>
   );
 }
 

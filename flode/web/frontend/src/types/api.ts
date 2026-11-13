@@ -215,6 +215,62 @@ export interface BlockMetadata {
   // SPEC-0030 (v0.58.0): 離散専用ブロック = sample_time の同期モード
   // (-1 / "dt") が有効。3 モード select の表示可否判定に使う (backend が SSOT)
   requires_discrete_rate?: boolean;
+  // ADR-0081 §8-A (blocks.v3、追加のみ): 読み込み元。``"builtin"`` /
+  // ``"workspace"`` / ``"dir:<name>"`` / ``"module:<module>"``。v2 以前のサーバでは欠落
+  // (= 組み込み扱い)。
+  source?: string;
+  // ADR-0081 §8-A: ポート名 (空配列 = 無名)。v2 以前のサーバでは欠落。
+  input_names?: string[];
+  output_names?: string[];
+}
+
+/** ADR-0081 §8-A: ``sources[].kind``。 */
+export type BlockSourceKind = "workspace" | "dir" | "module";
+
+/** ADR-0081 §6-D: 読み込み元で走査したファイル 1 件 (ルートからの相対パス)。 */
+export interface BlockSourceFile {
+  path: string;
+  status: "ok" | "error";
+}
+
+/** ADR-0081 §8-A: ユーザーブロックの読み込み元 1 件 (``GET /blocks`` の ``sources[]``)。 */
+export interface BlockSourceInfo {
+  /** ``BlockMetadata.source`` と同じ語彙の id。 */
+  id: string;
+  kind: BlockSourceKind;
+  /** ワークスペースは ``"blocks/"``、``dirs`` は名前、``modules`` はモジュール名。 */
+  label: string;
+  /** 読み込み元フォルダの表示用パス。``modules`` と非 loopback bind では ``null``。 */
+  root: string | null;
+  /** 再読み込みの対象か (``modules`` は ``false``)。 */
+  reloadable: boolean;
+  /** ワークスペースが起動時のカレントディレクトリから決まったか (R-1)。 */
+  from_cwd: boolean;
+  files: BlockSourceFile[];
+}
+
+/** ADR-0081 §8-A: 読み込みエラー 1 件 (``GET /blocks`` の ``load_errors[]``)。 */
+export interface BlockLoadError {
+  source: string;
+  path: string | null;
+  line: number | null;
+  kind: string;
+  message: string;
+  /** ``"info"`` は動作に影響しない告知。 */
+  severity: "error" | "info";
+  type_path: string | null;
+}
+
+/** ADR-0081 §6-A / §8-A: ユーザーブロック機能の状態 (``GET /blocks`` の ``user_blocks``)。 */
+export interface UserBlocksStatus {
+  enabled: boolean;
+  /** ``enabled=false`` の理由 (英語)。 */
+  reason: string | null;
+  reload_allowed: boolean;
+  /** ``reload_allowed=false`` の理由 (英語)。 */
+  reload_reason: string | null;
+  /** 再読み込みでは反映されない (= サーバ再起動が要る) 読み込み元 id。 */
+  restart_required_sources: string[];
 }
 
 // ADR-0021 §(5)(7): Subsystem mask param 宣言と現在値
@@ -229,10 +285,26 @@ export type MaskValuesDict = Record<string, number | boolean>;
 
 export interface BlockRegistryResponse {
   blocks: BlockMetadata[];
-  /** ``"blocks.v1"`` (legacy) または ``"blocks.v2"`` (ADR-0028)。 */
+  /** ``"blocks.v1"`` (legacy) / ``"blocks.v2"`` (ADR-0028) / ``"blocks.v3"`` (ADR-0081)。 */
   schema_version: string;
   /** ADR-0028: サーバが対応する locale 一覧。``schema_version >= blocks.v2`` のみ。 */
   supported_locales?: Locale[];
+  /** ADR-0081: ユーザーブロックの読み込み元 (``blocks.v3`` のみ)。 */
+  sources?: BlockSourceInfo[];
+  /** ADR-0081: 読み込みエラー (``blocks.v3`` のみ)。 */
+  load_errors?: BlockLoadError[];
+  /** ADR-0081: ユーザーブロック機能の状態 (``blocks.v3`` のみ)。 */
+  user_blocks?: UserBlocksStatus;
+}
+
+/** ADR-0081 §8-A: ``POST /api/v1/blocks/reload`` の応答 (``GET /blocks`` と同じ形 + 差分)。 */
+export interface BlockReloadResponse extends BlockRegistryResponse {
+  added: string[];
+  removed: string[];
+  changed: string[];
+  restart_required_sources: string[];
+  /** ``load_errors`` と同じ内容。 */
+  errors: BlockLoadError[];
 }
 
 // ADR-0029 (schema libraries.v1, v0.11.1):

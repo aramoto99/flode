@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 import { readPortEnv } from "./tests/e2e/ports";
+import { ensureTempConfigFile } from "./tests/e2e/tempConfig";
 
 // E2E テスト構成 (ADR-0012 §(7) Vite dev server + ADR-0011 FastAPI backend)。
 // Backend (flode) と Vite dev server を webServer で並列に起動する。
@@ -39,9 +40,14 @@ mkdirSync(path.join(REPO_ROOT, WORKSPACE_DIR), { recursive: true });
 const E2E_BACKEND_PORT = readPortEnv("E2E_BACKEND_PORT", 8770);
 const E2E_FRONTEND_PORT = readPortEnv("E2E_FRONTEND_PORT", 5173);
 
+// backend には実行ごとの一時ディレクトリの空 config.toml を --config で渡す
+// (開発者の ~/.flode/config.toml を読まない。後始末は globalTeardown、tempConfig.ts 参照)。
+const E2E_CONFIG_FILE = ensureTempConfigFile();
+
 export default defineConfig({
   testDir: "./tests/e2e",
   globalSetup: "./tests/e2e/global-setup.ts",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   testMatch: /.*\.spec\.ts$/,
   // E2E は per-spec で隔離するため並列度を抑える (1 backend instance を共有)
   fullyParallel: false,
@@ -67,9 +73,11 @@ export default defineConfig({
       // v0.21.0 (ADR-0041 §論点 4-A): ``--model-dir`` 廃止 → ``--workspace``。
       // health check URL も legacy ``/api/v1/models`` から
       // ``/api/v1/files/workspace_info`` (= ADR-0043 §論点 1-A) に切替。
-      command: `python -m flode.server.cli --workspace ${WORKSPACE_DIR} --port ${E2E_BACKEND_PORT}`,
+      // --no-browser: 空 config では [server] open_browser の既定 (開く) になるため明示的に止める。
+      command: `python -m flode.server.cli --workspace ${WORKSPACE_DIR} --port ${E2E_BACKEND_PORT} --config "${E2E_CONFIG_FILE}" --no-browser`,
       cwd: REPO_ROOT,
       url: `http://127.0.0.1:${E2E_BACKEND_PORT}/api/v1/files/workspace_info`,
+      // 注意: reuseExistingServer で既存サーバを掴んだ場合、そのサーバの --config は保証できない
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       stdout: "pipe",

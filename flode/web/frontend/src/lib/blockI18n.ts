@@ -17,6 +17,11 @@
 
 import { currentLanguage } from "../i18n";
 import type { BlockMetadata, Locale } from "../types/api";
+import {
+  isUserBlock,
+  userBlockDescription,
+  userBlockDisplayName,
+} from "./userBlocks";
 
 /** ``localizeName`` を呼べる任意オブジェクトの最小 shape (ADR-0029)。
  *  Block / Library / LibraryEntry のいずれにも適用できる generic 制約。 */
@@ -41,6 +46,11 @@ export function localizedDisplayName(
   lang?: Locale,
 ): string {
   const l = lang ?? currentLanguage();
+  if (isUserBlock(block)) {
+    // ADR-0081: ユーザーブロックの文字列はユーザーの .py 由来 (信頼できない) なので整形する。
+    // 組み込みは従来どおり (表示を変えない)。
+    return userBlockDisplayName(block, l);
+  }
   // ``||`` を使うのは「空文字列も missing 扱い」にしたいため。``??`` だと
   // ``display_name = ""`` で空文字を返してしまい、UI が空白セルになる。
   return (
@@ -86,6 +96,7 @@ export function localizedDocstringSummary(
   lang?: Locale,
 ): string {
   const l = lang ?? currentLanguage();
+  if (isUserBlock(block)) return userBlockDescription(block, l);
   return (
     block.docstring_summary_i18n?.[l] ||
     block.docstring_summary ||
@@ -122,10 +133,16 @@ export function localizeDescription<
  */
 export function searchableDisplayNames(block: BlockMetadata): string[] {
   const set = new Set<string>();
-  const en = block.display_name_i18n?.en ?? block.display_name;
-  const ja = block.display_name_i18n?.ja;
-  if (en) set.add(en);
-  if (ja) set.add(ja);
+  if (isUserBlock(block)) {
+    // ADR-0081: ユーザーブロックは整形済みの両言語名で検索する
+    set.add(localizedDisplayName(block, "en"));
+    set.add(localizedDisplayName(block, "ja"));
+  } else {
+    const en = block.display_name_i18n?.en ?? block.display_name;
+    const ja = block.display_name_i18n?.ja;
+    if (en) set.add(en);
+    if (ja) set.add(ja);
+  }
   // 末尾の class 名 (= "Constant" 等) も検索対象に: 旧 frontend で `display_name`
   // が空のブロックがあっても `type_path` の末尾でヒットさせる
   const tail = block.type_path.split(".").at(-1);

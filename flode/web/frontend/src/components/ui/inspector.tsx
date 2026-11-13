@@ -27,6 +27,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -165,10 +166,21 @@ export function PropertyHint({
  * セクション見出し (uppercase tracking-wider + 横ルール)。
  * グルーピング用、property row の前に挿入する。
  */
-export function SectionDivider({ label }: { label: string }): JSX.Element {
+export function SectionDivider({
+  label,
+  uppercase = true,
+}: {
+  label: string;
+  /** ``false`` で原文の大小文字のまま出す (ユーザーが書いたカテゴリ名等、ADR-0081)。 */
+  uppercase?: boolean;
+}): JSX.Element {
   return (
     <div className="my-1.5 flex items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span
+        className={`text-[10px] font-semibold tracking-wider text-slate-500 ${
+          uppercase ? "uppercase" : ""
+        }`}
+      >
         {label}
       </span>
       <div className="h-px flex-1 bg-slate-200" />
@@ -322,11 +334,14 @@ export function SecondaryButton({
   onClick,
   disabled,
   testId,
+  title,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   testId?: string;
+  /** hover tooltip (無効化の理由の表示などに使う)。 */
+  title?: string;
 }): JSX.Element {
   return (
     <button
@@ -334,6 +349,7 @@ export function SecondaryButton({
       onClick={onClick}
       disabled={disabled}
       data-testid={testId}
+      title={title}
       className={`border border-slate-400 px-2.5 py-0.5 text-[11px] ${
         disabled
           ? "cursor-not-allowed bg-slate-100 text-slate-400"
@@ -399,8 +415,9 @@ type _RowActionButtonBase = {
 
 type RowActionButtonProps =
   | (_RowActionButtonBase & {
-      /** アイコンモード: ariaLabel 必須 (グリフだけでは操作対象が伝わらないため)。 */
-      icon: "add" | "remove";
+      /** アイコンモード: ariaLabel 必須 (グリフだけでは操作対象が伝わらないため)。
+       *  ``"more"`` = ⋯ (操作メニューを開く、ADR-0081 §8-B)。 */
+      icon: "add" | "remove" | "more";
       ariaLabel: string;
       children?: never;
     })
@@ -455,6 +472,12 @@ export function RowActionButton({
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </>
+          ) : icon === "more" ? (
+            <>
+              <circle cx="5" cy="12" r="1.2" fill="currentColor" />
+              <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+              <circle cx="19" cy="12" r="1.2" fill="currentColor" />
+            </>
           ) : (
             <>
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -467,6 +490,129 @@ export function RowActionButton({
       )}
     </button>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Popup menu (右クリックメニュー / ⋯ メニュー)
+// ---------------------------------------------------------------------------
+
+/** メニューの最小幅 (px)。画面右端からはみ出さないよう位置を詰める計算にも使う。 */
+const POPUP_MENU_MIN_WIDTH = 160;
+/** 画面端からの余白 (px)。 */
+const POPUP_MENU_MARGIN = 4;
+
+/**
+ * 画面座標 (``x``, ``y``) に出すポップアップメニュー (ネイティブのコンテキストメニュー風)。
+ *
+ * File Browser の右クリックメニュー (ADR-0041 §論点 7-A) とパレットの ⋯ メニュー
+ * (ADR-0081 §8-B) で共用する。``onClose`` を渡すと、メニュー外の pointerdown・Escape・
+ * ウィンドウのフォーカス喪失で閉じる。項目は ``PopupMenuItem`` / ``PopupMenuSeparator``。
+ * メニュー内のクリックは親へ伝えない (外側クリックで閉じる処理と競合させない)。
+ */
+export function PopupMenu({
+  x,
+  y,
+  onClose,
+  anchorRef,
+  ariaLabel,
+  testId,
+  children,
+}: {
+  x: number;
+  y: number;
+  onClose?: () => void;
+  /**
+   * メニューを開いたボタン等。この中の pointerdown では閉じない (ボタン側の
+   * onClick でトグルさせ、「閉じた直後に click で開き直す」を防ぐ)。
+   */
+  anchorRef?: React.RefObject<HTMLElement>;
+  ariaLabel?: string;
+  testId?: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (onClose === undefined) return;
+    const onPointerDown = (e: PointerEvent): void => {
+      const target = e.target as Node;
+      if (anchorRef?.current?.contains(target)) return;
+      if (ref.current && !ref.current.contains(target)) onClose();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", onClose);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose, anchorRef]);
+  const left = Math.max(
+    0,
+    Math.min(x, window.innerWidth - POPUP_MENU_MIN_WIDTH - POPUP_MENU_MARGIN),
+  );
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={ariaLabel}
+      data-testid={testId}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-50 border border-slate-300 bg-white py-0.5 shadow-md"
+      style={{ left, top: y, minWidth: POPUP_MENU_MIN_WIDTH }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * ``PopupMenu`` の 1 項目。``destructive`` は削除など (rose 文字)。``title`` は
+ * hover tooltip (無効化の理由の表示などに使う)。
+ */
+export function PopupMenuItem({
+  label,
+  onClick,
+  disabled = false,
+  destructive = false,
+  title,
+  testId,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+  title?: string;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      data-testid={testId}
+      className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${
+        disabled
+          ? "text-slate-400"
+          : destructive
+            ? "text-rose-600 hover:bg-rose-50"
+            : "text-slate-700 hover:bg-blue-600 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** ``PopupMenu`` の項目区切り線。 */
+export function PopupMenuSeparator(): JSX.Element {
+  return <div className="my-0.5 border-t border-slate-200" />;
 }
 
 // ---------------------------------------------------------------------------

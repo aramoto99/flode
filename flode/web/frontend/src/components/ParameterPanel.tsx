@@ -12,6 +12,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata } from "../api/client";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 import { isArrayCapableParam, parseArrayLiteral } from "../lib/arrayParams";
 import { PYTHON_FUNCTION_TYPE } from "../lib/blockTypes";
 import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
@@ -25,12 +26,24 @@ import {
 } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import {
+  cleanServerText,
+  MAX_DESCRIPTION_CHARS,
+  MAX_PATH_CHARS,
+} from "../lib/untrustedText";
+import {
+  choiceLabels,
+  isUserBlock,
+  toLocale,
+  userBlockDescription,
+  userBlockDisplayName,
+} from "../lib/userBlocks";
+import {
   toggleBlockFlipped,
   updateBlockParams,
   updateSubsystemMaskValues,
   useAppStore,
 } from "../store/appStore";
-import type { BlockEntry, MaskParamSpec } from "../types/api";
+import type { BlockEntry, BlockMetadata, MaskParamSpec } from "../types/api";
 import { PythonFunctionEditor } from "./PythonFunctionEditor";
 import { SignalDtypeSection } from "./SignalDtypeSection";
 import {
@@ -112,9 +125,12 @@ export function ParameterPanel({
 function BlockHeader({
   block,
   subtitle,
+  userBlock,
 }: {
   block: BlockEntry;
   subtitle?: string;
+  /** ADR-0081: ユーザーブロックなら registry のメタデータ (表示名と説明を 2 行目に出す)。 */
+  userBlock?: BlockMetadata;
 }): JSX.Element {
   const { t } = useTranslation();
   // SPEC-0022 §機能要件 1-1: id 表示をクリックで rename 編集に切り替える
@@ -154,6 +170,9 @@ function BlockHeader({
           {subtitle ? `${shortType} · ${subtitle}` : shortType}
         </span>
       </div>
+      {userBlock !== undefined && (
+        <UserBlockSummary block={userBlock} />
+      )}
       {editor.editing && editor.error !== null && (
         <div className="pb-0.5 text-[10px] text-rose-600" data-testid="block-header-rename-error">
           {t(`diagram.rename.${editor.error.code}`, {
@@ -165,6 +184,28 @@ function BlockHeader({
   );
 }
 
+/**
+ * ADR-0081: ユーザーブロックの表示名と説明 (Inspector の見出し 2 行目)。
+ * 文字列はユーザーの .py 由来なので整形済みの値を使い、テキストとして描く
+ * (``blockI18n`` と同じ ``userBlocks`` の関数。言語は ``useTranslation`` から取る)。
+ */
+function UserBlockSummary({ block }: { block: BlockMetadata }): JSX.Element {
+  const { i18n } = useTranslation();
+  const lang = toLocale(i18n?.language);
+  const name = userBlockDisplayName(block, lang);
+  const summary = userBlockDescription(block, lang);
+  const text = summary ? `${name} — ${summary}` : name;
+  return (
+    <div
+      className="truncate text-[10px] text-slate-500"
+      title={`${text}\n${cleanServerText(block.type_path, MAX_PATH_CHARS)}`}
+      data-testid="block-header-user-summary"
+    >
+      {text}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 通常 block のパラメータ inline 編集
 // ---------------------------------------------------------------------------
@@ -172,7 +213,7 @@ function BlockHeader({
 function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   const { t } = useTranslation();
   const { data: registryData } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });
@@ -198,6 +239,9 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   const prevBlockIdRef = useRef<string | undefined>(undefined);
 
   const blockMeta = registryMap.get(block.type);
+  // ADR-0081: ユーザーブロック (組み込み以外の読み込み元) だけ、説明・選択肢の文字列を
+  // 信頼できない文字列として整形して出す。組み込みの表示は変えない。
+  const userMeta = blockMeta && isUserBlock(blockMeta) ? blockMeta : undefined;
 
   // ブロック切替時に draft を最新値で初期化
   // SPEC-0016 v0.39.1 amendment: registry.params_spec で宣言されているが
@@ -312,7 +356,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     >
       {/* key={block.id}: 選択切替・rename 確定時に rename editor 状態
           (editing/draft) を確実にリセットする (code-reviewer SHOULD-2) */}
-      <BlockHeader key={block.id} block={block} />
+      <BlockHeader key={block.id} block={block} userBlock={userMeta} />
 
       <div className="flex flex-1 flex-col overflow-y-auto px-3 py-2">
         <PropertyGrid>
@@ -346,9 +390,13 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
           )}
           {editableEntries.map(([k, v]) => {
             const valueType = typeof v;
-            const enumValues = blockMeta?.params_spec.find(
-              (p) => p.name === k,
-            )?.enum_values;
+            const paramSpec = blockMeta?.params_spec.find((p) => p.name === k);
+            const enumValues = paramSpec?.enum_values;
+            // ADR-0081 §7: パラメータの説明 (ユーザーブロックだけ。行の下に小さく出す)
+            const paramDescription =
+              userMeta !== undefined
+                ? cleanServerText(paramSpec?.description, MAX_DESCRIPTION_CHARS)
+                : "";
             // SPEC-0028 Q6 (security MUST-1 対応): Subsystem 内部の dtype 宣言は
             // 未対応 (float64 island、backend が build 時に拒否) — 非 root スコープ
             // では select を無効化して「操作できるのに効かない/エラーになる」を防ぐ
@@ -445,11 +493,15 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     }}
                     className={`${SELECT_CLS} min-w-0 flex-1 max-w-[140px]`}
                   >
-                    {enumValues.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
+                    {/* 値はそのまま保存し、表示だけ整形する (ユーザーブロックの選択肢。
+                        空・重複になる表示は choiceLabels が区別できる形に替える) */}
+                    {(userMeta !== undefined ? choiceLabels(enumValues) : enumValues).map(
+                      (label, i) => (
+                        <option key={enumValues[i]} value={enumValues[i]}>
+                          {label}
+                        </option>
+                      ),
+                    )}
                   </select>
                 ) : valueType === "boolean" ? (
                   <select
@@ -564,6 +616,13 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   />
                 )}
               </PropertyRow>
+              {paramDescription !== "" && (
+                <PropertyHint
+                  testId={`param-desc-${k}`}
+                  labelWidth={88}
+                  text={paramDescription}
+                />
+              )}
               {sampleTimeMode === "explicit" && (
                 // 「指定」時の周期入力は横並びではなく下のインデント行に出す
                 // (dt_base 明示指定 → 値 の既存パターン、オーナー指摘 2026-09-12)

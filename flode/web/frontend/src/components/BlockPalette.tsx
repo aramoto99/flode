@@ -7,9 +7,14 @@
 // Block class registry の **下** に Libraries セクションとして表示する。drag-start
 // では `application/flode-library-entry-ref` MIME で `{library, entry}` を運び、
 // drop 経路 (DiagramCanvas) で個別 fetch + Inline 展開する。
+//
+// ADR-0081 §8-B: Python で書いたユーザーブロックを、読み込み元ごとのセクション
+// (ワークスペース → dirs → modules) として組み込みカテゴリより **上** に出す。
+// 検索欄横の ⋯ メニュー・セクション見出しの右クリック・最下部のボタンから
+// 「再読み込み」、最下部に読み込みエラー欄。並びの規則は ``lib/userBlocks.ts``。
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listBlockMetadata, listLibraries } from "../api/client";
@@ -20,16 +25,33 @@ import {
   localizedDocstringSummary,
   searchableDisplayNames,
 } from "../lib/blockI18n";
-import { buildDefaultParams } from "../lib/idGenerator";
+import { cleanServerText, MAX_LABEL_CHARS, MAX_MESSAGE_CHARS } from "../lib/untrustedText";
+import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
+import { useBlockReload } from "../lib/useBlockReload";
+import { buildPaletteLayout, isUserBlock } from "../lib/userBlocks";
 import type {
   BlockMetadata,
+  BlockSourceInfo,
   LibraryEntryMetadata,
   LibraryMetadata,
 } from "../types/api";
+import { LoadErrorsPanel } from "./palette/LoadErrorsPanel";
+import {
+  BlockTile,
+  CategoryHeader,
+  TILE_CLS,
+  TILE_GLYPH_CLS,
+  TILE_GRID_CLS,
+  TILE_NAME_CLS,
+  TileBadge,
+} from "./palette/PaletteParts";
+import { sourceLabel } from "./palette/sourceLabels";
+import { UserBlockSectionView } from "./palette/UserBlockSectionView";
+import { PopupMenu, PopupMenuItem, RowActionButton } from "./ui/inspector";
 
-// 重要: このリストは palette 表示の whitelist として働く (= 含まれない category
-// のブロックは silently filter で除外される)。backend `_BUILTIN_METADATA` に新
-// category を追加するときは、ここにも追加すること。CI ガード
+// 組み込みカテゴリの表示順。ここに無い組み込みカテゴリは ``uncategorized`` の直前に
+// 文字列の昇順で出す (ADR-0081 §8-B、無言で消さない)。backend `_BUILTIN_METADATA` に
+// 新 category を追加するときは、ここにも追加して位置を決めること。CI ガード
 // `tests/server/test_palette_category_order.py` が backend のカテゴリ集合 ⊆
 // CATEGORY_ORDER であることを継続的に検証する。
 const CATEGORY_ORDER = [
@@ -55,10 +77,46 @@ const CATEGORY_ORDER = [
   "uncategorized",
 ] as const;
 
+/** ユーザーブロックのセクションの折りたたみ状態キーの接頭辞 (組み込みカテゴリと衝突させない)。 */
+const USER_SECTION_KEY_PREFIX = "user::";
+
+/** 開いている操作メニューの位置 (画面座標)。 */
+interface MenuPosition {
+  x: number;
+  y: number;
+}
+
+/**
+ * ブロックが検索文字列に一致するか。
+ *
+ * 組み込み: 両言語の表示名 + 検索別名 + カテゴリ + tags (従来どおり)。ユーザーブロックは
+ * さらに型名・説明・読み込み元のラベルも対象にする (ADR-0081 §8-B)。
+ */
+function matchesSearch(
+  block: BlockMetadata,
+  filter: string,
+  sourceLabelOf: (id: string) => string,
+): boolean {
+  if (!filter) return true;
+  // サーバの JSON の形が崩れていても (category が null・tags 欠落等) 例外にしない
+  const hit = (s: unknown): boolean =>
+    typeof s === "string" && s.toLowerCase().includes(filter);
+  if (searchableDisplayNames(block).some(hit)) return true;
+  if (hit(block.category)) return true;
+  if (Array.isArray(block.tags) && block.tags.some(hit)) return true;
+  if (!isUserBlock(block)) return false;
+  return [
+    block.type_path,
+    localizedDocstringSummary(block),
+    sourceLabelOf(block.source as string),
+  ].some(hit);
+}
+
+/** ブロックパレット (左ペイン)。 */
 export function BlockPalette(): JSX.Element {
   const { t, i18n } = useTranslation();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["blocks-registry"],
+    queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
     staleTime: 60 * 60 * 1000,
   });
@@ -71,52 +129,33 @@ export function BlockPalette(): JSX.Element {
   });
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [menu, setMenu] = useState<MenuPosition | null>(null);
+  const { reload, pending: reloadPending } = useBlockReload();
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const menuAnchorRef = useRef<HTMLSpanElement>(null);
 
   // ADR-0028: 言語切替時に block 表示名 / 検索結果が変わるため、``i18n.language`` を
   // useMemo の依存に含めて再計算する (registry 自体は 1 回 fetch + cache 維持)。
   const lang = i18n.language;
-  const blocksByCategory = useMemo(() => {
-    if (!data) return {} as Record<string, BlockMetadata[]>;
+  const layout = useMemo(() => {
+    if (!data) return null;
     const filter = search.trim().toLowerCase();
-    const filtered = data.blocks.filter((b) => {
-      if (!filter) return true;
-      // 両言語 display_name + category + tags を検索対象に (ADR-0028 §(4))
-      const names = searchableDisplayNames(b).map((s) => s.toLowerCase());
-      if (names.some((n) => n.includes(filter))) return true;
-      return (
-        b.category.toLowerCase().includes(filter) ||
-        b.tags.some((tag) => tag.toLowerCase().includes(filter))
-      );
-    });
-    const grouped: Record<string, BlockMetadata[]> = {};
-    for (const b of filtered) {
-      const key = b.category;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key]!.push(b);
-    }
-    for (const list of Object.values(grouped)) {
-      list.sort((a, b) =>
-        localizedDisplayName(a).localeCompare(localizedDisplayName(b)),
-      );
-    }
-    return grouped;
+    const sourceById = new Map<string, BlockSourceInfo>(
+      (data.sources ?? []).map((s) => [s.id, s]),
+    );
+    const labelOf = (id: string): string => sourceLabel(t, id, sourceById.get(id));
+    return buildPaletteLayout(
+      data,
+      data.blocks.filter((b) => matchesSearch(b, filter, labelOf)),
+      {
+        categoryOrder: CATEGORY_ORDER,
+        filtering: filter.length > 0,
+        nameOf: (b) => localizedDisplayName(b),
+      },
+    );
     // ``lang`` 変化で sort 順 / 検索ヒットが変わるため依存に追加
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, search, lang]);
-
-  const handleDragStart = (
-    event: React.DragEvent<HTMLDivElement>,
-    block: BlockMetadata,
-  ): void => {
-    event.dataTransfer.setData("application/flode-block-type", block.type_path);
-    event.dataTransfer.setData(
-      "application/flode-default-params",
-      JSON.stringify(
-        buildDefaultParams(block.params_spec, { isContainer: block.is_container }),
-      ),
-    );
-    event.dataTransfer.effectAllowed = "copy";
-  };
+  }, [data, search, lang, t]);
 
   // ADR-0029: Library entry の drag-start。``application/flode-library-entry-ref``
   // で参照のみを運ぶ (body は drop 経路で fetch、= ペイロード削減)。
@@ -150,6 +189,9 @@ export function BlockPalette(): JSX.Element {
     return candidates.some((c) => c.toLowerCase().includes(filter));
   };
 
+  const toggle = (key: string): void =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+
   if (isLoading) {
     return <div className="p-3 text-xs text-slate-500">{t("palette.loading")}</div>;
   }
@@ -160,94 +202,108 @@ export function BlockPalette(): JSX.Element {
       </div>
     );
   }
-  if (!data) return <div />;
+  if (!data || !layout) return <div />;
 
-  const visibleCategories = CATEGORY_ORDER.filter(
-    (c) => (blocksByCategory[c]?.length ?? 0) > 0,
-  );
   const isFiltering = search.trim().length > 0;
+  const userBlocksStatus = data.user_blocks;
+  const reloadAllowed = userBlocksStatus?.reload_allowed === true;
+  const reloadReason = reloadAllowed
+    ? undefined
+    : cleanServerText(userBlocksStatus?.reload_reason, MAX_MESSAGE_CHARS) || undefined;
+  // 読み込み元・読み込みエラー・無効の理由のどれかがあれば最下部の欄を出す
+  // (ユーザーブロックが未設定なら出さない。⋯ メニューの「再読み込み」は残る)
+  const showLoadPanel =
+    userBlocksStatus !== undefined &&
+    ((data.sources ?? []).length > 0 ||
+      (data.load_errors ?? []).length > 0 ||
+      !userBlocksStatus.enabled);
+  const openMenuAt = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+  const noMatch =
+    layout.userSections.length === 0 &&
+    layout.builtinGroups.length === 0 &&
+    (libraryData?.libraries ?? []).every(
+      (lib) => !lib.entries.some((e) => filterLibraryEntry(lib, e)),
+    );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-slate-200 p-2.5">
+    <div className="flex h-full min-h-0 flex-col" data-testid="block-palette">
+      <div className="flex shrink-0 items-center gap-1 border-b border-slate-200 p-2.5">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("palette.search")}
-          className="w-full rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="min-w-0 flex-1 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
           aria-label={t("palette.search")}
         />
+        {userBlocksStatus !== undefined && (
+          <span ref={menuAnchorRef} className="flex shrink-0">
+            <RowActionButton
+              icon="more"
+              ariaLabel={t("palette.menu.aria")}
+              testId="palette-menu-button"
+              onClick={() => {
+                // トグル: 開いていれば閉じ、閉じていればボタンの左下に出す
+                // (ボタン内の pointerdown では PopupMenu が閉じない = anchorRef)
+                const rect = menuAnchorRef.current?.getBoundingClientRect();
+                setMenu((prev) =>
+                  prev !== null ? null : { x: rect?.left ?? 0, y: rect?.bottom ?? 0 },
+                );
+              }}
+            />
+          </span>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
-        {visibleCategories.length === 0 &&
-        (libraryData?.libraries ?? []).every(
-          (lib) => !lib.entries.some((e) => filterLibraryEntry(lib, e)),
-        ) ? (
+        {noMatch && (
           <div className="p-3 text-xs text-slate-500">{t("palette.no_match")}</div>
-        ) : (
-          visibleCategories.map((cat) => {
-            const isCollapsed = collapsed[cat] && !isFiltering;
-            const blocks = blocksByCategory[cat] ?? [];
-            return (
-              <div key={cat} className="mb-1">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
-                  onClick={() =>
-                    setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }))
-                  }
-                  aria-expanded={!isCollapsed}
-                >
-                  <span className="w-3 text-slate-400">
-                    {isCollapsed ? "▸" : "▾"}
-                  </span>
-                  <span>{t(`palette.category.${cat}` as const)}</span>
-                  <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[9px] text-slate-500">
-                    {blocks.length}
-                  </span>
-                </button>
-                {!isCollapsed && (
-                  <div className="grid grid-cols-2 gap-1 px-1 pt-1">
-                    {blocks.map((b) => {
-                      // ADR-0028: 現在言語で表示名・docstring を取り出す。
-                      // ``i18n.language`` 変化で本コンポーネントが再 render され、
-                      // useMemo 経由で再計算されるため、ここはストレートに helper を呼ぶ。
-                      const dispName = localizedDisplayName(b);
-                      const summary = localizedDocstringSummary(b);
-                      return (
-                        <div
-                          key={b.type_path}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, b)}
-                          // v0.33.2: 角丸を撤廃して角ばった見た目に (ユーザー要望)
-                          className="group flex cursor-grab flex-col items-center gap-0.5 border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
-                          title={summary ? `${dispName} — ${summary}` : dispName}
-                        >
-                          <div
-                            // v0.33.0: per-block color 撤廃。glyph は CSS で
-                            // slate-600 を継承 (= 全カテゴリ統一の中性色)。
-                            className="flex h-9 w-9 items-center justify-center border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400"
-                          >
-                            <BlockGlyph typePath={b.type_path} />
-                          </div>
-                          <div className="w-full truncate text-[10px] font-medium text-slate-700">
-                            {dispName}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })
         )}
+        {/* ADR-0081 §8-B: ユーザーブロックのセクション (組み込みより上) */}
+        {layout.userSections.map((section) => {
+          const key = `${USER_SECTION_KEY_PREFIX}${section.id}`;
+          return (
+            <UserBlockSectionView
+              key={key}
+              section={section}
+              collapsed={Boolean(collapsed[key]) && !isFiltering}
+              onToggle={() => toggle(key)}
+              onContextMenu={openMenuAt}
+            />
+          );
+        })}
+        {layout.builtinGroups.map(({ category, blocks }) => {
+          const isCollapsed = Boolean(collapsed[category]) && !isFiltering;
+          return (
+            <div key={category} className="mb-1">
+              <CategoryHeader
+                label={
+                  (CATEGORY_ORDER as readonly string[]).includes(category)
+                    ? t(`palette.category.${category}` as "palette.category.sources")
+                    : // CATEGORY_ORDER 外のカテゴリは訳語が無いのでカテゴリ名のまま出す
+                      cleanServerText(category, MAX_LABEL_CHARS)
+                }
+                count={blocks.length}
+                collapsed={isCollapsed}
+                onToggle={() => toggle(category)}
+              />
+              {!isCollapsed && (
+                <div className={TILE_GRID_CLS}>
+                  {blocks.map((b) => (
+                    <BlockTile key={b.type_path} block={b} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {/* ADR-0029: Libraries セクション。組み込み + ユーザー定義の `.flwlib.json` を
             一覧表示する。各 entry は drag で `application/flode-library-entry-ref` を運ぶ。 */}
         {(libraryData?.libraries ?? []).map((library) => {
           const libCatKey = `lib::${library.name}`;
-          const isCollapsed = collapsed[libCatKey] && !isFiltering;
+          const isCollapsed = Boolean(collapsed[libCatKey]) && !isFiltering;
           const visibleEntries = library.entries.filter((e) =>
             filterLibraryEntry(library, e),
           );
@@ -255,35 +311,16 @@ export function BlockPalette(): JSX.Element {
           const libDispName = localizeName(library, library.name);
           return (
             <div key={libCatKey} className="mb-1">
-              <button
-                type="button"
-                // v0.33.1: 旧版は Library セクション (= .flwlib.json 由来) を
-                // violet で囲って built-in と区別していたが、per-block color
-                // 撤廃の流れに合わせて Library 側も slate 系 (built-in と同じ)
-                // に統一。区別は「Library · 名前」プレフィクスと「LIB」バッジで
-                // 視認する。
-                className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
-                onClick={() =>
-                  setCollapsed((prev) => ({
-                    ...prev,
-                    [libCatKey]: !prev[libCatKey],
-                  }))
-                }
-                aria-expanded={!isCollapsed}
-              >
-                <span className="w-3 text-slate-400">
-                  {isCollapsed ? "▸" : "▾"}
-                </span>
-                <span>
-                  {t("palette.library_prefix", { defaultValue: "Library" })} ·{" "}
-                  {libDispName}
-                </span>
-                <span className="ml-auto rounded bg-slate-100 px-1.5 py-px text-[9px] text-slate-500">
-                  {visibleEntries.length}
-                </span>
-              </button>
+              {/* v0.33.1: Library セクションも slate 系 (built-in と同じ)。区別は
+                  「Library · 名前」プレフィクスと「LIB」バッジで視認する。 */}
+              <CategoryHeader
+                label={`${t("palette.library_prefix", { defaultValue: "Library" })} · ${libDispName}`}
+                count={visibleEntries.length}
+                collapsed={isCollapsed}
+                onToggle={() => toggle(libCatKey)}
+              />
               {!isCollapsed && (
-                <div className="grid grid-cols-2 gap-1 px-1 pt-1">
+                <div className={TILE_GRID_CLS}>
                   {visibleEntries.map((entry) => {
                     const dispName = localizeName(entry, entry.id);
                     return (
@@ -293,19 +330,14 @@ export function BlockPalette(): JSX.Element {
                         onDragStart={(e) =>
                           handleLibraryDragStart(e, library, entry)
                         }
-                        // v0.33.2: 角丸撤廃 (built-in と同じ)
-                        className="group flex cursor-grab flex-col items-center gap-0.5 border border-transparent px-1 py-1.5 text-center hover:border-blue-300 hover:bg-blue-50/50 active:cursor-grabbing"
+                        className={TILE_CLS}
                         title={dispName}
                       >
-                        <div className="flex h-9 w-9 items-center justify-center border border-slate-200 bg-white p-1 text-slate-600 transition-colors group-hover:border-blue-400">
+                        <div className={TILE_GLYPH_CLS}>
                           <BlockGlyph typePath="flode.subsystems.subsystem.Subsystem" />
                         </div>
-                        <div className="w-full truncate text-[10px] font-medium text-slate-700">
-                          {dispName}
-                        </div>
-                        <span className="rounded bg-slate-100 px-1 text-[8px] uppercase tracking-wide text-slate-500">
-                          LIB
-                        </span>
+                        <div className={TILE_NAME_CLS}>{dispName}</div>
+                        <TileBadge text="LIB" />
                       </div>
                     );
                   })}
@@ -315,6 +347,36 @@ export function BlockPalette(): JSX.Element {
           );
         })}
       </div>
+      {showLoadPanel && (
+        <LoadErrorsPanel
+          registry={data}
+          onReload={() => void reload()}
+          reloadPending={reloadPending}
+        />
+      )}
+      {menu !== null && (
+        <PopupMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          anchorRef={menuAnchorRef}
+          ariaLabel={t("palette.menu.aria")}
+          testId="palette-menu"
+        >
+          <PopupMenuItem
+            label={
+              reloadPending ? t("palette.reload.pending") : t("palette.menu.reload")
+            }
+            disabled={!reloadAllowed || reloadPending}
+            title={reloadReason}
+            testId="palette-menu-reload"
+            onClick={() => {
+              setMenu(null);
+              void reload();
+            }}
+          />
+        </PopupMenu>
+      )}
     </div>
   );
 }
