@@ -375,3 +375,29 @@ class TestPortNamesInSpec:
         structure, _ = _exec_structure(code)
         assert spec.input_names == structure.input_names
         assert spec.has_u_arg == structure.has_u_arg
+
+
+# ---------------------------------------------------------------------------
+# ADR-0081 X-3: PythonFunction は出力 1 本以上を維持する
+# ---------------------------------------------------------------------------
+
+
+class TestNoOutputsRejected:
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "@block(outputs=0)\ndef f(t: float, u: float):\n    pass\n",
+            "@block\ndef f(t: float, u: float) -> None:\n    pass\n",
+        ],
+        ids=["outputs=0", "-> None"],
+    )
+    def test_sink_source_is_spec_error(self, code: str) -> None:
+        with pytest.raises(PythonFunctionSourceError, match="at least one output") as exc:
+            analyze_source(code, block_id="pf")
+        assert exc.value.kind == "spec"
+        assert exc.value.lineno == 2
+
+    def test_plain_block_still_accepts_sink(self) -> None:
+        """同じソースでも ``@block`` を直接使えば sink として書ける (制約は PythonFunction 側だけ)。"""
+        structure, _ = _exec_structure("@block\ndef f(t: float, u: float) -> None:\n    pass\n")
+        assert structure.n_outputs == 0

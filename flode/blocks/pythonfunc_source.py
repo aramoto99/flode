@@ -190,6 +190,16 @@ def analyze_source(code: str, *, block_id: str | None = None) -> SourceSpec:
         ) from e
 
     structure = cls._flode_structure  # type: ignore[attr-defined]
+    if structure.n_outputs == 0:
+        # ADR-0081 X-3: ``@block`` は sink (出力 0 本) を書けるが、PythonFunction は
+        # 出力 1 本以上のまま (sink の記録経路・状態の規則を PythonFunction へ広げない)
+        raise PythonFunctionSourceError(
+            "PythonFunction: a block without outputs (outputs=0 or `-> None`) is not "
+            "supported; a PythonFunction needs at least one output. Write a sink as an "
+            "@block in a Python module instead.",
+            lineno=func_def.lineno,
+            block_id=block_id,
+        )
     params_spec: tuple[tuple[str, Any, Any, bool], ...] = cls._flode_params_spec  # type: ignore[attr-defined]
     return SourceSpec(
         func_name=func_def.name,

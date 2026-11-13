@@ -1330,6 +1330,13 @@ def _check_in_shapes(
                         )
                     )
                 elif s is not None and s != SCALAR_SHAPE:
+                    # P7 (ADR-0081 §論点 5-C): @block は shape 宣言で受け取れる
+                    hint = (
+                        " Or declare the input port shapes on the @block, e.g. "
+                        f"port_shapes_in=({s!r},) for a single-input block."
+                        if hasattr(type(block), "_flode_structure")
+                        else ""
+                    )
                     sink(
                         _diag(
                             "shape.opaque_scalar_island",
@@ -1338,7 +1345,7 @@ def _check_in_shapes(
                             f"PythonFunction / Fcn / @block boundaries accept "
                             f"scalar signals only in this release (vector "
                             f"boundaries arrive in Stage 2, ADR-0079). Insert a "
-                            f"Demux before the boundary and a Mux after it.",
+                            f"Demux before the boundary and a Mux after it.{hint}",
                             block_id=bid,
                             direction="in",
                             port_index=i,

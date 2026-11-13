@@ -135,6 +135,15 @@ def _grid_time(k: int, dt_base: float) -> float:
     return round(k * dt_base, _GRID_TIME_DECIMALS)
 
 
+def _is_record_hit(b: Block, k: int) -> bool:
+    """基準ステップ ``k`` で ``b`` の記録経路を呼ぶか (ADR-0081 §論点 5-B)。
+
+    ``record_on_sample_hits`` が偽 (Scope 等の既存 sink) は毎ステップ、真なら
+    自分のサンプル時刻 (``k % _step_ratio == 0``) だけ。
+    """
+    return not b.record_on_sample_hits or k % b._step_ratio == 0
+
+
 class Simulator:
     """連続/離散ハイブリッドシミュレータ。
 
@@ -712,6 +721,7 @@ class Simulator:
         self,
         t: float,
         inputs_v: dict[Block, tuple[npt.NDArray[Any], ...]],
+        k: int,
     ) -> None:
         """SM-B run path 用の record。tuple-of-ndarray inputs を 1D ndarray に
         変換して既存 ``record(t, u_1d)`` に橋渡しする (ADR-0018 §(3))。
@@ -719,6 +729,10 @@ class Simulator:
         ADR-0079 §(4): 各 input port の ndarray を **C order で列展開**して
         concat する (rank-0 は 1 列、``(3,)`` は 3 列、``(2, 2)`` は 4 列)。
         全ポート ``()`` なら従来の「rank-0 を順に並べた 1D」と同一。
+
+        ADR-0081 §論点 5-B: ``record_v`` を持つブロックにはポートごとのタプルを
+        平坦化せずに渡す。``record_on_sample_hits`` が真のブロックは基準ステップ
+        番号 ``k`` が自分のサンプル時刻 (``k % _step_ratio == 0``) の時だけ呼ぶ。
 
         Contract:
             ``inputs_v`` は ``_step_vector`` の 2nd-pass 戻り値で、``record`` を持つ
@@ -729,7 +743,11 @@ class Simulator:
             ``BlockSpecError`` で気付ける形にしてある (= debug ノイズを残さない)。
         """
         for b in self.blocks:
-            if not hasattr(b, "record"):
+            record_v = getattr(b, "record_v", None)
+            record = getattr(b, "record", None)
+            if record_v is None and record is None:
+                continue
+            if not _is_record_hit(b, k):
                 continue
             u_tuple = inputs_v.get(b)
             if u_tuple is None:
@@ -740,14 +758,20 @@ class Simulator:
                     f"_step_vector. This indicates an internal bug or an unsupported "
                     f"direct_feedthrough=False sink block."
                 )
-            # tuple of ndarrays → 1D ndarray (C order 列展開、ADR-0079 §(4))
-            if u_tuple:
-                u_1d = np.concatenate(
-                    [np.ravel(np.asarray(ui, dtype=float), order="C") for ui in u_tuple]
-                )
-            else:
-                u_1d = np.zeros(0)
-            b.record(t, u_1d)
+            # ADR-0056 §C-3: record (ユーザー関数を含む) の例外時に関与ブロックを残す
+            self._current_block = b
+            if record_v is not None:
+                record_v(t, u_tuple)
+            elif record is not None:
+                # tuple of ndarrays → 1D ndarray (C order 列展開、ADR-0079 §(4))
+                if u_tuple:
+                    u_1d = np.concatenate(
+                        [np.ravel(np.asarray(ui, dtype=float), order="C") for ui in u_tuple]
+                    )
+                else:
+                    u_1d = np.zeros(0)
+                record(t, u_1d)
+        self._current_block = None
 
     def _is_sm_a_mode(self) -> bool:
         """モデルが SM-A hot path (``_step``) で走るかの pre-filter 判定。
@@ -1258,6 +1282,7 @@ class Simulator:
         sm_a_mode = self._signal_plan is None
         self._resolve_sample_times(order)
         dt_base = self._compute_dt_base()
+        self._warn_inner_sample_hit_sinks()
         layout, n_total = self._state_layout()
 
         x_cont = np.zeros(n_total)
@@ -1306,6 +1331,28 @@ class Simulator:
         else:
             self._run_sm_b_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
         self._warn_never_fired_gotos()
+
+    def _warn_inner_sample_hit_sinks(self) -> None:
+        """Subsystem 内部の ``record_on_sample_hits`` sink は呼ばれないことを WARNING で残す。
+
+        記録経路 (``_record`` / ``_record_v``) は最上位のブロックだけを見る (Subsystem
+        内部の Scope も記録されない既存の性質)。``@block`` の sink は関数の副作用
+        (書き出し・通信) が目的なので、黙って呼ばれないままにせずログで知らせる
+        (ADR-0081 §Confidence「Subsystem 内部の sink」、数値挙動は変えない)。
+        """
+        for scope_path, blocks in self._walk_scopes():
+            if not scope_path:
+                continue
+            for b in blocks:
+                if b.record_on_sample_hits:
+                    _logger.warning(
+                        "Sink %r (%s) is inside Subsystem %s and will not be called: "
+                        "sinks inside a Subsystem are not on the recording path. "
+                        "Place it at the top level of the model.",
+                        b.id,
+                        type(b).__name__,
+                        self._scope_path_str(scope_path),
+                    )
 
     def _warn_never_fired_gotos(self) -> None:
         """Trigger / Enable 配下で一度も実行されなかった Goto を WARNING で残す。
@@ -1397,7 +1444,7 @@ class Simulator:
             else:
                 outputs, inputs = self._step(t, x_cont, discrete_state, order, layout)
             # [E] record (Scope 等)
-            self._record(t, inputs)
+            self._record(t, inputs, k)
 
             if self.on_step_callback is not None:
                 cont = self.on_step_callback(t, self.t_end)
@@ -1506,7 +1553,7 @@ class Simulator:
             # [E] record: SM-B 信号は Scope で拒否済み。SM-A scalar 入力を持つ
             # ブロック (Scope 含む) は inputs_v[b] が rank-0 ndarray のタプルなので、
             # SM-A の ``_record`` が期待する 1D ndarray に変換する。
-            self._record_v(t, inputs_v)
+            self._record_v(t, inputs_v, k)
 
             if self.on_step_callback is not None:
                 cont = self.on_step_callback(t, self.t_end)
@@ -1538,10 +1585,14 @@ class Simulator:
                 x_cont = sol.y[:, -1]
             k += 1
 
-    def _record(self, t: float, inputs: dict[Block, npt.NDArray[Any]]) -> None:
+    def _record(self, t: float, inputs: dict[Block, npt.NDArray[Any]], k: int) -> None:
+        """SM-A run path 用の record (基準ステップ番号 ``k`` の規則は ``_record_v`` と同じ)。"""
         for b in self.blocks:
-            if hasattr(b, "record"):
+            if hasattr(b, "record") and _is_record_hit(b, k):
+                # ADR-0056 §C-3: record (ユーザー関数を含む) の例外時に関与ブロックを残す
+                self._current_block = b
                 b.record(t, inputs[b])
+        self._current_block = None
 
     def request_stop(self) -> None:
         """別スレッドからの graceful 停止要求 (ADR-0011 §(4))。

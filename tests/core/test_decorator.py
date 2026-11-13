@@ -708,16 +708,17 @@ def test_inputs_override_rejects_bool():
 
 
 def test_outputs_override_rejects_bool():
-    with pytest.raises(BlockSpecError, match="positive int"):
+    with pytest.raises(BlockSpecError, match="non-negative int"):
 
         @block(inputs=1, outputs=True)
         def bad(t: float, u) -> float:
             return 0.0
 
 
-def test_outputs_zero_message_mentions_sink_alternative():
-    """``outputs=0`` のエラーメッセージが Sink 代替手段を案内する (SHOULD 修正)。"""
-    with pytest.raises(BlockSpecError, match="Sink|Block inheritance"):
+def test_outputs_zero_with_value_annotation_is_rejected():
+    """``outputs=0`` (sink) と値を返す戻り値注釈の矛盾はエラー (ADR-0081 §論点 5-A)。
+    sink そのものの宣言は ``tests/core/test_decorator_sink.py``。"""
+    with pytest.raises(BlockSpecError, match="contradicts"):
 
         @block(inputs=1, outputs=0)
         def bad(t: float, u) -> float:

@@ -70,6 +70,32 @@ class TestFunctionForm:
         sim.run()
         np.testing.assert_array_equal(np.asarray(sc.values)[0], [2.0, 4.0, 6.0])
 
+    @pytest.mark.parametrize("form", ["function", "class"])
+    def test_discrete_block_with_vector_input_runs(self, form: str) -> None:
+        """回帰: 離散 sample_time の ``@block`` がベクトル入力を宣言すると、サンプル時刻の
+        シフト相 (``advance_v``) が基底のスカラ専用 wrapper に落ちて拒否されていた。"""
+        if form == "function":
+
+            @block(port_shapes_in=((3,),), sample_time=0.02)
+            def total(t: float, u: float) -> float:
+                return float(np.sum(u))
+
+        else:
+
+            @block(port_shapes_in=((3,),), sample_time=0.02)
+            class total:  # noqa: N801 - 関数形と同じ名前で並べる
+                def output(self, t: float, u: float) -> float:
+                    return float(np.sum(u))
+
+        sim = Simulator(t_end=0.04, dt=0.01)
+        m = _mux3(sim)
+        s = sim.add(total(id="s"))
+        sc = sim.add(Scope(id="sc"))
+        sim.connect(m, s)
+        sim.connect(s, sc)
+        sim.run()
+        np.testing.assert_array_equal(np.asarray(sc.values)[:, 0], [6.0] * 5)
+
     def test_tuple_inputs_mixed_scalar_and_vector(self) -> None:
         @block(port_shapes_in=((3,), ()), port_shapes_out=((3,),))
         def scale(t: float, u: tuple[float, float]) -> float:

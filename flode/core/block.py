@@ -226,6 +226,13 @@ class Block:
     #: 無状態ブロックはこちら。
     requires_discrete_rate: ClassVar[bool] = False
 
+    #: ADR-0081 §論点 5-B: 記録経路 (``record`` / ``record_v``) を呼ぶ時刻の規則。
+    #: ``False`` (default) = 基準グリッドの毎ステップ (Scope 等の既存 sink)。
+    #: ``True`` = 自分のサンプル時刻 (``k % _step_ratio == 0``) だけ — 連続 / 基準
+    #: クロックなら毎ステップ、離散 ``sample_time`` なら自分の周期。``@block`` の
+    #: sink (出力 0 本) が立てる (ユーザー関数を記録経路で呼ぶため)。
+    record_on_sample_hits: ClassVar[bool] = False
+
     #: ``direct_feedthrough=False`` でも ``output()`` 時点で値が必要な **制御入力**
     #: ポートの index。スケジューラはこれらのポートだけを直達辺として依存グラフに
     #: 加え、パス 1 (出力計算) で値を組み立てる (データ経路は非直達のまま)。

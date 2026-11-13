@@ -17,6 +17,11 @@
   Simulator が ``_resolved_sample_time`` に従って呼び分ける
 * ``u`` 二重評価は Phase 1 ではキャッシュせず、関数を 2 回呼ぶ (ADR-0003 Risk 1)。
   性能ボトルネック化したら ADR-0003 §「再考トリガー」に従い別案へ
+* 出力 0 本 (sink) は ``outputs=0`` または戻り値注釈 ``-> None`` で宣言する。sink の
+  関数は ``output`` ではなく記録経路 (``record`` / ``record_v``) で、基準グリッド
+  1 ステップに最大 1 回 (離散なら自分の周期) 呼ばれる (ADR-0081 §論点 5)
+* パレット / Inspector 用のメタデータ (``category`` 等) は生成クラスの公開 class 属性
+  ``block_*`` に載せる (ADR-0081 §論点 7-A)
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ import inspect
 import logging
 import numbers
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin, get_type_hints
 
@@ -34,6 +39,15 @@ import numpy.typing as npt
 
 from ..exceptions import BlockSpecError
 from .block import BASE_CLOCK_SAMPLE_TIME, Block
+from .block_metadata import (
+    HIDDEN_ATTRIBUTE,
+    METADATA_ATTRIBUTES,
+    NO_DEFAULT,
+    validate_category,
+    validate_choices,
+    validate_param_descriptions,
+    validate_text,
+)
 
 
 def _sample_time_is_statically_discrete(sample_time: float | str | None) -> bool:
@@ -57,6 +71,9 @@ _logger = logging.getLogger("flode.decorator")
 _RESERVED_X0 = "x0"
 _T_PARAM_RECOMMENDED = "t"
 _X_PARAM_RECOMMENDED = "x"
+
+#: 戻り値注釈 ``-> None`` は ``get_type_hints`` で ``NoneType`` に解決される (sink の宣言)。
+_NONE_TYPE = type(None)
 
 
 @dataclass(frozen=True)
@@ -111,6 +128,11 @@ def block(
     output_names: Sequence[str] | None = None,
     port_shapes_in: Sequence[Sequence[int]] | None = None,
     port_shapes_out: Sequence[Sequence[int]] | None = None,
+    category: str | None = None,
+    display_name: str | Mapping[str, str] | None = None,
+    description: str | Mapping[str, str] | None = None,
+    choices: Mapping[str, Sequence[str]] | None = None,
+    param_descriptions: Mapping[str, str] | None = None,
 ) -> Any:
     """関数または class から ``Block`` サブクラスを生成する。
 
@@ -125,7 +147,11 @@ def block(
         name: 生成 Block サブクラスの ``__name__``。省略時は関数 / class 名を
             PascalCase 化 (``unit_delay`` → ``UnitDelay``)。
         inputs: 入力ポート数の明示。省略時は ``u`` 引数の型注釈から推論。
-        outputs: 出力ポート数の明示。省略時は戻り値の型注釈から推論。
+        outputs: 出力ポート数の明示。省略時は戻り値の型注釈から推論。``0`` (または
+            戻り値注釈 ``-> None``) で出力の無いブロック (sink) になる。sink は
+            ``states=0`` に限り、関数 (class 形は ``output`` メソッド) は記録経路で
+            基準グリッド 1 ステップに最大 1 回、離散 ``sample_time`` なら自分の周期で
+            呼ばれる。戻り値は捨てる (``None`` 以外ならブロックごとに 1 回警告)。
         states: 状態次元数 (連続/離散共通)。0 で combinational。
         sample_time: ``None`` (default) または ``0.0`` で連続、``> 0`` で離散周期 [s]、
             ``-1.0`` で上流のレートに同期、``"dt"`` で基準クロック
@@ -147,15 +173,32 @@ def block(
             はこれと一致していなければならない。class 形では代わりに
             ``infer_output_shapes(self, in_shapes)`` メソッドを定義して入力 shape
             から出力 shape を返すこともできる (要素ごと演算のユーザーブロック用)。
+        category: パレットのカテゴリ名 (空でない文字列)。生成クラスの
+            ``block_category`` になる。
+        display_name: 表示名。文字列、または言語コード → 文字列の Mapping
+            (``{"ja": ..., "en": ...}``)。``block_display_name`` になる。
+        description: ブロックの説明。形は ``display_name`` と同じ。
+            ``block_description`` になる。
+        choices: 選択肢を持つパラメータの宣言 (パラメータ名 → 候補文字列の列)。
+            Inspector で select になる。候補は空でない重複なしの文字列列で、
+            既定値は候補に含まれること。``block_choices`` (値は tuple) になる。
+        param_descriptions: パラメータ名 → 説明文。``block_param_descriptions`` になる。
 
     Returns:
         ``Block`` のサブクラス。インスタンス化はキーワード引数のみ
-        (``Gain(k=2.0, id="g1")``)。
+        (``Gain(k=2.0, id="g1")``)。指定したメタデータ引数は同名の公開 class 属性
+        ``block_*`` として載る (``input_names`` / ``output_names`` を指定した場合は
+        ``block_input_names`` / ``block_output_names`` も)。省略した引数の属性は
+        書かない。class 版のユーザー class に ``block_hidden = True`` (注釈なしの
+        bool) があれば、生成クラスにも ``block_hidden`` として載る (パレットに出さない印)。
 
     Raises:
         BlockSpecError: シグネチャ違反 (``*args`` / ``**kwargs``、引数順、推論
             失敗で ``inputs``/``outputs`` 未指定、class 版で ``output``/``derivative``
-            等の必須メソッド欠落など)。
+            等の必須メソッド欠落など)、sink の宣言違反 (``outputs=0`` と戻り値注釈の
+            矛盾、``states>0``、``direct_feedthrough=False``)、メタデータの検証違反、
+            class 版でメタデータ属性 (:data:`~flode.core.block_metadata.METADATA_ATTRIBUTES`)
+            と同名の名前・注釈付きの ``block_hidden``・bool でない ``block_hidden``。
     """
 
     # SPEC-0030: 文字列は "dt" (基準クロック同期) のみ。ここで早期検証しないと
@@ -167,6 +210,21 @@ def block(
         )
 
     def _decorate(target: Any) -> type[Block]:
+        cls = _build(target)
+        _publish_metadata(
+            cls,
+            owner_name=getattr(target, "__name__", cls.__name__),
+            category=category,
+            display_name=display_name,
+            description=description,
+            choices=choices,
+            param_descriptions=param_descriptions,
+            publish_input_names=input_names is not None,
+            publish_output_names=output_names is not None,
+        )
+        return cls
+
+    def _build(target: Any) -> type[Block]:
         if isinstance(target, type):
             return _build_class_from_class(
                 target,
@@ -200,6 +258,192 @@ def block(
     if func_or_cls is None:
         return _decorate
     return _decorate(func_or_cls)
+
+
+# ---------------------------------------------------------------
+# メタデータ (ADR-0081 §論点 7-A)
+# ---------------------------------------------------------------
+
+
+def _publish_metadata(
+    cls: type[Block],
+    *,
+    owner_name: str,
+    category: str | None,
+    display_name: str | Mapping[str, str] | None,
+    description: str | Mapping[str, str] | None,
+    choices: Mapping[str, Sequence[str]] | None,
+    param_descriptions: Mapping[str, str] | None,
+    publish_input_names: bool,
+    publish_output_names: bool,
+) -> None:
+    """``@block`` のメタデータ引数を検証し、生成クラスの公開 class 属性に書き込む。
+
+    指定された引数だけを書く (省略 = 属性なし = registry 側の既定に委ねる)。表示名と
+    説明は生成クラス自身の ``__dict__`` に載る (派生クラスへ継承させない規則の前提)。
+
+    Raises:
+        BlockSpecError: 型・値の違反、存在しないパラメータ名、既定値が候補外。
+    """
+    params_spec: tuple[tuple[str, Any, Any, bool], ...] = cls._flode_params_spec  # type: ignore[attr-defined]
+    structure: BlockStructure = cls._flode_structure  # type: ignore[attr-defined]
+    params = {
+        name: (NO_DEFAULT if required else default) for name, default, _t, required in params_spec
+    }
+    attrs: dict[str, Any] = {}
+    try:
+        if category is not None:
+            attrs["block_category"] = validate_category(category, owner=owner_name)
+        if display_name is not None:
+            attrs["block_display_name"] = validate_text(
+                display_name, field="display_name", owner=owner_name
+            )
+        if description is not None:
+            attrs["block_description"] = validate_text(
+                description, field="description", owner=owner_name
+            )
+        if choices is not None:
+            attrs["block_choices"] = validate_choices(choices, params, owner=owner_name)
+        if param_descriptions is not None:
+            attrs["block_param_descriptions"] = validate_param_descriptions(
+                param_descriptions, params, owner=owner_name
+            )
+    except BlockSpecError as e:
+        raise BlockSpecError(f"@block: {e}") from e
+    if publish_input_names:
+        attrs["block_input_names"] = structure.input_names
+    if publish_output_names:
+        attrs["block_output_names"] = structure.output_names
+    for attr_name, value in attrs.items():
+        setattr(cls, attr_name, value)
+
+
+# ---------------------------------------------------------------
+# sink (出力 0 本、ADR-0081 §論点 5)
+# ---------------------------------------------------------------
+
+
+def _declares_sink(
+    outputs_override: int | None,
+    return_hint: Any,
+    *,
+    n_states: int,
+    direct_feedthrough_override: bool | None,
+    owner_name: str,
+) -> bool:
+    """``outputs=0`` / 戻り値注釈 ``-> None`` による sink 宣言を判定・検証する。
+
+    Args:
+        outputs_override: ``@block(outputs=...)`` の値。
+        return_hint: 関数 (class 形は ``output`` メソッド) の解決済み戻り値注釈。
+            未注釈は ``None``、``-> None`` は ``NoneType``。
+        n_states: 状態次元数。
+        direct_feedthrough_override: ``@block(direct_feedthrough=...)`` の値。
+        owner_name: エラーメッセージ用の関数 / class 名。
+
+    Returns:
+        sink なら True。
+
+    Raises:
+        BlockSpecError: ``outputs`` が非負 int でない、``outputs`` と戻り値注釈の矛盾、
+            状態つき sink (``Block`` サブクラスで書く)、``direct_feedthrough=False``。
+    """
+    if outputs_override is not None and (
+        not isinstance(outputs_override, int)
+        or isinstance(outputs_override, bool)
+        or outputs_override < 0
+    ):
+        raise BlockSpecError(
+            f"@block: outputs must be a non-negative int, got {outputs_override!r}"
+        )
+    none_annotated = return_hint is _NONE_TYPE
+    if outputs_override != 0 and not none_annotated:
+        return False
+    if outputs_override == 0 and return_hint is not None and not none_annotated:
+        raise BlockSpecError(
+            f"@block: outputs=0 of {owner_name!r} contradicts its return annotation "
+            f"{return_hint!r}; annotate `-> None` (or drop the annotation) for a sink."
+        )
+    if none_annotated and outputs_override not in (None, 0):
+        raise BlockSpecError(
+            f"@block: outputs={outputs_override} of {owner_name!r} contradicts its "
+            f"return annotation `-> None` (a sink has no outputs)."
+        )
+    if n_states > 0:
+        raise BlockSpecError(
+            f"@block: {owner_name!r} declares no outputs (a sink) with states={n_states}. "
+            f"@block sinks must be stateless; write a stateful sink as a Block subclass "
+            f"(implement output / derivative or update / record)."
+        )
+    if direct_feedthrough_override is False:
+        raise BlockSpecError(
+            f"@block: sink {owner_name!r} cannot set direct_feedthrough=False; a sink "
+            f"receives its inputs at the same time step it is called."
+        )
+    return True
+
+
+def _advance_v_identity(
+    self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+) -> npt.NDArray[Any]:
+    """生成クラスの ``advance_v``: ``@block`` は 2-state のシフト相を持たない (状態そのまま)。
+
+    基底の既定は SM-A ``advance`` への wrapper で、宣言したベクトル入力ポートを
+    拒否してしまう (離散 ``sample_time`` の ``@block`` がベクトル入力で動かない)。
+    """
+    return x
+
+
+def _discard_sink_result(instance: Block, result: Any) -> None:
+    """sink の関数の戻り値を捨てる。``None`` 以外は、ブロックごとに 1 回だけ警告する。"""
+    if result is None or getattr(instance, "_sink_return_warned", False):
+        return
+    instance._sink_return_warned = True  # type: ignore[attr-defined]
+    _logger.warning(
+        "@block sink %r (%s) returned a %s value; it is discarded because a sink has "
+        "no outputs. Return None to silence this warning.",
+        instance.id,
+        type(instance).__name__,
+        type(result).__name__,
+    )
+
+
+def _sink_methods(
+    call: Callable[[Block, float, npt.NDArray[Any]], Any],
+    call_v: Callable[[Block, float, tuple[npt.NDArray[Any], ...]], Any],
+) -> dict[str, Any]:
+    """sink の生成クラスの名前空間 (ADR-0081 §論点 5-B)。
+
+    ``output`` / ``output_v`` はユーザー関数を呼ばずに空の出力を返す (ソルバの各段で
+    何度も呼ばれるため)。ユーザー関数は記録経路の ``record`` (1D 入力、SM-A 経路) /
+    ``record_v`` (ポートごとの値、信号面 plan のある経路) から呼ぶ。
+
+    Args:
+        call: ``(self, t, u_1d)`` でユーザー関数を呼び、生の戻り値を返す。
+        call_v: ``(self, t, u_tuple)`` で同上。
+    """
+
+    def output(self: Block, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.zeros(0)
+
+    def output_v(
+        self: Block, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return ()
+
+    def record(self: Block, t: float, u: npt.NDArray[Any]) -> None:
+        _discard_sink_result(self, call(self, t, u))
+
+    def record_v(self: Block, t: float, u: tuple[npt.NDArray[Any], ...]) -> None:
+        _discard_sink_result(self, call_v(self, t, u))
+
+    return {
+        "output": output,
+        "output_v": output_v,
+        "record": record,
+        "record_v": record_v,
+        "record_on_sample_hits": True,
+    }
 
 
 def _build_class_from_function(
@@ -279,14 +523,20 @@ def _build_class_from_function(
     n_inputs, u_arg_kind = _resolve_input_count(u_param, type_hints, inputs_override, func.__name__)
 
     return_hint = type_hints.get("return")
-    if has_state:
-        output_hint = _split_state_return(return_hint, func.__name__)
-    else:
-        output_hint = return_hint
-    return_annotated = return_hint is not None
-    n_outputs, y_arg_kind = _resolve_output_count(
-        output_hint, outputs_override, func.__name__, return_annotated
+    is_sink = _declares_sink(
+        outputs_override,
+        return_hint,
+        n_states=n_states,
+        direct_feedthrough_override=direct_feedthrough_override,
+        owner_name=func.__name__,
     )
+    if is_sink:
+        n_outputs, y_arg_kind = 0, "none"
+    else:
+        output_hint = _split_state_return(return_hint, func.__name__) if has_state else return_hint
+        n_outputs, y_arg_kind = _resolve_output_count(
+            output_hint, outputs_override, func.__name__, return_hint is not None
+        )
 
     if direct_feedthrough_override is not None:
         df = bool(direct_feedthrough_override)
@@ -401,13 +651,7 @@ def _resolve_output_count(
     return_annotated: bool,
 ) -> tuple[int, str]:
     if override is not None:
-        if not isinstance(override, int) or isinstance(override, bool) or override < 1:
-            raise BlockSpecError(
-                f"@block: outputs must be a positive int, got {override!r}. "
-                f"Note: sink-style blocks (n_outputs=0) are not supported by "
-                f"@block in Phase 1; use direct Block inheritance instead "
-                f"(ADR-0003 §(9))."
-            )
+        # 型と 0 (sink) は呼び出し前の ``_declares_sink`` で処理済み
         return override, "ndarray"
     if not return_annotated:
         _logger.warning(
@@ -756,6 +1000,7 @@ def _make_block_class(
         "output_v": output_v,
         "derivative_v": derivative_v,
         "update_v": update_v,
+        "advance_v": _advance_v_identity,
         "_skip_dual_api_check": True,
         # port shape はデコレータの宣言 (``_flode_structure``) が SSOT。entry に書き出すと
         # 生成 ``__init__`` が受け取れず読み込みに失敗するため出力しない
@@ -775,6 +1020,14 @@ def _make_block_class(
             port_shapes_out=port_shapes_out,
         ),
     }
+    if n_outputs == 0:
+        # sink は状態なし (``_declares_sink``) なので x は常に空
+        namespace.update(
+            _sink_methods(
+                lambda self, t, u: _call_inner(t, np.zeros(0), u, self._params),
+                lambda self, t, u: _call_inner_v(t, np.zeros(0), u, self._params),
+            )
+        )
     return type(cls_name, (Block,), namespace)
 
 
@@ -980,6 +1233,27 @@ def _build_class_from_class(
     if user_output is None or not callable(user_output):
         raise BlockSpecError(f"@block class {user_cls.__name__!r} must define an `output` method")
 
+    # ADR-0081 §論点 7-A: 生成クラスに載せるメタデータ属性と同名の名前は予約する
+    # (フィールドにするとインスタンス属性がメタデータを隠し、registry と取り違える)。
+    # 他の block_* (例: block_size) は従来どおり使える
+    annotations = inspect.get_annotations(user_cls)
+    reserved = sorted(METADATA_ATTRIBUTES & {*user_cls.__dict__, *annotations})
+    if HIDDEN_ATTRIBUTE in annotations:
+        reserved.append(HIDDEN_ATTRIBUTE)
+    if reserved:
+        raise BlockSpecError(
+            f"@block class {user_cls.__name__!r}: {reserved} are reserved for block "
+            f"metadata. Rename the field, and pass metadata as @block(category=..., "
+            f"display_name=..., ...) arguments (mark a hidden block with a plain "
+            f"`{HIDDEN_ATTRIBUTE} = True` class attribute)."
+        )
+    hidden = user_cls.__dict__.get(HIDDEN_ATTRIBUTE)
+    if hidden is not None and not isinstance(hidden, bool):
+        raise BlockSpecError(
+            f"@block class {user_cls.__name__!r}: {HIDDEN_ATTRIBUTE} must be a bool, "
+            f"got {type(hidden).__name__}"
+        )
+
     has_state = n_states > 0
     user_derivative = getattr(user_cls, "derivative", None) if has_state else None
     user_update = getattr(user_cls, "update", None) if has_state else None
@@ -1018,10 +1292,25 @@ def _build_class_from_class(
     )
 
     return_hint = output_hints.get("return")
-    return_annotated = return_hint is not None
-    n_outputs, y_arg_kind = _resolve_output_count(
-        return_hint, outputs_override, user_cls.__name__, return_annotated
+    is_sink = _declares_sink(
+        outputs_override,
+        return_hint,
+        n_states=n_states,
+        direct_feedthrough_override=direct_feedthrough_override,
+        owner_name=user_cls.__name__,
     )
+    if is_sink:
+        sink_hooks = sorted({"record", "record_v"} & set(user_cls.__dict__))
+        if sink_hooks:
+            raise BlockSpecError(
+                f"@block class {user_cls.__name__!r}: a sink is called through its "
+                f"`output` method; it cannot also define {sink_hooks}."
+            )
+        n_outputs, y_arg_kind = 0, "none"
+    else:
+        n_outputs, y_arg_kind = _resolve_output_count(
+            return_hint, outputs_override, user_cls.__name__, return_hint is not None
+        )
 
     if direct_feedthrough_override is not None:
         df = bool(direct_feedthrough_override)
@@ -1171,7 +1460,7 @@ def _extract_class_params(user_cls: type) -> list[tuple[str, Any, Any, bool]]:
         BlockSpecError: 型注釈の解決に失敗した場合 (forward reference の
             未解決名前空間など)。
     """
-    own_annotations = user_cls.__dict__.get("__annotations__", {})
+    own_annotations = inspect.get_annotations(user_cls)
     result: list[tuple[str, Any, Any, bool]] = []
     try:
         resolved_hints = get_type_hints(user_cls)
@@ -1356,6 +1645,7 @@ def _make_block_class_from_class(
         "output_v": output_v,
         "derivative_v": derivative_v,
         "update_v": update_v,
+        "advance_v": _advance_v_identity,
         "_skip_dual_api_check": True,
         # port shape はデコレータの宣言 (``_flode_structure``) が SSOT。entry に書き出すと
         # 生成 ``__init__`` が受け取れず読み込みに失敗するため出力しない
@@ -1375,6 +1665,18 @@ def _make_block_class_from_class(
             port_shapes_out=port_shapes_out,
         ),
     }
+    # ADR-0081 P1: パレットに出さない印はユーザー class 自身の宣言を生成クラス自身に写す
+    # (registry はそのクラスの __dict__ だけを見る。検証済み: bool)
+    if HIDDEN_ATTRIBUTE in user_cls.__dict__:
+        namespace[HIDDEN_ATTRIBUTE] = user_cls.__dict__[HIDDEN_ATTRIBUTE]
+    if n_outputs == 0:
+        # sink は状態なし (``_declares_sink``) なので x は常に空
+        namespace.update(
+            _sink_methods(
+                lambda self, t, u: user_output(*_pack_method_args(self, t, np.zeros(0), u)),
+                lambda self, t, u: user_output(*_pack_method_args_v(self, t, np.zeros(0), u)),
+            )
+        )
     # user class が `record` / `reset` / `infer_output_shapes` (ADR-0079 §(3) 6c) 等の
     # 追加メソッドを持っていれば素直に継承する (Sink 系で record を持つケースを想定)。
     # Block 基底のメソッドを無音で上書きしないようガードする (`__init__` などの dunder は
