@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.65.0] - 2026-11-13 — マイブロック: 独自ブロックをライブラリに登録して左ペインから使う (ADR-0080)
+
+### Added
+
+- **マイブロック** (SPEC-0032 段階 1): キャンバス上の `Subsystem` / `PythonFunction` を右クリック →
+  「ライブラリに追加…」で登録すると、左ペイン最上部の「マイブロック」セクションに並び、以後どの
+  モデルにもドラッグで配置できる。登録時に名前・説明・分類を付けられ、分類はセクション内の
+  サブ見出しになる。エントリの右クリックで名前・説明・分類の編集と削除ができる。Python コードを
+  含むエントリには `PY` バッジが付く
+- **保存先**: `~/.flode/libraries/user.flwlib.json`。場所は `config.toml` の
+  `[settings] user_library_dir` で変更でき、空文字で無効になる。同じディレクトリに置いた
+  `*.flwlib.json` は読み取り専用のライブラリとして読み込まれる
+- **由来と更新通知**: ライブラリから配置したブロック (と登録元のブロック) は、どのライブラリの
+  どのエントリの第何版から来たかを記録する (ブロック entry の任意キー `provenance`。モデル
+  `schema_version` は変わらず、旧版で開いても保存しても消えない)。Inspector に由来と状態を表示し、
+  ライブラリ側が新しい版になるとブロックに更新マーカーが付く。Inspector の [差し替え] で新しい版に
+  置き換えられる: 位置・接続・同名で型が合うパラメータ値は保持、既存の接続を保てない場合は理由を
+  示して拒否、Ctrl+Z 1 回で元に戻る
+- **共有**: マイブロックを 1 つのファイルに書き出し、別の環境で取り込める (パレットのメニュー)。
+  取り込んだライブラリは読み取り専用で、取り込み前に Python コードを含むエントリの一覧と警告を
+  確認できる。取り込んだライブラリは GUI から削除できる
+- **ライブラリの再読み込み**: 手で置いた / 編集したライブラリファイルを、再起動せずに
+  パレットのメニューから読み込み直せる
+- REST: `POST` / `PATCH` / `DELETE /api/v1/libraries/user/entries`、`POST /api/v1/libraries/import`
+  (dry-run あり)、`DELETE /api/v1/libraries/{name}`、`POST /api/v1/libraries/reload`、
+  `GET /api/v1/libraries/{name}/export`。書き込みは loopback で起動したときだけ受け付ける。
+  `GET /api/v1/libraries` はエントリの `kind` / `revision` / `updated_at` / `contains_python`、
+  ライブラリの `uid` / `origin` / `writable`、`user_library` の状態を返す
+- Python API: `flode.libraries` に `atomic_write_text` (一時ファイル → `.bak` 退避 → 置換)、
+  `canonicalize_entry_block`、`library_to_dict` / `serialize_library`、`find_goto_from_violations`。
+  `Block.provenance` (読み取り専用)
+
+### Changed (BREAKING: ライブラリファイルと `LibraryEntry` が変わります)
+
+- **ライブラリ schema `libraries.v3 → libraries.v4`**。エントリ本体のフィールドが `subsystem` から
+  `block` になり、`Subsystem` に加えて `PythonFunction` 単体もエントリにできる。エントリに
+  `revision` / `updated_at`、ライブラリに `uid` / `model_schema_version` が加わった。v1〜v3 の
+  ファイルは読み込み時にメモリ上で変換され、読み込むだけでは書き換わらない
+- **`LibraryEntry` のコンストラクタ引数が `subsystem` から `block` に変わった**。読み取りの
+  `entry.subsystem` は非推奨の alias として残る (`DeprecationWarning`)
+- ライブラリ本体のモデル schema 版をファイルに記録し、古い本体はモデル側の migration を通すように
+  した (これまではライブラリ側に同じ migration を手で書く必要があり、0.13〜0.15 の分が漏れていた)。
+  v0.64.0 より前に書き出した、多入力の `StateSpace` 系を含むエントリは自動修復されないため、
+  読み込み時に警告を出す
+- `export_subsystem_to_library` の出力は v4 形式・改行 LF 固定になり、アトミックに書き込む
+- 旧パッケージ名の型を含む古いライブラリファイルは、読み込み時に拒否されて `load_errors` に載る
+  (これまではパレットに載るが配置すると構築に失敗していた)
+- エントリ id が `export` / `entries` のライブラリファイルは読み込まない (REST の URL と衝突する)
+- **GUI: ブロックの右ボタン操作**。押した瞬間に複製を作っていたのを、「4px 以上ドラッグで複製 /
+  動かさずに離すとメニュー」に変えた。複製は Ctrl+Z 1 回で戻る (これまでは複製が元の位置に
+  重なって残った)。ContextMenu キーでもメニューが開く
+- **GUI: 危険な操作の確認ダイアログ** (ファイル削除、上書き保存、ライブラリの削除、差し替え) は
+  Enter で確定せず、初期フォーカスがキャンセル側になる。確認ダイアログは Enter のキーリピートを
+  無視する
+- GUI: File Browser の右クリックメニューを共通のポップアップメニュー部品に載せ替えた (外側での
+  マウス押下と Escape で閉じる)
+- 非 loopback で起動した場合、`config.toml` に `user_library_dir` を明示しない限りマイブロックと
+  取り込みライブラリは読み込まれない (ホーム配下の内容をネットワークへ公開しないため)
+
+### Fixed
+
+- **非スカラーの port shape を宣言した `PythonFunction` を含むモデルが、Python API で保存すると
+  読み込めなかった** (`PythonFunction.__init__() got an unexpected keyword argument
+  'port_shapes_in'`)。shape はコードから再導出されるので、ブロック entry に出力しないようにした
+- **マスク付き `Subsystem` の内側にある入れ子 `Subsystem` で、マスクの placeholder (`"$Kp"`) が
+  保存時に具象値へ展開されていた**。保存後のファイルではマスク値を変えても入れ子の中に届かなかった
+- **ブロック型の解決が、`flode` 配下の `__init__.py` を持たないディレクトリにあるモジュールを
+  import しえた**。モデルやライブラリファイルの `type` 文字列で、ブロック定義と無関係なモジュールを
+  読み込ませることができた。通常のパッケージ階層にある型だけを解決する
+- 細工された JSON (極端に桁数の多い整数など) を含むライブラリファイルが 1 つあると、サーバの起動が
+  失敗していた。そのファイルだけを `load_errors` に落とす
+- GUI: `Subsystem` の中に入って戻ると、ブロックの右ドラッグ複製が効かなくなることがあった
+- GUI: `PythonFunction` のコード編集で、解析の応答を待つ間に別の操作でコードが変わると、応答が
+  古い内容で上書きしえた
+
+### 既知の制約
+
+- 同じライブラリブロックを 2 つ配置すると、内部ブロックの id が重複する (読み込みと実行は可能)。
+  内部に `Scope` があると表示設定が共有される
+- マスクパラメータの宣言・編集の GUI はまだ無い (マスク付き Subsystem の登録・配置・値の編集は可能)
+- 自分で書き出したマイブロックのファイルを、同じ環境に取り込むことはできない (同じ `uid` の
+  ライブラリは 1 つだけ読み込む)
+
 ## [0.64.1] - 2026-09-21 — Subsystem 内部の Goto を外側の From で受けるベクトル信号の修正
 
 ### Fixed
