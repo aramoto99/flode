@@ -43,6 +43,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..exceptions import AlgebraicLoopError, BlockSpecError, SignalShapeError
+from .persistence import RESERVED_USER_BLOCK_ROOTS, managed_block_types
 
 if TYPE_CHECKING:
     from .block import Block
@@ -727,8 +728,56 @@ def _mro_names(block: Block) -> tuple[str, ...]:
     return tuple(cls.__name__ for cls in type(block).__mro__)
 
 
+#: 管理型表から作った「ユーザーブロックのモジュール名」の集合と、その元になった表
+#: (表は差し替えのたびに新しい mapping になるので、identity で古さを判定する)
+_managed_modules_cache: tuple[Mapping[str, type], frozenset[str]] | None = None
+
+
+def _managed_modules() -> frozenset[str]:
+    """管理型表に載っているブロックのモジュール名 (config ``modules`` 由来を含む)。"""
+    global _managed_modules_cache
+    table = managed_block_types()
+    cached = _managed_modules_cache
+    if cached is not None and cached[0] is table:
+        return cached[1]
+    modules = frozenset(type_path.rpartition(".")[0] for type_path in table)
+    _managed_modules_cache = (table, modules)
+    return modules
+
+
+def _is_user_module(module: str) -> bool:
+    """予約ルート (``flode_ws`` / ``flode_dirs``) 配下か、管理型表に載るモジュールか。"""
+    return module.split(".", 1)[0] in RESERVED_USER_BLOCK_ROOTS or module in _managed_modules()
+
+
+def _is_user_block(block: Block) -> bool:
+    """ユーザーコードのブロックか (ADR-0081 §5-C で dtype を opaque にする対象)。
+
+    - ``@block`` 生成クラス: パレットに載っているかに関係なく真 (shape 側の
+      :func:`_classify_shape` と同じ判定)
+    - それ以外: MRO のどこかのクラスが、予約ルート配下か管理型表に載るモジュールで
+      定義されていれば真。クラスオブジェクトではなくモジュール名で見るので、registry の
+      reload でクラスが作り直されても判定は変わらない。組み込みブロック (``Gain`` 等) を
+      継承したユーザーのクラスも opaque (ユーザーコードの境界は float64)
+
+    パレット外 (スクリプト内) で定義したクラス形式の ``Block`` サブクラスは偽
+    (従来どおり既定の promote 規則)。
+    """
+    cls = type(block)
+    if hasattr(cls, "_flode_structure"):
+        return True
+    return any(_is_user_module(c.__module__) for c in cls.__mro__)
+
+
 def _classify(block: Block) -> tuple[Category, bool]:
-    """ブロックを dtype 分類する。戻り値は ``(category, rule_missing)``。"""
+    """ブロックを dtype 分類する。戻り値は ``(category, rule_missing)``。
+
+    ユーザーブロックは名前に関係なく ``opaque`` (境界で float64、ADR-0081 §5-C)。
+    既定の ``promote`` だと入力の型 (比較ブロックの bool など) を出力が受け継ぎ、
+    ユーザーコードが返した値が黙って cast される。
+    """
+    if _is_user_block(block):
+        return "opaque", False
     for name in _mro_names(block):
         category = _CLASSIFICATION.get(name)
         if category is not None:

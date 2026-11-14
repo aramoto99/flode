@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- パレットから読み込んだユーザーブロック (クラス形式の `Block` サブクラス) と `@block` の出力 dtype が入力の
+  dtype を受け継いでいた。比較ブロックの bool 出力をつなぐと、ユーザーブロックが返した数値まで bool に
+  cast されていた。ユーザーブロックの境界は float64 (入力は float64 に揃えて渡し、出力も float64) になる。
+  `@block` はパレットに載っているかに関係なく、クラス形式はパレット (ワークスペース `blocks/` / config の
+  `dirs` / `modules`) から読み込んだものが対象。スクリプト内で定義したクラス形式の `Block` サブクラスは従来どおり。
+  GUI の信号の型表示では、ユーザーブロックの出力は「—」(未解決) になる
+
 ## [0.67.0] - 2026-11-14 — 引数に追従するポート・後片付け・音声出力・実行ログ (ADR-0083)
 
 ### Added

@@ -120,6 +120,11 @@ shapes with ``port_shapes_in`` / ``port_shapes_out`` (details in
        """Euclidean norm of a 3-vector."""
        return float(np.linalg.norm(u))   # u is an ndarray of shape (3,)
 
+Signals cross the boundary of a palette block (and of any ``@block``) as
+``float64``: inputs arrive as ``float64`` whatever the upstream dtype (a
+comparison block's ``bool`` arrives as ``0.0`` / ``1.0``), and outputs leave as
+``float64``.
+
 **No output (writing to a file, sending over a network).** Declare
 ``outputs=0`` or annotate the return type ``-> None``:
 

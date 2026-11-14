@@ -7,12 +7,14 @@ island (Q6) / 状態持ち (Q7) / エラー昇格 (§3.5) を固定する。
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
-from flode import Simulator
+from flode import Block, Simulator, block
 from flode.blocks.cast import Cast
 from flode.blocks.continuous import Integrator
 from flode.blocks.discrete import UnitDelay, ZeroOrderHoldDirect
@@ -33,6 +35,7 @@ from flode.blocks.rounding import Rounding
 from flode.blocks.routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
 from flode.blocks.sinks import Scope
 from flode.blocks.sources import Constant
+from flode.core import persistence
 from flode.core import signals as dtypes
 from flode.exceptions import BlockSpecError
 from flode.subsystems import Inport, Outport, Subsystem
@@ -280,6 +283,103 @@ class TestFloat64Island:
         assert res.out_dtype("pf", 0) == "float64"
         assert_dtype_prediction_matches_execution(sim)
         assert float(np.asarray(sc.values)[0, 0]) == 6.0
+
+
+class _PaletteBlock(Block):
+    """パレットから読み込んだクラス形式のユーザーブロックの代わり (入力に関係なく 17.0 を出す)。"""
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id, n_inputs=1, n_outputs=1)
+        self._params = {}
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.array([17.0])
+
+
+@pytest.fixture
+def palette_block() -> Iterator[type[_PaletteBlock]]:
+    """``_PaletteBlock`` のモジュールを管理型表に載せる (config ``modules`` 由来のブロックと同じ形)。"""
+    module = _PaletteBlock.__module__
+    persistence._replace_managed_block_types(
+        {f"{module}._PaletteBlock": _PaletteBlock}, allowed_modules=(module,)
+    )
+    try:
+        yield _PaletteBlock
+    finally:
+        persistence._clear_managed_block_types()
+
+
+def _reserved_root_class() -> type[_PaletteBlock]:
+    """予約ルート (``flode_ws``) 配下で定義された、管理型表には載っていないクラス。
+
+    registry の reload でクラスが作り直された後、古い Simulator が握っている旧クラスと同じ立場。
+    """
+    return type("_ReloadedBlock", (_PaletteBlock,), {"__module__": "flode_ws.probe"})
+
+
+def _bool_into(user_block: Block) -> tuple[Simulator, Scope]:
+    """比較ブロック (bool 出力) → user_block → Scope のモデル (dtype 宣言ありで予測どおり cast される経路)。"""
+    sim = _sim()
+    c = sim.add(Constant(value=1.0, dtype="float64", id="c"))
+    rel = sim.add(RelationalOperator(operator=">", id="rel"))
+    zero = sim.add(Constant(value=0.0, id="zero"))
+    sim.add(user_block)
+    sc = sim.add(Scope(id="sc"))
+    sim.connect(c, rel, 0, 0)
+    sim.connect(zero, rel, 0, 1)
+    sim.connect(rel, user_block)
+    sim.connect(user_block, sc)
+    return sim, sc
+
+
+class TestUserBlockIsFloat64Island:
+    """ADR-0081 §5-C: パレットのユーザーブロック / ``@block`` も境界 float64 (入力の型を受け継がない)。"""
+
+    def test_palette_block_output_is_not_cast_to_bool_input(
+        self, palette_block: type[_PaletteBlock]
+    ) -> None:
+        sim, sc = _bool_into(palette_block(id="user"))
+        res = dtypes.resolve_dtypes(sim, mode="full")
+        assert res.in_dtype("user", 0) == "float64"
+        assert res.out_dtype("user", 0) == "float64"
+        assert_dtype_prediction_matches_execution(sim)
+        assert float(np.asarray(sc.values)[0, 0]) == 17.0  # bool に潰れると 1.0
+
+    def test_decorated_block_output_is_not_cast_to_bool_input(self) -> None:
+        """``@block`` はパレットに載っていなくても (スクリプト内で定義しても) opaque。"""
+
+        @block
+        def seventeen(t: float, u: float) -> float:
+            return 17.0
+
+        sim, sc = _bool_into(seventeen(id="user"))
+        res = dtypes.resolve_dtypes(sim, mode="full")
+        assert res.out_dtype("user", 0) == "float64"
+        assert_dtype_prediction_matches_execution(sim)
+        assert float(np.asarray(sc.values)[0, 0]) == 17.0
+
+    def test_reserved_root_class_is_opaque_even_after_reload(self) -> None:
+        """reload で管理型表のクラスが作り直されても、予約ルート配下のクラスは opaque のまま。"""
+        sim, sc = _bool_into(_reserved_root_class()(id="user"))
+        res = dtypes.resolve_dtypes(sim, mode="full")
+        assert res.out_dtype("user", 0) == "float64"
+        assert_dtype_prediction_matches_execution(sim)
+        assert float(np.asarray(sc.values)[0, 0]) == 17.0
+
+    def test_user_block_output_is_unknown_in_static_mode(
+        self, palette_block: type[_PaletteBlock]
+    ) -> None:
+        """GUI の resolve-dtypes (static) では PythonFunction と同じく unknown (bool と偽らない)。"""
+        sim, _ = _bool_into(palette_block(id="user"))
+        res = dtypes.resolve_dtypes(sim, mode="static")
+        assert res.out_dtype("user", 0) == dtypes.UNKNOWN
+
+    def test_unmanaged_block_subclass_keeps_promote_rule(self) -> None:
+        """パレット外 (スクリプト内) のクラス形式の Block 派生は従来どおり既定の promote 規則。"""
+        sim, _ = _bool_into(_PaletteBlock(id="user"))
+        res = dtypes.resolve_dtypes(sim, mode="full")
+        assert res.out_dtype("user", 0) == "bool"
+        assert any(d.code == "dtype.rule_missing" for d in res.diagnostics)
 
 
 class TestNestedDeclarationRejected:
