@@ -559,6 +559,7 @@ _CLASSIFICATION: Final[Mapping[str, Category]] = {
     # -- 出力なし --
     "Scope": "sink",
     "Display": "sink",
+    "ImageDisplay": "sink",
     "XYGraph": "sink",
     "Terminator": "sink",
     "Trigger": "sink",
@@ -691,6 +692,7 @@ _SHAPE_RULES: Final[Mapping[str, ShapeCategory]] = {
     # -- シンク --
     "Scope": "sink",
     "Display": "sink",
+    "ImageDisplay": "sink",
     "Terminator": "sink",
     "XYGraph": "sink_scalar",
     "Trigger": "sink_scalar",

@@ -26,6 +26,8 @@ export interface SimulatorConfig {
   rtol: number;
   atol: number;
   dt_base: number | null;
+  /** SPEC-0034 R-3: 実時間に同期して進める。真のときだけ保存される任意キー。 */
+  realtime?: boolean;
 }
 
 // ADR-0020: 各 block の GUI 上の位置 + optional サイズ (CSS px、React Flow 互換)。
@@ -160,6 +162,22 @@ export interface SimulationResults {
     string,
     { labels: string[]; times: number[]; values: number[][] }
   >;
+  /** ADR-0082 §(1): 画像表示ブロックの最後のコマ (block_id → コマ)。旧サーバでは欠落。 */
+  images?: Record<string, ImageFrame>;
+}
+
+/**
+ * ADR-0082 §(1): 画像表示ブロック (ImageDisplay) の 1 コマ。WS ``image_frame`` と
+ * ``GET /results`` の ``images`` で共通。``data`` は行優先 uint8 生バイト列
+ * (``channels`` = 1 グレー / 3 RGB) の base64。
+ */
+export interface ImageFrame {
+  block_id: string;
+  t: number;
+  height: number;
+  width: number;
+  channels: number;
+  data: string;
 }
 
 // ADR-0019 §(1): Block class registry REST schema (palette UI / shape validation)
@@ -532,6 +550,7 @@ export type StreamMessage =
       times: number[];
       values: number[][];
     }
+  | ({ type: "image_frame" } & ImageFrame)
   | { type: "completed"; duration_sec: number }
   | { type: "stopped"; duration_sec: number }
   | ({ type: "failed"; duration_sec: number } & Partial<FailurePayload>);

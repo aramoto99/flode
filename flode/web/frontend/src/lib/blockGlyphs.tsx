@@ -1063,6 +1063,16 @@ const DisplayGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// SPEC-0034: 画像表示。規格記号が無いため de facto の「画像」記号
+// (枠 + 山 + 太陽) を表示器の枠に載せる。
+const ImageDisplayGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <rect x="3" y="5" width="18" height="14" rx="1" />
+    <polyline points="5,17 10,11 13,14 15,12 19,17" strokeWidth="1.2" />
+    <circle cx="16" cy="9" r="1.5" />
+  </svg>
+);
+
 const XYGraphGlyph = ({ className }: GlyphProps): JSX.Element => (
   <svg {...G_PROPS} className={className}>
     {/* x-y 軸 + 散布点 */}
@@ -1320,6 +1330,7 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "flode.blocks.sinks.Scope": ScopeGlyph,
   "flode.blocks.sinks.Display": DisplayGlyph,
   "flode.blocks.sinks.XYGraph": XYGraphGlyph,
+  "flode.blocks.sinks.ImageDisplay": ImageDisplayGlyph,
   "flode.blocks.sinks.Terminator": TerminatorGlyph,
   // subsystems
   "flode.subsystems.subsystem.Subsystem": SubsystemGlyph,

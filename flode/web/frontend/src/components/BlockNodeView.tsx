@@ -12,7 +12,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -38,6 +38,7 @@ import {
 import {
   ENABLE_TYPE,
   getNumberParam,
+  IMAGE_DISPLAY_TYPE,
   INPORT_TYPE,
   OUTPORT_TYPE,
   PYTHON_FUNCTION_TYPE,
@@ -55,7 +56,7 @@ import {
   userPortNames,
 } from "../lib/userBlockModel";
 import { toLocale, userBlockDisplayName } from "../lib/userBlocks";
-import type { BlockEntry } from "../types/api";
+import type { BlockEntry, ImageFrame } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
 import { INPUT_CLS } from "./ui/inspector";
 
@@ -754,6 +755,11 @@ function ShapeContent({
   controlSlots?: { hasTrigger: boolean; hasEnable: boolean };
 }): JSX.Element {
   const { kind } = shape;
+
+  // SPEC-0034 F-5: 画像表示ブロックはブロック面に最新コマを描く
+  if (typePath === IMAGE_DISPLAY_TYPE) {
+    return <ImageDisplayLive blockId={blockId} />;
+  }
 
   // 三角形 (Gain): 底辺側に param (k=...) を表示。flipped=false なら底辺=左→
   // 左寄せ + pl-2.5、flipped=true なら底辺=右→右寄せ + pr-2.5。テキスト自身は
@@ -1692,6 +1698,82 @@ export function DisplayLiveValue({ blockId }: { blockId: string }): JSX.Element 
       ))}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// ImageDisplay の live 画像 (SPEC-0034 F-5 / ADR-0082 §(1))。WS ``image_frame`` で
+// store に入る最新コマを canvas に描く。canvas の画素は画像の画素数そのままにし、
+// CSS の object-fit で縦横比を保って枠に fit させる (拡大はドットのまま)。
+// ---------------------------------------------------------------------------
+
+/**
+ * 画像表示ブロックのブロック面。最新コマが無ければ「—」を出す。
+ *
+ * @internal テスト用 export。プロダクション利用は BlockNodeView 経由。
+ */
+export function ImageDisplayLive({ blockId }: { blockId: string }): JSX.Element {
+  const frame = useAppStore((s) => s.imageFrames[blockId]);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !frame) return;
+    const rgba = imageFrameToRgba(frame);
+    if (rgba === null) return;
+    // 大きさの代入はバッファを作り直すので、変わったときだけ
+    if (canvas.width !== frame.width) canvas.width = frame.width;
+    if (canvas.height !== frame.height) canvas.height = frame.height;
+    // jsdom 等 2d context が無い環境では描かない (表示だけの機能なので黙って諦める)
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.putImageData(new ImageData(rgba, frame.width, frame.height), 0, 0);
+  }, [frame]);
+
+  if (!frame) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-slate-400">
+        — — —
+      </div>
+    );
+  }
+  return (
+    <canvas
+      ref={canvasRef}
+      data-testid="image-display-canvas"
+      className="absolute inset-[2px] h-[calc(100%-4px)] w-[calc(100%-4px)] object-contain [image-rendering:pixelated]"
+    />
+  );
+}
+
+/**
+ * ``image_frame`` (base64 の uint8 グレー / RGB) を canvas 用の RGBA 配列に変換する。
+ * 画素数と ``data`` の長さが合わないコマは ``null`` (壊れたコマは描かない)。
+ *
+ * @internal テスト用 export。
+ */
+export function imageFrameToRgba(
+  frame: ImageFrame,
+): Uint8ClampedArray<ArrayBuffer> | null {
+  const { width, height, channels } = frame;
+  if (channels !== 1 && channels !== 3) return null;
+  let raw: string;
+  try {
+    raw = atob(frame.data);
+  } catch {
+    return null;
+  }
+  const n = width * height;
+  if (n <= 0 || raw.length !== n * channels) return null;
+  const rgba = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    const src = i * channels;
+    const r = raw.charCodeAt(src);
+    rgba[i * 4] = r;
+    rgba[i * 4 + 1] = channels === 3 ? raw.charCodeAt(src + 1) : r;
+    rgba[i * 4 + 2] = channels === 3 ? raw.charCodeAt(src + 2) : r;
+    rgba[i * 4 + 3] = 255;
+  }
+  return rgba;
 }
 
 /** @internal テスト用 export。dtype は解決済みの表示整形ヒント (SPEC-0028 Q8)。 */

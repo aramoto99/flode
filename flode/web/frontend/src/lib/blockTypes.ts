@@ -15,6 +15,8 @@ export const ENABLE_TYPE = "flode.subsystems.control_blocks.Enable";
 // SPEC-0023 / ADR-0073: ユーザー Python (@block 形) を実行するブロック。ポート数は
 // ``params.code`` の静的解析 (introspect API) で決まる (= lib/pythonFunctionSpec.ts)。
 export const PYTHON_FUNCTION_TYPE = "flode.blocks.pythonfunc.PythonFunction";
+/** SPEC-0034: 配列信号を画像としてブロック面に描く sink。 */
+export const IMAGE_DISPLAY_TYPE = "flode.blocks.sinks.ImageDisplay";
 
 /**
  * `params[key]` を number として取り出す。値が number でなければ `fallback` を返す。

@@ -12,6 +12,8 @@ import json
 import logging
 import math
 import numbers
+import threading
+import time
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -157,6 +159,10 @@ class Simulator:
         dt_base: 基本ステップの明示指定。``None`` (default) なら ``dt`` と
             離散ブロックの sample_time から自動推定する。手動指定すると
             離散周期との整数比チェックをスキップして強制適用される。
+        realtime: ``True`` なら実時間に同期して進める (SPEC-0034 R-1 / ADR-0082 §(2)):
+            各基準ステップの計算前に、壁時計が開始からシミュレーション時刻 ``t``
+            だけ経つまで待つ。遅れているときは待たず、基準を付け替える (遅れを
+            取り戻すための早送りはしない)。既定 ``False`` は最速で進める。
     """
 
     def __init__(
@@ -168,6 +174,7 @@ class Simulator:
         atol: float = 1e-9,
         dt_base: float | None = None,
         on_step_callback: StepCallback | None = None,
+        realtime: bool = False,
     ) -> None:
         # ADR-0042 §論点 4-A: ``"inf"`` (case-insensitive) を受け入れて
         # ``math.inf`` に変換する。``parse_t_end`` で全 validation 一元化。
@@ -197,6 +204,15 @@ class Simulator:
         self.dt_base_hint: float | None = (
             None if dt_base is None else _validate_positive_finite("dt_base", dt_base)
         )
+        if not isinstance(realtime, bool):
+            raise ModelLoadError(f"Invalid realtime: must be true or false, got {realtime!r}")
+        self.realtime: bool = realtime
+        # ADR-0082 §(2): 実時間待ちを停止要求で即座に抜けるためのイベント
+        # (``request_stop`` が set、``run`` 開始時に clear)。
+        self._stop_event = threading.Event()
+        # 実時間同期の基準 (= シミュレーション時刻 0 に対応する monotonic 時刻)。
+        # ``None`` = 未確定 (run() 開始時)。最初の ``_pace_realtime`` で決める。
+        self._realtime_origin: float | None = None
         self.blocks: list[Block] = []
         self._blocks_by_id: dict[str, Block] = {}
         # ADR-0071 §(2): NFKC fold key → NFC id。重複判定専用 (``Gain_1`` と
@@ -1321,6 +1337,9 @@ class Simulator:
         # 停止フラグはこの run() 呼び出しの間だけ有効。前回の値が残っているのを
         # ここでクリアする。
         self._stop_requested = False
+        self._stop_event.clear()
+        # 実時間の基準はループの最初のステップで決める (= 初期化の時間を含めない)
+        self._realtime_origin = None
 
         # ADR-0018 §(2) R-A: SM-A / SM-B run path 完全分離。SM-A モードでは
         # 既存ホットパスを完全に維持 (= 541 件テストへの影響ゼロ)。
@@ -1415,6 +1434,7 @@ class Simulator:
         k = 0
         while True:
             t = _grid_time(k, dt_base)
+            self._pace_realtime(t)
 
             # ADR-0078 サンプル時刻の処理順 (ADR-0015 §(1) を 1 パスに整理):
             #   [A] _step (トポロジカル順): 発火ブロック (k % step_ratio == 0) は
@@ -1525,6 +1545,7 @@ class Simulator:
         k = 0
         while True:
             t = _grid_time(k, dt_base)
+            self._pace_realtime(t)
 
             # [A]/[A'] 離散ブロック処理 (SM-B path、SM-A と同じ 1 パス順序、ADR-0078)
             if discrete_state:
@@ -1599,9 +1620,29 @@ class Simulator:
 
         ``run()`` ループ中の各ステップ末尾でフラグがチェックされ、True であれば
         その時点までの結果を保ったまま戻る。``Scope`` 等の record も停止時点までの
-        値を保持する。
+        値を保持する。実時間同期の待ち中なら待ちを即座に打ち切る (ADR-0082 §(2))。
         """
         self._stop_requested = True
+        self._stop_event.set()
+
+    def _pace_realtime(self, t: float) -> None:
+        """``realtime`` のとき、壁時計がシミュレーション時刻 ``t`` に追いつくまで待つ。
+
+        ADR-0082 §(2): 遅れているときは待たずに基準を ``now - t`` へ付け替える
+        (= 遅れを取り戻すための早送りをしない)。待ちは停止要求で即座に抜ける。
+        """
+        if not self.realtime:
+            return
+        now = time.monotonic()
+        if self._realtime_origin is None:
+            self._realtime_origin = now - t
+            return
+        wait = self._realtime_origin + t - now
+        if wait > 0.0:
+            # 極端に長い待ち (巨大な dt) で OverflowError にならないよう上限で丸める
+            self._stop_event.wait(min(wait, threading.TIMEOUT_MAX))
+        else:
+            self._realtime_origin = now - t
 
     def linearize(
         self,
@@ -1783,6 +1824,8 @@ class Simulator:
                     "rtol": float(self.rtol),
                     "atol": float(self.atol),
                     "dt_base": (None if self.dt_base_hint is None else float(self.dt_base_hint)),
+                    # SPEC-0034 R-3: 真のときだけ書く任意キー (偽のモデルは保存バイト列不変)
+                    **({"realtime": True} if self.realtime else {}),
                 },
                 "blocks": [b.to_dict() for b in self.blocks],
                 "connections": serialize_connections(self.blocks),
@@ -1882,6 +1925,8 @@ class Simulator:
                 rtol=sim_cfg["rtol"],
                 atol=sim_cfg["atol"],
                 dt_base=sim_cfg["dt_base"],
+                # SPEC-0034 R-3: 任意キー (旧モデルには無い)
+                realtime=sim_cfg.get("realtime", False),
             )
         except (ValueError, TypeError) as e:
             raise ModelLoadError(f"Invalid simulator configuration: {e}") from e

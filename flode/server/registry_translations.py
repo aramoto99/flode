@@ -748,6 +748,16 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "入力 0 (x) と 1 (y) のパラメトリックプロット。",
         },
     },
+    "flode.blocks.sinks.ImageDisplay": {
+        "en": {
+            "display_name": "Image Display",
+            "docstring_summary": "Show an (H, W) or (H, W, 3) array as a live image on the block face.",
+        },
+        "ja": {
+            "display_name": "画像表示",
+            "docstring_summary": "(H, W) / (H, W, 3) の配列を画像としてブロック上にライブ表示。",
+        },
+    },
     "flode.blocks.sinks.Terminator": {
         "en": {
             "display_name": "Terminator",

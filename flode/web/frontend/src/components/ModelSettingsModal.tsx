@@ -78,6 +78,8 @@ export function ModelSettingsModal({
   const [dtBaseStr, setDtBaseStr] = useState<string>(
     initial?.dt_base != null ? String(initial.dt_base) : "0.01",
   );
+  // SPEC-0034 R-4: 実時間に同期して進める
+  const [realtime, setRealtime] = useState<boolean>(initial?.realtime === true);
   const [error, setError] = useState<string | null>(null);
 
   const parsePositive = (s: string): number | null => {
@@ -124,7 +126,16 @@ export function ModelSettingsModal({
       }
       dtBase = v;
     }
-    updateSimulatorConfig({ solver, dt, rtol, atol, dt_base: dtBase });
+    updateSimulatorConfig({
+      solver,
+      dt,
+      rtol,
+      atol,
+      dt_base: dtBase,
+      // SPEC-0034 R-3: 偽は undefined にして保存 JSON からキーごと落とす
+      // (= 実時間同期を使わないモデルの保存内容を変えない)
+      realtime: realtime ? true : undefined,
+    });
     onClose();
   };
 
@@ -249,6 +260,22 @@ export function ModelSettingsModal({
               />
             </PropertyRow>
           )}
+          <PropertyRow label={t("model_settings.realtime", "Real time")}>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-700">
+              <input
+                type="checkbox"
+                checked={realtime}
+                onChange={() => setRealtime((v) => !v)}
+                data-testid="model-settings-realtime"
+                className={CHECKBOX_CLS}
+              />
+              <span>{t("model_settings.realtime_sync", "Sync with wall clock")}</span>
+            </label>
+          </PropertyRow>
+          <PropertyHint
+            testId="model-settings-realtime-hint"
+            text={t("model_settings.realtime_hint", "")}
+          />
 
           <SectionDivider
             label={t("model_settings.section.tolerance", "Tolerance")}

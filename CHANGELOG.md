@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.66.0] - 2026-11-14 — 画像表示ブロックと実時間同期 (ADR-0082)
+
+### Added
+
+- **画像表示ブロック `ImageDisplay`** (シンク、SPEC-0034)。shape `(H, W)` (グレー) / `(H, W, 3)` (RGB) の
+  配列信号を、実行中にブロック面へ画像としてライブ表示する (ブロックはリサイズ可、既定 160×120)。値 `0..vmax`
+  (既定 255) を黒〜白に写し、範囲外はクリップ。保持するのは最新 1 コマだけ (Python からは `latest_frame` /
+  `frame_time` / `frame_count` / `plot()`)。それ以外の shape と 1920×1080 画素を超える画像は実行前にエラー
+- **実時間同期**: `Simulator(realtime=True)` / モデル設定ダイアログの「実時間に同期」。シミュレーション時刻
+  1 秒を壁時計 1 秒に合わせて進める。計算が遅れたときは遅れたまま進み、早送りで取り戻さない。待ち中でも
+  停止ボタンは即座に効く。保存ファイルには有効なときだけ `simulator.realtime: true` を書く (schema version は
+  据え置き、既存モデルの保存内容は変わらない)
+- WebSocket に `image_frame` メッセージ (ブロックごと最大 30 fps、大きな画像は 8 MiB/s 以内に間引く、終了・停止・失敗時に最後のコマを必ず送る)、
+  `GET /api/v1/simulations/{id}/results` に `images` (各画像表示ブロックの最後のコマ) を追加
+
 ## [0.65.0] - 2026-11-14 — Python で書いたブロックを左ペインに出して使う (ADR-0081)
 
 ### Added

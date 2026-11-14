@@ -33,7 +33,20 @@ Blocks that consume signals without producing outputs.
    :nosignatures:
 
    flode.blocks.Scope
+   flode.blocks.ImageDisplay
    flode.blocks.Terminator
+
+``ImageDisplay`` shows an image signal — shape ``(H, W)`` (grayscale) or
+``(H, W, 3)`` (RGB) — on its block face in the Web GUI while the simulation
+runs. Values from ``0`` to ``vmax`` (default ``255``) map to black…white;
+values outside are clipped. Images up to 1920×1080 pixels are accepted;
+downscale larger ones first. Only the latest frame is kept
+(``latest_frame``); the GUI updates at most 30 times per second. To watch a
+game or a camera at its natural pace, turn on real-time pacing
+(``Simulator(realtime=True)``, or *Sync with wall clock* in the model
+settings): each step then waits until the wall clock reaches the simulation
+time, and if the computation falls behind it continues from there instead of
+fast-forwarding.
 
 Continuous
 ----------

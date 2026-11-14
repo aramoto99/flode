@@ -46,7 +46,7 @@ from .pythonfunc import PythonFunction
 from .random_source import RandomSource
 from .rounding import Rounding
 from .routing import Demux, From, Goto, Merge, MultiportSwitch, Mux, Switch
-from .sinks import Display, Scope, Terminator, XYGraph
+from .sinks import Display, ImageDisplay, Scope, Terminator, XYGraph
 from .sources import Clock, Constant, PulseGenerator, Ramp, Sine, Step
 from .transport_delay import TransportDelay
 from .userfunc import Fcn
@@ -72,6 +72,7 @@ __all__ = [
     "From",
     "Gain",
     "Goto",
+    "ImageDisplay",
     "Integrator",
     "InterpolationUsingPrelookup",
     "LogicalOperator",

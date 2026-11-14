@@ -51,6 +51,7 @@ import type {
   FailurePayload,
   FlwModel,
   LayoutDict,
+  ImageFrame,
   MaskValuesDict,
   SimulationStatus,
   SimulatorConfig,
@@ -546,6 +547,11 @@ interface AppState {
   replaceScopes: (
     scopes: Record<string, { times: number[]; values: number[][] }>,
   ) => void;
+
+  // ADR-0082 §(1): 画像表示ブロックの最新コマ (block_id -> コマ)。Run 開始でクリア。
+  imageFrames: Record<string, ImageFrame>;
+  // 終端後の一括結果 (`GET /results` の images) で最新コマを補完する。
+  replaceImageFrames: (frames: Record<string, ImageFrame>) => void;
 
   // 受信ハンドラ (WebSocket メッセージから状態に反映)
   handleStreamMessage: (msg: StreamMessage) => void;
@@ -1310,6 +1316,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       status: "running",
       progress: null,
       scopes: {},
+      // SPEC-0034 F-7: 前回の絵を残さない
+      imageFrames: {},
       // ADR-0056 §F3: 次の Run 開始時に直近 failure をクリア + Error tab focus 解除。
       lastFailure: null,
       lastFailureSource: null,
@@ -1391,8 +1399,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ scopes: rebuilt });
   },
 
+  imageFrames: {},
+  replaceImageFrames: (frames) =>
+    set((state) => ({ imageFrames: { ...state.imageFrames, ...frames } })),
+
   handleStreamMessage: (msg) => {
     switch (msg.type) {
+      case "image_frame": {
+        // サーバ側でブロックごと最大 30 fps に間引き済みなので、そのまま反映する
+        const { type: _type, ...frame } = msg;
+        set((state) => ({
+          imageFrames: { ...state.imageFrames, [frame.block_id]: frame },
+        }));
+        break;
+      }
       case "progress":
         // rAF coalescing: 最新 progress のみ保持し 1 フレーム後に反映する
         // (= 毎ステップ届く progress で React 再レンダを煽らない)。

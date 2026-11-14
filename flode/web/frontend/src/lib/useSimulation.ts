@@ -41,6 +41,8 @@ async function backfillScopeResults(simId: string): Promise<void> {
     // fetch 中に次の run が始まっていたら破棄 (新 run のバッファを壊さない)
     if (state.simulationId !== simId || state.status === "running") return;
     state.replaceScopes(results.scopes);
+    // ADR-0082 §(1): 画像表示ブロックの最後のコマも補完する (旧サーバは images 無し)
+    if (results.images) state.replaceImageFrames(results.images);
   } catch (e) {
     // backfill は WS ライブ表示に対する冗長系。失敗してもライブ描画分は
     // 残っているため UI は壊さず、原因調査用にログのみ残す。

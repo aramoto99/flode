@@ -7,23 +7,33 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import dataclasses
 import logging
+import math
 import threading
 import time
 import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 
+from ..blocks.sinks import ImageDisplay
 from ..core.persistence import serialize_t_end
 from ..core.simulator import Simulator
 from ..exceptions import FlodeError, SimulationStillRunningError
 from .errors import build_failure_payload
 
 _logger = logging.getLogger("flode.server.runtime")
+
+#: ADR-0082 §(1): ImageDisplay のコマ配信の最短間隔 [s] (= ブロックごと最大 30 fps)。
+IMAGE_FRAME_MIN_INTERVAL_S: Final[float] = 1.0 / 30.0
+#: ADR-0082 §(1): 画像表示ブロック 1 つあたりの配信量の上限 [byte/s] (生バイト換算)。
+#: 大きなコマは送信間隔をこの上限に収まるまで延ばす (WS queue のメモリと、scope_batch /
+#: progress が重いコマに押し出されるのを抑える)。160×120 RGB なら 30 fps のまま。
+IMAGE_FRAME_MAX_BYTES_PER_S: Final[float] = 8 * 1024 * 1024
 
 
 @dataclasses.dataclass
@@ -75,6 +85,12 @@ class _SimulationRecord:
         self.future: Future[None] | None = None
         # 各 Scope の前回送信済みインデックス (バッチ送信用)
         self._scope_cursors: dict[str, int] = {}
+        # ADR-0082 §(1): 画像表示ブロック (最上位のみ = 記録経路と同じ) と、
+        # ブロックごとの送信済みコマ数・最終送信の壁時計 (間引き用)。
+        self.image_blocks: list[ImageDisplay] = [
+            b for b in simulator.blocks if isinstance(b, ImageDisplay)
+        ]
+        self._image_sent: dict[str, tuple[int, float]] = {}
         # ADR-0056 §B-4: WS 再接続時の terminal メッセージ replay 用。
         # ``_run_in_thread`` の finally で最終 ``completed`` / ``stopped`` / ``failed``
         # メッセージをここに保持し、``SimulationManager.stream`` が再接続時に冒頭で 1
@@ -170,6 +186,7 @@ class SimulationManager:
             if n_total - cursor >= rec.scope_batch_size:
                 self._dispatch_scope_batch(rec, scope, cursor, n_total)
                 rec._scope_cursors[scope.id] = n_total
+        self._dispatch_image_frames(rec, throttle=True)
         # progress イベント (バッチサイズに関わらず毎ステップ送る)。
         # ADR-0042 §論点 3-A: ``t_end`` は ``serialize_t_end`` 経由で
         # ``math.inf → "inf"`` 文字列にする (= wire 形式統一)。
@@ -195,6 +212,28 @@ class SimulationManager:
             if n_total > cursor:
                 self._dispatch_scope_batch(rec, scope, cursor, n_total)
                 rec._scope_cursors[scope.id] = n_total
+
+    def _dispatch_image_frames(self, rec: _SimulationRecord, *, throttle: bool) -> None:
+        """新しいコマがある画像表示ブロックについて ``image_frame`` を送る (ADR-0082 §(1))。
+
+        Args:
+            rec: 対象シミュレーション。
+            throttle: 真なら前回送信から ``IMAGE_FRAME_MIN_INTERVAL_S`` 未満のブロックは
+                送らない (実行中)。偽なら未送信の最新コマを必ず送る (終了時)。
+        """
+        now = time.monotonic()
+        for b in rec.image_blocks:
+            assert b.id is not None
+            sent_count, sent_at = rec._image_sent.get(b.id, (0, -math.inf))
+            if b.frame_count == sent_count:
+                continue
+            if throttle and now - sent_at < image_frame_interval(b):
+                continue
+            payload = image_frame_payload(b)
+            if payload is None:
+                continue
+            rec._image_sent[b.id] = (b.frame_count, now)
+            self._dispatch(rec, {"type": "image_frame", **payload})
 
     def _dispatch_scope_batch(
         self, rec: _SimulationRecord, scope: Any, start: int, end: int
@@ -271,6 +310,11 @@ class SimulationManager:
                 t=rec.state.current_t,
             )
         finally:
+            # SPEC-0034 F-6: 完了 / 停止 / 失敗のいずれでも最後のコマを届ける
+            try:
+                self._dispatch_image_frames(rec, throttle=False)
+            except Exception:  # noqa: BLE001 - terminal メッセージ送出を妨げない
+                _logger.exception("image frame flush failed (simulation_id=%s)", rec.simulation_id)
             rec.state.finished_at = time.time()
             duration = rec.state.finished_at - rec.state.started_at
             terminal: dict[str, Any] = {
@@ -334,11 +378,45 @@ class SimulationManager:
                 "times": list(scope.times),
                 "values": np.asarray(scope.values).tolist(),
             }
+        # ADR-0082 §(1): WS で取りこぼしても終了後に正しい絵になるよう最後のコマを返す
+        images: dict[str, Any] = {}
+        for b in rec.image_blocks:
+            payload = image_frame_payload(b)
+            if payload is not None:
+                images[payload["block_id"]] = payload
         return {
             "simulation_id": sim_id,
             "status": rec.state.status,
             "scopes": scopes,
+            "images": images,
         }
+
+
+def image_frame_interval(block: ImageDisplay) -> float:
+    """そのブロックのコマを送る最短間隔 [s] (30 fps と配信量上限の遅い方、ADR-0082 §(1))。"""
+    frame = block.latest_frame
+    n_bytes = 0 if frame is None else int(frame.nbytes)
+    return max(IMAGE_FRAME_MIN_INTERVAL_S, n_bytes / IMAGE_FRAME_MAX_BYTES_PER_S)
+
+
+def image_frame_payload(block: ImageDisplay) -> dict[str, Any] | None:
+    """画像表示ブロックの最新コマを wire 形式にする。未受信なら ``None`` (ADR-0082 §(1))。
+
+    ``data`` は行優先の uint8 生バイト列 (channels = 1 or 3) の base64。シミュレーション
+    スレッド内 (``_on_step``) か、実行終了後に呼ぶこと (コマの差し替えと競合させない)。
+    """
+    frame = block.latest_frame
+    if frame is None:
+        return None
+    channels = 1 if frame.ndim == 2 else int(frame.shape[2])
+    return {
+        "block_id": block.id,
+        "t": block.frame_time,
+        "height": int(frame.shape[0]),
+        "width": int(frame.shape[1]),
+        "channels": channels,
+        "data": base64.b64encode(np.ascontiguousarray(frame).tobytes()).decode("ascii"),
+    }
 
 
 def _as_scope(b: Any) -> Any:

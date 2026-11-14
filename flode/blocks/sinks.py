@@ -379,6 +379,136 @@ class XYGraph(Block):
         return ax
 
 
+#: ImageDisplay が受理する入力 rank (``(H, W)`` = グレー / ``(H, W, 3)`` = RGB)。
+_IMAGE_CHANNELS_RGB = 3
+_IMAGE_MAX_LEVEL = 255.0
+#: ImageDisplay が受理する最大画素数 (= 1920×1080)。GUI へ毎コマ送るため、
+#: これを超える画像は配信量 (WS queue のメモリ) を守るため実行前に拒否する。
+IMAGE_MAX_PIXELS = 1920 * 1080
+
+
+class ImageDisplay(Block):
+    """配列信号を画像としてブロック面に表示する (SPEC-0034 / ADR-0082)。
+
+    入力は shape ``(H, W)`` (グレースケール) または ``(H, W, 3)`` (RGB) の 1 ポート。
+    値 ``0..vmax`` を輝度 ``0..255`` に写し、範囲外はクリップ、NaN は 0 にする。
+    保持するのは最新 1 コマだけで、uint8 で持つ (履歴は持たない)。Web GUI は実行中に
+    最新コマをブロック面へ描く。Python からは ``latest_frame`` / ``plot()`` で見る。
+
+    Scope 系の duck-type 名 (``times`` / ``values`` / ``labels``) は意図的に持たない
+    (= 数値の時系列配信に乗せない、ADR-0082 §(1))。
+
+    Args:
+        vmax: 輝度 255 に対応する入力値 (default ``255.0``)。``0..1`` の画像なら ``1.0``。
+    """
+
+    # ADR-0079: 任意 shape の入力を受ける sink (output_v は空 tuple)
+    _skip_dual_api_check = True
+
+    def __init__(
+        self,
+        vmax: float = _IMAGE_MAX_LEVEL,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        vmax_f = float(vmax)
+        if not np.isfinite(vmax_f) or vmax_f <= 0.0:
+            raise BlockSpecError(f"ImageDisplay: vmax must be finite and > 0, got {vmax!r}")
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=0)
+        self.vmax = vmax_f
+        self._params = {"vmax": self.vmax}
+        self._latest: npt.NDArray[np.uint8] | None = None
+        self._frame_time: float | None = None
+        self._frame_count = 0
+
+    def _apply_input_shapes(self, shapes: tuple[tuple[int, ...], ...]) -> None:
+        """入力 shape が画像として表示できるかを実行前に検査する (Simulator が呼ぶ)。"""
+        _check_image_shape(self.id, tuple(shapes[0]) if shapes else ())
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.zeros(0)
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return ()
+
+    def reset(self) -> None:
+        self._latest = None
+        self._frame_time = None
+        self._frame_count = 0
+
+    def record_v(self, t: float, u: tuple[npt.NDArray[Any], ...]) -> None:
+        """最新コマを uint8 に変換して保持する (ADR-0081 §論点 5-B の記録経路)。"""
+        frame = np.asarray(u[0], dtype=float)
+        _check_image_shape(self.id, frame.shape)
+        scaled = np.nan_to_num(frame, nan=0.0, posinf=self.vmax, neginf=0.0)
+        # 極端に大きな有限値の掛け算は inf になるだけ (直後に 255 へクリップ)
+        with np.errstate(over="ignore"):
+            scaled = np.clip(scaled * (_IMAGE_MAX_LEVEL / self.vmax), 0.0, _IMAGE_MAX_LEVEL)
+        self._latest = np.rint(scaled).astype(np.uint8)
+        self._frame_time = float(t)
+        self._frame_count += 1
+
+    def record(self, t: float, u: npt.NDArray[Any]) -> None:
+        """スカラ入力だけのモデル (配列信号を通らない経路) では画像にならないので拒否する。"""
+        raise BlockSpecError(
+            f"ImageDisplay {self.id!r}: input must be an image array of shape (H, W) or "
+            f"(H, W, 3), got a scalar signal"
+        )
+
+    @property
+    def latest_frame(self) -> npt.NDArray[np.uint8] | None:
+        """最新コマ (uint8、shape ``(H, W)`` / ``(H, W, 3)``)。未受信なら ``None``。"""
+        return self._latest
+
+    @property
+    def frame_time(self) -> float | None:
+        """最新コマのシミュレーション時刻。未受信なら ``None``。"""
+        return self._frame_time
+
+    @property
+    def frame_count(self) -> int:
+        """この実行で受け取ったコマ数 (``reset`` で 0)。"""
+        return self._frame_count
+
+    def plot(self, ax: Axes | None = None, show: bool = False) -> Any:
+        """最新コマを matplotlib ``imshow`` で描く (CLI / pytest 用)。"""
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+        assert ax is not None
+        if self._latest is not None:
+            cmap = "gray" if self._latest.ndim == 2 else None
+            ax.imshow(self._latest, cmap=cmap, vmin=0, vmax=255)
+        ax.set_axis_off()
+        ax.set_title(self.id or "ImageDisplay")
+        if show:
+            plt.show()
+        return ax
+
+
+def _check_image_shape(block_id: str | None, shape: tuple[int, ...]) -> None:
+    """``(H, W)`` / ``(H, W, 3)`` (H, W >= 1、画素数 ``IMAGE_MAX_PIXELS`` 以下) 以外を拒否する。"""
+    is_gray = len(shape) == 2
+    is_rgb = len(shape) == 3 and shape[2] == _IMAGE_CHANNELS_RGB
+    if not ((is_gray or is_rgb) and shape[0] >= 1 and shape[1] >= 1):
+        raise BlockSpecError(
+            f"ImageDisplay {block_id!r}: input must be an image array of shape (H, W) or "
+            f"(H, W, 3), got shape {shape}"
+        )
+    if shape[0] * shape[1] > IMAGE_MAX_PIXELS:
+        raise BlockSpecError(
+            f"ImageDisplay {block_id!r}: image of {shape[0]}x{shape[1]} pixels exceeds the "
+            f"limit of {IMAGE_MAX_PIXELS} pixels (1920x1080); downscale it first"
+        )
+
+
 class Terminator(Block):
     """入力を消費するだけで何もしない終端ブロック。
 

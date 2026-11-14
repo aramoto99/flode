@@ -68,6 +68,8 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.discrete.DiscreteIntegrator":     { kind: "rect-wide", width: 80, height: 48 },
   // -------- Display は live 数値を大きく表示するため広め --------
   "flode.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 48 },
+  // SPEC-0034 F-5: 画像をブロック面に描くため大きめ (4:3、リサイズ可)
+  "flode.blocks.sinks.ImageDisplay":              { kind: "rect", width: 160, height: 120 },
 
   // -------- v0.35.0: Add (Sum の矩形版) --------
   "flode.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },

@@ -295,6 +295,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "flode.blocks.sinks.Scope": ("sinks", "Scope", "sinks.scope"),
     "flode.blocks.sinks.Display": ("sinks", "Display", "sinks.display"),
     "flode.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
+    # SPEC-0034 / ADR-0082: 配列信号を画像としてブロック面に表示
+    "flode.blocks.sinks.ImageDisplay": ("sinks", "Image Display", "sinks.imagedisplay"),
     "flode.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
     # subsystems
     "flode.subsystems.subsystem.Subsystem": (
