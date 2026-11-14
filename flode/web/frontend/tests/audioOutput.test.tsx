@@ -203,7 +203,7 @@ describe("audio_chunk stream handling", () => {
 });
 
 function entry(message: string, level = "INFO"): RunLogEntry {
-  return { t: 0.25, level, logger: "flode_ws.vizdoom", message };
+  return { t: 0.25, level, logger: "flode_ws.my_blocks", message };
 }
 
 describe("run log", () => {

@@ -188,7 +188,7 @@ export interface RunLogEntry {
   t: number;
   /** ``INFO`` / ``WARNING`` / ``ERROR`` / ``CRITICAL``。 */
   level: string;
-  /** logger 名 (例: ``flode_ws.vizdoom_env``)。 */
+  /** logger 名 (例: ``flode_ws.my_blocks``)。 */
   logger: string;
   message: string;
 }
