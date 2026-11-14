@@ -10,7 +10,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { putFileContent } from "../api/filesApi";
 import { prepareModelForBackend } from "../lib/modelForBackend";
-import { parseToolbarTEnd } from "../lib/timeUtil";
+import {
+  formatToolbarTEnd,
+  parseTEnd,
+  parseToolbarTEnd,
+  UNBOUNDED_SYMBOL,
+} from "../lib/timeUtil";
 import { useSimulation } from "../lib/useSimulation";
 import { updateSimulatorConfig, useAppStore } from "../store/appStore";
 
@@ -135,36 +140,52 @@ export function Toolbar(): JSX.Element {
 // ---------------------------------------------------------------------------
 // StopTimeInput: リファレンスツールのツールバー右側にある Stop Time フィールド相当。
 // ``editingModel.simulator.t_end`` を直接購読 + 編集する入力フィールド。
-// ADR-0042 §論点 5-A: ``"inf"`` (case-insensitive) を受け入れて Stop ボタンまで
-// 走らせる unbounded run を実現する。不正値 (空 / NaN / 負 / 未対応 string) は
-// store に書かず draft をリセット。autosave は applyEditingModel 内で立つ。
 // ---------------------------------------------------------------------------
+
 interface StopTimeInputProps {
   disabled: boolean;
 }
 
-function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
+/**
+ * ツールバーの終了時刻 (Stop Time) 入力欄。
+ *
+ * ADR-0042 §論点 5-A の unbounded run: ``"inf"`` (case-insensitive) または
+ * **空欄**で確定すると ``"inf"`` (停止ボタンまで実行、2026-11-14)。unbounded 時は
+ * 空欄 + 灰色 placeholder ``∞`` で表示する。不正値 (NaN / 負 / 未対応 string) は
+ * store に書かず draft をリセット。Esc で編集を破棄して確定済みの値に戻す
+ * (= 誤って消したときの逃げ道)。autosave は applyEditingModel 内で立つ。
+ *
+ * Toolbar 本体は React Flow / QueryClient に依存するため、単体テスト用に export。
+ */
+export function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
   const { t } = useTranslation();
   const tEnd = useAppStore((s) => s.editingModel?.simulator.t_end);
   const [draft, setDraft] = useState<string>("");
 
-  // store の値が変わったら draft を同期 (= 別タブで開いたモデル切替時 etc.)
+  // store の値が変わったら draft を同期 (= 別タブで開いたモデル切替時 etc.)。
+  // unbounded ("inf") は空欄表示 + placeholder "∞" (formatToolbarTEnd 参照)。
   useEffect(() => {
-    if (tEnd === undefined) {
-      setDraft("");
-    } else {
-      setDraft(String(tEnd));
-    }
+    setDraft(formatToolbarTEnd(tEnd));
   }, [tEnd]);
 
   const commit = (): void => {
+    // モデル未選択では書き込み先が無い (空欄 → "inf" を store に送らない)
+    if (tEnd === undefined) return;
     const parsed = parseToolbarTEnd(draft);
     if (parsed === null) {
       // 不正値は draft をリセット (= 旧値を表示し直す)
-      setDraft(tEnd === undefined ? "" : String(tEnd));
+      setDraft(formatToolbarTEnd(tEnd));
       return;
     }
-    if (parsed !== tEnd) updateSimulatorConfig({ t_end: parsed });
+    // unbounded 同士 ("inf" と防御的に来うる Infinity) は同値扱いで書き換えない
+    const same =
+      parsed === tEnd || (parseTEnd(parsed).isUnbounded && parseTEnd(tEnd).isUnbounded);
+    if (!same) {
+      updateSimulatorConfig({ t_end: parsed });
+    } else {
+      // "INF" → "inf" 等、値が同じでも表示を正規化する (useEffect は発火しない)
+      setDraft(formatToolbarTEnd(parsed));
+    }
   };
 
   return (
@@ -183,15 +204,21 @@ function StopTimeInput({ disabled }: StopTimeInputProps): JSX.Element {
         type="text"
         inputMode="decimal"
         value={draft}
+        // モデル未選択 (tEnd undefined) では ∞ を見せない
+        placeholder={tEnd === undefined ? undefined : UNBOUNDED_SYMBOL}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            // 編集を破棄して確定済みの値に戻す。focus は残すので、この後
+            // blur しても draft == 確定値 のため commit は何も変えない。
+            setDraft(formatToolbarTEnd(tEnd));
           }
         }}
-        className="h-6 w-16 rounded border border-slate-300 px-1.5 text-right font-mono text-[11px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+        className="h-6 w-16 rounded border border-slate-300 px-1.5 text-right font-mono text-[11px] tabular-nums text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
         data-testid="toolbar-stop-time"
         aria-label={t("toolbar.stop_time")}
       />

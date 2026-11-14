@@ -8,6 +8,9 @@
 
 import type { TEnd } from "../types/api";
 
+/** 終了時刻なし (unbounded) を画面に出すときの記号 (Toolbar placeholder / StatusBar)。 */
+export const UNBOUNDED_SYMBOL = "∞";
+
 export interface ParsedTEnd {
   /** ``Number.POSITIVE_INFINITY`` (unbounded) または有限正値 */
   value: number;
@@ -46,16 +49,45 @@ export function parseTEnd(raw: TEnd): ParsedTEnd {
  *
  * ADR-0042 §論点 5-A: ``"inf"`` (case-insensitive、前後空白許容) は受け入れる。
  * ``"+inf"`` / ``"infinity"`` / ``"∞"`` 等は **拒否** (= backend の ``parse_t_end``
- * と完全一致)。空文字や不正値は ``null`` を返し、呼び出し側で「入力受け付けず」
- * 表示する。正の有限数は ``number``、``"inf"`` (case-insensitive) は文字列
- * リテラル ``"inf"`` を返す。
+ * と完全一致)。**空欄 (空白のみ含む) は ``"inf"``** = 終了時刻なし
+ * (2026-11-14 ユーザー要望: Stop ボタンを押すまで実行)。不正値は ``null`` を
+ * 返し、呼び出し側で「入力受け付けず」表示する。正の有限数は ``number``、
+ * ``"inf"`` / 空欄は文字列リテラル ``"inf"`` を返す。
  */
 export function parseToolbarTEnd(input: string): TEnd | null {
   const trimmed = input.trim();
-  if (trimmed.length === 0) return null;
+  if (trimmed.length === 0) return "inf";
   if (trimmed.toLowerCase() === "inf") return "inf";
   const n = Number(trimmed);
   if (!Number.isFinite(n)) return null;
   if (n <= 0) return null;
   return n;
+}
+
+/**
+ * ``t_end`` を Toolbar の Stop Time 入力欄に表示する文字列に変換する。
+ *
+ * ``parseToolbarTEnd`` の逆変換。unbounded (``"inf"``) は **空文字** で表示し、
+ * 入力欄の placeholder (``∞``) を見せる (= 空欄 = 終了時刻なし の対応を
+ * 見た目と操作で一致させる)。モデル未選択 (``undefined``) も空文字。
+ *
+ * @param tEnd store の ``simulator.t_end``。未選択時は ``undefined``。
+ * @returns 入力欄に置く文字列。
+ */
+export function formatToolbarTEnd(tEnd: TEnd | undefined): string {
+  if (tEnd === undefined) return "";
+  if (parseTEnd(tEnd).isUnbounded) return "";
+  return String(tEnd);
+}
+
+/**
+ * ``t_end`` を読み取り専用の表示 (StatusBar 等) 用の文字列に変換する。
+ *
+ * unbounded は ``UNBOUNDED_SYMBOL`` (``∞``)、有限値はそのまま。
+ *
+ * @param tEnd store の ``simulator.t_end``。
+ * @returns 表示文字列。
+ */
+export function formatTEndLabel(tEnd: TEnd): string {
+  return parseTEnd(tEnd).isUnbounded ? UNBOUNDED_SYMBOL : String(tEnd);
 }

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { resolveBlocksAtPath } from "../lib/pathResolver";
-import { parseTEnd } from "../lib/timeUtil";
+import { formatTEndLabel, parseTEnd } from "../lib/timeUtil";
 import { useAppStore } from "../store/appStore";
 
 export function StatusBar(): JSX.Element {
@@ -137,7 +137,7 @@ export function StatusBar(): JSX.Element {
           </span>
           <span>
             <span className="text-slate-500">{t("statusbar.label.t_end")}</span>{" "}
-            <span className="font-mono">{stats.tEnd}</span>
+            <span className="font-mono">{formatTEndLabel(stats.tEnd)}</span>
           </span>
           <span>
             <span className="text-slate-500">{t("statusbar.label.dt")}</span>{" "}

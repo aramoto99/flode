@@ -2,7 +2,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseTEnd, parseToolbarTEnd } from "../src/lib/timeUtil";
+import {
+  formatTEndLabel,
+  formatToolbarTEnd,
+  parseTEnd,
+  parseToolbarTEnd,
+  UNBOUNDED_SYMBOL,
+} from "../src/lib/timeUtil";
 
 describe("parseTEnd (wire/store value)", () => {
   it("returns finite value for positive number", () => {
@@ -43,12 +49,42 @@ describe("parseToolbarTEnd (user input)", () => {
     expect(parseToolbarTEnd("∞")).toBeNull();
   });
 
-  it("rejects empty / NaN / negative / zero", () => {
-    expect(parseToolbarTEnd("")).toBeNull();
-    expect(parseToolbarTEnd("   ")).toBeNull();
+  it("treats empty / whitespace-only as 'inf' (= 空欄は終了時刻なし)", () => {
+    expect(parseToolbarTEnd("")).toBe("inf");
+    expect(parseToolbarTEnd("   ")).toBe("inf");
+  });
+
+  it("rejects NaN / negative / zero / garbage", () => {
     expect(parseToolbarTEnd("abc")).toBeNull();
     expect(parseToolbarTEnd("-1")).toBeNull();
     expect(parseToolbarTEnd("0")).toBeNull();
     expect(parseToolbarTEnd("NaN")).toBeNull();
+  });
+});
+
+describe("formatToolbarTEnd (display in input)", () => {
+  it("shows finite value as-is", () => {
+    expect(formatToolbarTEnd(10)).toBe("10");
+    expect(formatToolbarTEnd(0.5)).toBe("0.5");
+  });
+
+  it("shows unbounded as empty string (placeholder ∞ が見える)", () => {
+    expect(formatToolbarTEnd("inf")).toBe("");
+    expect(formatToolbarTEnd(Number.POSITIVE_INFINITY)).toBe("");
+  });
+
+  it("shows undefined (no model) as empty string", () => {
+    expect(formatToolbarTEnd(undefined)).toBe("");
+  });
+
+  it("formatTEndLabel shows ∞ for unbounded (StatusBar)", () => {
+    expect(formatTEndLabel("inf")).toBe(UNBOUNDED_SYMBOL);
+    expect(formatTEndLabel(Number.POSITIVE_INFINITY)).toBe(UNBOUNDED_SYMBOL);
+    expect(formatTEndLabel(10)).toBe("10");
+  });
+
+  it("round-trips with parseToolbarTEnd", () => {
+    expect(parseToolbarTEnd(formatToolbarTEnd("inf"))).toBe("inf");
+    expect(parseToolbarTEnd(formatToolbarTEnd(10))).toBe(10);
   });
 });

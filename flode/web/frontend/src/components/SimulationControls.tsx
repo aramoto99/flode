@@ -6,7 +6,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { parseTEnd } from "../lib/timeUtil";
+import { parseTEnd, UNBOUNDED_SYMBOL } from "../lib/timeUtil";
 import { useAppStore } from "../store/appStore";
 
 export function SimulationControls(_props: {
@@ -81,7 +81,7 @@ export function SimulationControls(_props: {
             className={`font-mono text-[10px] tabular-nums text-slate-600 ${parsedTEnd.isUnbounded ? "ml-auto" : ""}`}
           >
             {parsedTEnd.isUnbounded
-              ? `t=${progress.current_t.toFixed(3)} / ∞`
+              ? `t=${progress.current_t.toFixed(3)} / ${UNBOUNDED_SYMBOL}`
               : `t=${progress.current_t.toFixed(3)} / ${parsedTEnd.value.toFixed(3)}`}
           </span>
         </>

@@ -113,7 +113,7 @@
   "toolbar.run": "Run Simulation (F9 / Ctrl+T)",
   "toolbar.stop": "Stop Simulation (Shift+F9 / Ctrl+Shift+T)",
   "toolbar.stop_time": "Stop time",
-  "toolbar.stop_time_tooltip": "Simulation stop time (s)",
+  "toolbar.stop_time_tooltip": "Simulation stop time (s). Leave empty to run until you press Stop",
   "simulation.stop_failed": "Stop request failed: {{message}}",
   "palette.search": "Search blocks…",
   "palette.loading": "Loading palette...",

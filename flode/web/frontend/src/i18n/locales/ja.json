@@ -113,7 +113,7 @@
   "toolbar.run": "シミュレーション実行 (F9 / Ctrl+T)",
   "toolbar.stop": "停止 (Shift+F9 / Ctrl+Shift+T)",
   "toolbar.stop_time": "終了時刻",
-  "toolbar.stop_time_tooltip": "シミュレーション終了時刻 (秒)",
+  "toolbar.stop_time_tooltip": "シミュレーション終了時刻 (秒)。空欄なら停止ボタンを押すまで実行",
   "simulation.stop_failed": "停止要求が失敗しました: {{message}}",
   "palette.search": "ブロックを検索…",
   "palette.loading": "パレットを読み込み中...",
