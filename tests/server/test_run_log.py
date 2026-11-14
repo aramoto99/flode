@@ -22,6 +22,8 @@ from flode.server.run_log import (
 from flode.server.runtime import SimulationManager
 
 _user_logger = logging.getLogger("flode_ws.demo")
+#: 実行スレッドの終わりを待つ上限 (超えたら future.result が TimeoutError で失敗する)
+_RUN_TIMEOUT_SEC = 10.0
 
 
 class _Talker(Block):
@@ -77,6 +79,39 @@ def test_block_logs_are_streamed_and_returned() -> None:
     assert messages[-1]["type"] == "completed"
     assert [e["message"] for e in results["logs"]] == ["picked up armor", "low health"]
     assert results["logs_dropped"] == 0
+
+
+def test_stream_started_after_the_run_finished_still_gets_every_message() -> None:
+    """実行がイベントループより先に終わっても、最初の接続ではキューの中身を全部受け取る。
+
+    送信は ``run_coroutine_threadsafe`` で予約されるだけなので、ループが回るまでキューは
+    空のまま。そこで「終端済み + キューが空」を再接続とみなすと完了だけを返して終わり、
+    ログや Scope のデータを取りこぼしていた (速い実行で CI だけ失敗)。
+    """
+    manager = SimulationManager()
+
+    async def go() -> list[dict[str, Any]]:
+        sim_id = manager.start(
+            model_id="<inline>",
+            simulator=_model(),
+            loop=asyncio.get_running_loop(),
+            scope_batch_size=10,
+        )
+        # ループを止めたまま (= 予約された送信を処理させずに) 実行スレッドの終わりを待つ。
+        # Future の完了 = 完了メッセージの予約 (finally) まで済んだ状態
+        future = manager._records[sim_id].future
+        assert future is not None
+        future.result(timeout=_RUN_TIMEOUT_SEC)
+        return [m async for m in manager.stream(sim_id)]
+
+    try:
+        messages = asyncio.run(go())
+    finally:
+        manager.shutdown()
+    types = [m["type"] for m in messages]
+    assert types.count("log") == 2
+    assert "scope_batch" in types
+    assert types[-1] == "completed"
 
 
 def _handler(sink: list[dict[str, Any]] | None = None) -> RunLogHandler:

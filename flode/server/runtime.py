@@ -106,6 +106,10 @@ class _SimulationRecord:
         # メッセージをここに保持し、``SimulationManager.stream`` が再接続時に冒頭で 1
         # 回 yield してから queue 処理に入る。
         self.last_terminal_msg: dict[str, Any] | None = None
+        # ある stream が queue から terminal を取り出したか (= 以降の接続は再接続)。
+        # 「terminal 済み + queue が空」では判定しない: 送信は event loop への予約なので、
+        # loop が回る前に実行が終わると queue はまだ空で、初回接続を再接続と誤認する。
+        self.terminal_delivered = False
 
 
 class SimulationManager:
@@ -368,32 +372,35 @@ class SimulationManager:
                 # ADR-0056 §B-1: 失敗時のみ構造化フィールドをマージ。
                 terminal.update(failure_payload)
             # ADR-0056 §B-4: replay 用に保持 (= 再接続クライアントが冒頭で受信できる)。
-            # code-reviewer MUST-2: dispatch を先に行ってから last_terminal_msg をセット
-            # することで、stream() の replay 判定 (last_terminal_msg is not None and
-            # queue.empty()) が「dispatch 前 / queue 未投入」窓で誤発火するレースを
-            # 防ぐ (= dispatch 後は queue に入っているので queue.empty() が False、
-            # 通常 drain ルートへ確実に流れる)。
-            self._dispatch(rec, terminal)
+            # replay するのは、ある stream が queue から terminal を取り出した後だけ
+            # (``terminal_delivered``)。_dispatch は loop への予約なので、ここで
+            # queue.empty() を見ても投入済みとは限らない。保持を予約より先にするのは、
+            # terminal を取り出した直後の再接続が replay を確実に受け取れるようにするため。
             rec.last_terminal_msg = terminal
+            self._dispatch(rec, terminal)
 
     async def stream(self, sim_id: str) -> AsyncIterator[dict[str, Any]]:
         with self._lock:
             if sim_id not in self._records:
                 raise FlodeError(f"Unknown simulation_id: {sim_id!r}")
             rec = self._records[sim_id]
-        # ADR-0056 §B-4: 終端済みシミュレーションへの **再接続** (= queue 既消費)
-        # 時、保存済みの terminal を 1 回 yield して即クローズ。失敗詳細を
-        # 取り損ねないことが目的。初回接続で queue にメッセージが残っている
-        # ケースは下の通常ループに任せる (= progress / scope_batch / 最後に
-        # terminal を順に yield)。
-        if rec.last_terminal_msg is not None and rec.queue.empty():
+        # ADR-0056 §B-4: 前の接続が terminal を受け取った後の **再接続** では、
+        # 保存済みの terminal を 1 回 yield して即クローズ。失敗詳細を取り損ねない
+        # ことが目的。それ以外 (初回接続や、terminal を受け取る前に切れた接続の
+        # 再接続) は、実行が終わっていても下の通常ループで queue を順に yield する
+        # (= progress / scope_batch / log / 最後に terminal)。
+        if rec.terminal_delivered and rec.last_terminal_msg is not None:
             yield dict(rec.last_terminal_msg)
             return
         terminal_types = {"completed", "stopped", "failed"}
         while True:
             msg = await rec.queue.get()
+            is_terminal = msg.get("type") in terminal_types
+            if is_terminal:
+                # yield の後に呼び出し側が generator を閉じても記録が残るよう先に立てる
+                rec.terminal_delivered = True
             yield msg
-            if msg.get("type") in terminal_types:
+            if is_terminal:
                 break
 
     def get_results(self, sim_id: str) -> dict[str, Any]:
