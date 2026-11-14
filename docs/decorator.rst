@@ -162,7 +162,8 @@ workspace (see :doc:`user_blocks`):
 - ``choices={"mode": ("abs", "square")}``: parameters shown as a drop-down.
   The key must be a parameter, the values distinct non-empty strings, and the
   default must be one of them.
-- ``param_descriptions={"gain": "Multiplier"}``: parameter descriptions. They
+- ``param_descriptions={"gain": "Multiplier"}``: parameter descriptions. Each
+  value is a string or, like ``display_name``, ``{"ja": ..., "en": ...}``. They
   override the ``Args:`` section of the docstring; the first docstring line is
   the block description unless ``description`` is given.
 

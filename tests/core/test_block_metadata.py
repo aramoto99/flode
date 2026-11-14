@@ -91,11 +91,20 @@ class TestParamDescriptions:
     def test_valid(self) -> None:
         assert validate_param_descriptions({"k": "Gain"}, ["k", "mode"], owner="B") == {"k": "Gain"}
 
+    def test_language_map_is_copied(self) -> None:
+        source = {"ja": "ゲイン", "en": "Gain"}
+        result = validate_param_descriptions({"k": source}, ["k"], owner="B")
+        assert result == {"k": {"ja": "ゲイン", "en": "Gain"}}
+        assert result["k"] is not source
+
     @pytest.mark.parametrize(
         ("bad", "match"),
         [
             ({"gain": "x"}, "'gain', which is not a parameter"),
             ({"k": 1}, r"param_descriptions\['k'\]"),
+            ({"k": {}}, r"param_descriptions\['k'\]"),
+            ({"k": {"ja": " "}}, r"param_descriptions\['k'\]"),
+            ({"k": {"ja": 1}}, r"param_descriptions\['k'\]"),
             (["k"], "must be a mapping"),
         ],
     )

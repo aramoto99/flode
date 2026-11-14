@@ -69,6 +69,9 @@ class ResolvedMetadata:
     category: str | None
     choices: Mapping[str, tuple[str, ...]]
     param_descriptions: Mapping[str, str]
+    #: 言語別に宣言された引数の説明 (引数名 → {言語: 説明})。``param_descriptions`` には
+    #: その ``en`` (無ければ最初の値) が入る
+    param_descriptions_i18n: Mapping[str, Mapping[str, str]]
     input_names: tuple[str, ...]
     output_names: tuple[str, ...]
 
@@ -288,9 +291,15 @@ def resolve_metadata(
 
     # docstring の Args: は t / u 等の引数以外も書くので、引数名に一致するものだけ採る
     descriptions = {k: v for k, v in doc_args.items() if k in params}
+    descriptions_i18n: dict[str, dict[str, str]] = {}
     explicit = getattr(cls, "block_param_descriptions", None)
     if explicit is not None:
-        descriptions.update(validate_param_descriptions(explicit, params, owner=owner))
+        for pname, text in validate_param_descriptions(explicit, params, owner=owner).items():
+            if isinstance(text, str):
+                descriptions[pname] = text
+            else:
+                descriptions[pname] = text.get(_FALLBACK_LOCALE, next(iter(text.values())))
+                descriptions_i18n[pname] = dict(text)
 
     return ResolvedMetadata(
         display_name=display_name,
@@ -301,6 +310,7 @@ def resolve_metadata(
         category=category,
         choices=choices,
         param_descriptions=descriptions,
+        param_descriptions_i18n=descriptions_i18n,
         input_names=_resolve_port_names(cls, "block_input_names", "input_names", n_inputs),
         output_names=_resolve_port_names(cls, "block_output_names", "output_names", n_outputs),
     )

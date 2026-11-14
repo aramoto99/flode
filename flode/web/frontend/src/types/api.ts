@@ -187,6 +187,8 @@ export interface BlockParamSpec {
   has_default: boolean;
   default: unknown;
   description: string;
+  /** 言語別の説明 (ユーザーブロックが ``{"ja": ..., "en": ...}`` で宣言したときだけ)。 */
+  description_i18n?: Partial<Record<Locale, string>>;
   // ADR-0039 follow-up (v2.0.3): block class が ``_param_enums`` で
   // 許容値を宣言している場合、ParameterPanel が ``<select>`` で render する。
   // null / 未指定 (= キー不在) のとき従来 ``<input>``。

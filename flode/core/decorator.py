@@ -132,7 +132,7 @@ def block(
     display_name: str | Mapping[str, str] | None = None,
     description: str | Mapping[str, str] | None = None,
     choices: Mapping[str, Sequence[str]] | None = None,
-    param_descriptions: Mapping[str, str] | None = None,
+    param_descriptions: Mapping[str, str | Mapping[str, str]] | None = None,
 ) -> Any:
     """関数または class から ``Block`` サブクラスを生成する。
 
@@ -182,7 +182,8 @@ def block(
         choices: 選択肢を持つパラメータの宣言 (パラメータ名 → 候補文字列の列)。
             Inspector で select になる。候補は空でない重複なしの文字列列で、
             既定値は候補に含まれること。``block_choices`` (値は tuple) になる。
-        param_descriptions: パラメータ名 → 説明文。``block_param_descriptions`` になる。
+        param_descriptions: パラメータ名 → 説明文。説明文は文字列、または ``display_name``
+            と同じ言語コード → 文字列の Mapping。``block_param_descriptions`` になる。
 
     Returns:
         ``Block`` のサブクラス。インスタンス化はキーワード引数のみ
@@ -273,7 +274,7 @@ def _publish_metadata(
     display_name: str | Mapping[str, str] | None,
     description: str | Mapping[str, str] | None,
     choices: Mapping[str, Sequence[str]] | None,
-    param_descriptions: Mapping[str, str] | None,
+    param_descriptions: Mapping[str, str | Mapping[str, str]] | None,
     publish_input_names: bool,
     publish_output_names: bool,
 ) -> None:

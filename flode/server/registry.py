@@ -64,6 +64,8 @@ class ParamSpec:
     has_default: bool = False
     description: str = ""
     enum_values: list[str] | None = None
+    #: 言語別の説明 (ユーザーブロックが ``{"ja": ..., "en": ...}`` で宣言した場合だけ)
+    description_i18n: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -549,19 +551,18 @@ def _python_spec_payload(spec: Any) -> dict[str, Any]:
                 json_default = to_json_value(default)
             except Exception:  # noqa: BLE001 - registry と同じ best-effort fallback
                 json_default = None
-        params.append(
-            asdict(
-                ParamSpec(
-                    name=name,
-                    type=_format_annotation(
-                        ptype if ptype is not None else inspect.Parameter.empty
-                    ),
-                    has_default=not required,
-                    default=json_default,
-                    enum_values=None,
-                )
+        param = asdict(
+            ParamSpec(
+                name=name,
+                type=_format_annotation(ptype if ptype is not None else inspect.Parameter.empty),
+                has_default=not required,
+                default=json_default,
+                enum_values=None,
             )
         )
+        # 言語別の説明はユーザーブロックだけの項目。PythonFunction の応答形は変えない
+        param.pop("description_i18n", None)
+        params.append(param)
     return {
         "resolved": True,
         "func_name": spec.func_name,
@@ -925,6 +926,7 @@ def build_user_block_metadata(info: UserBlockInfo) -> BlockMetadata:
                 has_default=True,
                 description=p.description,
                 enum_values=list(p.choices) if p.choices is not None else None,
+                description_i18n=dict(p.description_i18n),
             )
             for p in info.params
         ],
@@ -967,6 +969,8 @@ def metadata_to_dict(
                 # ADR-0039 follow-up (v0.15.0): enum 候補が指定されている param のみ
                 # 流す。``None`` のときキー自体を出さず、payload を膨らませない。
                 **({"enum_values": p.enum_values} if p.enum_values is not None else {}),
+                # 言語別の説明は宣言されたときだけ出す (組み込みブロックの payload は不変)
+                **({"description_i18n": p.description_i18n} if p.description_i18n else {}),
             }
             for p in meta.params_spec
         ],

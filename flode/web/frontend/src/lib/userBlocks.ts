@@ -11,6 +11,7 @@
 
 import type {
   BlockMetadata,
+  BlockParamSpec,
   BlockRegistryResponse,
   BlockSourceInfo,
   BlockSourceKind,
@@ -158,6 +159,24 @@ export function userBlockDescription(block: BlockMetadata, lang: Locale): string
   return (
     cleanServerText(block.docstring_summary_i18n?.[lang], MAX_DESCRIPTION_CHARS) ||
     cleanServerText(block.docstring_summary, MAX_DESCRIPTION_CHARS)
+  );
+}
+
+/**
+ * ユーザーブロックの引数の説明 (整形済み、無ければ ``""``)。``description_i18n[lang]`` →
+ * ``description`` の順 (ブロックの説明と同じ規則)。
+ *
+ * @param spec - registry の引数 1 つ (未定義なら ``""``)。
+ * @param lang - 表示言語。
+ * @returns 説明文。
+ */
+export function userParamDescription(
+  spec: BlockParamSpec | undefined,
+  lang: Locale,
+): string {
+  return (
+    cleanServerText(spec?.description_i18n?.[lang], MAX_DESCRIPTION_CHARS) ||
+    cleanServerText(spec?.description, MAX_DESCRIPTION_CHARS)
   );
 }
 

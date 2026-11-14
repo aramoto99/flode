@@ -163,10 +163,14 @@ class TestMetadataValidation:
         with pytest.raises(BlockSpecError, match="'gain'"):
             make(param_descriptions={"gain": "x"})
 
-    @pytest.mark.parametrize("bad", [{"k": 1}, ["k"], {"k": {"ja": "x"}}])
-    def test_param_descriptions_values_must_be_str(self, bad) -> None:
+    @pytest.mark.parametrize("bad", [{"k": 1}, ["k"], {"k": {"ja": ""}}, {"k": {}}])
+    def test_param_descriptions_values_must_be_str_or_language_map(self, bad) -> None:
         with pytest.raises(BlockSpecError, match="param_descriptions"):
             _function_form(param_descriptions=bad)
+
+    def test_param_descriptions_accept_language_map(self) -> None:
+        cls = _function_form(param_descriptions={"k": {"ja": "ゲイン", "en": "Gain"}})
+        assert cls.block_param_descriptions == {"k": {"ja": "ゲイン", "en": "Gain"}}
 
     def test_choices_are_copied_not_aliased(self) -> None:
         options = ["fast", "slow"]

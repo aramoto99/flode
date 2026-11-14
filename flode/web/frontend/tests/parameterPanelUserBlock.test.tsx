@@ -34,6 +34,14 @@ const USER_META: BlockMetadata = {
       description: "Number of samples\nin the window.",
     },
     {
+      name: "gain",
+      type: "float",
+      has_default: true,
+      default: 1,
+      description: "Output gain.",
+      description_i18n: { ja: "出力のゲイン", en: "Output gain (en)." },
+    },
+    {
       name: "method",
       type: "str",
       has_default: true,
@@ -119,6 +127,18 @@ describe("ParameterPanel: user block descriptions and choices", () => {
     // 見出し 2 行目に表示名と説明 (整形済み)
     const summary = screen.getByTestId("block-header-user-summary");
     expect(summary.textContent).toBe("Moving average — Average of the last n samples.");
+  });
+
+  it("picks the language-specific parameter description for the UI language", async () => {
+    useAppStore.setState({
+      editingModel: model(USER_TYPE, { n: 4, method: "mean", gain: 1 }),
+      editingPath: [],
+      selectedNodeId: "B1",
+    });
+    renderPanel();
+    // テストの i18n は言語未設定 = "en"
+    const desc = await screen.findByTestId("param-desc-gain");
+    expect(desc.textContent).toBe("Output gain (en).");
   });
 
   it("renders choices with the select, keeping raw values and cleaning labels", async () => {

@@ -138,19 +138,23 @@ def validate_choices(
 
 def validate_param_descriptions(
     descriptions: Any, param_names: Iterable[str], *, owner: str
-) -> dict[str, str]:
+) -> dict[str, str | dict[str, str]]:
     """パラメータの説明 (パラメータ名 → 説明文) を検証する。
 
+    説明文は ``str``、または ``display_name`` / ``description`` と同じ言語コード → ``str``
+    の Mapping (``{"ja": ..., "en": ...}``、Inspector が表示言語で選ぶ)。
+
     Args:
-        descriptions: パラメータ名 → ``str`` の Mapping。
+        descriptions: パラメータ名 → 説明文の Mapping。
         param_names: ブロックのパラメータ名。
         owner: エラーメッセージに出すブロック名。
 
     Returns:
-        入力の ``dict`` コピー。
+        入力の ``dict`` コピー (言語別の Mapping も ``dict`` にコピーする)。
 
     Raises:
-        BlockSpecError: Mapping でない / キーが ``param_names`` に無い / 値が ``str`` でない。
+        BlockSpecError: Mapping でない / キーが ``param_names`` に無い / 値が ``str`` でも
+            言語別の Mapping (空でない ``str`` → 空でない ``str``) でもない。
     """
     if not isinstance(descriptions, Mapping):
         raise BlockSpecError(
@@ -158,15 +162,23 @@ def validate_param_descriptions(
             f"str, got {type(descriptions).__name__}"
         )
     names = list(param_names)
+    validated: dict[str, str | dict[str, str]] = {}
     for pname, text in descriptions.items():
         if pname not in names:
             raise BlockSpecError(
                 f"param_descriptions of {owner!r} names {pname!r}, which is not a "
                 f"parameter; parameters: {names}"
             )
-        if not isinstance(text, str):
+        if isinstance(text, str):
+            validated[pname] = text
+        elif isinstance(text, Mapping):
+            validated[pname] = validate_text(
+                text, field=f"param_descriptions[{pname!r}]", owner=owner
+            )
+        else:
             raise BlockSpecError(
-                f"param_descriptions[{pname!r}] of {owner!r} must be a str, "
+                f"param_descriptions[{pname!r}] of {owner!r} must be a str or a mapping of "
+                f'language code to str (e.g. {{"ja": ..., "en": ...}}), '
                 f"got {type(text).__name__}"
             )
-    return dict(descriptions)
+    return validated

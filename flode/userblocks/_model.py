@@ -102,7 +102,9 @@ class UserParamSpec:
         type: 型の表示ラベル (注釈なしは ``"any"``)。
         default: JSON 往復済みの既定値 (パレットから置いたときに entry に書かれる値)。
         description: 引数の説明 (明示 ``param_descriptions`` > docstring ``Args:``)。
+            言語別に宣言された場合は ``en`` (無ければ最初の値)。
         choices: 選択肢 (宣言が無ければ ``None``)。
+        description_i18n: 言語別に宣言された説明 (``{"ja": ..., "en": ...}``、無ければ空)。
     """
 
     name: str
@@ -110,6 +112,7 @@ class UserParamSpec:
     default: Any
     description: str = ""
     choices: tuple[str, ...] | None = None
+    description_i18n: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

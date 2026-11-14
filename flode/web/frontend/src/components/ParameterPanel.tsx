@@ -28,7 +28,6 @@ import { indexRegistry } from "../lib/portShapeValidate";
 import { isPlaceholderType, removedParamNames } from "../lib/userBlockModel";
 import {
   cleanServerText,
-  MAX_DESCRIPTION_CHARS,
   MAX_PATH_CHARS,
   stripBidiControls,
 } from "../lib/untrustedText";
@@ -38,6 +37,7 @@ import {
   toLocale,
   userBlockDescription,
   userBlockDisplayName,
+  userParamDescription,
 } from "../lib/userBlocks";
 import {
   toggleBlockFlipped,
@@ -215,7 +215,7 @@ function UserBlockSummary({ block }: { block: BlockMetadata }): JSX.Element {
 // ---------------------------------------------------------------------------
 
 function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: registryData } = useQuery({
     queryKey: BLOCKS_REGISTRY_QUERY_KEY,
     queryFn: listBlockMetadata,
@@ -458,9 +458,10 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             const paramSpec = blockMeta?.params_spec.find((p) => p.name === k);
             const enumValues = paramSpec?.enum_values;
             // ADR-0081 §7: パラメータの説明 (ユーザーブロックだけ。行の下に小さく出す)
+            // (言語別に宣言されていれば表示言語のものを選ぶ)
             const paramDescription =
               userMeta !== undefined
-                ? cleanServerText(paramSpec?.description, MAX_DESCRIPTION_CHARS)
+                ? userParamDescription(paramSpec, toLocale(i18n?.language))
                 : "";
             // SPEC-0028 Q6 (security MUST-1 対応): Subsystem 内部の dtype 宣言は
             // 未対応 (float64 island、backend が build 時に拒否) — 非 root スコープ

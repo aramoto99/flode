@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   据え置き、既存モデルの保存内容は変わらない)
 - WebSocket に `image_frame` メッセージ (ブロックごと最大 30 fps、大きな画像は 8 MiB/s 以内に間引く、終了・停止・失敗時に最後のコマを必ず送る)、
   `GET /api/v1/simulations/{id}/results` に `images` (各画像表示ブロックの最後のコマ) を追加
+- ユーザーブロックの引数の説明 (`param_descriptions` / `block_param_descriptions`) を `display_name` と同じく
+  `{"ja": ..., "en": ...}` で書けるようにした。Inspector が表示言語のものを出す (従来の文字列はそのまま)。
+  REST `params_spec[]` に `description_i18n` (言語別に書かれたときだけ) を追加
 
 ## [0.65.0] - 2026-11-14 — Python で書いたブロックを左ペインに出して使う (ADR-0081)
 

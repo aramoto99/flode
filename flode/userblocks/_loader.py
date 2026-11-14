@@ -1070,6 +1070,7 @@ def _build_info(
             default=defaults[name],
             description=meta.param_descriptions.get(name, ""),
             choices=meta.choices.get(name),
+            description_i18n=dict(meta.param_descriptions_i18n.get(name, {})),
         )
         for name, label in labels
     )

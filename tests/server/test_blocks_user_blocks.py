@@ -255,6 +255,27 @@ class TestStartupLoading:
         assert entry["params_spec"] == []
         assert (entry["input_names"], entry["output_names"]) == ([], [])
 
+    def test_language_specific_param_description(
+        self, workspace: Path, write_block: WriteFile, make_client: Any
+    ) -> None:
+        """引数の説明を言語別に書くと ``description_i18n`` が付く (``description`` は en)。"""
+        write_block(
+            "bilingual.py",
+            """
+            from flode import block
+
+            @block(param_descriptions={"k": {"ja": "ゲイン", "en": "Gain"}})
+            def scaled(t: float, u: float, *, k: float = 1.0) -> float:
+                return k * u
+            """,
+        )
+        client = make_client(_loopback_settings(workspace))
+
+        entry = _blocks_by_type(client.get("/api/v1/blocks").json())["flode_ws.bilingual.Scaled"]
+        (param,) = entry["params_spec"]
+        assert param["description"] == "Gain"
+        assert param["description_i18n"] == {"ja": "ゲイン", "en": "Gain"}
+
     def test_builtin_entries_get_builtin_source(
         self, workspace: Path, write_block: WriteFile, make_client: Any
     ) -> None:

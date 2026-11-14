@@ -123,6 +123,36 @@ class TestResolveMetadata:
         assert meta.input_names == ("in",)
         assert meta.output_names == ("out",)
 
+    def test_param_description_language_map(self):
+        """引数の説明も言語別に書ける (en が既定の文字列、無ければ最初の値)。"""
+
+        class Bilingual(_Plain):
+            """Bilingual.
+
+            Args:
+                k: From docstring.
+                mode: Mode from docstring.
+            """
+
+            block_param_descriptions = {
+                "k": {"ja": "ゲイン", "en": "Gain"},
+                "mode": {"ja": "動作"},
+            }
+
+        meta = resolve_metadata(Bilingual, {"k": 1.0, "mode": "a"}, n_inputs=1, n_outputs=1)
+        assert dict(meta.param_descriptions) == {"k": "Gain", "mode": "動作"}
+        assert {k: dict(v) for k, v in meta.param_descriptions_i18n.items()} == {
+            "k": {"ja": "ゲイン", "en": "Gain"},
+            "mode": {"ja": "動作"},
+        }
+
+    def test_plain_param_description_has_no_language_map(self):
+        class Plain(_Plain):
+            block_param_descriptions = {"k": "Gain"}
+
+        meta = resolve_metadata(Plain, {"k": 1.0, "mode": "a"}, n_inputs=1, n_outputs=1)
+        assert dict(meta.param_descriptions_i18n) == {}
+
     def test_mapping_without_en_uses_first_value(self):
         class Ja(_Plain):
             block_display_name = {"ja": "日本語名"}

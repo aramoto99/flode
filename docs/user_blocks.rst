@@ -195,7 +195,9 @@ What shows up in the palette and the Inspector
        the first line of the docstring.
    * - Parameter descriptions
      - The ``Args:`` section of the docstring (Google style), or
-       ``param_descriptions={"gain": "..."}``. The explicit argument wins
+       ``param_descriptions={"gain": "..."}``. Each description may also be
+       ``{"ja": "...", "en": "..."}`` to show it in the UI language (the
+       docstring holds one language only). The explicit argument wins
        over the docstring. The docstring is read from the function (function
        form), the class (class form and ``Block`` subclasses), falling back to
        ``__init__`` when the class has no ``Args:``.
