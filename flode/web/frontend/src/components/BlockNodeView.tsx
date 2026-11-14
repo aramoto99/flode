@@ -1410,12 +1410,15 @@ function arrowHandleStyle(pos: HandlePos): React.CSSProperties {
   return { ...base, top: `${pos.topPct}%` };
 }
 
+/** chevron 箱 (正方形) の一辺 (px)。 */
+const CHEVRON_SIZE = 6;
+
 const CHEVRON_STYLE: React.CSSProperties = {
   position: "absolute",
   top: "50%",
   left: "50%",
-  width: 6,
-  height: 6,
+  width: CHEVRON_SIZE,
+  height: CHEVRON_SIZE,
   borderTop: "1.75px solid #475569",
   borderRight: "1.75px solid #475569",
   // ``translate`` で中央寄せしてから ``rotate`` で 45deg 倒す = 上 + 右辺が
@@ -1432,8 +1435,7 @@ const CHEVRON_STYLE: React.CSSProperties = {
 // transform 計算: translate の単位 % は **自要素 (= width/height) サイズ基準**。
 // width=height=6px なので ``-50%`` = -3px 中央寄せ、``-150%`` は更に追加で
 // -6px (= chevron 1 個分) を上方向に押し出した結果、Handle 中心 (= ブロック
-// 境界線) から外側へ chevron 1 個分シフトする。``chevronStyleFor`` の左辺版
-// ``translate(-150%, -50%)`` と数値的に対称。
+// 境界線) から外側へ chevron 1 個分シフトする。
 const triggerGlyphStyle: React.CSSProperties = {
   position: "absolute",
   top: "50%",
@@ -1465,6 +1467,13 @@ function flipPosition(p: Position): Position {
 // ADR-0081 §論点 3: 超過ポート (registry のポート数を超えた側) の chevron はエラー色
 const EXCESS_CHEVRON_BORDER = `1.75px solid ${EXCESS_PORT_STROKE}`;
 
+// chevron 箱 (6×6) の中心をブロック境界から外へ何 px 出すか。chevron が枠に接する値:
+//   - 先端が枠を向く (入力 ``>`` / 反転時の入力 ``<``): 先端 = 中心 ± 6/√2 ≈ 4.24
+//   - 付け根が枠を向く (出力): 付け根の線の外縁 = 中心 ∓ 1.75/√2 ≈ 1.24
+const CHEVRON_HALF = CHEVRON_SIZE / 2;
+const CHEVRON_OUTSET_TIP_INWARD = 4.5;
+const CHEVRON_OUTSET_ARMS_INWARD = 1.5;
+
 function chevronStyleFor(
   position: Position,
   flipped: boolean,
@@ -1476,19 +1485,16 @@ function chevronStyleFor(
   const base: React.CSSProperties = excess
     ? { ...CHEVRON_STYLE, borderTop: EXCESS_CHEVRON_BORDER, borderRight: EXCESS_CHEVRON_BORDER }
     : CHEVRON_STYLE;
-  if (position === Position.Left) {
-    return {
-      ...base,
-      transform: `translate(-150%, -50%) ${rot}`,
-    };
-  }
-  if (position === Position.Right) {
-    return {
-      ...base,
-      transform: `translate(50%, -50%) ${rot}`,
-    };
-  }
-  return base;
+  if (position !== Position.Left && position !== Position.Right) return base;
+  // ``>`` は左辺で、``<`` は右辺で先端がブロックを向く。
+  const tipInward = (position === Position.Left) !== flipped;
+  const outset = tipInward ? CHEVRON_OUTSET_TIP_INWARD : CHEVRON_OUTSET_ARMS_INWARD;
+  // 箱の左端は Handle 中心 (= ブロック境界) にあるので、中心を ±outset に置く。
+  const tx = position === Position.Left ? -outset - CHEVRON_HALF : outset - CHEVRON_HALF;
+  return {
+    ...base,
+    transform: `translate(${tx}px, -50%) ${rot}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
