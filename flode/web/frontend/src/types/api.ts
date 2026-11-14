@@ -164,6 +164,33 @@ export interface SimulationResults {
   >;
   /** ADR-0082 §(1): 画像表示ブロックの最後のコマ (block_id → コマ)。旧サーバでは欠落。 */
   images?: Record<string, ImageFrame>;
+  /** ADR-0083 §(5): 実行ログ (上限件数まで)。旧サーバでは欠落。 */
+  logs?: RunLogEntry[];
+  /** ADR-0083 §(5): 上限を超えて捨てたログの件数。 */
+  logs_dropped?: number;
+}
+
+/**
+ * ADR-0083 §(4): 音声出力ブロック (AudioOutput) の音声の塊。WS ``audio_chunk`` だけで届く。
+ * ``data`` はチャンネルを交互に並べた int16 リトルエンディアンの base64。
+ */
+export interface AudioChunk {
+  block_id: string;
+  t: number;
+  sample_rate: number;
+  channels: number;
+  data: string;
+}
+
+/** ADR-0083 §(5): 実行中にブロック (``flode_ws.*``) / flode 本体が出したログ 1 件。 */
+export interface RunLogEntry {
+  /** 出した時点のシミュレーション時刻 [s]。 */
+  t: number;
+  /** ``INFO`` / ``WARNING`` / ``ERROR`` / ``CRITICAL``。 */
+  level: string;
+  /** logger 名 (例: ``flode_ws.vizdoom_env``)。 */
+  logger: string;
+  message: string;
 }
 
 /**
@@ -242,6 +269,10 @@ export interface BlockMetadata {
   // ADR-0081 §8-A: ポート名 (空配列 = 無名)。v2 以前のサーバでは欠落。
   input_names?: string[];
   output_names?: string[];
+  // ユーザーブロックが ``block_dynamic_ports = True`` を宣言している (true のときだけ載る)。
+  // ポート数・shape・ポート名は引数ごとに resolve-port-shapes で問い合わせる
+  // (lib/userBlockPorts.ts)。上の default_* / *_names は既定値の引数のもの。
+  dynamic_ports?: boolean;
 }
 
 /** ADR-0081 §8-A: ``sources[].kind``。 */
@@ -383,6 +414,9 @@ export interface ResolvedPortShapes {
   n_outputs: number;
   port_shapes_in: number[][];
   port_shapes_out: number[][];
+  /** ユーザーブロックだけ: その引数でのポート名 (空配列 = 無名)。組み込みでは欠落。 */
+  input_names?: string[];
+  output_names?: string[];
 }
 
 // SPEC-0027 (SM-D Stage 0) / ADR-0079 (SM-T Stage 1):
@@ -553,6 +587,8 @@ export type StreamMessage =
       values: number[][];
     }
   | ({ type: "image_frame" } & ImageFrame)
+  | ({ type: "audio_chunk" } & AudioChunk)
+  | ({ type: "log" } & RunLogEntry)
   | { type: "completed"; duration_sec: number }
   | { type: "stopped"; duration_sec: number }
   | ({ type: "failed"; duration_sec: number } & Partial<FailurePayload>);

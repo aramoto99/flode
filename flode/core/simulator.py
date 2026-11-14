@@ -32,7 +32,7 @@ from ..exceptions import (
     SolverError,
     UnknownBlockIdError,
 )
-from .block import BASE_CLOCK_SAMPLE_TIME, Block
+from .block import BASE_CLOCK_SAMPLE_TIME, Block, close_all
 from .identifiers import fold_block_id, normalize_block_id, validate_block_id
 from .persistence import (
     CURRENT_SCHEMA_VERSION,
@@ -1307,9 +1307,32 @@ class Simulator:
 
         discrete_state = self._init_discrete_state()
 
-        for b in self.blocks:
-            if hasattr(b, "reset"):
-                b.reset()
+        # ADR-0083 §(2): reset() を呼んだブロックは、完了・停止・失敗のどれでも
+        # ループの後に close() する (外部プロセス等を残さない)
+        started: list[Block] = []
+        try:
+            for b in self.blocks:
+                # reset() を呼びに行ったブロックは、例外で終わっても閉じる対象に入れる
+                # (途中まで開いた資源を残さない)。まだ呼んでいないブロックは閉じない
+                started.append(b)
+                if hasattr(b, "reset"):
+                    b.reset()
+            self._run_loops(sm_a_mode, dt_base, n_total, order, layout, x_cont, discrete_state)
+        finally:
+            close_all(started)
+        self._warn_never_fired_gotos()
+
+    def _run_loops(
+        self,
+        sm_a_mode: bool,
+        dt_base: float,
+        n_total: int,
+        order: list[Block],
+        layout: list[tuple[Block, slice]],
+        x_cont: npt.NDArray[Any],
+        discrete_state: dict[Block, npt.NDArray[Any]],
+    ) -> None:
+        """``run()`` の後半: 終了時刻の決定・停止フラグの初期化・ループ本体。"""
 
         # ADR-0042 §論点 1-A: ``t_end = math.inf`` (unbounded) では n_steps を
         # 計算せず ``None`` として、ループ側で `_stop_requested` のみで終了させる。
@@ -1349,7 +1372,6 @@ class Simulator:
             self._run_sm_a_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
         else:
             self._run_sm_b_loop(n_steps, dt_base, n_total, order, layout, x_cont, discrete_state)
-        self._warn_never_fired_gotos()
 
     def _warn_inner_sample_hit_sinks(self) -> None:
         """Subsystem 内部の ``record_on_sample_hits`` sink は呼ばれないことを WARNING で残す。

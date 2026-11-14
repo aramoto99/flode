@@ -33,7 +33,7 @@ from pathlib import Path
 from types import ModuleType
 
 from ..core import signals
-from ..core.block import Block
+from ..core.block import Block, close_all
 from ..core.block_metadata import HIDDEN_ATTRIBUTE
 from ..core.persistence import (
     RESERVED_USER_BLOCK_ROOTS,
@@ -43,7 +43,12 @@ from ..core.persistence import (
     to_json_value,
 )
 from ..exceptions import BlockReloadInProgressError, BlockSpecError
-from ._docmeta import read_params, resolve_metadata
+from ._docmeta import (
+    has_dynamic_ports,
+    port_names_for_instance,
+    read_params,
+    resolve_metadata,
+)
 from ._finder import (
     DIRS_ROOT_NAME,
     PACKAGE_INIT,
@@ -82,6 +87,9 @@ MAX_SCAN_DEPTH = 32
 MAX_SCAN_ENTRIES = 10_000
 #: ワークスペース内のブロック置き場のフォルダ名。
 WORKSPACE_BLOCKS_DIR = "blocks"
+#: 引数で決まるポート数 (片側) の上限。GUI はポートを 1 本ずつ描くので、打ち間違い
+#: (``n = 100000000`` 等) で巨大な応答・描画にしない (ADR-0083 §(1))。
+USER_BLOCK_MAX_PORTS = 256
 _TRUNCATION_MARK = "…"
 _UNPRINTABLE = "<unprintable>"
 _OUTSIDE_LINK_MESSAGE = (
@@ -1062,7 +1070,13 @@ def _build_info(
         ) from e
     if not isinstance(instance, Block):
         raise _BlockRejectedError("instantiating the class did not return a Block")
-    meta = resolve_metadata(cls, defaults, n_inputs=instance.n_inputs, n_outputs=instance.n_outputs)
+    meta = resolve_metadata(
+        cls,
+        defaults,
+        n_inputs=instance.n_inputs,
+        n_outputs=instance.n_outputs,
+        instance=instance,
+    )
     params = tuple(
         UserParamSpec(
             name=name,
@@ -1103,7 +1117,70 @@ def _build_info(
         input_names=meta.input_names,
         output_names=meta.output_names,
         block_class=cls,
+        dynamic_ports=has_dynamic_ports(cls),
     )
+
+
+@dataclass(frozen=True)
+class UserBlockPorts:
+    """引数を与えてインスタンス化したユーザーブロックのポート (GUI のポート描画用)。"""
+
+    n_inputs: int
+    n_outputs: int
+    port_shapes_in: tuple[tuple[int, ...], ...]
+    port_shapes_out: tuple[tuple[int, ...], ...]
+    input_names: tuple[str, ...]
+    output_names: tuple[str, ...]
+
+
+def resolve_user_block_ports(cls: type, params: Mapping[str, object]) -> UserBlockPorts:
+    """ユーザーブロック ``cls`` を ``params`` でインスタンス化し、ポートを返す。
+
+    インスタンス化とポート属性の読み出しはユーザーコードの境界として扱い、中断
+    (``KeyboardInterrupt`` / ``GeneratorExit``) 以外のどんな例外も ``BlockSpecError`` にする
+    (読み込み時の ``_build_info`` と同じ扱い。``SystemExit`` も捕捉する)。
+
+    Args:
+        cls: 管理型表にあるユーザーブロックのクラス。
+        params: ``__init__`` に渡す引数。
+
+    Returns:
+        ポート数・宣言 shape・ポート名。
+
+    Raises:
+        BlockSpecError: インスタンス化の失敗、``Block`` でない、ポート名の宣言が不正。
+    """
+    instance: object = None
+    try:
+        instance = cls(**params)
+        if not isinstance(instance, Block):
+            raise BlockSpecError("instantiating the class did not return a Block")
+        n_in, n_out = int(instance.n_inputs), int(instance.n_outputs)
+        if max(n_in, n_out) > USER_BLOCK_MAX_PORTS:
+            # GUI が描くポート数の上限 (引数の打ち間違いで巨大な応答・描画にしない)
+            raise BlockSpecError(
+                f"{n_in} inputs / {n_out} outputs exceed the limit of "
+                f"{USER_BLOCK_MAX_PORTS} ports per side"
+            )
+        input_names, output_names = port_names_for_instance(cls, instance)
+        return UserBlockPorts(
+            n_inputs=n_in,
+            n_outputs=n_out,
+            port_shapes_in=tuple(tuple(int(d) for d in s) for s in instance.port_shapes_in),
+            port_shapes_out=tuple(tuple(int(d) for d in s) for s in instance.port_shapes_out),
+            input_names=input_names,
+            output_names=output_names,
+        )
+    except BaseException as e:  # noqa: BLE001 - ユーザーコードの境界 (§10、読み込み時と同じ)
+        _reraise_if_interrupt(e)
+        message = _safe_text(e) if isinstance(e, BlockSpecError) else _exception_text(e)
+        raise BlockSpecError(
+            _truncate(f"cannot create the block with these parameters: {message}")
+        ) from e
+    finally:
+        # ポートを見るためだけのインスタンス。__init__ で何か開いていても閉じる (ADR-0083 §(2))
+        if isinstance(instance, Block):
+            close_all([instance])
 
 
 def _log_summary(report: BlockLoadReport) -> None:

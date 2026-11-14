@@ -20,11 +20,12 @@ from typing import Any, Final
 
 import numpy as np
 
-from ..blocks.sinks import ImageDisplay
+from ..blocks.sinks import AudioOutput, ImageDisplay
 from ..core.persistence import serialize_t_end
 from ..core.simulator import Simulator
 from ..exceptions import FlodeError, SimulationStillRunningError
 from .errors import build_failure_payload
+from .run_log import RunLogHandler, ensure_user_block_logging
 
 _logger = logging.getLogger("flode.server.runtime")
 
@@ -91,6 +92,15 @@ class _SimulationRecord:
             b for b in simulator.blocks if isinstance(b, ImageDisplay)
         ]
         self._image_sent: dict[str, tuple[int, float]] = {}
+        # ADR-0083 §(4): 音声出力ブロック (最上位のみ)。音は実時間で流れるので、
+        # 実時間同期の実行でだけ配信する (最速実行では塊が一気に届いて鳴らせない)。
+        self.audio_blocks: list[AudioOutput] = (
+            [b for b in simulator.blocks if isinstance(b, AudioOutput)]
+            if simulator.realtime
+            else []
+        )
+        # ADR-0083 §(5): 実行ログ (run 開始時に作る。未開始なら None)
+        self.run_log: RunLogHandler | None = None
         # ADR-0056 §B-4: WS 再接続時の terminal メッセージ replay 用。
         # ``_run_in_thread`` の finally で最終 ``completed`` / ``stopped`` / ``failed``
         # メッセージをここに保持し、``SimulationManager.stream`` が再接続時に冒頭で 1
@@ -187,6 +197,7 @@ class SimulationManager:
                 self._dispatch_scope_batch(rec, scope, cursor, n_total)
                 rec._scope_cursors[scope.id] = n_total
         self._dispatch_image_frames(rec, throttle=True)
+        self._dispatch_audio_chunks(rec)
         # progress イベント (バッチサイズに関わらず毎ステップ送る)。
         # ADR-0042 §論点 3-A: ``t_end`` は ``serialize_t_end`` 経由で
         # ``math.inf → "inf"`` 文字列にする (= wire 形式統一)。
@@ -234,6 +245,17 @@ class SimulationManager:
                 continue
             rec._image_sent[b.id] = (b.frame_count, now)
             self._dispatch(rec, {"type": "image_frame", **payload})
+
+    def _dispatch_audio_chunks(self, rec: _SimulationRecord) -> None:
+        """溜まった音声がある音声出力ブロックについて ``audio_chunk`` を送る (ADR-0083 §(4))。
+
+        画像と違い間引かない (欠けると音が途切れる)。最上位の記録経路と同じスレッド
+        (``_on_step``) か、実行終了後に呼ぶこと。
+        """
+        for b in rec.audio_blocks:
+            payload = audio_chunk_payload(b, t=rec.state.current_t)
+            if payload is not None:
+                self._dispatch(rec, {"type": "audio_chunk", **payload})
 
     def _dispatch_scope_batch(
         self, rec: _SimulationRecord, scope: Any, start: int, end: int
@@ -288,13 +310,33 @@ class SimulationManager:
             # loop が閉じている場合は drop (シャットダウン途中)
             _logger.debug("event loop closed; dropping message %r", msg.get("type"))
 
+    def _run_with_log_capture(self, rec: _SimulationRecord) -> None:
+        """``Simulator.run()`` の間だけ実行ログを集めて ``log`` として送る (ADR-0083 §(5))。
+
+        捕捉は run 本体に限る (失敗時にサーバが出す ``simulation ... failed`` は
+        ``failed`` メッセージ側で届くので、ログに二重に載せない)。
+        """
+        ensure_user_block_logging()
+        handler = RunLogHandler(
+            thread_id=threading.get_ident(),
+            current_t=lambda: rec.state.current_t,
+            sink=lambda entry: self._dispatch(rec, {"type": "log", **entry}),
+        )
+        rec.run_log = handler
+        root = logging.getLogger()
+        root.addHandler(handler)
+        try:
+            rec.simulator.run()
+        finally:
+            root.removeHandler(handler)
+
     def _run_in_thread(self, rec: _SimulationRecord) -> None:
         # ADR-0056 §B-3: 失敗時の構造化 payload は finally 内で `failed` 1 件にまとめる
         # (= 旧 `error` メッセージの事前送出を廃止)。例外捕捉時は payload を保持する
         # だけ、実際の送出は finally で実施する。
         failure_payload: dict[str, Any] | None = None
         try:
-            rec.simulator.run()
+            self._run_with_log_capture(rec)
             self._flush_remaining_scopes(rec)
             if rec.simulator.is_stopped:
                 rec.state.status = "stopped"
@@ -313,8 +355,9 @@ class SimulationManager:
             # SPEC-0034 F-6: 完了 / 停止 / 失敗のいずれでも最後のコマを届ける
             try:
                 self._dispatch_image_frames(rec, throttle=False)
+                self._dispatch_audio_chunks(rec)
             except Exception:  # noqa: BLE001 - terminal メッセージ送出を妨げない
-                _logger.exception("image frame flush failed (simulation_id=%s)", rec.simulation_id)
+                _logger.exception("media flush failed (simulation_id=%s)", rec.simulation_id)
             rec.state.finished_at = time.time()
             duration = rec.state.finished_at - rec.state.started_at
             terminal: dict[str, Any] = {
@@ -384,11 +427,15 @@ class SimulationManager:
             payload = image_frame_payload(b)
             if payload is not None:
                 images[payload["block_id"]] = payload
+        run_log = rec.run_log
         return {
             "simulation_id": sim_id,
             "status": rec.state.status,
             "scopes": scopes,
             "images": images,
+            # ADR-0083 §(5): WS で取りこぼしても終了後にログ一覧を復元できるようにする
+            "logs": [] if run_log is None else list(run_log.entries),
+            "logs_dropped": 0 if run_log is None else run_log.dropped,
         }
 
 
@@ -416,6 +463,28 @@ def image_frame_payload(block: ImageDisplay) -> dict[str, Any] | None:
         "width": int(frame.shape[1]),
         "channels": channels,
         "data": base64.b64encode(np.ascontiguousarray(frame).tobytes()).decode("ascii"),
+    }
+
+
+def audio_chunk_payload(block: AudioOutput, *, t: float) -> dict[str, Any] | None:
+    """音声出力ブロックに溜まった音声を取り出して wire 形式にする (ADR-0083 §(4))。
+
+    ``data`` はチャンネルを交互に並べた int16 リトルエンディアンの base64。溜まって
+    いなければ ``None``。取り出した分はブロックから消える。
+
+    Args:
+        block: 対象ブロック。
+        t: 塊を送る時点のシミュレーション時刻 (表示・診断用)。
+    """
+    samples = block.take_pending()
+    if samples is None:
+        return None
+    return {
+        "block_id": block.id,
+        "t": t,
+        "sample_rate": block.sample_rate,
+        "channels": int(samples.shape[1]),
+        "data": base64.b64encode(samples.astype("<i2").tobytes()).decode("ascii"),
     }
 
 

@@ -12,7 +12,7 @@ SM-A (各ポート = 1 スカラー) は ``port_shapes = ()`` (rank-0) の特殊
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, ClassVar
@@ -179,6 +179,22 @@ def _scalar_inputs_1d(block: Block, u: tuple[npt.NDArray[Any], ...]) -> npt.NDAr
             )
         flat.append(float(arr.item()))
     return np.array(flat, dtype=float)
+
+
+def close_all(blocks: Iterable[Block]) -> None:
+    """各ブロックの ``close()`` を呼ぶ (ADR-0083 §(2))。
+
+    後片付けは 1 つが失敗しても残りを必ず閉じたいので、例外はブロック id 付きで
+    ログに残して握る (実行本体の例外を後片付けの例外で上書きしないため)。
+
+    Args:
+        blocks: 閉じるブロック。
+    """
+    for b in blocks:
+        try:
+            b.close()
+        except Exception:  # noqa: BLE001 — ユーザーコードの後片付けは何を投げてもよい
+            _logger.exception("close() of block %r (%s) failed", b.id, type(b).__name__)
 
 
 class Block:
@@ -501,6 +517,16 @@ class Block:
             そのまま返す (1-state ブロック / 状態なしブロック用)。
         """
         return x
+
+    def close(self) -> None:
+        """実行の終わりに呼ばれる後片付けの hook (ADR-0083 §(2))。
+
+        ``Simulator.run()`` は完了・停止・失敗のどの場合でも、``reset()`` を
+        呼んだ全ブロックについてループの後にこれを呼ぶ。外部のプロセス・ファイル・
+        通信などを開いたブロックはオーバーライドして閉じる。Default 実装は何もしない。
+        次の ``run()`` では再び ``reset()`` から始まるので、閉じたものは ``reset()``
+        で開き直すこと。
+        """
 
     # ---------- SM-T (ADR-0079 §(5)): 状態ブロックの vector-port API ----------
     #

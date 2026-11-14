@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   findBlock,
+  inferArrayElementType,
+  isIntTypeLabel,
+  isStringListTypeLabel,
   isEditableParam,
   parseNumericInput,
   updateBlockParam,
@@ -110,5 +113,36 @@ describe("updateBlockParam", () => {
   it("is a no-op (structurally) when the block id is not found", () => {
     const next = updateBlockParam(baseModel, "missing", "k", 0);
     expect(next.blocks).toEqual(baseModel.blocks);
+  });
+});
+
+describe("type labels of user block parameters", () => {
+  it.each([
+    "list[str]",
+    "List[str]",
+    "tuple[str, ...]",
+    "Sequence[str]",
+    "collections.abc.Sequence[str]",
+    " list[ str ] ",
+  ])("%s is a string list", (label) => {
+    expect(isStringListTypeLabel(label)).toBe(true);
+    // 既定値が空リストでも文字列の配列として編集する
+    expect(inferArrayElementType([], label)).toBe("string");
+  });
+
+  it.each(["list[float]", "list", "str", "dict[str, str]", "tuple[str, int]", undefined])(
+    "%s is not a string list",
+    (label) => {
+      expect(isStringListTypeLabel(label)).toBe(false);
+      expect(inferArrayElementType([], label)).toBe("number");
+    },
+  );
+
+  it("detects int labels only", () => {
+    expect(isIntTypeLabel("int")).toBe(true);
+    expect(isIntTypeLabel(" int ")).toBe(true);
+    expect(isIntTypeLabel("float")).toBe(false);
+    expect(isIntTypeLabel("int | None")).toBe(false);
+    expect(isIntTypeLabel(undefined)).toBe(false);
   });
 });

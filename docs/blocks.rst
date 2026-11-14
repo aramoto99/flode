@@ -34,6 +34,7 @@ Blocks that consume signals without producing outputs.
 
    flode.blocks.Scope
    flode.blocks.ImageDisplay
+   flode.blocks.AudioOutput
    flode.blocks.Terminator
 
 ``ImageDisplay`` shows an image signal — shape ``(H, W)`` (grayscale) or
@@ -47,6 +48,18 @@ game or a camera at its natural pace, turn on real-time pacing
 settings): each step then waits until the wall clock reaches the simulation
 time, and if the computation falls behind it continues from there instead of
 fast-forwarding.
+
+``AudioOutput`` plays sound in the browser running the Web GUI. Each time it
+records, it takes one chunk of samples: shape ``(N,)`` (mono) or ``(N, 2)``
+(stereo) at ``sample_rate`` Hz. Values from ``-scale`` to ``scale``
+(default ``1``; use ``32768`` for 16-bit integer audio) map to full volume.
+It records only at the sample times of its upstream block, so a held chunk is
+not played twice. Sound is streamed only when real-time pacing is on; the
+block face shows a level meter and a *Mute* checkbox. Feed it chunks (for
+example one sample period's worth of samples per step) rather than one scalar
+sample per step: each step sends one message, and a slow browser may lose
+messages when thousands arrive per second. A chunk may hold at most 10 seconds
+of sound.
 
 Continuous
 ----------

@@ -16,6 +16,11 @@ import {
 } from "./blockTypes";
 import { getCachedPythonSpec } from "./pythonFunctionSpec";
 import { isPlaceholderType, userBlockMetaOf, type RegistryIndex } from "./userBlockModel";
+import {
+  effectiveUserBlockPorts,
+  getCachedUserBlockPorts,
+  isDynamicUserBlock,
+} from "./userBlockPorts";
 import { isUserBlock } from "./userBlocks";
 
 export interface ResolvedPortCounts {
@@ -48,11 +53,13 @@ export function resolvePortCounts(
   const defaultIn = meta?.default_n_inputs ?? 1;
   const defaultOut = meta?.default_n_outputs ?? 1;
 
-  // ADR-0081 X-1: ユーザーブロックのポート数はパラメータに依存しない (registry の数)。
+  // ADR-0081 X-1: ユーザーブロックのポート数は registry の数。ただし ``dynamic_ports`` の
+  // ブロックはサーバが引数ごとに解決した数 (キャッシュ済みのとき、lib/userBlockPorts.ts)。
   // 型名の末尾一致による組み込みの特別扱い (下の分岐) を通さない
   // (例: 型名 ``flode_ws.filters.Sum`` を組み込み Sum として数えない)。
   if (meta !== undefined && isUserBlock(meta)) {
-    return { nInputs: defaultIn, nOutputs: defaultOut };
+    const ports = effectiveUserBlockPorts(meta, params);
+    return { nInputs: ports.nInputs, nOutputs: ports.nOutputs };
   }
 
   // ----- Math -----
@@ -156,6 +163,8 @@ export function resolvePortCounts(
  * ADR-0081 §論点 3 / §4-B: ユーザーブロック (registry の ``source !== "builtin"``) と
  * プレースホルダ (registry 取得済みで型が無い) は剪定しない。ユーザーブロックのポート数は
  * パラメータに依存せず、剪定すると引数を 1 つ編集しただけで超過配線が消えてしまう。
+ * 例外は ``dynamic_ports`` のユーザーブロックで、編集後の引数のポートがサーバから解決済み
+ * (キャッシュ済み) のときだけ剪定してよい (PythonFunction と同じ考え方)。
  *
  * @param typePath - 対象ブロックの型名。
  * @param nextParams - 編集後の params。
@@ -166,7 +175,13 @@ export function canPruneOnParamChange(
   nextParams: Record<string, unknown>,
   registry?: RegistryIndex,
 ): boolean {
-  if (userBlockMetaOf(typePath, registry) !== undefined) return false;
+  const userMeta = userBlockMetaOf(typePath, registry);
+  if (userMeta !== undefined) {
+    return (
+      isDynamicUserBlock(userMeta) &&
+      getCachedUserBlockPorts(typePath, nextParams) !== undefined
+    );
+  }
   if (isPlaceholderType(typePath, registry)) return false;
   if (typePath !== PYTHON_FUNCTION_TYPE) return true;
   const spec = getCachedPythonSpec(nextParams.code);

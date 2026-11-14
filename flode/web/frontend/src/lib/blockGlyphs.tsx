@@ -1063,6 +1063,15 @@ const DisplayGlyph = ({ className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+// ADR-0083 §(4): 音声出力。JIS C 0617 / IEC 60617 のスピーカ記号
+// (小さな矩形 + 開いた台形)。
+const AudioOutputGlyph = ({ className }: GlyphProps): JSX.Element => (
+  <svg {...G_PROPS} className={className}>
+    <rect x="5" y="9" width="4" height="6" />
+    <polygon points="9,9 15,4 15,20 9,15" />
+  </svg>
+);
+
 // SPEC-0034: 画像表示。規格記号が無いため de facto の「画像」記号
 // (枠 + 山 + 太陽) を表示器の枠に載せる。
 const ImageDisplayGlyph = ({ className }: GlyphProps): JSX.Element => (
@@ -1331,6 +1340,7 @@ const GLYPHS: Record<string, (props: GlyphProps) => JSX.Element> = {
   "flode.blocks.sinks.Display": DisplayGlyph,
   "flode.blocks.sinks.XYGraph": XYGraphGlyph,
   "flode.blocks.sinks.ImageDisplay": ImageDisplayGlyph,
+  "flode.blocks.sinks.AudioOutput": AudioOutputGlyph,
   "flode.blocks.sinks.Terminator": TerminatorGlyph,
   // subsystems
   "flode.subsystems.subsystem.Subsystem": SubsystemGlyph,

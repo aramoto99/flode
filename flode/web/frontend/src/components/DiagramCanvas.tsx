@@ -41,6 +41,8 @@ import {
   useDtypeResolutionFetcher,
 } from "../lib/dtypeResolution";
 import { usePythonSpecVersion } from "../lib/usePythonSpecVersion";
+import { collectDynamicUserBlocks, ensureUserBlockPorts } from "../lib/userBlockPorts";
+import { useUserBlockPortsVersion } from "../lib/useUserBlockPortsVersion";
 import { generateUniqueId } from "../lib/idGenerator";
 import {
   resolveBlocksAtPath,
@@ -102,6 +104,9 @@ const EDGE_TYPES = { branchable: BranchableEdge } as const;
 // editor 慣習)。配列参照を毎 render で新しくしないために module-level 定数。
 const PAN_BUTTONS = [1, 2];
 
+/** ポートが引数で変わるユーザーブロックのポート問い合わせを、編集が落ち着くまで待つ時間。 */
+const USER_BLOCK_PORTS_DEBOUNCE_MS = 150;
+
 /**
  * v0.21.0: legacy ``modelId`` prop を撤去し、``editingModel`` を store から
  * 直接読む形に変更 (= FileBrowser onClick が ``editingModel`` を populate 済の
@@ -162,6 +167,19 @@ export function DiagramCanvas({
     const codes = collectPythonCodes(editingModel);
     if (codes.length > 0) void ensurePythonSpecs(codes);
   }, [editingModel]);
+  // ポートが引数で変わるユーザーブロック (registry の dynamic_ports): 引数ごとのポートを
+  // サーバに問い合わせ (入力途中の連続編集はまとめる)、解決 (= cache 世代の更新) で再描画して
+  // ポート数・ポート名を確定値に置き換える。それまでは registry の既定値で描く
+  useUserBlockPortsVersion();
+  useEffect(() => {
+    if (registry === undefined) return;
+    const requests = collectDynamicUserBlocks(editingModel, registryMap);
+    if (requests.length === 0) return;
+    const timer = setTimeout(() => {
+      void ensureUserBlockPorts(requests);
+    }, USER_BLOCK_PORTS_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [editingModel, registry, registryMap]);
 
   // リファレンスツール互換 (v2.1.x ユーザー指摘): ``Ctrl + 左クリック`` 2-step auto-connect の
   // 1 回目クリック時の source を保持。2 回目の別ノード Ctrl+click で edge を作成、

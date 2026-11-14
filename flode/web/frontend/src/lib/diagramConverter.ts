@@ -18,6 +18,7 @@ import {
   userPortNames,
   type RegistryIndex,
 } from "./userBlockModel";
+import { effectiveUserBlockPorts } from "./userBlockPorts";
 import { userBlockDisplayName } from "./userBlocks";
 import type {
   BlockEntry,
@@ -101,6 +102,12 @@ export interface UserBlockNodeInfo {
   declaredOutputs: number | null;
   /** ブロックから消えた引数 (entry に残っている。user のみ、次の保存・実行で除去)。 */
   removedParams: string[];
+  /**
+   * ポート名 (整形前、空 = 無名)。``dynamic_ports`` のブロックは引数ごとに解決した名前
+   * (未解決なら registry の名前)。未指定なら ``meta`` の名前を使う。
+   */
+  inputNames?: readonly string[];
+  outputNames?: readonly string[];
 }
 
 /** 超過ポートに繋がった配線のスタイル (エラー色の破線、自動では消さない)。 */
@@ -160,8 +167,17 @@ function cachedUserBlockShape(
   isUser: boolean,
   nInputs: number,
   nOutputs: number,
+  names: { inputs: readonly string[]; outputs: readonly string[] },
 ): BlockShape {
-  const key = `${isUser ? "u" : "p"}\u0000${type}\u0000${nInputs}\u0000${nOutputs}`;
+  // ポート名は dynamic_ports のブロックで引数ごとに変わるのでキーに含める
+  const key = [
+    isUser ? "u" : "p",
+    type,
+    nInputs,
+    nOutputs,
+    JSON.stringify(names.inputs),
+    JSON.stringify(names.outputs),
+  ].join("\u0000");
   let cache: Map<string, BlockShape>;
   if (meta !== undefined) {
     cache = shapeCacheByMeta.get(meta) ?? new Map<string, BlockShape>();
@@ -179,8 +195,8 @@ function cachedUserBlockShape(
   const shape = getUserBlockShape(
     {
       titles,
-      inputs: userPortNames(meta?.input_names).slice(0, nInputs),
-      outputs: userPortNames(meta?.output_names).slice(0, nOutputs),
+      inputs: userPortNames(names.inputs).slice(0, nInputs),
+      outputs: userPortNames(names.outputs).slice(0, nOutputs),
     },
     nInputs,
     nOutputs,
@@ -199,16 +215,33 @@ function userBlockGeometry(
   const placeholder = meta === undefined && isPlaceholderType(block.type, registry);
   if (meta === undefined && !placeholder) return null;
   const shown = meta ?? lastSeen?.get(block.type);
-  const nInputs = Math.max(shown?.default_n_inputs ?? 0, extent.nInputs);
-  const nOutputs = Math.max(shown?.default_n_outputs ?? 0, extent.nOutputs);
-  const shape = cachedUserBlockShape(block.type, shown, meta !== undefined, nInputs, nOutputs);
+  // dynamic_ports のブロックは引数ごとに解決したポート (未解決なら registry の既定値)
+  const ports = meta !== undefined ? effectiveUserBlockPorts(meta, block.params) : undefined;
+  const names = {
+    inputs: ports?.inputNames ?? shown?.input_names ?? [],
+    outputs: ports?.outputNames ?? shown?.output_names ?? [],
+  };
+  const declaredIn = ports?.nInputs ?? shown?.default_n_inputs ?? 0;
+  const declaredOut = ports?.nOutputs ?? shown?.default_n_outputs ?? 0;
+  const nInputs = Math.max(declaredIn, extent.nInputs);
+  const nOutputs = Math.max(declaredOut, extent.nOutputs);
+  const shape = cachedUserBlockShape(
+    block.type,
+    shown,
+    meta !== undefined,
+    nInputs,
+    nOutputs,
+    names,
+  );
   return {
     info: {
       kind: meta !== undefined ? "user" : "placeholder",
       meta: shown,
-      declaredInputs: meta?.default_n_inputs ?? null,
-      declaredOutputs: meta?.default_n_outputs ?? null,
+      declaredInputs: ports?.nInputs ?? null,
+      declaredOutputs: ports?.nOutputs ?? null,
       removedParams: meta !== undefined ? removedParamNames(block.params, meta) : [],
+      inputNames: names.inputs,
+      outputNames: names.outputs,
     },
     shape,
     nInputs,

@@ -758,6 +758,16 @@ _BLOCK_TRANSLATIONS: dict[str, _LocaleMap] = {
             "docstring_summary": "(H, W) / (H, W, 3) の配列を画像としてブロック上にライブ表示。",
         },
     },
+    "flode.blocks.sinks.AudioOutput": {
+        "en": {
+            "display_name": "Audio Output",
+            "docstring_summary": "Play (N,) or (N, 2) sample chunks as sound in the browser.",
+        },
+        "ja": {
+            "display_name": "音声出力",
+            "docstring_summary": "(N,) / (N, 2) のサンプルの塊をブラウザから音として鳴らす。",
+        },
+    },
     "flode.blocks.sinks.Terminator": {
         "en": {
             "display_name": "Terminator",

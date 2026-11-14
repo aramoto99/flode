@@ -81,15 +81,48 @@ export function isLongStringParam(value: string): boolean {
 }
 
 /**
+ * 文字列の列を表す型ラベル (ユーザーブロックの引数の注釈を文字列にしたもの)。
+ * ``list[str]`` / ``List[str]`` / ``tuple[str, ...]`` / ``Sequence[str]``
+ * (``collections.abc.`` / ``typing.`` 付きも) を受ける。
+ */
+const STRING_LIST_TYPE_RE =
+  /^(?:(?:typing|collections\.abc)\.)?(?:list|List|Sequence|tuple|Tuple)\[\s*str\s*(?:,\s*\.\.\.\s*)?\]$/;
+
+/**
+ * 型ラベルが文字列の列 (``list[str]`` 等) か。既定値が空リストでも文字列の配列として
+ * 編集するために使う。
+ *
+ * @param typeLabel - registry の ``params_spec[].type`` (未指定なら false)。
+ */
+export function isStringListTypeLabel(typeLabel: string | undefined): boolean {
+  return typeLabel !== undefined && STRING_LIST_TYPE_RE.test(typeLabel.trim());
+}
+
+/**
+ * 型ラベルが整数 (``int``) か。ユーザーブロックの引数を整数として検証するために使う。
+ *
+ * @param typeLabel - registry の ``params_spec[].type`` (未指定なら false)。
+ */
+export function isIntTypeLabel(typeLabel: string | undefined): boolean {
+  return typeLabel !== undefined && typeLabel.trim() === "int";
+}
+
+/**
  * 1-D 配列の要素型を先頭要素から推論する (SPEC-0011 §1.2)。
  *
+ * - 型ラベルが文字列の列 (``list[str]`` 等): ``"string"`` (空配列でも)
  * - 空配列: ``"number"`` (LookupTable1D 等の数値配列 default を想定)
  * - 先頭が string: ``"string"``
  * - それ以外: ``"number"``
+ *
+ * @param value - 現在の配列。
+ * @param typeLabel - registry の型ラベル (ユーザーブロックの引数の注釈。任意)。
  */
 export function inferArrayElementType(
   value: unknown[],
+  typeLabel?: string,
 ): "number" | "string" {
+  if (isStringListTypeLabel(typeLabel)) return "string";
   if (value.length === 0) return "number";
   if (typeof value[0] === "string") return "string";
   return "number";

@@ -70,6 +70,8 @@ const SHAPE_BY_TYPE: Record<string, BlockShape> = {
   "flode.blocks.sinks.Display":                   { kind: "rect-wide", width: 96, height: 48 },
   // SPEC-0034 F-5: 画像をブロック面に描くため大きめ (4:3、リサイズ可)
   "flode.blocks.sinks.ImageDisplay":              { kind: "rect", width: 160, height: 120 },
+  // ADR-0083 §(4): 音量計と消音チェックを載せるため横長
+  "flode.blocks.sinks.AudioOutput":               { kind: "rect-wide", width: 96, height: 48 },
 
   // -------- v0.35.0: Add (Sum の矩形版) --------
   "flode.blocks.mathops.Add":                   { kind: "rect", width: 48, height: 48 },

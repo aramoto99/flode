@@ -43,6 +43,8 @@ async function backfillScopeResults(simId: string): Promise<void> {
     state.replaceScopes(results.scopes);
     // ADR-0082 §(1): 画像表示ブロックの最後のコマも補完する (旧サーバは images 無し)
     if (results.images) state.replaceImageFrames(results.images);
+    // ADR-0083 §(5): WS で取りこぼしたログも一覧に戻す (旧サーバは logs 無し)
+    if (results.logs) state.replaceRunLogs(results.logs, results.logs_dropped ?? 0);
   } catch (e) {
     // backfill は WS ライブ表示に対する冗長系。失敗してもライブ描画分は
     // 残っているため UI は壊さず、原因調査用にログのみ残す。

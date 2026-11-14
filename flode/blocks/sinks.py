@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from collections import deque
 from typing import TYPE_CHECKING, Any, Literal, get_args
@@ -12,6 +13,8 @@ from ..exceptions import BlockSpecError, BufferOverflowWarning
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+
+_logger = logging.getLogger("flode.blocks.sinks")
 
 
 # ADR-0042 §論点 2-A: ring/bounded のデフォルト容量。100,000 サンプル × n_inputs
@@ -507,6 +510,186 @@ def _check_image_shape(block_id: str | None, shape: tuple[int, ...]) -> None:
             f"ImageDisplay {block_id!r}: image of {shape[0]}x{shape[1]} pixels exceeds the "
             f"limit of {IMAGE_MAX_PIXELS} pixels (1920x1080); downscale it first"
         )
+
+
+#: AudioOutput が受理するサンプリング周波数の範囲 [Hz] (ブラウザの WebAudio が扱える範囲)。
+AUDIO_MIN_SAMPLE_RATE = 8000
+AUDIO_MAX_SAMPLE_RATE = 96000
+#: AudioOutput の最大チャンネル数 (モノラル / ステレオ)。
+AUDIO_MAX_CHANNELS = 2
+#: 取り出されずに溜まった音声の上限 [秒]。GUI 以外 (Python API) で使って誰も取り出さない
+#: ときにメモリを使い続けないよう、超えた分は古い方から捨てる。
+AUDIO_MAX_PENDING_SECONDS = 10.0
+_INT16_MAX = 32767
+
+
+class AudioOutput(Block):
+    """配列信号を音声として Web GUI のブラウザから鳴らす (ADR-0083 §(4))。
+
+    入力は 1 ポートで、1 回の記録ごとに音声の塊を受け取る:
+
+    - shape ``()`` / ``(1,)`` / ``(N,)``: モノラル N サンプル
+    - shape ``(N, 1)`` / ``(N, 2)``: モノラル / ステレオ N サンプル
+
+    値 ``-scale..scale`` を ``-1..1`` に写し (範囲外はクリップ、NaN は 0)、16 bit PCM に
+    して溜める。Web GUI は実行中に溜まった分を受け取り、時刻を合わせて順に鳴らす。
+    音は実時間で流れるので、モデル設定の「実時間に同期」が有効なときだけ配信する。
+
+    Args:
+        sample_rate: サンプリング周波数 [Hz] (8000〜96000)。
+        scale: 振幅 1 に対応する入力値 (default ``1.0``。16 bit 整数の音なら ``32768``)。
+    """
+
+    # ADR-0079: 任意 shape の入力を受ける sink (output_v は空 tuple)
+    _skip_dual_api_check = True
+    # 上流のサンプル時刻にだけ記録する (基準ステップが上流の周期より細かいとき、
+    # ホールドされた同じ塊を何度も鳴らさないため)。上流が連続なら毎ステップ。
+    record_on_sample_hits = True
+
+    def __init__(
+        self,
+        sample_rate: int = 44100,
+        scale: float = 1.0,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        rate = int(sample_rate) if np.isfinite(sample_rate) else 0
+        if rate != sample_rate or not AUDIO_MIN_SAMPLE_RATE <= rate <= AUDIO_MAX_SAMPLE_RATE:
+            raise BlockSpecError(
+                f"AudioOutput: sample_rate must be an integer in "
+                f"[{AUDIO_MIN_SAMPLE_RATE}, {AUDIO_MAX_SAMPLE_RATE}], got {sample_rate!r}"
+            )
+        scale_f = float(scale)
+        if not np.isfinite(scale_f) or scale_f <= 0.0:
+            raise BlockSpecError(f"AudioOutput: scale must be finite and > 0, got {scale!r}")
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=0, sample_time=-1.0)
+        self.sample_rate = rate
+        self.scale = scale_f
+        self._params = {"sample_rate": self.sample_rate, "scale": self.scale}
+        self._pending: list[npt.NDArray[np.int16]] = []
+        self._pending_samples = 0
+        self._channels: int | None = None
+        self._dropped_samples = 0
+
+    def _apply_input_shapes(self, shapes: tuple[tuple[int, ...], ...]) -> None:
+        """入力 shape が音声の塊として扱えるかを実行前に検査する (Simulator が呼ぶ)。"""
+        shape = tuple(shapes[0]) if shapes else ()
+        _audio_channels(self.id, shape)
+        self._check_chunk_length(shape[0] if shape else 1)
+
+    def _check_chunk_length(self, n: int) -> None:
+        """1 回の塊が溜め置きの上限 (``AUDIO_MAX_PENDING_SECONDS``) を超えないこと。"""
+        limit = int(AUDIO_MAX_PENDING_SECONDS * self.sample_rate)
+        if n > limit:
+            raise BlockSpecError(
+                f"AudioOutput {self.id!r}: a chunk of {n} samples exceeds "
+                f"{AUDIO_MAX_PENDING_SECONDS:g} s at {self.sample_rate} Hz ({limit} samples)"
+            )
+
+    def output(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
+        return np.zeros(0)
+
+    def output_v(
+        self,
+        t: float,
+        x: npt.NDArray[Any],
+        u: tuple[npt.NDArray[Any], ...],
+    ) -> tuple[npt.NDArray[Any], ...]:
+        return ()
+
+    # 上流が離散なら自分も離散に解決されて状態 API が呼ばれる (状態は持たない)
+    def advance_v(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return x
+
+    def update_v(
+        self, t: float, x: npt.NDArray[Any], u: tuple[npt.NDArray[Any], ...]
+    ) -> npt.NDArray[Any]:
+        return x
+
+    def reset(self) -> None:
+        self._pending = []
+        self._pending_samples = 0
+        self._channels = None
+        self._dropped_samples = 0
+
+    def record_v(self, t: float, u: tuple[npt.NDArray[Any], ...]) -> None:
+        """音声の塊を 16 bit PCM にして溜める (ADR-0081 §論点 5-B の記録経路)。"""
+        self._append(np.asarray(u[0], dtype=float))
+
+    def record(self, t: float, u: npt.NDArray[Any]) -> None:
+        """スカラ信号のモデルでは 1 回の記録 = モノラル 1 サンプルとして溜める。"""
+        self._append(np.asarray(u, dtype=float).reshape(-1)[:1])
+
+    def _append(self, chunk: npt.NDArray[Any]) -> None:
+        channels = _audio_channels(self.id, chunk.shape)
+        if self._channels is not None and channels != self._channels:
+            raise BlockSpecError(
+                f"AudioOutput {self.id!r}: channel count changed from {self._channels} "
+                f"to {channels} during the run"
+            )
+        self._channels = channels
+        frames = chunk.reshape(-1, channels)
+        if frames.shape[0] == 0:
+            return
+        self._check_chunk_length(frames.shape[0])
+        clean = np.nan_to_num(frames, nan=0.0, posinf=self.scale, neginf=-self.scale)
+        with np.errstate(over="ignore"):
+            level = np.clip(clean / self.scale, -1.0, 1.0)
+        self._pending.append(np.rint(level * _INT16_MAX).astype(np.int16))
+        self._pending_samples += frames.shape[0]
+        limit = int(AUDIO_MAX_PENDING_SECONDS * self.sample_rate)
+        while self._pending_samples > limit and len(self._pending) > 1:
+            oldest = self._pending.pop(0)
+            self._pending_samples -= oldest.shape[0]
+            self._dropped_samples += oldest.shape[0]
+
+    def close(self) -> None:
+        """実行の終わりに、取り出されずに捨てた音があれば WARNING で知らせる。"""
+        if self._dropped_samples:
+            _logger.warning(
+                "AudioOutput %r dropped %d samples (%.1f s) that were not taken out in time",
+                self.id,
+                self._dropped_samples,
+                self._dropped_samples / self.sample_rate,
+            )
+
+    def take_pending(self) -> npt.NDArray[np.int16] | None:
+        """溜まった音声を取り出して空にする。無ければ ``None``。
+
+        Returns:
+            shape ``(N, channels)`` の int16 配列。
+        """
+        if not self._pending:
+            return None
+        out = np.concatenate(self._pending, axis=0)
+        self._pending = []
+        self._pending_samples = 0
+        return out
+
+    @property
+    def channels(self) -> int | None:
+        """この実行のチャンネル数 (1 / 2)。まだ受け取っていなければ ``None``。"""
+        return self._channels
+
+    @property
+    def dropped_samples(self) -> int:
+        """取り出されないまま上限を超えて捨てたサンプル数 (``reset`` で 0)。"""
+        return self._dropped_samples
+
+
+def _audio_channels(block_id: str | None, shape: tuple[int, ...]) -> int:
+    """音声の塊の shape からチャンネル数を返す。扱えない shape は拒否する。"""
+    if len(shape) <= 1:
+        return 1
+    if len(shape) == 2 and 1 <= shape[1] <= AUDIO_MAX_CHANNELS:
+        return int(shape[1])
+    raise BlockSpecError(
+        f"AudioOutput {block_id!r}: input must be audio samples of shape (N,), (N, 1) or "
+        f"(N, 2), got shape {shape}"
+    )
 
 
 class Terminator(Block):

@@ -17,6 +17,8 @@ export const ENABLE_TYPE = "flode.subsystems.control_blocks.Enable";
 export const PYTHON_FUNCTION_TYPE = "flode.blocks.pythonfunc.PythonFunction";
 /** SPEC-0034: 配列信号を画像としてブロック面に描く sink。 */
 export const IMAGE_DISPLAY_TYPE = "flode.blocks.sinks.ImageDisplay";
+/** ADR-0083 §(4): 音声の塊をブラウザから鳴らす sink。 */
+export const AUDIO_OUTPUT_TYPE = "flode.blocks.sinks.AudioOutput";
 
 /**
  * `params[key]` を number として取り出す。値が number でなければ `fallback` を返す。

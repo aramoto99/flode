@@ -19,6 +19,7 @@ import { findBlockAtPath, resolveBlocksAtPath } from "../lib/pathResolver";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
 import {
   inferArrayElementType,
+  isIntTypeLabel,
   isLongStringParam,
   isPrimitiveParam,
   parseNumericInput,
@@ -26,6 +27,13 @@ import {
 } from "../lib/paramEdit";
 import { indexRegistry } from "../lib/portShapeValidate";
 import { isPlaceholderType, removedParamNames } from "../lib/userBlockModel";
+import {
+  effectiveUserBlockPorts,
+  ensureUserBlockPorts,
+  getCachedUserBlockPorts,
+  isDynamicUserBlock,
+} from "../lib/userBlockPorts";
+import { useUserBlockPortsVersion } from "../lib/useUserBlockPortsVersion";
 import {
   cleanServerText,
   MAX_PATH_CHARS,
@@ -62,6 +70,9 @@ import {
   SELECT_CLS,
   TextInput,
 } from "./ui/inspector";
+
+/** 文字列の配列 (ユーザーブロックの ``list[str]`` 等の引数) の入力例 (言語に依らない JSON)。 */
+const STRING_ARRAY_PLACEHOLDER = '["A", "B"]';
 
 interface ParameterPanelProps {
   modelId: string;
@@ -253,18 +264,66 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   const removedParams = new Set(
     userMeta !== undefined ? removedParamNames(block.params, userMeta) : [],
   );
-  // ADR-0081 §論点 3: registry のポート数を超えた index に繋がっている配線
+  // ADR-0081 §論点 3: registry のポート数を超えた index に繋がっている配線。
+  // dynamic_ports のブロックは引数ごとに解決したポート数と比べる (解決で再描画する)
+  useUserBlockPortsVersion();
+  const userPorts =
+    userMeta !== undefined ? effectiveUserBlockPorts(userMeta, block.params) : undefined;
   const excessPorts =
-    userMeta !== undefined && scopeView !== null
+    userPorts !== undefined && scopeView !== null
       ? scopeView.connections.flatMap((c) => [
-          ...(c.dst === block.id && c.dst_idx >= userMeta.default_n_inputs
+          ...(c.dst === block.id && c.dst_idx >= userPorts.nInputs
             ? [`in[${c.dst_idx}]`]
             : []),
-          ...(c.src === block.id && c.src_idx >= userMeta.default_n_outputs
+          ...(c.src === block.id && c.src_idx >= userPorts.nOutputs
             ? [`out[${c.src_idx}]`]
             : []),
         ])
       : [];
+  // dynamic_ports のブロックは、編集後の引数のポートをサーバから解決してから params を
+  // 確定する (解決済みなら updateBlockParams が減ったポートの配線を剪定できる)。応答待ちの
+  // 間に続けて編集された値は、未確定の params を土台にして最後の 1 件だけを確定する
+  // (ブロック id → 応答待ちの params と要求番号)
+  const pendingParamsRef = useRef(
+    new Map<string, { seq: number; params: Record<string, unknown> }>(),
+  );
+  const commitSeqRef = useRef(0);
+  const applyParams = (nextParams: Record<string, unknown>): void => {
+    const blockId = block.id;
+    const pending = pendingParamsRef.current;
+    if (
+      !isDynamicUserBlock(userMeta) ||
+      getCachedUserBlockPorts(block.type, nextParams) !== undefined
+    ) {
+      pending.delete(blockId);
+      updateBlockParams(blockId, nextParams, registryMap);
+      return;
+    }
+    commitSeqRef.current += 1;
+    const seq = commitSeqRef.current;
+    pending.set(blockId, { seq, params: nextParams });
+    const path = JSON.stringify(editingPath);
+    // 編集の土台にした params (store の参照)。応答待ちの間に undo 等で変わっていたら確定しない
+    const baseParams = block.params;
+    void ensureUserBlockPorts([{ type_path: block.type, params: nextParams }])
+      .catch(() => undefined)
+      .then(() => {
+        if (pending.get(blockId)?.seq !== seq) return; // 後の編集に置き換わった
+        pending.delete(blockId);
+        const state = useAppStore.getState();
+        // 応答待ちの間に別スコープへ移っていたら、同じ id の別ブロックを書き換えない
+        if (JSON.stringify(state.editingPath) !== path || state.editingModel === null) return;
+        let current: BlockEntry | undefined;
+        try {
+          current = findBlockAtPath(state.editingModel, state.editingPath, blockId);
+        } catch {
+          return;
+        }
+        // 削除された / undo などで別の値になった: 古い編集を復活させない
+        if (current?.params !== baseParams) return;
+        updateBlockParams(blockId, nextParams, registryMap);
+      });
+  };
 
   // ブロック切替時に draft を最新値で初期化
   // SPEC-0016 v0.39.1 amendment: registry.params_spec で宣言されているが
@@ -355,6 +414,15 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
         setError(t("inspector.invalid_number", { name: k }));
         return;
       }
+      // ユーザーブロックは型ラベル (引数の注釈) が int なら名前に関係なく整数として検証する
+      if (
+        userMeta !== undefined &&
+        isIntTypeLabel(userMeta.params_spec.find((p) => p.name === k)?.type) &&
+        !Number.isInteger(parsed)
+      ) {
+        setError(t("inspector.invalid_integer", { name: k }));
+        return;
+      }
       const isIntParam =
         k === "n" ||
         k === "n_inputs" ||
@@ -371,13 +439,15 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       newValue = raw;
     }
     setError(null);
-    const nextParams = withDependentParams(block, k, newValue);
+    // 応答待ち (dynamic_ports) の params があればそれを土台にする (先の編集を落とさない)
+    const baseParams = pendingParamsRef.current.get(block.id)?.params ?? block.params;
+    const nextParams = withDependentParams({ ...block, params: baseParams }, k, newValue);
     // 従属パラメータの追従 / clamp で実際に入る値が入力と異なるキーは draft も
     // 揃える (= 入力欄に「3」と残ったまま params は 1、という食い違いを防ぐ)
     setDraft((d) => {
       const out = { ...d };
       for (const [key, v] of Object.entries(nextParams)) {
-        const changedByDependency = key !== k && block.params[key] !== v;
+        const changedByDependency = key !== k && baseParams[key] !== v;
         const clamped = key === k && v !== newValue;
         if ((changedByDependency || clamped) && isPrimitiveParam(v)) {
           out[key] = formatForDraft(v);
@@ -385,7 +455,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       }
       return out;
     });
-    updateBlockParams(block.id, nextParams, registryMap);
+    applyParams(nextParams);
   };
 
   // ADR-0081 §4-B: 読み込めないブロックは params を読み取り専用で出し、理由を示す
@@ -635,18 +705,24 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   // SPEC-0011 §1.1: 1-D 配列を JsonArrayEditor で編集
                   // SPEC-0018: 3-D 以上の n-D 数値配列 (= LookupTableND.table)
                   // も elementType="nested" でここに流れる (Phase 1 = JSON 編集のみ)
+                  // ユーザーブロックの list[str] 等の引数は既定値が空でも文字列の配列として編集する
                   <JsonArrayEditor
                     value={v}
                     elementType={
                       Array.isArray(v[0])
                         ? "nested"
-                        : inferArrayElementType(v)
+                        : inferArrayElementType(
+                            v,
+                            userMeta !== undefined ? paramSpec?.type : undefined,
+                          )
                     }
                     testid={`param-input-${k}`}
-                    placeholder={t(
-                      "inspector.array.placeholder",
-                      "e.g. [0.0, 1.0, 2.0]",
-                    )}
+                    placeholder={
+                      userMeta !== undefined &&
+                      inferArrayElementType(v, paramSpec?.type) === "string"
+                        ? STRING_ARRAY_PLACEHOLDER
+                        : t("inspector.array.placeholder", "e.g. [0.0, 1.0, 2.0]")
+                    }
                     onCommit={(next) => commit(k, next, "array")}
                     // ADR-0079 Stage 3: 配列 → スカラに戻す (数値 1 個を書く)
                     onCommitScalar={

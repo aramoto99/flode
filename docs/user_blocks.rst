@@ -236,7 +236,51 @@ Parameter values
 
 Numbers (``float`` / ``int`` / ``bool``), arrays (the Inspector accepts an
 array literal such as ``[1, 2, 3]``) and strings can be edited in the
-Inspector.
+Inspector. A parameter annotated ``int`` only accepts whole numbers. A
+parameter annotated ``list[str]`` is edited as a list of strings
+(``["A", "B"]``), even when its default is an empty list.
+
+Ports that depend on parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A ``Block`` subclass whose number of ports, port shapes or port names depend
+on its parameters sets ``block_dynamic_ports = True``. Its ``__init__``
+decides ``n_inputs`` / ``n_outputs`` / ``port_shapes_in`` /
+``port_shapes_out`` as usual and may set the instance attributes
+``input_names`` / ``output_names`` (tuples of strings, one per port). Each time
+a parameter is edited in the Inspector, the GUI builds the block with the new
+values and redraws its ports; wires to ports that no longer exist are removed.
+
+.. code-block:: python
+
+   class Channels(Block):
+       block_dynamic_ports = True
+
+       def __init__(self, n: int = 2, *, id=None, name=None):
+           super().__init__(id=id, name=name, n_inputs=1, n_outputs=n)
+           self._params = {"n": n}
+           self.output_names = tuple(f"ch{i}" for i in range(n))
+
+Because ``__init__`` runs on every edit, keep it cheap and free of side
+effects: start external resources (processes, devices, connections) in
+``reset()``, not in ``__init__``.
+
+Opening and closing resources, logging
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``reset()`` is called at the start of every run, and ``close()`` after the
+run ends — completed, stopped or failed. Open external resources in
+``reset()`` and close them in ``close()``; an exception in one block's
+``close()`` is logged and the other blocks are still closed.
+
+Messages a block logs with the standard ``logging`` module
+(``logging.getLogger(__name__).info("...")``) during a run appear, with the
+simulation time, in the **Log** tab of the GUI (``INFO`` and above; up to
+1000 entries per run). Only messages logged on the simulation's own thread are
+collected; a block that runs work on its own thread should log from its
+``output`` / ``update`` methods. To make this work the server sets the level
+of the ``flode_ws`` logger to ``INFO`` when it is unset, so these messages also
+reach any console or file handler you configured.
 
 Rules to keep
 -------------

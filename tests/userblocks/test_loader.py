@@ -1081,3 +1081,166 @@ class TestPrivateDependencies:
             assert "_flode_structure" in vars(cls)
         assert "_flode_func" in vars(probe_fn)
         assert "_flode_user_cls" in vars(probe_cls)
+
+
+# ---------------------------------------------------------------------------
+# block_dynamic_ports (ポートが引数で変わるブロック)
+# ---------------------------------------------------------------------------
+
+_DYNAMIC_TEMPLATE = """
+from flode import Block
+
+
+class Split(Block):
+    block_dynamic_ports = {flag}
+    {class_names}
+
+    def __init__(self, n: int = 2, **kwargs):
+        super().__init__(n_inputs=1, n_outputs=n, **kwargs)
+        {instance_names}
+
+    def output(self, t, x, u):
+        return [u[0]] * self.n_outputs
+"""
+
+
+def _dynamic_source(
+    *, flag: str = "True", class_names: str = "", instance_names: str = "pass"
+) -> str:
+    return _DYNAMIC_TEMPLATE.format(
+        flag=flag, class_names=class_names, instance_names=instance_names
+    )
+
+
+class TestDynamicPorts:
+    def test_instance_names_are_used_and_flagged(self, workspace: Path, write_block: WriteFile):
+        write_block(
+            "dyn.py",
+            _dynamic_source(instance_names="self.output_names = tuple(f'o{i}' for i in range(n))"),
+        )
+
+        report = _load(workspace)
+
+        assert _errors(report) == []
+        (info,) = report.block_infos
+        assert info.dynamic_ports is True
+        assert info.output_names == ("o0", "o1")
+        assert info.n_outputs == 2
+
+    def test_instance_names_count_is_checked_against_default_instance(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        write_block("dyn.py", _dynamic_source(instance_names="self.output_names = ('only',)"))
+
+        report = _load(workspace)
+
+        assert report.block_infos == ()
+        (error,) = _errors(report)
+        assert "instance attribute output_names has 1 names but the block has 2 ports" in (
+            error.message
+        )
+
+    def test_instance_names_must_be_strings(self, workspace: Path, write_block: WriteFile):
+        write_block("dyn.py", _dynamic_source(instance_names="self.output_names = 'ab'"))
+
+        report = _load(workspace)
+
+        (error,) = _errors(report)
+        assert "must be a sequence of strings" in error.message
+
+    def test_class_names_fall_back_and_are_checked_at_default(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        write_block("ok.py", _dynamic_source(class_names="block_output_names = ('a', 'b')"))
+        write_block("bad.py", _dynamic_source(class_names="block_output_names = ('a',)"))
+
+        report = _load(workspace)
+
+        (info,) = report.block_infos
+        assert info.type_path == "flode_ws.ok.Split"
+        assert info.output_names == ("a", "b")
+        (error,) = _errors(report)
+        assert error.type_path == "flode_ws.bad.Split"
+        assert "block_output_names has 1 names but the block has 2 ports" in error.message
+
+    @pytest.mark.parametrize("flag", ["False", "1"])
+    def test_without_true_declaration_instance_names_are_ignored(
+        self, workspace: Path, write_block: WriteFile, flag: str
+    ):
+        write_block(
+            "dyn.py", _dynamic_source(flag=flag, instance_names="self.output_names = ('z',)")
+        )
+
+        report = _load(workspace)
+
+        (info,) = report.block_infos
+        assert info.dynamic_ports is False
+        assert info.output_names == ()
+
+    def test_resolve_user_block_ports_is_lenient_for_class_names(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        from flode.userblocks import resolve_user_block_ports
+
+        write_block("dyn.py", _dynamic_source(class_names="block_output_names = ('a', 'b')"))
+        (info,) = _load(workspace).block_infos
+
+        ports = resolve_user_block_ports(info.block_class, {"n": 3})
+
+        assert (ports.n_inputs, ports.n_outputs) == (1, 3)
+        assert ports.output_names == ()
+        assert ports.port_shapes_out == ((), (), ())
+
+    def test_resolve_user_block_ports_wraps_any_exception(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        from flode.exceptions import BlockSpecError
+        from flode.userblocks import resolve_user_block_ports
+
+        write_block("dyn.py", _dynamic_source())
+        (info,) = _load(workspace).block_infos
+
+        with pytest.raises(BlockSpecError, match="cannot create the block"):
+            resolve_user_block_ports(info.block_class, {"n": "x"})
+        with pytest.raises(BlockSpecError, match="SystemExit"):
+            resolve_user_block_ports(_exiting_class(), {})
+
+    def test_resolve_user_block_ports_caps_port_count(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        from flode.exceptions import BlockSpecError
+        from flode.userblocks import resolve_user_block_ports
+        from flode.userblocks._loader import USER_BLOCK_MAX_PORTS
+
+        write_block("dyn.py", _dynamic_source())
+        (info,) = _load(workspace).block_infos
+
+        resolve_user_block_ports(info.block_class, {"n": USER_BLOCK_MAX_PORTS})
+        with pytest.raises(BlockSpecError, match="exceed the limit"):
+            resolve_user_block_ports(info.block_class, {"n": USER_BLOCK_MAX_PORTS + 1})
+
+    def test_resolve_user_block_ports_closes_the_probe_instance(self):
+        from flode import Block
+        from flode.userblocks import resolve_user_block_ports
+
+        closed: list[str] = []
+
+        class Opener(Block):
+            def __init__(self, **kwargs: object) -> None:
+                super().__init__(n_inputs=1, n_outputs=1)
+
+            def close(self) -> None:
+                closed.append("closed")
+
+        resolve_user_block_ports(Opener, {})
+        assert closed == ["closed"]
+
+
+def _exiting_class() -> type:
+    from flode import Block
+
+    class Exiting(Block):
+        def __init__(self, **kwargs: object) -> None:
+            raise SystemExit(3)
+
+    return Exiting

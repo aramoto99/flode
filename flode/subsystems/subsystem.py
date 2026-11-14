@@ -26,6 +26,7 @@ import numpy.typing as npt
 from ..core.block import (
     BASE_CLOCK_SAMPLE_TIME,
     Block,
+    close_all,
     in_serialization_build,
     register_serialization_invalidation,
     serialization_build,
@@ -752,6 +753,13 @@ class Subsystem(Block):
             inner_reset = getattr(b, "reset", None)
             if callable(inner_reset):
                 inner_reset()
+
+    def close(self) -> None:
+        """実行の終わりに内部ブロックの ``close()`` を呼ぶ (ADR-0083 §(2))。
+
+        1 つが例外を出しても残りは閉じる (例外はログに残して握る)。
+        """
+        close_all(self._inner_blocks)
 
     def _compute_exec_order(self) -> list[Block]:
         """内部 direct_feedthrough 依存に基づくトポロジカル順 (代数ループ検出付き)。"""

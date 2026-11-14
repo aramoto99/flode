@@ -208,9 +208,11 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
 
     Returns:
         ``{"n_inputs", "n_outputs", "port_shapes_in", "port_shapes_out"}``。
+        ユーザーブロックはさらに ``"input_names"`` / ``"output_names"`` (空 = 無名)。
 
     Raises:
-        HTTPException: type_path 解決失敗 → 404、``__init__`` 失敗 → 400。
+        HTTPException: type_path 解決失敗 → 404、``__init__`` 失敗 → 400
+            (ユーザーブロックはユーザーコードのどんな例外も 400)。
     """
     body = await request.json()
     if not isinstance(body, dict):
@@ -222,17 +224,23 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
     if not isinstance(params, dict):
         raise HTTPException(status_code=400, detail="`params` must be a JSON object")
     try:
-        resolved = resolve_port_shapes(type_path, params)
+        # ユーザーブロックの __init__ が重くても event loop (WS 配信・他の API) を止めない
+        resolved = await run_in_threadpool(resolve_port_shapes, type_path, params)
     except UnknownBlockTypeError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except BlockSpecError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return {
+    out: dict[str, Any] = {
         "n_inputs": resolved.n_inputs,
         "n_outputs": resolved.n_outputs,
         "port_shapes_in": resolved.port_shapes_in,
         "port_shapes_out": resolved.port_shapes_out,
     }
+    if resolved.input_names is not None:
+        out["input_names"] = resolved.input_names
+    if resolved.output_names is not None:
+        out["output_names"] = resolved.output_names
+    return out
 
 
 @router.get("/python-function/introspect")

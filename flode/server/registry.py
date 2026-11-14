@@ -37,7 +37,7 @@ from ..core.persistence import (
     to_json_value,
 )
 from ..exceptions import BlockSpecError
-from ..userblocks import UserBlockInfo
+from ..userblocks import UserBlockInfo, resolve_user_block_ports
 
 _logger = logging.getLogger("flode.registry")
 
@@ -127,6 +127,9 @@ class BlockMetadata:
     # ポート名 (空 = 無名)。組み込みブロックは常に空。
     input_names: list[str] = field(default_factory=list)
     output_names: list[str] = field(default_factory=list)
+    # ユーザーブロックが ``block_dynamic_ports = True`` を宣言している (ポートが引数で
+    # 変わる。frontend は ``resolve-port-shapes`` で引数ごとのポートを問い合わせる)。
+    dynamic_ports: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +302,8 @@ _BUILTIN_METADATA: dict[str, tuple[str, str, str]] = {
     "flode.blocks.sinks.XYGraph": ("sinks", "XY Graph", "sinks.xygraph"),
     # SPEC-0034 / ADR-0082: 配列信号を画像としてブロック面に表示
     "flode.blocks.sinks.ImageDisplay": ("sinks", "Image Display", "sinks.imagedisplay"),
+    # ADR-0083 §(4): 音声の塊をブラウザから鳴らす
+    "flode.blocks.sinks.AudioOutput": ("sinks", "Audio Output", "sinks.audiooutput"),
     "flode.blocks.sinks.Terminator": ("sinks", "Terminator", "sinks.terminator"),
     # subsystems
     "flode.subsystems.subsystem.Subsystem": (
@@ -941,6 +946,7 @@ def build_user_block_metadata(info: UserBlockInfo) -> BlockMetadata:
         source=info.source,
         input_names=list(info.input_names),
         output_names=list(info.output_names),
+        dynamic_ports=info.dynamic_ports,
     )
 
 
@@ -994,6 +1000,9 @@ def metadata_to_dict(
     # ``None`` のとき payload に乗せない (= 既存 builtin の後方互換)。
     if meta.n_inputs_resolver is not None:
         out["n_inputs_resolver"] = meta.n_inputs_resolver
+    # ポートが引数で変わるユーザーブロックだけ載せる (既存の payload は不変)
+    if meta.dynamic_ports:
+        out["dynamic_ports"] = True
     if include_full_docstring:
         out["docstring_full"] = meta.docstring_full
     return out
@@ -1010,6 +1019,9 @@ class ResolvedPortShapes:
     n_outputs: int
     port_shapes_in: list[list[int]]
     port_shapes_out: list[list[int]]
+    #: ポート名 (ユーザーブロックだけ。組み込みは ``None`` = 応答に載せない)
+    input_names: list[str] | None = None
+    output_names: list[str] | None = None
 
 
 def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortShapes:
@@ -1023,18 +1035,35 @@ def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortS
         type_path: ``"flode.blocks.Gain"`` 等の dotted path。
         params: ``__init__`` に渡す kwargs。
 
+    ユーザーブロック (管理型表にある型) は ``input_names`` / ``output_names`` も返す
+    (``block_dynamic_ports`` を宣言していればインスタンスから、それ以外は class 属性)。
+    ユーザーコードのどんな例外 (中断を除く) も ``BlockSpecError`` にする。
+
     Returns:
         ``ResolvedPortShapes``。
 
     Raises:
         BlockSpecError: ``cls`` の解決失敗、または ``__init__`` での例外。
     """
-    from ..core.persistence import resolve_block_class
+    from ..core.persistence import managed_block_types, resolve_block_class
 
+    # 管理型表は 1 回だけ読む (2 回読む間に再読み込みが挟まるとユーザークラスが
+    # 汎用経路に落ち、任意の例外が 500 になるため、security-reviewer S-3)
+    user_cls = managed_block_types().get(type_path)
+    if user_cls is not None:
+        ports = resolve_user_block_ports(user_cls, params)
+        return ResolvedPortShapes(
+            n_inputs=ports.n_inputs,
+            n_outputs=ports.n_outputs,
+            port_shapes_in=[list(s) for s in ports.port_shapes_in],
+            port_shapes_out=[list(s) for s in ports.port_shapes_out],
+            input_names=list(ports.input_names),
+            output_names=list(ports.output_names),
+        )
     cls = resolve_block_class(type_path)
     try:
         instance = cls(**params)
-    except (TypeError, ValueError, BlockSpecError) as e:
+    except (TypeError, ValueError, OverflowError, BlockSpecError) as e:
         raise BlockSpecError(f"Cannot instantiate {type_path!r} with params {params!r}: {e}") from e
     return ResolvedPortShapes(
         n_inputs=instance.n_inputs,

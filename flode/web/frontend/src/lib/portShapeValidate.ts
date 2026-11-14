@@ -10,6 +10,7 @@ import {
 } from "./blockTypes";
 import { hasDynamicPorts, resolvePortCounts } from "./dynamicPorts";
 import { isPlaceholderType, userBlockMetaOf } from "./userBlockModel";
+import { effectiveUserBlockPorts } from "./userBlockPorts";
 
 export function shapeEquals(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -47,13 +48,15 @@ export function getDefaultPortShapes(
   registry: ReadonlyMap<string, BlockMetadata>,
 ): { in: number[][]; out: number[][] } {
   // ADR-0081 X-1: ユーザーブロックは registry の ``port_shapes_*_default`` をそのまま使い、
-  // 型名の末尾一致による組み込みの特別扱い (Subsystem / 動的ポート) を通さない
+  // 型名の末尾一致による組み込みの特別扱い (Subsystem / 動的ポート) を通さない。
+  // ``dynamic_ports`` のブロックはサーバが引数ごとに解決した shape (キャッシュ済みのとき)
   const userMeta = userBlockMetaOf(block.type, registry);
   if (userMeta !== undefined) {
-    return {
-      in: userMeta.port_shapes_in_default,
-      out: userMeta.port_shapes_out_default,
-    };
+    const ports = effectiveUserBlockPorts(
+      userMeta,
+      block.params as Record<string, unknown>,
+    );
+    return { in: ports.shapesIn, out: ports.shapesOut };
   }
   // ADR-0039: Subsystem は内部 Inport/Outport から派生
   if (block.type.endsWith(".Subsystem")) {

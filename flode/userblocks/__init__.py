@@ -25,9 +25,11 @@ from ._config import (
 )
 from ._loader import (
     WORKSPACE_BLOCKS_DIR,
+    UserBlockPorts,
     current_report,
     load_sources,
     reload_sources,
+    resolve_user_block_ports,
     unload_sources,
 )
 from ._model import (
@@ -114,6 +116,7 @@ __all__ = [
     "SourceFile",
     "SourceInfo",
     "UserBlockInfo",
+    "UserBlockPorts",
     "UserParamSpec",
     "current_report",
     "default_config_path",
@@ -122,5 +125,6 @@ __all__ = [
     "parse_blocks_config",
     "read_blocks_config",
     "reload_sources",
+    "resolve_user_block_ports",
     "unload_blocks",
 ]

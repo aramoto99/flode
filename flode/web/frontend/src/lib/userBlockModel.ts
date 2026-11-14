@@ -20,6 +20,7 @@ import type {
   FlwModel,
 } from "../types/api";
 import { cleanServerText, MAX_LABEL_CHARS, MAX_PATH_CHARS } from "./untrustedText";
+import { effectiveUserBlockPorts } from "./userBlockPorts";
 import { isUserBlock } from "./userBlocks";
 
 /** type_path → registry のメタデータ。 */
@@ -197,7 +198,8 @@ export function collectPlaceholderBlocks(
 
 /**
  * ユーザーブロックの registry のポート数を超える index に繋がった配線を全部集める。
- * プレースホルダ (ポート数が分からない) と組み込みブロックは対象外。
+ * プレースホルダ (ポート数が分からない) と組み込みブロックは対象外。``dynamic_ports`` の
+ * ブロックは引数ごとに解決済みのポート数 (未解決なら registry の数) と比べる。
  */
 export function collectExcessPortConnections(
   model: FlwModel,
@@ -215,12 +217,12 @@ export function collectExcessPortConnections(
     for (const c of connections) {
       const dst = byId.get(c.dst);
       const dstMeta = dst && userBlockMetaOf(dst.type, registry);
-      if (dst && dstMeta && c.dst_idx >= dstMeta.default_n_inputs) {
+      if (dst && dstMeta && c.dst_idx >= effectiveUserBlockPorts(dstMeta, dst.params).nInputs) {
         out.push({ ...ref(dst), direction: "in", portIndex: c.dst_idx });
       }
       const src = byId.get(c.src);
       const srcMeta = src && userBlockMetaOf(src.type, registry);
-      if (src && srcMeta && c.src_idx >= srcMeta.default_n_outputs) {
+      if (src && srcMeta && c.src_idx >= effectiveUserBlockPorts(srcMeta, src.params).nOutputs) {
         out.push({ ...ref(src), direction: "out", portIndex: c.src_idx });
       }
     }

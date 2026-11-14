@@ -12,7 +12,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -36,6 +36,7 @@ import {
   type BlockShapeKind,
 } from "../lib/blockShapes";
 import {
+  AUDIO_OUTPUT_TYPE,
   ENABLE_TYPE,
   getNumberParam,
   IMAGE_DISPLAY_TYPE,
@@ -58,7 +59,8 @@ import {
 import { toLocale, userBlockDisplayName } from "../lib/userBlocks";
 import type { BlockEntry, ImageFrame } from "../types/api";
 import { updateBlockSize, useAppStore } from "../store/appStore";
-import { INPUT_CLS } from "./ui/inspector";
+import { CHECKBOX_CLS, INPUT_CLS } from "./ui/inspector";
+import { audioPlayer } from "../lib/audioPlayer";
 
 /**
  * ADR-0058 §論点 4 / §論点 11: Subsystem に含まれる control block の有無を
@@ -654,12 +656,13 @@ function UserBlockContent({
   const { t, i18n } = useTranslation();
   const placeholder = info.kind === "placeholder";
   const labels: SubsystemPortLabelInfo = { inputs: [], outputs: [], nDataIn: nIn, nOut };
-  userPortNames(info.meta?.input_names)
+  // dynamic_ports のブロックは引数ごとに解決したポート名 (diagramConverter が載せる)
+  userPortNames(info.inputNames ?? info.meta?.input_names)
     .slice(0, nIn)
     .forEach((label, portIdx) => {
       if (label !== "") labels.inputs.push({ portIdx, label });
     });
-  userPortNames(info.meta?.output_names)
+  userPortNames(info.outputNames ?? info.meta?.output_names)
     .slice(0, nOut)
     .forEach((label, portIdx) => {
       if (label !== "") labels.outputs.push({ portIdx, label });
@@ -759,6 +762,10 @@ function ShapeContent({
   // SPEC-0034 F-5: 画像表示ブロックはブロック面に最新コマを描く
   if (typePath === IMAGE_DISPLAY_TYPE) {
     return <ImageDisplayLive blockId={blockId} />;
+  }
+  // ADR-0083 §(4): 音声出力ブロックは音量計と消音チェックを出す
+  if (typePath === AUDIO_OUTPUT_TYPE) {
+    return <AudioOutputLive blockId={blockId} />;
   }
 
   // 三角形 (Gain): 底辺側に param (k=...) を表示。flipped=false なら底辺=左→
@@ -1742,6 +1749,49 @@ export function ImageDisplayLive({ blockId }: { blockId: string }): JSX.Element 
       data-testid="image-display-canvas"
       className="absolute inset-[2px] h-[calc(100%-4px)] w-[calc(100%-4px)] object-contain [image-rendering:pixelated]"
     />
+  );
+}
+
+/**
+ * 音声出力ブロックのブロック面 (ADR-0083 §(4)): 音量計・消音チェック。モデル設定の
+ * 「実時間に同期」が無効なら音は届かないので、その旨を出す。
+ *
+ * @internal テスト用 export。プロダクション利用は BlockNodeView 経由。
+ */
+export function AudioOutputLive({ blockId }: { blockId: string }): JSX.Element {
+  const { t } = useTranslation();
+  const realtime = useAppStore((s) => s.editingModel?.simulator.realtime === true);
+  const state = useSyncExternalStore(
+    (cb) => audioPlayer.subscribe(cb),
+    () => audioPlayer.getState(blockId),
+  );
+  const levelPct = Math.round(Math.min(1, state.level) * 100);
+  return (
+    <div className="absolute inset-0 flex flex-col justify-center gap-1 px-2 text-[10px] text-slate-700">
+      <div className="h-1.5 w-full rounded-sm border border-slate-300 bg-slate-50">
+        <div
+          data-testid="audio-output-level"
+          className="h-full bg-slate-500"
+          style={{ width: `${levelPct}%` }}
+        />
+      </div>
+      {realtime ? (
+        <label className="nodrag flex items-center gap-1">
+          <input
+            type="checkbox"
+            className={CHECKBOX_CLS}
+            checked={state.muted}
+            onChange={(e) => audioPlayer.setMuted(blockId, e.target.checked)}
+            data-testid="audio-output-mute"
+          />
+          <span>{t("audio_output.mute", "Mute")}</span>
+        </label>
+      ) : (
+        <span className="text-amber-700" data-testid="audio-output-needs-realtime">
+          {t("audio_output.needs_realtime", "Needs real-time sync")}
+        </span>
+      )}
+    </div>
   );
 }
 

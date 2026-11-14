@@ -37,6 +37,8 @@ _MAX_DOC_LINE_CHARS = 1000
 _NON_PARAM_NAMES: frozenset[str] = frozenset({"self", "id", "name"})
 _ANY_TYPE_LABEL = "any"
 _FALLBACK_LOCALE = "en"
+#: ポート数・ポート名が引数で変わることの宣言 (class 属性、``True`` のときだけ有効)。
+DYNAMIC_PORTS_ATTRIBUTE = "block_dynamic_ports"
 
 
 @dataclass(frozen=True)
@@ -219,25 +221,119 @@ def _localized(value: Any, *, field: str, owner: str) -> tuple[str, dict[str, st
     return validated.get(_FALLBACK_LOCALE, next(iter(validated.values()))), validated
 
 
-def _resolve_port_names(
-    cls: type, attr: str, structure_field: str, n_ports: int
-) -> tuple[str, ...]:
+def _validated_names(raw: Any, label: str) -> tuple[str, ...]:
+    """ポート名の列を検証して tuple にする (class 属性・インスタンス属性で同じ規則)。"""
+    if isinstance(raw, str) or not isinstance(raw, Sequence):
+        raise BlockSpecError(f"{label} must be a sequence of strings, got {raw!r}")
+    names = tuple(raw)
+    if not all(isinstance(n, str) for n in names):
+        raise BlockSpecError(f"{label} must be a sequence of strings, got {raw!r}")
+    return names
+
+
+def _class_port_names(cls: type, attr: str, structure_field: str) -> tuple[str, ...]:
+    """class 属性 (無ければ ``@block`` の構造宣言) のポート名 (長さは検査しない)。"""
     raw = getattr(cls, attr, None)
     if raw is None:
         structure = getattr(cls, "_flode_structure", None)
         raw = getattr(structure, structure_field, ()) if structure is not None else ()
-    if isinstance(raw, str) or not isinstance(raw, Sequence):
-        raise BlockSpecError(f"{attr} must be a sequence of strings, got {raw!r}")
-    names = tuple(raw)
-    if not all(isinstance(n, str) for n in names):
-        raise BlockSpecError(f"{attr} must be a sequence of strings, got {raw!r}")
+    return _validated_names(raw, attr)
+
+
+def _resolve_port_names(
+    cls: type, attr: str, structure_field: str, n_ports: int
+) -> tuple[str, ...]:
+    names = _class_port_names(cls, attr, structure_field)
     if names and len(names) != n_ports:
         raise BlockSpecError(f"{attr} has {len(names)} names but the block has {n_ports} ports")
     return names
 
 
+def has_dynamic_ports(cls: type) -> bool:
+    """クラスが ``block_dynamic_ports = True`` を宣言しているか (継承する)。
+
+    宣言したブロックは、引数ごとのインスタンスの ``n_inputs`` / ``n_outputs`` /
+    ``port_shapes_*`` / ``input_names`` / ``output_names`` でポートが決まる。
+    静的に読み (ユーザーのメタクラス / descriptor を実行しない)、真偽は ``is True`` だけ認める。
+    """
+    return inspect.getattr_static(cls, DYNAMIC_PORTS_ATTRIBUTE, False) is True
+
+
+def resolve_instance_port_names(
+    cls: type, instance: Any, *, strict: bool
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """ポート数が引数で変わるブロック (``block_dynamic_ports``) のポート名をインスタンスから決める。
+
+    方向ごとに、インスタンス属性 ``input_names`` / ``output_names`` (``None`` / 無しなら未宣言)
+    を優先し、未宣言なら class の ``block_input_names`` / ``block_output_names`` を使う。
+
+    Args:
+        cls: ``Block`` サブクラス。
+        instance: ``cls(**params)`` のインスタンス (属性の読み出しはユーザーコードを通る)。
+        strict: ``True`` なら class のポート名の数がインスタンスのポート数と合わないときに
+            ``BlockSpecError`` (読み込み時の既定値インスタンスの検査)。``False`` なら無名にする
+            (引数を変えてポート数が変わった場合)。
+
+    Returns:
+        ``(入力ポート名, 出力ポート名)`` (空 = 無名)。
+
+    Raises:
+        BlockSpecError: ポート名が文字列の列でない、またはインスタンス属性のポート名の数が
+            ポート数と合わない (``strict`` に関係なく)。
+    """
+    resolved: list[tuple[str, ...]] = []
+    for inst_attr, cls_attr, structure_field, n_ports in (
+        ("input_names", "block_input_names", "input_names", int(instance.n_inputs)),
+        ("output_names", "block_output_names", "output_names", int(instance.n_outputs)),
+    ):
+        raw = getattr(instance, inst_attr, None)
+        if raw is not None:
+            names = _validated_names(raw, f"the instance attribute {inst_attr}")
+            if names and len(names) != n_ports:
+                raise BlockSpecError(
+                    f"the instance attribute {inst_attr} has {len(names)} names but the "
+                    f"block has {n_ports} ports"
+                )
+        else:
+            names = _class_port_names(cls, cls_attr, structure_field)
+            if names and len(names) != n_ports:
+                if strict:
+                    raise BlockSpecError(
+                        f"{cls_attr} has {len(names)} names but the block has {n_ports} ports"
+                    )
+                names = ()
+        resolved.append(names)
+    return resolved[0], resolved[1]
+
+
+def port_names_for_instance(cls: type, instance: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """任意の引数で作ったインスタンスのポート名 (数が合わない class のポート名は無名にする)。
+
+    ``block_dynamic_ports`` を宣言したクラスは ``resolve_instance_port_names`` (非厳密)、
+    それ以外は class のポート名だけを見る (インスタンス属性は読まない = 従来どおり)。
+
+    Raises:
+        BlockSpecError: ポート名が文字列の列でない等 (``resolve_instance_port_names`` と同じ)。
+    """
+    if has_dynamic_ports(cls):
+        return resolve_instance_port_names(cls, instance, strict=False)
+    resolved: list[tuple[str, ...]] = []
+    for cls_attr, structure_field, n_ports in (
+        ("block_input_names", "input_names", int(instance.n_inputs)),
+        ("block_output_names", "output_names", int(instance.n_outputs)),
+    ):
+        names = _class_port_names(cls, cls_attr, structure_field)
+        resolved.append(names if len(names) == n_ports else ())
+    return resolved[0], resolved[1]
+
+
 def resolve_metadata(
-    cls: type, params: Mapping[str, Any], *, n_inputs: int, n_outputs: int
+    cls: type,
+    params: Mapping[str, Any],
+    *,
+    n_inputs: int,
+    n_outputs: int,
+    instance: Any = None,
 ) -> ResolvedMetadata:
     """クラスの公開属性・private 属性・docstring からメタデータを決める。
 
@@ -248,6 +344,9 @@ def resolve_metadata(
         params: ``{引数名: JSON 往復済みの既定値}`` (選択肢の既定値検査に使う)。
         n_inputs: 既定値でインスタンス化したときの入力ポート数 (ポート名の長さ検査)。
         n_outputs: 同出力ポート数。
+        instance: 既定値のインスタンス。``block_dynamic_ports`` を宣言したクラスでは、
+            ポート名をこのインスタンスから決める (``resolve_instance_port_names``、
+            数の検査は厳密)。``None`` なら class 属性だけを見る。
 
     Returns:
         解決済みのメタデータ。
@@ -301,6 +400,12 @@ def resolve_metadata(
                 descriptions[pname] = text.get(_FALLBACK_LOCALE, next(iter(text.values())))
                 descriptions_i18n[pname] = dict(text)
 
+    if instance is not None and has_dynamic_ports(cls):
+        input_names, output_names = resolve_instance_port_names(cls, instance, strict=True)
+    else:
+        input_names = _resolve_port_names(cls, "block_input_names", "input_names", n_inputs)
+        output_names = _resolve_port_names(cls, "block_output_names", "output_names", n_outputs)
+
     return ResolvedMetadata(
         display_name=display_name,
         display_name_i18n=display_i18n,
@@ -311,6 +416,6 @@ def resolve_metadata(
         choices=choices,
         param_descriptions=descriptions,
         param_descriptions_i18n=descriptions_i18n,
-        input_names=_resolve_port_names(cls, "block_input_names", "input_names", n_inputs),
-        output_names=_resolve_port_names(cls, "block_output_names", "output_names", n_outputs),
+        input_names=input_names,
+        output_names=output_names,
     )

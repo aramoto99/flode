@@ -42,6 +42,8 @@ import {
   type SplitTree,
 } from "../lib/splitTree";
 import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
+import { audioPlayer } from "../lib/audioPlayer";
+import { invalidateUserBlockPorts } from "../lib/userBlockPorts";
 import type {
   BlockEntry,
   BlockMetadata,
@@ -53,6 +55,7 @@ import type {
   LayoutDict,
   ImageFrame,
   MaskValuesDict,
+  RunLogEntry,
   SimulationStatus,
   SimulatorConfig,
   StreamMessage,
@@ -68,12 +71,17 @@ import { BLOCKS_REGISTRY_QUERY_KEY } from "../lib/queryKeys";
 /** block registry の cache を invalidate する (表示中なら再取得される)。 */
 function invalidateBlockRegistry(): void {
   void queryClient.invalidateQueries({ queryKey: BLOCKS_REGISTRY_QUERY_KEY });
+  // ADR-0083 §(1): 再読み込みでポートの解決結果も変わりうる
+  invalidateUserBlockPorts();
 }
 
 // ADR-0023 §Decision §(3): ScopeBuffer は ``../lib/scopeBuffer`` に SoA 実装を抽出。
 // ここでは re-export して既存 import (= ScopeView / XYGraphView / BlockNodeView 経由) を
 // 壊さないように維持する。
 export type { ScopeBuffer };
+
+/** ADR-0083 §(5): 保持する実行ログの上限件数 (サーバの ``RUN_LOG_MAX_ENTRIES`` と同じ)。 */
+export const RUN_LOG_MAX_ENTRIES = 1000;
 
 /** v0.20.0: undo/redo の最大履歴サイズ (= 過去 N 状態まで保持)。
  *
@@ -552,6 +560,13 @@ interface AppState {
   imageFrames: Record<string, ImageFrame>;
   // 終端後の一括結果 (`GET /results` の images) で最新コマを補完する。
   replaceImageFrames: (frames: Record<string, ImageFrame>) => void;
+
+  // ADR-0083 §(5): 実行ログ (ブロックが出したログ)。Run 開始でクリア。
+  runLogs: RunLogEntry[];
+  /** 上限を超えて捨てたログの件数 (サーバ側の数 + 受信側で捨てた数)。 */
+  runLogsDropped: number;
+  // 終端後の一括結果 (`GET /results` の logs) でログ一覧を置き換える。
+  replaceRunLogs: (logs: RunLogEntry[], dropped: number) => void;
 
   // 受信ハンドラ (WebSocket メッセージから状態に反映)
   handleStreamMessage: (msg: StreamMessage) => void;
@@ -1311,6 +1326,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 前 run の未 flush pending (scope_batch / progress) が新 run に漏れ込まない
     // よう、予約済み rAF を解除して pending を破棄してから開始する。
     cancelPendingStream();
+    // ADR-0083 §(4): 前回の実行の音を止め、再生時刻の予約を取り直す
+    audioPlayer.stopAll();
     set({
       simulationId: simId,
       status: "running",
@@ -1318,6 +1335,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       scopes: {},
       // SPEC-0034 F-7: 前回の絵を残さない
       imageFrames: {},
+      runLogs: [],
+      runLogsDropped: 0,
       // ADR-0056 §F3: 次の Run 開始時に直近 failure をクリア + Error tab focus 解除。
       lastFailure: null,
       lastFailureSource: null,
@@ -1403,8 +1422,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   replaceImageFrames: (frames) =>
     set((state) => ({ imageFrames: { ...state.imageFrames, ...frames } })),
 
+  runLogs: [],
+  runLogsDropped: 0,
+  replaceRunLogs: (logs, dropped) =>
+    set({ runLogs: logs.slice(0, RUN_LOG_MAX_ENTRIES), runLogsDropped: dropped }),
+
   handleStreamMessage: (msg) => {
     switch (msg.type) {
+      case "audio_chunk": {
+        // 毎ステップ届くので state には載せず、再生器へ直接渡す
+        const { type: _type, ...chunk } = msg;
+        audioPlayer.enqueue(chunk);
+        break;
+      }
+      case "log": {
+        const { type: _type, ...entry } = msg;
+        set((state) =>
+          state.runLogs.length >= RUN_LOG_MAX_ENTRIES
+            ? { runLogsDropped: state.runLogsDropped + 1 }
+            : { runLogs: [...state.runLogs, entry] },
+        );
+        break;
+      }
       case "image_frame": {
         // サーバ側でブロックごと最大 30 fps に間引き済みなので、そのまま反映する
         const { type: _type, ...frame } = msg;
@@ -1437,12 +1476,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         // (= バックエンドの最終バッチの取りこぼし・順序逆転を防ぐ)。
         flushPendingStream();
         cancelPendingStream();
+        // 停止ボタンなら鳴っている音も止める (完了なら予約済みの残りは鳴らし切る)
+        if (msg.type === "stopped") audioPlayer.stopAll();
         set({ status: msg.type });
         break;
       case "failed": {
         // 終端: progress / scope_batch の pending を同期 drain してから失敗確定。
         flushPendingStream();
         cancelPendingStream();
+        audioPlayer.stopAll();
         // ADR-0056 §F2: ``failed`` に ``category`` フィールドが付いていれば構造化
         // エラーとして lastFailure に保存し Error tab を自動 focus。``category``
         // 無し (= 旧フォーマット or 想定外) なら詳細無しで status だけ立てる。

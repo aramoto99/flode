@@ -144,6 +144,8 @@ class UserBlockInfo:
         input_names: 入力ポート名 (空 = 無名)。
         output_names: 出力ポート名 (空 = 無名)。
         block_class: クラス本体 (比較対象外)。
+        dynamic_ports: ``block_dynamic_ports = True`` を宣言している (ポート数・ポート名・
+            shape が引数で変わる。上のポート関係の値は既定値のインスタンスのもの)。
     """
 
     type_path: str
@@ -167,6 +169,7 @@ class UserBlockInfo:
     input_names: tuple[str, ...]
     output_names: tuple[str, ...]
     block_class: type = field(compare=False, repr=False)
+    dynamic_ports: bool = False
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.67.0] - 2026-11-14 — 引数に追従するポート・後片付け・音声出力・実行ログ (ADR-0083)
+
+### Added
+
+- **ユーザーブロックのポートが引数に追従する**: `Block` サブクラスに `block_dynamic_ports = True` を宣言すると、
+  Inspector で引数を変えるたびにブロックを作り直してポート数・shape・ポート名 (インスタンス属性
+  `input_names` / `output_names`) を描き直し、無くなったポートへの配線を外す。REST
+  `POST /api/v1/blocks/resolve-port-shapes` の応答に `input_names` / `output_names` を追加し、ユーザーコードの
+  例外は 400 にした。registry のメタデータに `dynamic_ports: true` (宣言したときだけ)
+- **`Block.close()`**: 実行の終わり (完了・停止・失敗のどれでも) に呼ばれる後片付けの hook。既定は何もしない。
+  Subsystem は内側のブロックへ伝える。1 つが例外を出しても残りは閉じる (例外はログに残す)
+- **音声出力ブロック `AudioOutput`** (シンク)。shape `(N,)` / `(N, 2)` の音声の塊を、Web GUI のブラウザから
+  鳴らす (引数 `sample_rate` / `scale`)。上流のサンプル時刻にだけ記録する。実時間同期の実行でだけ WebSocket
+  `audio_chunk` (int16 PCM) で配信する。ブロック面に音量計と消音チェック
+- **実行ログ**: 実行中にユーザーブロック (`flode_ws.*`、INFO 以上) と flode 本体 (WARNING 以上) が標準
+  `logging` で出したメッセージを、シミュレーション時刻つきで GUI の「ログ」タブに一覧表示する (1 回の実行で
+  最大 1000 件)。WebSocket に `log`、`GET /results` に `logs` / `logs_dropped` を追加
+- Inspector: 型注釈が `int` の引数は整数だけを受け付け、`list[str]` の引数は既定値が空リストでも文字列の
+  リストとして編集できる
+
 ## [0.66.0] - 2026-11-14 — 画像表示ブロックと実時間同期 (ADR-0082)
 
 ### Added

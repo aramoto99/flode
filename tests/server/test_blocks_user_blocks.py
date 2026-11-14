@@ -676,3 +676,132 @@ def test_user_block_replaces_builtin_entry_with_same_type(
     assert len(matching) == 1
     assert matching[0]["source"] == "workspace"
     assert matching[0]["display_name"] == "Scaler"
+
+
+# ---------------------------------------------------------------------------
+# ポートが引数で変わるユーザーブロック (block_dynamic_ports)
+# ---------------------------------------------------------------------------
+
+DYNAMIC = '''
+from flode import Block
+
+
+class ChannelSplit(Block):
+    """Split into named channels."""
+
+    block_dynamic_ports = True
+
+    def __init__(self, channels: list[str] = ["a", "b"], *, id=None, name=None):
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=len(channels))
+        self.output_names = tuple(channels)
+        if "boom" in channels:
+            raise RuntimeError("no boom channel")
+
+    def output(self, t, x, u):
+        return [u[0]] * self.n_outputs
+
+
+class Wide(Block):
+    """Fixed ports with a class-level name."""
+
+    block_input_names = ("in",)
+
+    def __init__(self, n: int = 1, *, id=None, name=None):
+        super().__init__(id=id, name=name, n_inputs=1, n_outputs=1)
+        if n < 0:
+            raise ZeroDivisionError("negative")
+
+    def output(self, t, x, u):
+        return [u[0]]
+'''
+
+DYNAMIC_TYPE = "flode_ws.dyn.ChannelSplit"
+WIDE_TYPE = "flode_ws.dyn.Wide"
+
+
+def _resolve(client: TestClient, type_path: str, params: dict[str, Any]) -> Any:
+    return client.post(
+        "/api/v1/blocks/resolve-port-shapes", json={"type_path": type_path, "params": params}
+    )
+
+
+class TestDynamicPorts:
+    def test_registry_flags_only_dynamic_blocks(
+        self, workspace: Path, write_block: WriteFile, make_client: Any
+    ) -> None:
+        write_block("dyn.py", DYNAMIC)
+        client = make_client(_loopback_settings(workspace))
+
+        blocks = _blocks_by_type(client.get("/api/v1/blocks").json())
+
+        dyn = blocks[DYNAMIC_TYPE]
+        assert dyn["dynamic_ports"] is True
+        assert dyn["default_n_outputs"] == 2
+        assert dyn["output_names"] == ["a", "b"]
+        assert "dynamic_ports" not in blocks[WIDE_TYPE]
+        assert "dynamic_ports" not in blocks["flode.blocks.mathops.Gain"]
+
+    def test_resolve_returns_ports_and_names_per_params(
+        self, workspace: Path, write_block: WriteFile, make_client: Any
+    ) -> None:
+        write_block("dyn.py", DYNAMIC)
+        client = make_client(_loopback_settings(workspace))
+
+        resp = _resolve(client, DYNAMIC_TYPE, {"channels": ["x", "y", "z"]})
+
+        assert resp.status_code == 200, resp.json()
+        assert resp.json() == {
+            "n_inputs": 1,
+            "n_outputs": 3,
+            "port_shapes_in": [[]],
+            "port_shapes_out": [[], [], []],
+            "input_names": [],
+            "output_names": ["x", "y", "z"],
+        }
+
+    def test_resolve_non_dynamic_user_block_uses_class_names(
+        self, workspace: Path, write_block: WriteFile, make_client: Any
+    ) -> None:
+        write_block("dyn.py", DYNAMIC)
+        client = make_client(_loopback_settings(workspace))
+
+        body = _resolve(client, WIDE_TYPE, {"n": 3}).json()
+
+        assert (body["n_inputs"], body["n_outputs"]) == (1, 1)
+        assert (body["input_names"], body["output_names"]) == (["in"], [])
+
+    @pytest.mark.parametrize(
+        ("type_path", "params", "fragment"),
+        [
+            (DYNAMIC_TYPE, {"channels": ["boom"]}, "RuntimeError: no boom channel"),
+            (WIDE_TYPE, {"n": -1}, "ZeroDivisionError: negative"),
+        ],
+    )
+    def test_any_user_exception_is_400(
+        self,
+        workspace: Path,
+        write_block: WriteFile,
+        make_client: Any,
+        type_path: str,
+        params: dict[str, Any],
+        fragment: str,
+    ) -> None:
+        write_block("dyn.py", DYNAMIC)
+        client = make_client(_loopback_settings(workspace))
+
+        resp = _resolve(client, type_path, params)
+
+        assert resp.status_code == 400
+        assert fragment in resp.json()["detail"]
+
+    def test_builtin_resolve_has_no_names(
+        self, workspace: Path, write_block: WriteFile, make_client: Any
+    ) -> None:
+        write_block("dyn.py", DYNAMIC)
+        client = make_client(_loopback_settings(workspace))
+
+        body = _resolve(client, "flode.blocks.Mux", {"n": 3}).json()
+
+        assert body["n_inputs"] == 3
+        assert "input_names" not in body
+        assert "output_names" not in body

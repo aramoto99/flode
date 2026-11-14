@@ -15,6 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
 import { indexRegistry } from "./portShapeValidate";
 import { collectRemovedParams, formatRemovedParams } from "./userBlockModel";
+import { invalidateUserBlockPorts } from "./userBlockPorts";
 import type { BlockRegistryResponse, BlockReloadResponse } from "../types/api";
 import { BLOCKS_REGISTRY_QUERY_KEY } from "./queryKeys";
 import { cleanServerText, MAX_LABEL_CHARS, MAX_MESSAGE_CHARS } from "./untrustedText";
@@ -127,6 +128,8 @@ export function useBlockReload(): { reload: () => Promise<void>; pending: boolea
       if (Array.isArray(resp.blocks)) {
         queryClient.setQueryData<BlockRegistryResponse>(BLOCKS_REGISTRY_QUERY_KEY, resp);
       }
+      // ADR-0083 §(1): 直したコードでは同じ引数でもポートが変わりうる (拒否も解けうる)
+      invalidateUserBlockPorts();
       pushToast(formatReloadResult(t, resp));
       // ADR-0081 §論点 3: 開いているモデルに「ブロックから消えた引数」が残っていれば、
       // 次の保存・実行で値が削除されることを別のトーストで知らせる

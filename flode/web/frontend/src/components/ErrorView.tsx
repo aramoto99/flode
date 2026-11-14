@@ -92,14 +92,74 @@ function renderBodyWithBlockLink(
   );
 }
 
+/** 実行ログ 1 行の水準ごとの文字色 (INFO 等それ以外は既定色)。 */
+const _LEVEL_CLS: ReadonlyMap<string, string> = new Map([
+  ["WARNING", "text-amber-700"],
+  ["ERROR", "text-rose-700"],
+  ["CRITICAL", "text-rose-700"],
+]);
+/** 実行ログのメッセージの表示上限 (サーバ側の切り詰めと同じ)。 */
+const _RUN_LOG_MESSAGE_CHARS = 2000;
+
+/**
+ * ADR-0083 §(5): 実行中にブロックが出したログの一覧 (時刻・水準・logger・本文)。
+ * 本文はユーザーのブロックが出した文字列なので、信頼できない文字列として整形する。
+ */
+function RunLogList(): JSX.Element | null {
+  const { t } = useTranslation();
+  const logs = useAppStore((s) => s.runLogs);
+  const dropped = useAppStore((s) => s.runLogsDropped);
+  if (logs.length === 0 && dropped === 0) return null;
+  return (
+    <div className="flex flex-col" data-testid="run-log-list">
+      <div className="mb-1 text-[11px] font-medium text-slate-600">
+        {t("log.run_log", "実行ログ")}
+      </div>
+      <table className="w-full border-collapse font-mono text-[10px]">
+        <tbody>
+          {logs.map((entry, i) => (
+            <tr key={i} className="border-b border-slate-100 align-top">
+              <td className="whitespace-nowrap pr-2 text-slate-500">
+                {Number.isFinite(entry.t) ? entry.t.toFixed(3) : "-"}
+              </td>
+              <td className={`whitespace-nowrap pr-2 ${_LEVEL_CLS.get(entry.level) ?? "text-slate-600"}`}>
+                {cleanServerText(entry.level, MAX_LABEL_CHARS)}
+              </td>
+              <td className="whitespace-nowrap pr-2 text-slate-500">
+                {cleanServerText(entry.logger, MAX_PATH_CHARS)}
+              </td>
+              <td className="whitespace-pre-wrap break-all text-slate-800">
+                {cleanServerText(entry.message, _RUN_LOG_MESSAGE_CHARS)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {dropped > 0 && (
+        <div className="mt-1 text-[10px] text-slate-500">
+          {t("log.run_log_dropped", "ほか {{count}} 件は上限を超えたため省略", { count: dropped })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ErrorView(): JSX.Element {
   const { t } = useTranslation();
   const lastFailure = useAppStore((s) => s.lastFailure);
   const lastFailureSource = useAppStore((s) => s.lastFailureSource);
   const focusBlock = useAppStore((s) => s.focusBlock);
+  const hasRunLogs = useAppStore((s) => s.runLogs.length > 0 || s.runLogsDropped > 0);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (lastFailure === null) {
+    if (hasRunLogs) {
+      return (
+        <div className="flex h-full w-full flex-col overflow-auto bg-white p-3 text-[11px] text-slate-800">
+          <RunLogList />
+        </div>
+      );
+    }
     return (
       <div className="flex h-full items-center justify-center bg-white p-3 text-center text-[11px] text-slate-400">
         {t("log.empty", "ログはまだありません")}
@@ -229,6 +289,12 @@ export function ErrorView(): JSX.Element {
             </button>
           </div>
         </details>
+      )}
+
+      {hasRunLogs && (
+        <div className="mt-3 border-t border-slate-200 pt-2">
+          <RunLogList />
+        </div>
       )}
     </div>
   );
