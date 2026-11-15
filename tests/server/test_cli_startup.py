@@ -287,3 +287,94 @@ class TestMainStartupIntegration:
         mock_probe.assert_not_called()
         mock_browser_thread.assert_not_called()
         mock_uvicorn.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# アクセスログ: 外部変更ポーリングの「変化なし」を出さない
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def restore_uvicorn_loggers() -> Iterator[None]:
+    """テストで dictConfig した uvicorn のロガーを元の状態に戻す。"""
+    names = ("uvicorn", "uvicorn.error", "uvicorn.access")
+    saved = {
+        name: (lg.handlers[:], lg.filters[:], lg.level, lg.propagate)
+        for name, lg in ((n, logging.getLogger(n)) for n in names)
+    }
+    yield
+    for name, (handlers, filters, level, propagate) in saved.items():
+        lg = logging.getLogger(name)
+        lg.handlers[:] = handlers
+        lg.filters[:] = filters
+        lg.setLevel(level)
+        lg.propagate = propagate
+
+
+class TestAccessLogQuietsPolling:
+    def _access_lines(
+        self,
+        tmp_path: Path,
+        mock_uvicorn,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        requests: list[tuple[str, str, int]],
+    ) -> list[str]:
+        """``main()`` が uvicorn に渡すログ設定で、アクセスログに出る行を返す。"""
+        import logging.config
+
+        monkeypatch.chdir(tmp_path)
+        main(["--no-browser"])
+        _, kwargs = mock_uvicorn.call_args
+        logging.config.dictConfig(kwargs["log_config"])
+        capsys.readouterr()
+        access = logging.getLogger("uvicorn.access")
+        for method, path, status in requests:
+            access.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:5000", method, path, "1.1", status)
+        return [line for line in capsys.readouterr().out.splitlines() if line]
+
+    def test_unchanged_poll_is_not_logged(
+        self,
+        tmp_path: Path,
+        isolated_home: Path,
+        mock_uvicorn,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        restore_uvicorn_loggers: None,
+    ) -> None:
+        lines = self._access_lines(
+            tmp_path,
+            mock_uvicorn,
+            monkeypatch,
+            capsys,
+            [("GET", "/api/v1/files/content?path=a.flw.json", 304)],
+        )
+        assert lines == []
+
+    @pytest.mark.parametrize(
+        ("method", "path", "status"),
+        [
+            ("GET", "/api/v1/files/content?path=a.flw.json", 200),
+            ("PUT", "/api/v1/files/content?path=a.flw.json", 200),
+            ("GET", "/api/v1/files/content?path=missing.flw.json", 404),
+            ("GET", "/assets/index.js", 304),
+            ("GET", "/api/v1/files/content2?path=a.flw.json", 304),
+        ],
+    )
+    def test_other_requests_are_still_logged(
+        self,
+        tmp_path: Path,
+        isolated_home: Path,
+        mock_uvicorn,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        restore_uvicorn_loggers: None,
+        method: str,
+        path: str,
+        status: int,
+    ) -> None:
+        lines = self._access_lines(
+            tmp_path, mock_uvicorn, monkeypatch, capsys, [(method, path, status)]
+        )
+        assert len(lines) == 1
+        assert path in lines[0]

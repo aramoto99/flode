@@ -26,6 +26,7 @@ UI を開き (``--no-browser`` / ``[server] open_browser`` で無効化)、要�
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
 import errno
 import ipaddress
@@ -71,6 +72,39 @@ _WINERROR_WSAEACCES = 10013
 # TCP ポート番号の上限。port_retries の誤設定 (極端に大きい値) で 65535 超のポートを
 # 探索しないよう find_free_port で範囲を打ち切る (code-reviewer SHOULD)。
 _MAX_TCP_PORT = 65535
+
+# 画面は開いているモデルの外部変更を 5 秒ごとに条件付き GET で確かめる
+# (ADR-0041 §論点 11-A、frontend の useExternalChangesPoll)。変化なし (304) の行は
+# 何も起きていないのにコンソールを埋めるので、アクセスログに出さない。
+_POLL_PATH = "/api/v1/files/content"
+_HTTP_NOT_MODIFIED = 304
+#: uvicorn のアクセスログの引数 (client, method, path, http_version, status) の数
+_ACCESS_LOG_ARGS = 5
+
+
+class _QuietPollFilter(logging.Filter):
+    """外部変更ポーリングの「変化なし」(GET + 304) をアクセスログから外す。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) != _ACCESS_LOG_ARGS:
+            return True
+        _client, method, path, _version, status = args
+        return not (
+            method == "GET"
+            and str(path).split("?", 1)[0] == _POLL_PATH
+            and status == _HTTP_NOT_MODIFIED
+        )
+
+
+def _uvicorn_log_config() -> dict[str, Any]:
+    """uvicorn 既定のログ設定に :class:`_QuietPollFilter` を足したものを返す。"""
+    from uvicorn.config import LOGGING_CONFIG
+
+    config = copy.deepcopy(LOGGING_CONFIG)
+    config.setdefault("filters", {})["quiet_poll"] = {"()": _QuietPollFilter}
+    config["loggers"]["uvicorn.access"]["filters"] = ["quiet_poll"]
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +678,7 @@ def main(argv: list[str] | None = None) -> None:
     # SPEC-0021 §1: ブラウザ自動オープン (listen 確立を確認してから開く)
     if open_browser:
         _launch_browser_thread(host, port)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_config=_uvicorn_log_config())
 
 
 if __name__ == "__main__":
