@@ -6,7 +6,13 @@ import pytest
 
 from flode import Block, block
 from flode.exceptions import BlockSpecError
-from flode.userblocks._docmeta import parse_docstring, read_params, resolve_metadata
+from flode.userblocks._docmeta import (
+    is_string_list_type_label,
+    parse_docstring,
+    read_params,
+    resolve_metadata,
+    resolve_param_search,
+)
 
 
 class TestParseDocstring:
@@ -239,3 +245,152 @@ class TestParseDocstringComplexity:
     def test_continuations_are_joined(self):
         doc = "S.\n\nArgs:\n    k: first\n        second\n        third\n"
         assert dict(parse_docstring(doc).args) == {"k": "first second third"}
+
+
+# ---------------------------------------------------------------------------
+# 引数の値の検索の宣言 (ADR-0085 §1-D)
+# ---------------------------------------------------------------------------
+
+
+class TestIsStringListTypeLabel:
+    """フロントの ``isStringListTypeLabel`` (tests/paramEdit.test.ts) と同じ例の表。"""
+
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "list[str]",
+            "List[str]",
+            "tuple[str, ...]",
+            "Sequence[str]",
+            "collections.abc.Sequence[str]",
+            " list[ str ] ",
+        ],
+    )
+    def test_string_lists(self, label):
+        assert is_string_list_type_label(label) is True
+
+    @pytest.mark.parametrize(
+        "label", ["list[float]", "list", "str", "dict[str, str]", "tuple[str, int]"]
+    )
+    def test_not_string_lists(self, label):
+        assert is_string_list_type_label(label) is False
+
+
+class _Searchable(Block):
+    """Block with string-list parameters."""
+
+    block_param_search = {"names": "search", "tags": "search_static"}
+
+    def __init__(
+        self,
+        names: list[str] = ["a"],  # noqa: B006 - 既定値の検査に使う
+        tags: tuple[str, ...] = (),
+        k: float = 1.0,
+        numbers: list[float] = [],  # noqa: B006
+        **kwargs,
+    ):
+        super().__init__(n_inputs=1, n_outputs=1, **kwargs)
+
+    @classmethod
+    def search(cls, query, limit, current, **_):
+        return {"columns": ["c"], "rows": []}
+
+    @staticmethod
+    def search_static(query, limit, current, **_):
+        return {"columns": ["c"], "rows": []}
+
+    def instance_search(self, query, limit, current):
+        return {}
+
+    @property
+    def prop_search(self):
+        return None
+
+    not_callable = 3
+
+
+def _resolve(cls):
+    return resolve_param_search(cls, read_params(cls))
+
+
+class TestResolveParamSearch:
+    def test_valid_declaration(self):
+        methods, warnings = _resolve(_Searchable)
+        assert methods == {"names": "search", "tags": "search_static"}
+        assert warnings == []
+
+    def test_no_declaration(self):
+        assert _resolve(_Plain) == ({}, [])
+
+    def test_is_inherited(self):
+        class Child(_Searchable):
+            pass
+
+        assert _resolve(Child)[0] == {"names": "search", "tags": "search_static"}
+
+    def test_private_method_name_is_allowed(self):
+        class Private(_Searchable):
+            block_param_search = {"names": "_hidden"}
+
+            @classmethod
+            def _hidden(cls, query, limit, current):
+                return {}
+
+        assert _resolve(Private) == ({"names": "_hidden"}, [])
+
+    @pytest.mark.parametrize("raw", [["names"], "names", 3])
+    def test_not_a_mapping_ignores_everything(self, raw):
+        Bad = type("Bad", (_Searchable,), {"block_param_search": raw})
+        methods, warnings = _resolve(Bad)
+        assert methods == {}
+        assert len(warnings) == 1
+        assert "must be a dict" in warnings[0]
+
+    def test_property_declaration_is_not_evaluated(self):
+        calls = []
+
+        class Bad(_Searchable):
+            @property
+            def block_param_search(self):
+                calls.append(1)
+                return {"names": "search"}
+
+        methods, warnings = _resolve(Bad)
+        assert (methods, calls) == ({}, [])
+        assert "property" in warnings[0]
+
+    @pytest.mark.parametrize(
+        ("declaration", "fragment"),
+        [
+            ({"missing": "search"}, "no parameter with this name"),
+            ({1: "search"}, "no parameter with this name"),
+            ({"k": "search"}, "only a parameter annotated as list[str]"),
+            ({"numbers": "search"}, "only a parameter annotated as list[str]"),
+            ({"names": 5}, "must be the name of a classmethod or staticmethod"),
+            ({"names": "nope"}, "has no attribute 'nope'"),
+            ({"names": "instance_search"}, "must be a classmethod or staticmethod"),
+            ({"names": "prop_search"}, "must be a classmethod or staticmethod"),
+            ({"names": "not_callable"}, "must be a classmethod or staticmethod"),
+        ],
+    )
+    def test_bad_item_is_ignored_with_a_warning(self, declaration, fragment):
+        Bad = type("Bad", (_Searchable,), {"block_param_search": {**declaration, "tags": "search"}})
+        methods, warnings = _resolve(Bad)
+        assert methods == {"tags": "search"}
+        assert len(warnings) == 1
+        assert fragment in warnings[0]
+
+    def test_default_must_be_a_list_of_strings(self):
+        class BadDefault(Block):
+            block_param_search = {"names": "search"}
+
+            def __init__(self, names: list[str] = [1, 2], **kwargs):  # noqa: B006
+                super().__init__(n_inputs=1, n_outputs=1, **kwargs)
+
+            @classmethod
+            def search(cls, query, limit, current):
+                return {}
+
+        methods, warnings = _resolve(BadDefault)
+        assert methods == {}
+        assert "default value is a list of strings" in warnings[0]

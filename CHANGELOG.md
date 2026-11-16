@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-11-17 — ユーザーブロックの引数を検索して選ぶ (ADR-0085)
+
+### Added
+
+- ユーザーブロックの引数の値を検索で選べるようにした (試験的、ADR-0085)。`Block` サブクラスが
+  `block_param_search = {"引数名": "classmethod 名"}` で `list[str]` の引数に検索関数を宣言すると、
+  Inspector のその行に「探す…」が出て、ブロックが返す表から行を複数選んで引数の末尾に追加できる。
+  検索は `POST /api/v1/blocks/search-param-values` (同時実行は 2 本まで、超えると 409)。
+  registry の `params_spec[]` には宣言した引数だけ `searchable: true` が載る。宣言の誤りはブロックを
+  落とさず、読み込みエラー欄の注記 (`severity: "info"`) になる。`@block` は非対応 (class 形で書くとエラー)
+- 読み込みエラーが注記 (`severity: "info"`) だけのファイルは、ファイルの状態を `"ok"` にする
+
 ### Fixed
 
 - パレットから読み込んだユーザーブロック (クラス形式の `Block` サブクラス) と `@block` の出力 dtype が入力の

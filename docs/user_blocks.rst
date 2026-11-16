@@ -270,6 +270,91 @@ Because ``__init__`` runs on every edit, keep it cheap and free of side
 effects: start external resources (processes, devices, connections) in
 ``reset()``, not in ``__init__``.
 
+Searching for parameter values (experimental)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. note::
+
+   This interface is **experimental**: its shape may change in a future minor
+   release.
+
+When a ``list[str]`` parameter takes lines that are hard to write by hand (for
+example names picked from a large table), a ``Block`` subclass can offer a
+search for it. Map the parameter to a ``classmethod`` (or ``staticmethod``) in
+``block_param_search``; the Inspector then shows **Search…** on that
+parameter's row. The dialog calls the method as you type, shows the table it
+returns, and appends the ``value`` of the checked rows to the end of the list
+(lines already in the list are not added twice).
+
+.. code-block:: python
+
+   import threading
+
+   _lock = threading.Lock()
+   _catalog = None
+
+
+   def _load_catalog():
+       # Load a heavy table once, even when several searches start together
+       # (functools.lru_cache alone does not merge concurrent first calls).
+       global _catalog
+       with _lock:
+           if _catalog is None:
+               _catalog = [("resistor", 120), ("capacitor", 80), ("relay", 5)]
+       return _catalog
+
+
+   class PartsBin(Block):
+       block_dynamic_ports = True
+       block_param_search = {"parts": "find_parts"}
+
+       def __init__(self, parts: list[str] = [], *, id=None, name=None):
+           super().__init__(id=id, name=name, n_inputs=len(parts), n_outputs=1)
+           self._params = {"parts": list(parts)}
+           self.input_names = tuple(line.split(":")[0] for line in parts)
+
+       @classmethod
+       def find_parts(cls, query, limit, current, **_):
+           taken = {line.split(":")[0] for line in current}
+           rows = []
+           for part, stock in _load_catalog():
+               if query in part:
+                   name = part if part not in taken else f"{part}_2"
+                   rows.append({"cells": [part, stock], "value": f"{name}: {part}"})
+           return {"columns": ["part", "stock"], "rows": rows}
+
+- The method is called with keyword arguments ``query`` (the search text,
+  without surrounding spaces, never empty), ``limit`` (how many rows are
+  shown, 200 by default) and ``current`` (a copy of the parameter's current
+  lines). Accept ``**_`` so that arguments added later do not break it.
+- It returns ``{"columns": [...], "rows": [...]}``. ``rows`` may be a list or
+  a generator of ``{"cells": [...], "value": "..."}``, with one cell per
+  column. Cells may be strings, numbers (NumPy numbers too) or ``None``;
+  ``NaN`` / infinite values are shown as empty cells. ``value`` is the line
+  added to the parameter: a non-empty single-line string.
+- Return all matches, or at least ``limit + 1`` rows. flode keeps the first
+  ``limit`` rows and, when there are more, asks the user to narrow the search;
+  if exactly ``limit`` rows come back, flode cannot tell that more exist.
+- Making each ``value`` unique within one result, and choosing names that do
+  not clash with ``current``, is the block's job; flode does not rename lines.
+  A result with the same ``value`` twice is rejected.
+- The first search may be slow if the block loads data. flode has no timeout
+  and runs at most two searches at a time, so load shared data once behind a
+  lock as above.
+- **The method must always return in a finite time.** flode cannot interrupt
+  it: a search that never returns keeps one of the two search slots busy until
+  the server is restarted, and further searches are refused while both slots
+  are taken.
+- ``value`` must be a single line without control characters; a result with
+  a line break (including ``\x85`` and U+2028), a control character or an
+  unencodable character in a ``value`` or a column heading is rejected.
+- On a server bound to a non-loopback address, an exception raised by the
+  method is shown as a fixed message; the details are in the server log.
+- A mistake in ``block_param_search`` (unknown parameter, a parameter that is
+  not ``list[str]``, a missing method or a normal method) is reported as a
+  note in the Load errors area and that entry is ignored; the block itself
+  still loads. ``@block`` does not support this attribute.
+
 Opening and closing resources, logging
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

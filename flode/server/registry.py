@@ -36,8 +36,14 @@ from ..core.persistence import (
     block_type_path,
     to_json_value,
 )
-from ..exceptions import BlockSpecError
-from ..userblocks import UserBlockInfo, resolve_user_block_ports
+from ..exceptions import BlockSpecError, ParamSearchUnavailableError
+from ..userblocks import (
+    ParamSearchResult,
+    UserBlockInfo,
+    find_param_search_method,
+    resolve_user_block_ports,
+    search_user_block_param,
+)
 
 _logger = logging.getLogger("flode.registry")
 
@@ -66,6 +72,9 @@ class ParamSpec:
     enum_values: list[str] | None = None
     #: 言語別の説明 (ユーザーブロックが ``{"ja": ..., "en": ...}`` で宣言した場合だけ)
     description_i18n: dict[str, str] = field(default_factory=dict)
+    #: ブロックが値の検索を提供する引数 (ユーザーブロックの ``block_param_search``、ADR-0085)。
+    #: 表示用の写しで、検索の要求時はクラスから宣言を引き直す
+    searchable: bool = False
 
 
 @dataclass
@@ -567,6 +576,7 @@ def _python_spec_payload(spec: Any) -> dict[str, Any]:
         )
         # 言語別の説明はユーザーブロックだけの項目。PythonFunction の応答形は変えない
         param.pop("description_i18n", None)
+        param.pop("searchable", None)
         params.append(param)
     return {
         "resolved": True,
@@ -932,6 +942,7 @@ def build_user_block_metadata(info: UserBlockInfo) -> BlockMetadata:
                 description=p.description,
                 enum_values=list(p.choices) if p.choices is not None else None,
                 description_i18n=dict(p.description_i18n),
+                searchable=p.name in info.param_search,
             )
             for p in info.params
         ],
@@ -977,6 +988,8 @@ def metadata_to_dict(
                 **({"enum_values": p.enum_values} if p.enum_values is not None else {}),
                 # 言語別の説明は宣言されたときだけ出す (組み込みブロックの payload は不変)
                 **({"description_i18n": p.description_i18n} if p.description_i18n else {}),
+                # 値の検索を宣言した引数だけ (ADR-0085 §4-B、既存の payload は不変)
+                **({"searchable": True} if p.searchable else {}),
             }
             for p in meta.params_spec
         ],
@@ -1071,3 +1084,45 @@ def resolve_port_shapes(type_path: str, params: dict[str, Any]) -> ResolvedPortS
         port_shapes_in=[list(s) for s in instance.port_shapes_in],
         port_shapes_out=[list(s) for s in instance.port_shapes_out],
     )
+
+
+# ---------------------------------------------------------------------------
+# search_param_values (POST /api/v1/blocks/search-param-values)
+# ---------------------------------------------------------------------------
+
+
+def search_param_values(
+    type_path: str, param: str, query: str, limit: int, current: list[str]
+) -> ParamSearchResult:
+    """ユーザーブロックが引数 ``param`` に宣言した検索関数を呼ぶ (ADR-0085 §2-B)。
+
+    管理型表を 1 回だけ読み (``resolve_port_shapes`` と同じ理由)、宣言はクラスそのものから
+    引き直す。組み込みブロックとユーザーブロック無効の構成 (管理型表が空) は常に
+    ``ParamSearchUnavailableError`` で、ユーザーコードは走らない。
+
+    Args:
+        type_path: ユーザーブロックの型名。
+        param: 引数名。
+        query: 検索語 (空でないこと)。
+        limit: 表示する最大件数 (1 以上)。
+        current: その引数の現在の値。
+
+    Returns:
+        検証・切り詰め済みの検索結果。
+
+    Raises:
+        ParamSearchUnavailableError: 型がユーザーブロックとして読み込まれていない、または
+            その引数に有効な検索の宣言が無い。
+        BlockSpecError: 検索関数の例外、または戻り値の形が不正。
+    """
+    from ..core.persistence import managed_block_types
+
+    user_cls = managed_block_types().get(type_path)
+    if user_cls is None:
+        raise ParamSearchUnavailableError(f"{type_path!r} is not a loaded user block")
+    method_name = find_param_search_method(user_cls, param)
+    if method_name is None:
+        raise ParamSearchUnavailableError(
+            f"the block {type_path!r} does not provide a value search for parameter {param!r}"
+        )
+    return search_user_block_param(user_cls, method_name, query=query, limit=limit, current=current)

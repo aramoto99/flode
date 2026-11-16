@@ -15,8 +15,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from ...exceptions import BlockReloadInProgressError, BlockSpecError, UnknownBlockTypeError
-from ...userblocks import reload_sources
+from ...exceptions import (
+    BlockReloadInProgressError,
+    BlockSpecError,
+    ParamSearchFunctionError,
+    ParamSearchUnavailableError,
+    UnknownBlockTypeError,
+)
+from ...userblocks import ParamSearchResult, reload_sources
 from ..block_catalog import (
     BlockCatalog,
     compose_catalog,
@@ -33,6 +39,7 @@ from ..registry import (
     metadata_to_dict,
     resolve_port_shapes,
     rewrite_python_source,
+    search_param_values,
 )
 from ..settings import Settings
 
@@ -44,6 +51,23 @@ router = APIRouter(prefix="/blocks", tags=["blocks"])
 # 1 モデルに 64 個超の PythonFunction、256 KiB 超のソースは実用上あり得ない。
 MAX_INTROSPECT_ITEMS = 64
 MAX_INTROSPECT_CODE_CHARS = 256 * 1024
+
+# ADR-0085 §2-E / §3-A: 引数の値の検索 (search-param-values) の入力上限と件数
+MAX_PARAM_SEARCH_QUERY_CHARS = 256
+MAX_PARAM_SEARCH_TYPE_PATH_CHARS = 512
+MAX_PARAM_SEARCH_PARAM_CHARS = 256
+#: ``current`` は引数の行 (= ポート)。ポート数の上限 256 の 4 倍の余裕
+MAX_PARAM_SEARCH_CURRENT_ITEMS = 1024
+MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS = 1000
+PARAM_SEARCH_DEFAULT_LIMIT = 200
+PARAM_SEARCH_MAX_LIMIT = 1000
+#: サーバ全体で同時に走らせる検索の数 (ADR-0085 §2-D、超えたら 409)。スレッドプールは
+#: 他の API と共有するので、重い初回の読み込みが要求の数だけ並行しないようにする
+MAX_CONCURRENT_PARAM_SEARCHES = 2
+PARAM_SEARCH_BUSY_DETAIL = "another parameter search is running; try again when it finishes"
+#: 非 loopback bind で、検索関数の例外 (ユーザーコード由来の文字列) の代わりに返す固定文
+PARAM_SEARCH_REMOTE_ERROR_DETAIL = "the search function raised an exception; see the server log"
+PARAM_SEARCH_DISABLED_DETAIL = "user blocks are not enabled in this server configuration"
 
 
 def _catalog(request: Request) -> BlockCatalog:
@@ -241,6 +265,137 @@ async def resolve_port_shapes_endpoint(request: Request) -> dict[str, Any]:
     if resolved.output_names is not None:
         out["output_names"] = resolved.output_names
     return out
+
+
+@router.get("/search-param-values")
+def search_param_values_get_method_not_allowed() -> None:
+    """``POST /api/v1/blocks/search-param-values`` の GET 方向の 405 stub。
+
+    ``resolve-port-shapes`` と同じ理由 (catch-all ``GET /{type_path:path}`` への誤マッチ防止)。
+    """
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "Use POST /api/v1/blocks/search-param-values with body "
+            "{type_path, param, query, limit?, current} to search parameter values."
+        ),
+    )
+
+
+def _bad_request(detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail=detail)
+
+
+def _validated_param_search_body(body: Any) -> tuple[str, str, str, int, list[str]]:
+    """search-param-values の本文を検証する (ADR-0085 §2-E / §3-A、違反はすべて 400)。
+
+    Returns:
+        ``(type_path, param, 前後の空白を除いた query, 1〜上限に丸めた limit, current)``。
+    """
+    if not isinstance(body, dict):
+        raise _bad_request("Body must be a JSON object")
+    type_path = body.get("type_path")
+    param = body.get("param")
+    query = body.get("query")
+    current = body.get("current")
+    if not isinstance(type_path, str) or not type_path:
+        raise _bad_request("`type_path` (string) is required in body")
+    if len(type_path) > MAX_PARAM_SEARCH_TYPE_PATH_CHARS:
+        raise _bad_request(f"`type_path` exceeds {MAX_PARAM_SEARCH_TYPE_PATH_CHARS} characters")
+    if not isinstance(param, str) or not param:
+        raise _bad_request("`param` (string) is required in body")
+    if len(param) > MAX_PARAM_SEARCH_PARAM_CHARS:
+        raise _bad_request(f"`param` exceeds {MAX_PARAM_SEARCH_PARAM_CHARS} characters")
+    if not isinstance(query, str):
+        raise _bad_request("`query` (string) is required in body")
+    if len(query) > MAX_PARAM_SEARCH_QUERY_CHARS:
+        raise _bad_request(f"`query` exceeds {MAX_PARAM_SEARCH_QUERY_CHARS} characters")
+    query = query.strip()
+    if not query:
+        raise _bad_request("`query` must not be empty")
+    raw_limit = body.get("limit")
+    if raw_limit is None:
+        limit = PARAM_SEARCH_DEFAULT_LIMIT
+    elif isinstance(raw_limit, bool) or not isinstance(raw_limit, int):
+        raise _bad_request("`limit` must be an integer")
+    else:
+        # 表示件数の希望なので範囲外は丸める (型の誤りだけ 400)
+        limit = min(max(raw_limit, 1), PARAM_SEARCH_MAX_LIMIT)
+    if not isinstance(current, list):
+        raise _bad_request("`current` (array of strings) is required in body")
+    if len(current) > MAX_PARAM_SEARCH_CURRENT_ITEMS:
+        raise _bad_request(f"`current` must have at most {MAX_PARAM_SEARCH_CURRENT_ITEMS} entries")
+    for i, item in enumerate(current):
+        if not isinstance(item, str):
+            raise _bad_request(f"current[{i}] must be a string")
+        if len(item) > MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS:
+            raise _bad_request(
+                f"current[{i}] exceeds {MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS} characters"
+            )
+    return type_path, param, query, limit, current
+
+
+@router.post("/search-param-values")
+async def search_param_values_endpoint(request: Request) -> dict[str, Any]:
+    """ユーザーブロックが提供する引数の値の検索を実行する (ADR-0085、試験的)。
+
+    Body: ``{"type_path": str, "param": str, "query": str, "limit"?: int, "current": [str]}``。
+    ``limit`` は省略時 200、1〜1000 に丸める。
+
+    Returns:
+        ``{"columns": [str], "rows": [{"cells": [str | number | null], "value": str}],
+        "truncated": bool}``。
+
+    Raises:
+        HTTPException: 404 (型がユーザーブロックとして読み込まれていない / その引数に検索の
+            宣言が無い。ユーザーコードは走らない)、400 (本文の型違反・上限超過・空の検索語・
+            検索関数の例外・不正な応答)、409 (同時に走る検索の数が上限)。detail は文字列。
+            ユーザーブロックが無効な構成では本文も読まずに 404。非 loopback bind では
+            検索関数の例外の detail を固定文にする (メッセージはサーバのログにある)。
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.user_blocks_enabled:
+        # 管理型表の中身に関係なく、ユーザーコードを走らせない (security-reviewer SHOULD-1)
+        raise HTTPException(status_code=404, detail=PARAM_SEARCH_DISABLED_DETAIL)
+    try:
+        body = await request.json()
+    except ValueError as e:
+        raise _bad_request("Body must be valid JSON") from e
+    type_path, param, query, limit, current = _validated_param_search_body(body)
+    semaphore: threading.BoundedSemaphore = request.app.state.param_search_semaphore
+
+    def _search() -> ParamSearchResult | None:
+        # 取得・解放はワーカースレッドの中で完結させる (再読み込みのロックと同じ理由)。
+        # 取れなければ待たずに None (= 409)。待つとスレッドプールを握り続けるため
+        if not semaphore.acquire(blocking=False):
+            return None
+        try:
+            return search_param_values(type_path, param, query, limit, current)
+        finally:
+            semaphore.release()
+
+    try:
+        result = await run_in_threadpool(_search)
+    except ParamSearchUnavailableError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ParamSearchFunctionError as e:
+        detail = str(e) if settings.loopback_bind else PARAM_SEARCH_REMOTE_ERROR_DETAIL
+        raise HTTPException(status_code=400, detail=detail) from e
+    except BlockSpecError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if result is None:
+        _logger.info(
+            "parameter search for %r / %r rejected: %d search(es) are already running",
+            type_path,
+            param,
+            MAX_CONCURRENT_PARAM_SEARCHES,
+        )
+        raise HTTPException(status_code=409, detail=PARAM_SEARCH_BUSY_DETAIL)
+    return {
+        "columns": list(result.columns),
+        "rows": [{"cells": list(row.cells), "value": row.value} for row in result.rows],
+        "truncated": result.truncated,
+    }
 
 
 @router.get("/python-function/introspect")

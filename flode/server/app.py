@@ -25,6 +25,7 @@ from .routes import (
     models_router,
     simulations_router,
 )
+from .routes.blocks import MAX_CONCURRENT_PARAM_SEARCHES
 from .runtime import SimulationManager
 from .security.origin import check_state_changing_request
 from .settings import Settings
@@ -105,6 +106,9 @@ def create_app(*, settings: Settings) -> FastAPI:
     # 取れなければ 409)。flode.userblocks 側のロックだけだと、先に終わった再読み込みの
     # 差し替えが後の再読み込みの差し替えを上書きする順序の逆転が起こりうる。
     app.state.block_reload_lock = threading.Lock()
+    # ADR-0085 §2-D: 引数の値の検索の同時実行数 (ワーカースレッド内で非ブロッキングに取り、
+    # 取れなければ 409)。テストで差し替えられるようにモジュールの大域変数にしない
+    app.state.param_search_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_PARAM_SEARCHES)
 
     # CSRF guard (security/origin.py): 書き込み要求は application/json 必須 + Origin 検証。
     # ブラウザ経由の cross-site 要求 (simple request) で loopback サーバーを叩かせない。

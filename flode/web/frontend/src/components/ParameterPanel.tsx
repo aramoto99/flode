@@ -54,6 +54,7 @@ import {
   useAppStore,
 } from "../store/appStore";
 import type { BlockEntry, BlockMetadata, MaskParamSpec } from "../types/api";
+import { ParamSearchDialog } from "./ParamSearchDialog";
 import { PythonFunctionEditor } from "./PythonFunctionEditor";
 import { SignalDtypeSection } from "./SignalDtypeSection";
 import {
@@ -66,6 +67,7 @@ import {
   PropertyGrid,
   PropertyHint,
   PropertyRow,
+  RowActionButton,
   SectionDivider,
   SELECT_CLS,
   TextInput,
@@ -288,6 +290,36 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     new Map<string, { seq: number; params: Record<string, unknown> }>(),
   );
   const commitSeqRef = useRef(0);
+  // ADR-0085 §4-C: 値の検索ダイアログを開いている引数 (ブロック id が変わったら閉じる)
+  const [searchTarget, setSearchTarget] = useState<{ blockId: string; param: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    setSearchTarget((s) => (s !== null && s.blockId !== block.id ? null : s));
+  }, [block.id]);
+  /**
+   * 検索ダイアログの ``current``: その時点の引数の値 (応答待ちの未確定値があればそれ、無ければ
+   * store の最新値。追加の直後に再検索するため、描画時の ``block`` ではなく store から読む)。
+   */
+  const readStringListParam = (blockId: string, param: string): string[] => {
+    let params: Record<string, unknown> | undefined =
+      pendingParamsRef.current.get(blockId)?.params;
+    if (params === undefined) {
+      const state = useAppStore.getState();
+      if (state.editingModel !== null) {
+        try {
+          params = findBlockAtPath(state.editingModel, state.editingPath, blockId)?.params;
+        } catch {
+          params = undefined;
+        }
+      }
+    }
+    const raw =
+      params !== undefined && param in params
+        ? params[param]
+        : blockMeta?.params_spec.find((p) => p.name === param)?.default;
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+  };
   const applyParams = (nextParams: Record<string, unknown>): void => {
     const blockId = block.id;
     const pending = pendingParamsRef.current;
@@ -566,6 +598,13 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
               editingModel?.simulator as Record<string, unknown> | undefined
             )?.dt;
             const dtLabel = typeof modelDt === "number" ? modelDt : "?";
+            // ADR-0085 §4-B: 検索を宣言した引数 (検証済みの宣言だけ searchable) で、値が
+            // 文字列の配列のときだけ「探す…」を出す
+            const searchable =
+              userMeta !== undefined &&
+              paramSpec?.searchable === true &&
+              Array.isArray(v) &&
+              v.every((x) => typeof x === "string");
             const sampleTimeHint =
               sampleTimeMode === null
                 ? null
@@ -576,7 +615,22 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     : t("inspector.sample_time.fixed_hint");
             return (
               <Fragment key={k}>
-              <PropertyRow labelWidth={88} labelAlign="left" label={k}>
+              <PropertyRow
+                labelWidth={88}
+                labelAlign="left"
+                label={k}
+                action={
+                  searchable ? (
+                    <RowActionButton
+                      onClick={() => setSearchTarget({ blockId: block.id, param: k })}
+                      ariaLabel={t("inspector.param_search.button_aria", { param: k })}
+                      testId={`param-search-${k}`}
+                    >
+                      {t("inspector.param_search.button")}
+                    </RowActionButton>
+                  ) : undefined
+                }
+              >
                 {sampleTimeMode !== null ? (
                   <select
                     data-testid="param-sample-time-mode"
@@ -859,6 +913,19 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
       <div className="border-t border-slate-200 bg-slate-50 px-3 py-1 text-[10px] text-slate-500">
         {t("inspector.autosave_hint")}
       </div>
+      {searchTarget !== null &&
+        searchTarget.blockId === block.id &&
+        userMeta?.params_spec.find((p) => p.name === searchTarget.param)?.searchable ===
+          true && (
+          <ParamSearchDialog
+            key={`${block.id}\u0000${searchTarget.param}`}
+            typePath={block.type}
+            param={searchTarget.param}
+            getCurrent={() => readStringListParam(block.id, searchTarget.param)}
+            onAppend={(next) => commit(searchTarget.param, next, "array")}
+            onClose={() => setSearchTarget(null)}
+          />
+        )}
     </div>
   );
 }

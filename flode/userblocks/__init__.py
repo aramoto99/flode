@@ -41,6 +41,12 @@ from ._model import (
     UserBlockInfo,
     UserParamSpec,
 )
+from ._param_search import (
+    ParamSearchResult,
+    ParamSearchRow,
+    find_param_search_method,
+    search_user_block_param,
+)
 
 #: ``BlockLoadError`` のメッセージに並べるエラーの最大件数。
 _ERRORS_IN_MESSAGE = 3
@@ -113,6 +119,8 @@ __all__ = [
     "BlocksConfig",
     "LoadError",
     "LoadRequest",
+    "ParamSearchResult",
+    "ParamSearchRow",
     "SourceFile",
     "SourceInfo",
     "UserBlockInfo",
@@ -120,11 +128,13 @@ __all__ = [
     "UserParamSpec",
     "current_report",
     "default_config_path",
+    "find_param_search_method",
     "load_blocks",
     "load_sources",
     "parse_blocks_config",
     "read_blocks_config",
     "reload_sources",
     "resolve_user_block_ports",
+    "search_user_block_param",
     "unload_blocks",
 ]

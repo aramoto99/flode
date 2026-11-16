@@ -146,6 +146,8 @@ class UserBlockInfo:
         block_class: クラス本体 (比較対象外)。
         dynamic_ports: ``block_dynamic_ports = True`` を宣言している (ポート数・ポート名・
             shape が引数で変わる。上のポート関係の値は既定値のインスタンスのもの)。
+        param_search: 検証済みの引数の値の検索の宣言 (``{引数名: メソッド名}``、
+            ``block_param_search``、ADR-0085。無ければ空)。
     """
 
     type_path: str
@@ -170,6 +172,7 @@ class UserBlockInfo:
     output_names: tuple[str, ...]
     block_class: type = field(compare=False, repr=False)
     dynamic_ports: bool = False
+    param_search: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

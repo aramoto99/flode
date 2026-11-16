@@ -29,6 +29,10 @@ METADATA_ATTRIBUTES: frozenset[str] = frozenset(
 #: パレットに出さない印 (ADR-0081 P1)。そのクラス自身の ``__dict__`` だけを見る。
 HIDDEN_ATTRIBUTE = "block_hidden"
 
+#: 引数の値の検索の宣言 (``Block`` サブクラスだけ、ADR-0085 §1-A / §1-E、試験的)。
+#: ``@block`` は対応しないので ``METADATA_ATTRIBUTES`` には入れない (class 形では専用の検査で拒否)。
+PARAM_SEARCH_ATTRIBUTE = "block_param_search"
+
 #: :func:`validate_choices` の ``params`` で「既定値なし (必須引数)」を表す値。
 NO_DEFAULT: Any = inspect.Parameter.empty
 

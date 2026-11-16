@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..core.block_metadata import (
+    PARAM_SEARCH_ATTRIBUTE,
     validate_category,
     validate_choices,
     validate_param_descriptions,
@@ -39,6 +40,12 @@ _ANY_TYPE_LABEL = "any"
 _FALLBACK_LOCALE = "en"
 #: ポート数・ポート名が引数で変わることの宣言 (class 属性、``True`` のときだけ有効)。
 DYNAMIC_PORTS_ATTRIBUTE = "block_dynamic_ports"
+#: 文字列の列を表す型ラベル。フロントの ``STRING_LIST_TYPE_RE`` (``src/lib/paramEdit.ts``) と
+#: 同じ規則にする (その引数を文字列リストとして編集するかどうかはフロントがこの規則で決めるため)。
+_STRING_LIST_TYPE_RE = re.compile(
+    r"(?:(?:typing|collections\.abc)\.)?(?:list|List|Sequence|tuple|Tuple)"
+    r"\[\s*str\s*(?:,\s*\.\.\.\s*)?\]"
+)
 
 
 @dataclass(frozen=True)
@@ -257,6 +264,91 @@ def has_dynamic_ports(cls: type) -> bool:
     静的に読み (ユーザーのメタクラス / descriptor を実行しない)、真偽は ``is True`` だけ認める。
     """
     return inspect.getattr_static(cls, DYNAMIC_PORTS_ATTRIBUTE, False) is True
+
+
+def is_string_list_type_label(type_label: str) -> bool:
+    """型ラベルが文字列の列 (``list[str]`` / ``tuple[str, ...]`` / ``Sequence[str]`` 等) か。
+
+    フロントの ``isStringListTypeLabel`` と同じ規則 (前後の空白は無視、``typing.`` /
+    ``collections.abc.`` 付きも受ける)。
+
+    Args:
+        type_label: ``read_params`` の型ラベル。
+
+    Returns:
+        文字列の列なら ``True``。
+    """
+    return _STRING_LIST_TYPE_RE.fullmatch(type_label.strip()) is not None
+
+
+def _is_string_list_value(value: Any) -> bool:
+    return isinstance(value, list | tuple) and all(isinstance(v, str) for v in value)
+
+
+def resolve_param_search(cls: type, params: Sequence[RawParam]) -> tuple[dict[str, str], list[str]]:
+    """引数の値の検索の宣言 (``block_param_search``) を検証して、有効な対応だけを返す。
+
+    宣言は ``inspect.getattr_static`` で読む (継承する。ユーザーのメタクラス / descriptor を
+    実行しない)。誤りはブロックを拒否せず、その項目 (Mapping でなければ宣言全体) を無視して
+    警告文を返す (ADR-0085 §1-D)。読み込み時と検索の要求時の両方で使う。
+
+    有効な項目の条件:
+
+    * キーがクラスの引数名で、その型ラベルが文字列の列 (:func:`is_string_list_type_label`)、
+      既定値が文字列のリスト (tuple も可)
+    * 値が文字列で、その名前の属性が ``classmethod`` か ``staticmethod``
+      (インスタンスを作らずに呼べるもの)
+
+    Args:
+        cls: ``Block`` サブクラス。
+        params: クラスの引数一覧 (``read_params`` の結果、既定値は JSON 往復済みでもよい)。
+
+    Returns:
+        ``({引数名: メソッド名}, [警告文])``。宣言が無ければ ``({}, [])``。
+    """
+    raw = inspect.getattr_static(cls, PARAM_SEARCH_ATTRIBUTE, None)
+    if raw is None:
+        return {}, []
+    if not isinstance(raw, Mapping):
+        return {}, [
+            f"{PARAM_SEARCH_ATTRIBUTE} must be a dict of parameter name -> method name, "
+            f"got {type(raw).__name__}; it is ignored"
+        ]
+    by_name = {p.name: p for p in params}
+    methods: dict[str, str] = {}
+    warnings: list[str] = []
+    for key, method_name in raw.items():
+        where = f"{PARAM_SEARCH_ATTRIBUTE}[{key!r}]"
+        if not isinstance(key, str) or key not in by_name:
+            warnings.append(f"{where}: the block has no parameter with this name; it is ignored")
+            continue
+        param = by_name[key]
+        if not is_string_list_type_label(param.type_label) or not _is_string_list_value(
+            param.default
+        ):
+            warnings.append(
+                f"{where}: only a parameter annotated as list[str] whose default value is a list "
+                f"of strings can be searched (annotation {param.type_label!r}); it is ignored"
+            )
+            continue
+        if not isinstance(method_name, str):
+            warnings.append(
+                f"{where}: the value must be the name of a classmethod or staticmethod, "
+                f"got {type(method_name).__name__}; it is ignored"
+            )
+            continue
+        method = inspect.getattr_static(cls, method_name, None)
+        if method is None:
+            warnings.append(f"{where}: the class has no attribute {method_name!r}; it is ignored")
+            continue
+        if not isinstance(method, classmethod | staticmethod):
+            warnings.append(
+                f"{where}: {method_name!r} must be a classmethod or staticmethod (the search "
+                f"runs without creating the block); it is ignored"
+            )
+            continue
+        methods[key] = method_name
+    return methods, warnings
 
 
 def resolve_instance_port_names(

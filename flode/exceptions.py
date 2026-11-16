@@ -298,6 +298,23 @@ class BlockReloadInProgressError(FlodeError):
     """
 
 
+class ParamSearchUnavailableError(FlodeError):
+    """引数の値の検索が使えない (ADR-0085 §2-B、REST では 404)。
+
+    型がユーザーブロックとして読み込まれていない (組み込みブロック・ユーザーブロック無効の
+    構成を含む)、またはその引数に検索の宣言 (``block_param_search``) が無い。
+    どちらの場合もユーザーコードは走らない。
+    """
+
+
+class ParamSearchFunctionError(BlockSpecError):
+    """ユーザーブロックの検索関数自体が例外を出した (ADR-0085、REST では 400)。
+
+    戻り値の形の不正 (flode 自身の検証) とは区別する。非 loopback の server は
+    メッセージ (ユーザーコード由来) を返さず固定の要約にする。
+    """
+
+
 class BlockSourceConfigError(FlodeError):
     """ユーザーブロックの読み込み元指定の型違反 (ADR-0081 §1-B / SPEC-0033 P3)。
 

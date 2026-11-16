@@ -1244,3 +1244,64 @@ def _exiting_class() -> type:
             raise SystemExit(3)
 
     return Exiting
+
+
+# ---------------------------------------------------------------------------
+# 引数の値の検索の宣言 (ADR-0085 §1-D)
+# ---------------------------------------------------------------------------
+
+PARAM_SEARCH_FORM = '''
+from flode import Block
+
+
+class Catalog(Block):
+    """Parts catalog."""
+
+    block_param_search = {"parts": "find_parts", "missing": "find_parts", "k": "find_parts"}
+
+    def __init__(self, parts: list[str] = [], k: float = 1.0, **kwargs):
+        super().__init__(n_inputs=1, n_outputs=1, **kwargs)
+
+    @classmethod
+    def find_parts(cls, query, limit, current, **_):
+        return {"columns": ["part"], "rows": []}
+
+    def output(self, t, x, u):
+        return u
+'''
+
+
+class TestParamSearchDeclaration:
+    def test_valid_items_are_kept_and_errors_are_info(
+        self, workspace: Path, write_block: WriteFile, caplog: pytest.LogCaptureFixture
+    ):
+        write_block("catalog.py", PARAM_SEARCH_FORM)
+
+        with caplog.at_level(logging.WARNING, logger="flode.userblocks"):
+            report = _load(workspace)
+
+        assert report.blocks == ("flode_ws.catalog.Catalog",)
+        (info,) = report.block_infos
+        assert dict(info.param_search) == {"parts": "find_parts"}
+        assert _errors(report) == []
+        notes = _errors(report, "info")
+        assert len(notes) == 2
+        assert {(n.kind, n.type_path, n.path) for n in notes} == {
+            ("spec", "flode_ws.catalog.Catalog", "blocks/catalog.py")
+        }
+        assert all(n.message.startswith("Catalog: block_param_search[") for n in notes)
+        assert all(n.line is not None for n in notes)
+        assert report.error_count == 0
+        # info だけならファイルは "ok" (ブロックは使える)
+        (source_info,) = report.sources
+        assert {f.path: f.status for f in source_info.files} == {"catalog.py": "ok"}
+        assert sum("block_param_search" in r.getMessage() for r in caplog.records) == 2
+
+    def test_block_without_declaration_has_empty_param_search(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        write_block("offset.py", SUBCLASS_FORM)
+
+        (info,) = _load(workspace).block_infos
+
+        assert dict(info.param_search) == {}

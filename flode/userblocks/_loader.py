@@ -44,10 +44,12 @@ from ..core.persistence import (
 )
 from ..exceptions import BlockReloadInProgressError, BlockSpecError
 from ._docmeta import (
+    RawParam,
     has_dynamic_ports,
     port_names_for_instance,
     read_params,
     resolve_metadata,
+    resolve_param_search,
 )
 from ._finder import (
     DIRS_ROOT_NAME,
@@ -679,7 +681,9 @@ def _load_tree(
             collected.add_infos(infos)
             file_errors.extend(block_errors)
         errors.extend(file_errors)
-        files.append(SourceFile(path=entry.rel, status="error" if file_errors else "ok"))
+        # "info" (ブロックは使える注記、ADR-0085 §1-D) だけならファイルは "ok"
+        failed = any(e.severity == "error" for e in file_errors)
+        files.append(SourceFile(path=entry.rel, status="error" if failed else "ok"))
     collected.errors.extend(errors)
     collected.sources.append(
         SourceInfo(
@@ -754,10 +758,10 @@ def _warn_slow_import(label: str) -> None:
     )
 
 
-def _truncate(text: str) -> str:
-    if len(text) <= MAX_MESSAGE_CHARS:
+def _truncate(text: str, max_chars: int = MAX_MESSAGE_CHARS) -> str:
+    if len(text) <= max_chars:
         return text
-    return text[: MAX_MESSAGE_CHARS - len(_TRUNCATION_MARK)] + _TRUNCATION_MARK
+    return text[: max_chars - len(_TRUNCATION_MARK)] + _TRUNCATION_MARK
 
 
 def _reraise_if_interrupt(exc: BaseException) -> None:
@@ -985,15 +989,29 @@ def _collect_blocks(
                     f"module; none of them is loaded. Give them different names",
                     kind="conflict",
                 )
-            infos.append(
-                _build_info(
-                    classes[0],
-                    module_name,
-                    class_name=class_name,
-                    source_id=source_id,
-                    path=display_path,
-                )
+            info, warnings = _build_info(
+                classes[0],
+                module_name,
+                class_name=class_name,
+                source_id=source_id,
+                path=display_path,
             )
+            infos.append(info)
+            for warning in warnings:
+                # 宣言の誤りはブロックを落とさない注記 (ADR-0085 §1-D)
+                message = _truncate(f"{class_name}: {warning}")
+                _logger.warning("user blocks: %s %r: %s", source_id, display_path, message)
+                errors.append(
+                    LoadError(
+                        source=source_id,
+                        path=display_path,
+                        line=_class_line(classes[0]),
+                        kind="spec",
+                        message=message,
+                        severity="info",
+                        type_path=type_path,
+                    )
+                )
         except BaseException as e:  # noqa: BLE001 - ユーザーコードの境界: ブロック単位に隔離 (P4)
             _reraise_if_interrupt(e)
             kind: LoadErrorKind = e.kind if isinstance(e, _BlockRejectedError) else "spec"
@@ -1050,8 +1068,13 @@ def _json_round_trip(cls: type) -> tuple[list[tuple[str, str]], dict[str, object
 
 def _build_info(
     cls: type, module_name: str, *, class_name: str, source_id: str, path: str | None
-) -> UserBlockInfo:
-    """1 クラスを検証してメタデータを作る (X-1・P2・§10・§7)。"""
+) -> tuple[UserBlockInfo, list[str]]:
+    """1 クラスを検証してメタデータを作る (X-1・P2・§10・§7)。
+
+    Returns:
+        ``(メタデータ, ブロックを落とさない警告文)``。警告は引数の値の検索の宣言の誤り
+        (ADR-0085 §1-D)。
+    """
     expected_type_path = f"{module_name}.{class_name}"
     if class_name in builtin_class_names():
         raise _BlockRejectedError(
@@ -1088,6 +1111,13 @@ def _build_info(
         )
         for name, label in labels
     )
+    param_search, warnings = resolve_param_search(
+        cls,
+        [
+            RawParam(name=name, type_label=label, has_default=True, default=defaults[name])
+            for name, label in labels
+        ],
+    )
     # L-1: インスタンス化やメタデータ参照の間にクラスの __module__ / __name__ が書き換えられて
     # いたら、組み込み等の型名を名乗れてしまうので拒否する
     if block_type_path(cls) != expected_type_path:
@@ -1095,7 +1125,7 @@ def _build_info(
             f"the class changed its module or name while being loaded "
             f"(expected {expected_type_path!r}); it is not loaded"
         )
-    return UserBlockInfo(
+    info = UserBlockInfo(
         type_path=expected_type_path,
         class_name=class_name,
         source=source_id,
@@ -1118,7 +1148,9 @@ def _build_info(
         output_names=meta.output_names,
         block_class=cls,
         dynamic_ports=has_dynamic_ports(cls),
+        param_search=param_search,
     )
+    return info, warnings
 
 
 @dataclass(frozen=True)

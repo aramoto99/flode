@@ -232,6 +232,46 @@ class TestClassFormReservedNames:
     def test_without_hidden_marker_no_attribute(self) -> None:
         assert "block_hidden" not in vars(_class_form())
 
+
+class TestClassFormParamSearch:
+    """ADR-0085 §1-E: ``block_param_search`` は ``Block`` サブクラスだけで使える。"""
+
+    def test_param_search_declaration_is_rejected(self) -> None:
+        with pytest.raises(BlockSpecError, match="block_param_search can be used only"):
+
+            @block
+            class Bad:
+                names: list[str] = []  # noqa: RUF012 - @block のフィールド宣言
+                block_param_search = {"names": "search"}  # noqa: RUF012
+
+                @classmethod
+                def search(cls, query: str, limit: int, current: list[str]) -> dict:
+                    return {}
+
+                def output(self, t: float, u: float) -> float:
+                    return u
+
+    def test_inherited_param_search_declaration_is_rejected(self) -> None:
+        class Mixin:
+            block_param_search = {"names": "search"}  # noqa: RUF012
+
+        class Bad(Mixin):
+            def output(self, t: float, u: float) -> float:
+                return u
+
+        with pytest.raises(BlockSpecError, match="block_param_search"):
+            block(Bad)
+
+    def test_annotated_param_search_field_is_rejected(self) -> None:
+        with pytest.raises(BlockSpecError, match="block_param_search"):
+
+            @block
+            class Bad:
+                block_param_search: str
+
+                def output(self, t: float, u: float) -> float:
+                    return u
+
     def test_annotated_hidden_marker_is_rejected(self) -> None:
         """注釈を付けるとパラメータ (フィールド) になってしまうため拒否する。"""
         with pytest.raises(BlockSpecError, match="block_hidden"):

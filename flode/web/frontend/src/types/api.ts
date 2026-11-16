@@ -220,6 +220,40 @@ export interface BlockParamSpec {
   // 許容値を宣言している場合、ParameterPanel が ``<select>`` で render する。
   // null / 未指定 (= キー不在) のとき従来 ``<input>``。
   enum_values?: string[];
+  /**
+   * ADR-0085 §4-B: ユーザーブロックがこの引数の値の検索 (``block_param_search``) を
+   * 宣言している (検証済みの宣言だけ ``true``。宣言が無ければキー自体が無い)。
+   */
+  searchable?: boolean;
+}
+
+/** ADR-0085: ``POST /api/v1/blocks/search-param-values`` の要求。 */
+export interface ParamSearchRequest {
+  type_path: string;
+  param: string;
+  /** 前後の空白を除いた検索語 (空は送らない)。 */
+  query: string;
+  /** 表示件数の希望 (サーバが 1〜1000 に丸める。省略時 200)。 */
+  limit?: number;
+  /** その引数の現在の値 (応答待ちの未確定値を含む)。 */
+  current: string[];
+}
+
+/** ADR-0085 §3-B: 表のセル (``null`` は欠損 = 空欄で描く)。 */
+export type ParamSearchCell = string | number | null;
+
+/** ADR-0085: 検索結果の 1 行。``value`` が引数に入れる 1 行 (1 応答の中で一意)。 */
+export interface ParamSearchRow {
+  cells: ParamSearchCell[];
+  value: string;
+}
+
+/** ADR-0085: ``POST /api/v1/blocks/search-param-values`` の応答 200。 */
+export interface ParamSearchResponse {
+  columns: string[];
+  rows: ParamSearchRow[];
+  /** ``limit`` を超える行があり、切り詰めた。 */
+  truncated: boolean;
 }
 
 // ADR-0028: Block 表示名・docstring summary の i18n (ja/en) 翻訳対応。

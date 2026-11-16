@@ -13,6 +13,8 @@ import type {
   FlwModel,
   LibraryEntryDetail,
   LibraryRegistryResponse,
+  ParamSearchRequest,
+  ParamSearchResponse,
   PythonFunctionIntrospectResponse,
   PythonFunctionParamEdit,
   PythonFunctionRewriteResponse,
@@ -218,6 +220,30 @@ export async function resolvePortShapes(
   return _fetch<ResolvedPortShapes>("/blocks/resolve-port-shapes", {
     method: "POST",
     body: JSON.stringify({ type_path: typePath, params }),
+  });
+}
+
+/**
+ * ADR-0085: ユーザーブロックが宣言した検索関数で、引数に入れる値の候補を探す。
+ *
+ * サーバは既に読み込んだブロックのコード (検索関数) を呼ぶ。ユーザーブロックが
+ * 無効な構成では型が無く 404 になり、ユーザーコードは走らない。
+ *
+ * @param req 型・引数名・検索語 (空は送らない)・現在の値。
+ * @param signal ダイアログを閉じたときに応答の受信をやめるための AbortSignal
+ *   (サーバ側の処理は止まらない)。
+ * @returns 列見出し・行 (``cells`` + ``value``)・切り詰めの有無。
+ * @throws ApiError 404 (型 / 宣言が無い)、400 (要求の不正・検索関数の例外・不正な応答。
+ *   detail は文字列)、409 (同時実行の上限。少し待って再試行する)。
+ */
+export async function searchParamValues(
+  req: ParamSearchRequest,
+  signal?: AbortSignal,
+): Promise<ParamSearchResponse> {
+  return _fetch<ParamSearchResponse>("/blocks/search-param-values", {
+    method: "POST",
+    body: JSON.stringify(req),
+    signal,
   });
 }
 

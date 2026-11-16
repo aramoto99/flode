@@ -1308,3 +1308,159 @@ export function GridEditor({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// ADR-0085 §4-A: 行を複数選べる表 (検索結果のピッカー等)
+// ---------------------------------------------------------------------------
+
+/** ``SelectableTable`` のセル (``null`` は空欄)。 */
+export type SelectableTableCell = string | number | null;
+
+/** ``SelectableTable`` の 1 行。``key`` が選択のキー (表の中で一意)。 */
+export interface SelectableTableRow {
+  key: string;
+  cells: ReadonlyArray<SelectableTableCell>;
+  /**
+   * 行のチェックボックスの a11y ラベル (整形済みの文字列)。省略時は ``key``。
+   * ``key`` が信頼できない文字列なら、呼ぶ側で整えた値を渡す。
+   */
+  label?: string;
+}
+
+/**
+ * 先頭列のチェックで行を複数選ぶ表 (ADR-0085 §4-A)。
+ *
+ * - 外枠 1px slate-400、角丸・影なし。中は縦スクロールで、見出しは固定表示
+ * - 見出しは title bar と同じ gradient (列名は原文の大小文字のまま)
+ * - 行のどこを押してもチェックが切り替わる (チェックボックスの小ささを補う)。選択行は ``bg-blue-50``
+ * - 数値セルは右寄せ ``tabular-nums``、``null`` は空欄、長い文字列は省略して ``title`` に全文
+ * - ``disabledKeys`` の行は薄く表示し、選べない (既に引数にある値など)
+ * - 選択状態はチェックボックスの ``checked`` で伝える (``role="table"`` には
+ *   ``aria-multiselectable`` / ``aria-selected`` が無効なので付けない。grid にはしない)
+ *
+ * 文字列の整形 (信頼できない文字列の制御文字の除去等) は呼ぶ側で済ませておく。
+ * 全選択・Shift での範囲選択は持たない。
+ */
+export function SelectableTable({
+  columns,
+  rows,
+  selected,
+  disabledKeys,
+  disabledTitle,
+  onToggle,
+  heightClass = "h-[260px]",
+  testId,
+  emptyText,
+  ariaLabel,
+}: {
+  columns: ReadonlyArray<string>;
+  rows: ReadonlyArray<SelectableTableRow>;
+  selected: ReadonlySet<string>;
+  /** 選べない行の ``key`` (薄く表示し、チェックできない)。 */
+  disabledKeys?: ReadonlySet<string>;
+  /** 選べない行の hover tooltip (選べない理由)。 */
+  disabledTitle?: string;
+  onToggle: (key: string) => void;
+  /** 表の高さ (固定。ダイアログ内で中身に応じて伸縮させない)。 */
+  heightClass?: string;
+  testId?: string;
+  /** 行が 0 件のときに出す文言 (検索前・該当なし等)。 */
+  emptyText?: string;
+  ariaLabel?: string;
+}): JSX.Element {
+  const headCls =
+    "sticky top-0 z-10 border-b border-slate-400 bg-gradient-to-b from-slate-200 to-slate-100 px-1.5 py-0.5 text-left text-[10px] font-semibold text-slate-600";
+  return (
+    <div
+      className={`${heightClass} overflow-auto border border-slate-400 bg-white`}
+      data-testid={testId}
+    >
+      <table className="w-full border-collapse text-[11px]" aria-label={ariaLabel}>
+        <thead>
+          <tr>
+            <th className={`${headCls} w-6`} aria-hidden="true" />
+            {columns.map((c, i) => (
+              <th key={i} className={headCls} title={c} scope="col">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && emptyText !== undefined && (
+            <tr>
+              <td
+                colSpan={columns.length + 1}
+                className="px-1.5 py-1 text-slate-500"
+                data-testid={testId ? `${testId}-empty` : undefined}
+              >
+                {emptyText}
+              </td>
+            </tr>
+          )}
+          {rows.map((row) => {
+            const disabled = disabledKeys?.has(row.key) ?? false;
+            const isSelected = !disabled && selected.has(row.key);
+            return (
+              <tr
+                key={row.key}
+                data-selected={isSelected || undefined}
+                data-disabled={disabled || undefined}
+                title={disabled ? disabledTitle : undefined}
+                data-testid={testId ? `${testId}-row` : undefined}
+                data-key={row.key}
+                onClick={(e) => {
+                  if (disabled) return;
+                  // フォーカスを行のチェックボックスに置く (body に落ちると、Delete 等の
+                  // キャンバスのショートカットがダイアログの裏で効いてしまう)
+                  e.currentTarget.querySelector("input")?.focus();
+                  onToggle(row.key);
+                }}
+                className={`h-5 border-b border-slate-100 ${
+                  disabled
+                    ? "cursor-default text-slate-400"
+                    : isSelected
+                      ? "cursor-pointer bg-blue-50 text-slate-800"
+                      : "cursor-pointer text-slate-800 hover:bg-slate-50"
+                }`}
+              >
+                <td className="w-6 px-1.5">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={disabled}
+                    onChange={() => onToggle(row.key)}
+                    // 行の onClick と二重に切り替えない
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={row.label ?? row.key}
+                    className={`${CHECKBOX_CLS} align-middle disabled:cursor-default`}
+                  />
+                </td>
+                {row.cells.map((cell, j) =>
+                  typeof cell === "number" ? (
+                    <td
+                      key={j}
+                      className="whitespace-nowrap px-1.5 text-right tabular-nums"
+                      data-cell-kind="number"
+                    >
+                      {cell}
+                    </td>
+                  ) : (
+                    <td
+                      key={j}
+                      className="max-w-[240px] truncate px-1.5"
+                      title={cell ?? undefined}
+                      data-cell-kind={cell === null ? "null" : "text"}
+                    >
+                      {cell ?? ""}
+                    </td>
+                  ),
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
