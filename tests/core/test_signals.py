@@ -535,6 +535,86 @@ class TestShapeSource:
         sim.add(_VectorSrc())
         assert has_shape_source(sim) is True
 
+    def test_vector_api_only_block_with_scalar_ports_is_a_source(self) -> None:
+        """bug-fix 2026-11-16: output_v だけのブロックは全ポート () でも SM-A では動かない。"""
+        sim = _sim()
+        sim.add(_ScalarPortsVectorApi())
+        assert has_shape_source(sim) is True
+        assert sim._is_sm_a_mode() is False
+
+    def test_vector_api_only_block_runs_in_scalar_model(self) -> None:
+        """bug-fix 2026-11-16: 全信号スカラーのモデルで output_v だけのブロックが落ちていた
+        (SM-A 経路が Block.output を呼んで NotImplementedError)。"""
+        sim = _sim()
+        c = sim.add(Constant(value=3.0))
+        b = sim.add(_ScalarPortsVectorApi())
+        scope = sim.add(Scope(n_inputs=1))
+        sim.connect(c, b)
+        sim.connect(b, scope)
+        sim.run()
+        assert np.allclose(np.asarray(scope.values, dtype=float).ravel(), 6.0)
+
+    def test_vector_api_only_block_inside_subsystem_runs(self) -> None:
+        sim = _sim()
+        c = sim.add(Constant(value=4.0))
+        sub = Subsystem(id="sub")
+        sub.add(Inport(port_idx=0, id="ip"))
+        sub.add(_ScalarPortsVectorApi(id="b"))
+        sub.add(Outport(port_idx=0, id="op"))
+        sub.connect("ip", "b")
+        sub.connect("b", "op")
+        sim.add(sub)
+        scope = sim.add(Scope(n_inputs=1))
+        sim.connect(c, sub)
+        sim.connect(sub, scope)
+        assert has_shape_source(sim) is True
+        sim.run()
+        assert np.allclose(np.asarray(scope.values, dtype=float).ravel(), 8.0)
+
+    def test_vector_api_only_block_linearizes(self) -> None:
+        """Integrator → 2 倍 (output_v だけ) → Integrator の入力: dx/dt = 2x。"""
+        from flode.analysis import linearize
+
+        sim = _sim()
+        integ = sim.add(Integrator())
+        b = sim.add(_ScalarPortsVectorApi())
+        sim.connect(integ, b)
+        sim.connect(b, integ)
+        ls = linearize(sim)
+        np.testing.assert_allclose(ls.A, [[2.0]])
+
+    def test_block_with_both_apis_is_not_a_source(self) -> None:
+        """output と output_v の両方を持つスカラーポートのブロックは SM-A のまま。"""
+        sim = _sim()
+        sim.add(_ScalarPortsBothApis())
+        assert has_shape_source(sim) is False
+        assert sim._is_sm_a_mode() is True
+
+
+class _ScalarPortsBothApis(Block):
+    """全ポート () で output と output_v の両方を実装したブロック (テスト用)。"""
+
+    _skip_dual_api_check = True
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id, n_inputs=1, n_outputs=1)
+
+    def output(self, t, x, u):  # type: ignore[no-untyped-def]
+        return np.asarray(u) * 2.0
+
+    def output_v(self, t, x, u):  # type: ignore[no-untyped-def]
+        return (np.asarray(u[0]) * 2.0,)
+
+
+class _ScalarPortsVectorApi(Block):
+    """全ポート () だが vector-port API (``output_v``) だけを実装したブロック (テスト用)。"""
+
+    def __init__(self, *, id: str | None = None) -> None:
+        super().__init__(id=id, n_inputs=1, n_outputs=1)
+
+    def output_v(self, t, x, u):  # type: ignore[no-untyped-def]
+        return (np.asarray(u[0]) * 2.0,)
+
 
 # ---------------------------------------------------------------------------
 # AC-10: 網羅ガード (全 builtin Block クラスが shape 規則表に載る)

@@ -882,12 +882,31 @@ def has_shape_source(sim: Simulator) -> bool:
     起点があるモデルも plan 経路で実行する)。起点が 1 つもなければ推論結果も
     全 ``()`` になる (非 ``()`` は起点からしか生まれない) ため、``False`` の
     モデルを解決器なしで SM-A path に流しても健全。
+
+    ただし ``output_v`` だけを実装したブロック (``output`` は ``Block`` 既定のまま) は、
+    全ポート ``()`` でも SM-A path (``output`` 直呼び) では動かないので起点と同じ扱いにする。
     """
     return _any_shape_source(sim.blocks)
 
 
+def _has_vector_api_only(b: Block) -> bool:
+    """``output_v`` を上書きし、SM-A の ``output`` を ``Block`` 既定のまま残したブロックか。
+
+    対象は ``output`` / ``output_v`` の組だけ。``update_v`` / ``advance_v`` /
+    ``derivative_v`` だけを上書きしたブロックは見ない (標準ブロックの mixin は
+    呼ばれない側のスカラー版を持たない組が多く、ここに含めると既存モデルの経路が変わる)。
+    """
+    # block.py の import は TYPE_CHECKING だけなので (循環回避)、実行時はここで引く
+    from .block import Block
+
+    cls = type(b)
+    return cls.output_v is not Block.output_v and cls.output is Block.output
+
+
 def _any_shape_source(blocks: Iterable[Block]) -> bool:
     for b in blocks:
+        if _has_vector_api_only(b):
+            return True
         if any(s != SCALAR_SHAPE for s in b.port_shapes_in):
             return True
         if any(s != SCALAR_SHAPE for s in b.port_shapes_out):

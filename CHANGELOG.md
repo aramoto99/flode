@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `flode` のコンソールに、開いているモデルの外部変更の確認 (5 秒ごと) が
   `GET /api/v1/files/content?... 304 Not Modified` として出続けていた。変化なし (304) の確認はアクセスログに
   出さない。ほかのリクエスト (読み込み・保存・エラーなど) はこれまでどおり出る
+- `output_v` だけを実装したブロック (`output` は持たない) を、ポートがすべてスカラーのまま使い、モデルの
+  信号もすべてスカラーだと、実行が `NotImplementedError: <ブロック名>.output not implemented` で失敗していた。
+  このようなブロックがあるモデルは、ベクトルの信号があるときと同じ経路で実行する
 
 ## [0.67.0] - 2026-11-14 — 引数に追従するポート・後片付け・音声出力・実行ログ (ADR-0083)
 
