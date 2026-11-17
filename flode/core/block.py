@@ -535,6 +535,15 @@ class Block:
     # ``solve_ivp`` の契約は不変、D-7)。ベクトル状態ブロックは ``x.reshape(state_shape)``
     # して使う (``flode.blocks._vector_state.VectorStateMixin``)。Default 実装は
     # 全入力が rank-0 のときだけ SM-A 版へ縮退する wrapper (非 () は明示エラー)。
+    # ただし SM-A 版を上書きしていないなら、入力を使わない Block 既定の結果をそのまま返す
+    # (片方の ``_v`` だけを書いたブロックにベクトル入力をつないでも落とさない)。
+
+    def _inherits(self, name: str) -> bool:
+        """SM-A 版の状態メソッド ``name`` を上書きしていない (Block 既定のまま) か。
+
+        クラス属性で判定する (インスタンスに関数を差し込んでも上書きとはみなさない)。
+        """
+        return getattr(type(self), name) is getattr(Block, name)
 
     def derivative_v(
         self,
@@ -551,8 +560,10 @@ class Block:
 
         Returns:
             ``x_dot`` (flat、shape ``(n_states,)``)。Default は SM-A ``derivative`` を
-            rank-0 入力で呼ぶ wrapper。
+            rank-0 入力で呼ぶ wrapper (``derivative`` が Block 既定ならゼロを返す)。
         """
+        if self._inherits("derivative"):
+            return np.zeros(self.n_states)
         return self.derivative(t, x, _scalar_inputs_1d(self, u))
 
     def update_v(
@@ -561,7 +572,12 @@ class Block:
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> npt.NDArray[Any]:
-        """vector-port 版 ``update`` (ADR-0079 §(5))。Default は SM-A ``update`` への wrapper。"""
+        """vector-port 版 ``update`` (ADR-0079 §(5))。Default は SM-A ``update`` への wrapper。
+
+        ``update`` が Block 既定なら ``x`` をそのまま返す (入力の shape は問わない)。
+        """
+        if self._inherits("update"):
+            return x
         return self.update(t, x, _scalar_inputs_1d(self, u))
 
     def advance_v(
@@ -570,7 +586,12 @@ class Block:
         x: npt.NDArray[Any],
         u: tuple[npt.NDArray[Any], ...],
     ) -> npt.NDArray[Any]:
-        """vector-port 版 ``advance`` (ADR-0079 §(5)、A-5)。Default は SM-A ``advance`` への wrapper。"""
+        """vector-port 版 ``advance`` (ADR-0079 §(5)、A-5)。Default は SM-A ``advance`` への wrapper。
+
+        ``advance`` が Block 既定なら ``x`` をそのまま返す (入力の shape は問わない)。
+        """
+        if self._inherits("advance"):
+            return x
         return self.advance(t, x, _scalar_inputs_1d(self, u))
 
     def __repr__(self) -> str:
