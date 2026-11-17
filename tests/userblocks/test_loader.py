@@ -1305,3 +1305,59 @@ class TestParamSearchDeclaration:
         (info,) = _load(workspace).block_infos
 
         assert dict(info.param_search) == {}
+
+
+# ---------------------------------------------------------------------------
+# 行エディタの宣言 (ADR-0086 §1-D)
+# ---------------------------------------------------------------------------
+
+PARAM_ROWS_FORM = '''
+from flode import Block
+
+
+class Bin(Block):
+    """Parts bin."""
+
+    block_param_rows = {"parts": "edit_parts", "missing": "edit_parts", "k": "edit_parts"}
+
+    def __init__(self, parts: list[str] = [], k: float = 1.0, **kwargs):
+        super().__init__(n_inputs=1, n_outputs=1, **kwargs)
+
+    @classmethod
+    def edit_parts(cls, action, params, **_):
+        return NotImplemented
+
+    def output(self, t, x, u):
+        return u
+'''
+
+
+class TestParamRowsDeclaration:
+    def test_valid_items_are_kept_and_errors_are_info(
+        self, workspace: Path, write_block: WriteFile, caplog: pytest.LogCaptureFixture
+    ):
+        write_block("bin.py", PARAM_ROWS_FORM)
+
+        with caplog.at_level(logging.WARNING, logger="flode.userblocks"):
+            report = _load(workspace)
+
+        assert report.blocks == ("flode_ws.bin.Bin",)
+        (info,) = report.block_infos
+        assert dict(info.param_rows) == {"parts": "edit_parts"}
+        assert dict(info.param_search) == {}
+        assert _errors(report) == []
+        notes = _errors(report, "info")
+        assert len(notes) == 2
+        assert all(n.kind == "spec" for n in notes)
+        assert all(n.message.startswith("Bin: block_param_rows[") for n in notes)
+        assert report.error_count == 0
+        assert sum("block_param_rows" in r.getMessage() for r in caplog.records) == 2
+
+    def test_block_without_declaration_has_empty_param_rows(
+        self, workspace: Path, write_block: WriteFile
+    ):
+        write_block("offset.py", SUBCLASS_FORM)
+
+        (info,) = _load(workspace).block_infos
+
+        assert dict(info.param_rows) == {}

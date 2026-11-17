@@ -49,6 +49,7 @@ from ._docmeta import (
     port_names_for_instance,
     read_params,
     resolve_metadata,
+    resolve_param_rows,
     resolve_param_search,
 )
 from ._finder import (
@@ -1111,13 +1112,13 @@ def _build_info(
         )
         for name, label in labels
     )
-    param_search, warnings = resolve_param_search(
-        cls,
-        [
-            RawParam(name=name, type_label=label, has_default=True, default=defaults[name])
-            for name, label in labels
-        ],
-    )
+    raw_params = [
+        RawParam(name=name, type_label=label, has_default=True, default=defaults[name])
+        for name, label in labels
+    ]
+    param_search, warnings = resolve_param_search(cls, raw_params)
+    param_rows, rows_warnings = resolve_param_rows(cls, raw_params)
+    warnings = warnings + rows_warnings
     # L-1: インスタンス化やメタデータ参照の間にクラスの __module__ / __name__ が書き換えられて
     # いたら、組み込み等の型名を名乗れてしまうので拒否する
     if block_type_path(cls) != expected_type_path:
@@ -1149,6 +1150,7 @@ def _build_info(
         block_class=cls,
         dynamic_ports=has_dynamic_ports(cls),
         param_search=param_search,
+        param_rows=param_rows,
     )
     return info, warnings
 

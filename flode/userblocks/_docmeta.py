@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..core.block_metadata import (
+    PARAM_ROWS_ATTRIBUTE,
     PARAM_SEARCH_ATTRIBUTE,
     validate_category,
     validate_choices,
@@ -306,19 +307,60 @@ def resolve_param_search(cls: type, params: Sequence[RawParam]) -> tuple[dict[st
     Returns:
         ``({引数名: メソッド名}, [警告文])``。宣言が無ければ ``({}, [])``。
     """
-    raw = inspect.getattr_static(cls, PARAM_SEARCH_ATTRIBUTE, None)
+    return _resolve_param_method_map(
+        cls, params, attribute=PARAM_SEARCH_ATTRIBUTE, ability="be searched", runner="the search"
+    )
+
+
+def resolve_param_rows(cls: type, params: Sequence[RawParam]) -> tuple[dict[str, str], list[str]]:
+    """行エディタの宣言 (``block_param_rows``) を検証して、有効な対応だけを返す (ADR-0086 §1-D)。
+
+    規則・誤りの扱いは :func:`resolve_param_search` と同じ (属性名と警告文だけが違う)。
+
+    Args:
+        cls: ``Block`` サブクラス。
+        params: クラスの引数一覧 (``read_params`` の結果、既定値は JSON 往復済みでもよい)。
+
+    Returns:
+        ``({引数名: メソッド名}, [警告文])``。宣言が無ければ ``({}, [])``。
+    """
+    return _resolve_param_method_map(
+        cls,
+        params,
+        attribute=PARAM_ROWS_ATTRIBUTE,
+        ability="have a row editor",
+        runner="the row editor",
+    )
+
+
+def _resolve_param_method_map(
+    cls: type, params: Sequence[RawParam], *, attribute: str, ability: str, runner: str
+) -> tuple[dict[str, str], list[str]]:
+    """``{引数名: classmethod / staticmethod 名}`` 形式の宣言を検証する (検索・行エディタ共通)。
+
+    Args:
+        cls: ``Block`` サブクラス。
+        params: クラスの引数一覧。
+        attribute: 宣言の class 属性名。
+        ability: 警告文の「list[str] の引数だけが ～ できる」の部分 (``"be searched"`` 等)。
+        runner: 警告文の「～ はブロックを作らずに走る」の主語 (``"the search"`` 等)。
+
+    Returns:
+        ``({引数名: メソッド名}, [警告文])``。
+    """
+    raw = inspect.getattr_static(cls, attribute, None)
     if raw is None:
         return {}, []
     if not isinstance(raw, Mapping):
         return {}, [
-            f"{PARAM_SEARCH_ATTRIBUTE} must be a dict of parameter name -> method name, "
+            f"{attribute} must be a dict of parameter name -> method name, "
             f"got {type(raw).__name__}; it is ignored"
         ]
     by_name = {p.name: p for p in params}
     methods: dict[str, str] = {}
     warnings: list[str] = []
     for key, method_name in raw.items():
-        where = f"{PARAM_SEARCH_ATTRIBUTE}[{key!r}]"
+        where = f"{attribute}[{key!r}]"
         if not isinstance(key, str) or key not in by_name:
             warnings.append(f"{where}: the block has no parameter with this name; it is ignored")
             continue
@@ -328,7 +370,7 @@ def resolve_param_search(cls: type, params: Sequence[RawParam]) -> tuple[dict[st
         ):
             warnings.append(
                 f"{where}: only a parameter annotated as list[str] whose default value is a list "
-                f"of strings can be searched (annotation {param.type_label!r}); it is ignored"
+                f"of strings can {ability} (annotation {param.type_label!r}); it is ignored"
             )
             continue
         if not isinstance(method_name, str):
@@ -343,7 +385,7 @@ def resolve_param_search(cls: type, params: Sequence[RawParam]) -> tuple[dict[st
             continue
         if not isinstance(method, classmethod | staticmethod):
             warnings.append(
-                f"{where}: {method_name!r} must be a classmethod or staticmethod (the search "
+                f"{where}: {method_name!r} must be a classmethod or staticmethod ({runner} "
                 f"runs without creating the block); it is ignored"
             )
             continue

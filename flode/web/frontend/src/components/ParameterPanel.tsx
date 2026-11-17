@@ -50,10 +50,13 @@ import {
 import {
   toggleBlockFlipped,
   updateBlockParams,
+  updateBlockParamsAndRemap,
   updateSubsystemMaskValues,
   useAppStore,
 } from "../store/appStore";
 import type { BlockEntry, BlockMetadata, MaskParamSpec } from "../types/api";
+import type { IndexRemap } from "../lib/paramRows";
+import { ParamRowsEditor } from "./ParamRowsEditor";
 import { ParamSearchDialog } from "./ParamSearchDialog";
 import { PythonFunctionEditor } from "./PythonFunctionEditor";
 import { SignalDtypeSection } from "./SignalDtypeSection";
@@ -67,6 +70,7 @@ import {
   PropertyGrid,
   PropertyHint,
   PropertyRow,
+  PropertyStackRow,
   RowActionButton,
   SectionDivider,
   SELECT_CLS,
@@ -285,11 +289,34 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
   // dynamic_ports のブロックは、編集後の引数のポートをサーバから解決してから params を
   // 確定する (解決済みなら updateBlockParams が減ったポートの配線を剪定できる)。応答待ちの
   // 間に続けて編集された値は、未確定の params を土台にして最後の 1 件だけを確定する
-  // (ブロック id → 応答待ちの params と要求番号)
+  // (ブロック id → 応答待ちの params と要求番号)。
+  // ADR-0086 §5-D: ``remaps`` は行エディタの 1 操作 (``null`` = 通常の引数編集で、
+  // ``params:<id>`` の連続編集にまとめる)。行エディタ以外の編集が応答待ちの操作の上に
+  // 重なったら、元の ``remaps`` を引き継ぐ (引き継がないと行の削除の付け替えが消える)
   const pendingParamsRef = useRef(
-    new Map<string, { seq: number; params: Record<string, unknown> }>(),
+    new Map<
+      string,
+      {
+        seq: number;
+        params: Record<string, unknown>;
+        remaps: ReadonlyArray<IndexRemap> | null;
+      }
+    >(),
   );
   const commitSeqRef = useRef(0);
+  // 応答待ちのブロック id (行エディタの操作ボタンを無効にするため描画に反映する)
+  const [pendingBlockIds, setPendingBlockIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const markPending = (blockId: string, on: boolean): void => {
+    setPendingBlockIds((prev) => {
+      if (prev.has(blockId) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(blockId);
+      else next.delete(blockId);
+      return next;
+    });
+  };
   // ADR-0085 §4-C: 値の検索ダイアログを開いている引数 (ブロック id が変わったら閉じる)
   const [searchTarget, setSearchTarget] = useState<{ blockId: string; param: string } | null>(
     null,
@@ -302,46 +329,78 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
    * store の最新値。追加の直後に再検索するため、描画時の ``block`` ではなく store から読む)。
    */
   const readStringListParam = (blockId: string, param: string): string[] => {
-    let params: Record<string, unknown> | undefined =
-      pendingParamsRef.current.get(blockId)?.params;
-    if (params === undefined) {
-      const state = useAppStore.getState();
-      if (state.editingModel !== null) {
-        try {
-          params = findBlockAtPath(state.editingModel, state.editingPath, blockId)?.params;
-        } catch {
-          params = undefined;
-        }
-      }
-    }
+    const params = readLatestParams(blockId);
     const raw =
       params !== undefined && param in params
         ? params[param]
         : blockMeta?.params_spec.find((p) => p.name === param)?.default;
     return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
   };
-  const applyParams = (nextParams: Record<string, unknown>): void => {
+  /** その時点の params (応答待ちの未確定値があればそれ、無ければ store の最新値)。 */
+  function readLatestParams(blockId: string): Record<string, unknown> | undefined {
+    const pendingParams = pendingParamsRef.current.get(blockId)?.params;
+    if (pendingParams !== undefined) return pendingParams;
+    const state = useAppStore.getState();
+    if (state.editingModel === null) return undefined;
+    try {
+      return findBlockAtPath(state.editingModel, state.editingPath, blockId)?.params;
+    } catch {
+      return undefined;
+    }
+  }
+  /**
+   * ADR-0086 §3-B: 行エディタの要求に送る他の引数値 (registry の既定値で補完し、編集中の
+   * 引数自身は除く。サーバも宣言済みの引数に絞る)。
+   */
+  const readOtherParams = (blockId: string, param: string): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const p of blockMeta?.params_spec ?? []) {
+      if (p.has_default) out[p.name] = p.default;
+    }
+    Object.assign(out, readLatestParams(blockId) ?? {});
+    delete out[param];
+    return out;
+  };
+  /**
+   * 引数を確定する。``remaps`` が ``null`` なら通常の編集 (連続編集を 1 履歴にまとめる)、
+   * 配列なら行エディタの 1 操作 (1 操作 = 1 履歴で、配線を対応表で付け替える。ADR-0086 §5-C)。
+   */
+  const applyParams = (
+    nextParams: Record<string, unknown>,
+    remaps: ReadonlyArray<IndexRemap> | null = null,
+  ): void => {
     const blockId = block.id;
     const pending = pendingParamsRef.current;
+    // 配線の付け替えは dynamic_ports のブロックだけ (ポート数が引数に追従しないなら番号で対応)
+    const ownRemaps = remaps === null ? null : isDynamicUserBlock(userMeta) ? remaps : [];
+    const effectiveRemaps = ownRemaps ?? pending.get(blockId)?.remaps ?? null;
+    const commitNow = (r: ReadonlyArray<IndexRemap> | null): void => {
+      if (r === null) updateBlockParams(blockId, nextParams, registryMap);
+      else updateBlockParamsAndRemap(blockId, nextParams, r, registryMap);
+    };
     if (
       !isDynamicUserBlock(userMeta) ||
       getCachedUserBlockPorts(block.type, nextParams) !== undefined
     ) {
       pending.delete(blockId);
-      updateBlockParams(blockId, nextParams, registryMap);
+      markPending(blockId, false);
+      commitNow(effectiveRemaps);
       return;
     }
     commitSeqRef.current += 1;
     const seq = commitSeqRef.current;
-    pending.set(blockId, { seq, params: nextParams });
+    pending.set(blockId, { seq, params: nextParams, remaps: effectiveRemaps });
+    markPending(blockId, true);
     const path = JSON.stringify(editingPath);
     // 編集の土台にした params (store の参照)。応答待ちの間に undo 等で変わっていたら確定しない
     const baseParams = block.params;
     void ensureUserBlockPorts([{ type_path: block.type, params: nextParams }])
       .catch(() => undefined)
       .then(() => {
-        if (pending.get(blockId)?.seq !== seq) return; // 後の編集に置き換わった
+        const entry = pending.get(blockId);
+        if (entry?.seq !== seq) return; // 後の編集に置き換わった
         pending.delete(blockId);
+        markPending(blockId, false);
         const state = useAppStore.getState();
         // 応答待ちの間に別スコープへ移っていたら、同じ id の別ブロックを書き換えない
         if (JSON.stringify(state.editingPath) !== path || state.editingModel === null) return;
@@ -353,7 +412,7 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
         }
         // 削除された / undo などで別の値になった: 古い編集を復活させない
         if (current?.params !== baseParams) return;
-        updateBlockParams(blockId, nextParams, registryMap);
+        commitNow(entry.remaps);
       });
   };
 
@@ -600,11 +659,16 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
             const dtLabel = typeof modelDt === "number" ? modelDt : "?";
             // ADR-0085 §4-B: 検索を宣言した引数 (検証済みの宣言だけ searchable) で、値が
             // 文字列の配列のときだけ「探す…」を出す
+            // ADR-0086 §論点 4: 行エディタを宣言した引数で、値が文字列の配列なら表 + ボタン列で
+            // 編集し、「探す…」は出さない (宣言のない引数は従来の JSON 欄のまま)
+            const isStringList = Array.isArray(v) && v.every((x) => typeof x === "string");
+            const rowEditor =
+              userMeta !== undefined && paramSpec?.row_editor === true && isStringList;
             const searchable =
               userMeta !== undefined &&
               paramSpec?.searchable === true &&
-              Array.isArray(v) &&
-              v.every((x) => typeof x === "string");
+              isStringList &&
+              !rowEditor;
             const sampleTimeHint =
               sampleTimeMode === null
                 ? null
@@ -615,6 +679,28 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                     : t("inspector.sample_time.fixed_hint");
             return (
               <Fragment key={k}>
+              {rowEditor ? (
+                <PropertyStackRow label={k} testId={`param-rows-${k}`}>
+                  <ParamRowsEditor
+                    // ブロックが変わったら作り直す (describe の取り消し・ダイアログを閉じる)
+                    key={`${block.id}\u0000${k}`}
+                    typePath={block.type}
+                    blockId={block.id}
+                    param={k}
+                    rows={readStringListParam(block.id, k)}
+                    otherParams={readOtherParams(block.id, k)}
+                    busy={pendingBlockIds.has(block.id)}
+                    readRows={() => readStringListParam(block.id, k)}
+                    readParams={() => readOtherParams(block.id, k)}
+                    onApply={(rows, remaps) => {
+                      setError(null);
+                      const base =
+                        pendingParamsRef.current.get(block.id)?.params ?? block.params;
+                      applyParams({ ...base, [k]: rows }, remaps);
+                    }}
+                  />
+                </PropertyStackRow>
+              ) : (
               <PropertyRow
                 labelWidth={88}
                 labelAlign="left"
@@ -812,10 +898,11 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
                   />
                 )}
               </PropertyRow>
+              )}
               {paramDescription !== "" && (
                 <PropertyHint
                   testId={`param-desc-${k}`}
-                  labelWidth={88}
+                  labelWidth={rowEditor ? 0 : 88}
                   text={paramDescription}
                 />
               )}

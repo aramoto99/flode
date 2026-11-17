@@ -272,6 +272,43 @@ class TestClassFormParamSearch:
                 def output(self, t: float, u: float) -> float:
                     return u
 
+    def test_param_rows_declaration_is_rejected(self) -> None:
+        """ADR-0086 §1-D: ``block_param_rows`` も ``Block`` サブクラスだけで使える。"""
+        with pytest.raises(BlockSpecError, match="block_param_rows can be used only"):
+
+            @block
+            class Bad:
+                names: list[str] = []  # noqa: RUF012 - @block のフィールド宣言
+                block_param_rows = {"names": "edit"}  # noqa: RUF012
+
+                @classmethod
+                def edit(cls, action: str, params: dict, **_: object) -> object:
+                    return NotImplemented
+
+                def output(self, t: float, u: float) -> float:
+                    return u
+
+    def test_inherited_param_rows_declaration_is_rejected(self) -> None:
+        class Mixin:
+            block_param_rows = {"names": "edit"}  # noqa: RUF012
+
+        class Bad(Mixin):
+            def output(self, t: float, u: float) -> float:
+                return u
+
+        with pytest.raises(BlockSpecError, match="block_param_rows"):
+            block(Bad)
+
+    def test_annotated_param_rows_field_is_rejected(self) -> None:
+        with pytest.raises(BlockSpecError, match="block_param_rows"):
+
+            @block
+            class Bad:
+                block_param_rows: str
+
+                def output(self, t: float, u: float) -> float:
+                    return u
+
     def test_annotated_hidden_marker_is_rejected(self) -> None:
         """注釈を付けるとパラメータ (フィールド) になってしまうため拒否する。"""
         with pytest.raises(BlockSpecError, match="block_hidden"):

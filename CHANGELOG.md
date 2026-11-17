@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.69.0] - 2026-11-18 — ユーザーブロックの行リスト引数を表 + 編集ダイアログで編集する (ADR-0086)
+
+### Added
+
+- ユーザーブロックの `list[str]` の引数を、表と編集ダイアログで編集できるようにした (試験的、ADR-0086)。
+  `Block` サブクラスが `block_param_rows = {"引数名": "classmethod 名"}` を宣言すると、Inspector のその引数は
+  JSON の入力欄の代わりに全幅の表 (列はブロックが決める、誤りのある行は赤字) になり、追加 / 編集 / 削除 /
+  ↑ / ↓ / テキストで編集… ができる。編集ダイアログの項目 (テキスト / 選択 / 検索して複数選ぶ) と、項目から
+  1 行を作る処理はブロックが提供する (`action` = `describe` / `form` / `compose` / `search` で呼ばれる)。
+  要求は `POST /api/v1/blocks/param-rows` (同時実行は引数の値の検索と合わせて 2 本まで)。
+  registry の `params_spec[]` には宣言した引数だけ `row_editor: true` が載り、その引数では「探す…」を出さない
+- 表の行が入出力ポートに対応するブロック (`describe` が `ports` を返し、`block_dynamic_ports = True`) では、
+  行の追加・削除・並べ替えで配線が行に付いて移る (削除した行の配線は外れる、分岐点も移る)。1 操作 = 1 Undo
 
 ### Fixed
 

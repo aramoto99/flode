@@ -11,6 +11,7 @@ from flode.userblocks._docmeta import (
     parse_docstring,
     read_params,
     resolve_metadata,
+    resolve_param_rows,
     resolve_param_search,
 )
 
@@ -394,3 +395,81 @@ class TestResolveParamSearch:
         methods, warnings = _resolve(BadDefault)
         assert methods == {}
         assert "default value is a list of strings" in warnings[0]
+
+
+class _RowEdited(Block):
+    """Block with string-list parameters edited as rows."""
+
+    block_param_rows = {"names": "edit", "tags": "edit_static"}
+
+    def __init__(
+        self,
+        names: list[str] = ["a"],  # noqa: B006 - 既定値の検査に使う
+        tags: tuple[str, ...] = (),
+        k: float = 1.0,
+        **kwargs,
+    ):
+        super().__init__(n_inputs=1, n_outputs=1, **kwargs)
+
+    @classmethod
+    def edit(cls, action, params, **_):
+        return NotImplemented
+
+    @staticmethod
+    def edit_static(action, params, **_):
+        return NotImplemented
+
+    def instance_edit(self, action, params, **_):
+        return NotImplemented
+
+
+def _resolve_rows(cls):
+    return resolve_param_rows(cls, read_params(cls))
+
+
+class TestResolveParamRows:
+    """ADR-0086 §1-D: ``block_param_rows`` は ``block_param_search`` と同じ規則で解決する。"""
+
+    def test_valid_declaration(self):
+        assert _resolve_rows(_RowEdited) == ({"names": "edit", "tags": "edit_static"}, [])
+
+    def test_no_declaration(self):
+        assert _resolve_rows(_Plain) == ({}, [])
+
+    def test_is_inherited(self):
+        class Child(_RowEdited):
+            pass
+
+        assert _resolve_rows(Child)[0] == {"names": "edit", "tags": "edit_static"}
+
+    def test_search_declaration_is_not_read(self):
+        # 2 つの宣言は独立 (検索の宣言は行エディタにならない)
+        assert _resolve_rows(_Searchable) == ({}, [])
+        assert _resolve(_RowEdited) == ({}, [])
+
+    @pytest.mark.parametrize("raw", [["names"], "names", 3])
+    def test_not_a_mapping_ignores_everything(self, raw):
+        Bad = type("Bad", (_RowEdited,), {"block_param_rows": raw})
+        methods, warnings = _resolve_rows(Bad)
+        assert methods == {}
+        assert len(warnings) == 1
+        assert warnings[0].startswith("block_param_rows must be a dict")
+
+    @pytest.mark.parametrize(
+        ("declaration", "fragment"),
+        [
+            ({"missing": "edit"}, "no parameter with this name"),
+            ({"k": "edit"}, "only a parameter annotated as list[str]"),
+            ({"names": 5}, "must be the name of a classmethod or staticmethod"),
+            ({"names": "nope"}, "has no attribute 'nope'"),
+            ({"names": "instance_edit"}, "must be a classmethod or staticmethod"),
+        ],
+    )
+    def test_bad_item_is_ignored_with_a_warning(self, declaration, fragment):
+        Bad = type("Bad", (_RowEdited,), {"block_param_rows": {**declaration, "tags": "edit"}})
+        methods, warnings = _resolve_rows(Bad)
+        assert methods == {"tags": "edit"}
+        assert len(warnings) == 1
+        assert warnings[0].startswith("block_param_rows[")
+        assert fragment in warnings[0]
+        assert "search" not in warnings[0]

@@ -270,3 +270,20 @@ describe("appendUniqueValues", () => {
     expect(appendUniqueValues([], rows, new Set(["zzz"]))).toEqual([]);
   });
 });
+
+describe("ParamSearchController without getCurrent (ADR-0086 §3-D)", () => {
+  it("sends an empty current when getCurrent is omitted", async () => {
+    const seen: string[][] = [];
+    const controller = new ParamSearchController({
+      search: async (query, current) => {
+        seen.push(current);
+        return response(query);
+      },
+      onState: () => undefined,
+    });
+    controller.submit("bolt");
+    await flush();
+    expect(seen).toEqual([[]]);
+    controller.dispose();
+  });
+});

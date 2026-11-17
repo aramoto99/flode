@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 import threading
 from collections.abc import Callable, Iterator
@@ -21,6 +22,7 @@ from flode.core.persistence import managed_block_types
 from flode.server import create_app
 from flode.server.routes.blocks import (
     MAX_CONCURRENT_PARAM_SEARCHES,
+    MAX_PARAM_ROWS_BODY_BYTES,
     MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS,
     MAX_PARAM_SEARCH_CURRENT_ITEMS,
     MAX_PARAM_SEARCH_PARAM_CHARS,
@@ -290,6 +292,50 @@ class TestBadRequest:
         resp = client.post(URL, content=b"{", headers={"content-type": "application/json"})
 
         assert resp.status_code == 400
+
+    def test_very_deep_json_is_400_not_500(self, client: TestClient, workspace: Path):
+        # security SHOULD-2: request.json() の RecursionError が 500 になっていた
+        depth = 100_000
+        content = b'{"current": ' + b"[" * depth + b"]" * depth + b"}"
+        resp = client.post(URL, content=content, headers={"content-type": "application/json"})
+
+        assert resp.status_code == 400
+        assert _calls(workspace) == []
+
+    def test_too_large_body(self, client: TestClient, workspace: Path):
+        padding = "x" * (MAX_PARAM_ROWS_BODY_BYTES + 1)
+        resp = client.post(
+            URL,
+            content=json.dumps(_body(pad=padding)),
+            headers={"content-type": "application/json"},
+        )
+
+        assert resp.status_code == 400
+        assert "bytes" in resp.json()["detail"]
+        assert _calls(workspace) == []
+
+    def test_too_large_body_without_content_length(self, client: TestClient, workspace: Path):
+        padding = b"x" * (MAX_PARAM_ROWS_BODY_BYTES + 1)
+
+        def chunks() -> Iterator[bytes]:
+            yield b'{"pad": "'
+            yield padding
+            yield b'"}'
+
+        resp = client.post(URL, content=chunks(), headers={"content-type": "application/json"})
+
+        assert resp.status_code == 400
+        assert "bytes" in resp.json()["detail"]
+        assert _calls(workspace) == []
+
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    def test_nan_and_infinity_are_400(self, client: TestClient, workspace: Path, constant: str):
+        content = json.dumps(_body()).encode()[:-1] + f', "x": {constant}}}'.encode()
+        resp = client.post(URL, content=content, headers={"content-type": "application/json"})
+
+        assert resp.status_code == 400
+        assert constant in resp.json()["detail"]
+        assert _calls(workspace) == []
 
     def test_user_exception_is_400(self, client: TestClient):
         resp = client.post(URL, json=_body(param="spares", query="raise"))

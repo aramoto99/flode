@@ -28,6 +28,7 @@ const QUERY_CANDIDATES = ["a", "e", "o", "i", "u", "r", "s", "t", "n", "l"];
 interface ParamSpecLike {
   name: string;
   searchable?: boolean;
+  row_editor?: boolean;
 }
 interface BlockLike {
   type_path: string;
@@ -36,7 +37,10 @@ interface BlockLike {
   params_spec: ParamSpecLike[];
 }
 
-/** ワークスペースの、検索を宣言した引数でポートが増減するブロックを registry から探す。 */
+/**
+ * ワークスペースの、検索を宣言した引数でポートが増減するブロックを registry から探す。
+ * 表の編集 (row_editor、ADR-0086) も宣言した引数は「探す…」が出ないので除く。
+ */
 async function findSearchableBlock(
   api: APIRequestContext,
 ): Promise<{ typePath: string; param: string } | undefined> {
@@ -44,7 +48,7 @@ async function findSearchableBlock(
   const body = (await res.json()) as { blocks: BlockLike[] };
   for (const b of body.blocks) {
     if (b.source !== "workspace" || b.dynamic_ports !== true) continue;
-    const p = b.params_spec.find((s) => s.searchable === true);
+    const p = b.params_spec.find((s) => s.searchable === true && s.row_editor !== true);
     if (p !== undefined) return { typePath: b.type_path, param: p.name };
   }
   return undefined;

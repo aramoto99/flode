@@ -44,6 +44,11 @@ import {
 import { makeWorkspaceLayoutKey } from "../lib/storageKeys";
 import { audioPlayer } from "../lib/audioPlayer";
 import { invalidateUserBlockPorts } from "../lib/userBlockPorts";
+import {
+  remapBranchWaypoints,
+  remapConnections,
+  type IndexRemap,
+} from "../lib/paramRows";
 import type {
   BlockEntry,
   BlockMetadata,
@@ -2393,6 +2398,74 @@ export function updateBlockParams(
     // を typing する間) を 1 履歴に集約。別ブロック / 別アクションで分離。
     { mergeKey: `params:${blockId}` },
   );
+}
+
+/**
+ * ADR-0086 §5-C: 行エディタの 1 操作 (追加・置き換え・削除・↑/↓・テキストで編集) で、
+ * 引数と配線 (と出力側の手動分岐点のキー) を同時に書き換える。
+ *
+ * ``mergeKey`` なしで 1 回 ``applyEditingModel`` するので、1 操作 = 1 履歴になり、Undo で
+ * 引数・配線・分岐点が同時に戻る (``params:<id>`` の連続編集にはまとめない)。今のスコープの
+ * ``connections`` / ``branch_waypoints`` が対象 (Subsystem の中でも同じ)。
+ *
+ * 手順: params を置き換える → ``remaps`` を順に配線へ当てる (出力側は分岐点キーも移す) →
+ * ``updateBlockParams`` と同じ剪定 (ポート数が減ったら新しい数以上の番号の配線を落とす) →
+ * 枝が 2 本未満になった分岐点の孤児掃除。
+ *
+ * @param blockId - 行エディタのブロック (今のスコープ)。
+ * @param params - 新しい params 全体。
+ * @param remaps - 操作が作った旧 → 新の対応表。空 = 番号で対応 (テキスト編集・describe 失敗時)。
+ * @param registry - 剪定のポート数の解決に使う registry。
+ */
+export function updateBlockParamsAndRemap(
+  blockId: string,
+  params: Record<string, unknown>,
+  remaps: ReadonlyArray<IndexRemap>,
+  registry?: ReadonlyMap<string, BlockMetadata>,
+): void {
+  const path = currentPath();
+  useAppStore.getState().applyEditingModel((m) => {
+    let found = false;
+    let updated: FlwModel;
+    try {
+      updated = applyAtPath(m, path, (view) => {
+        const target = view.blocks.find((b) => b.id === blockId);
+        if (!target) return view;
+        found = true;
+        const newBlocks = view.blocks.map((b) =>
+          b.id === blockId ? { ...b, params } : b,
+        );
+        let newConnections = view.connections;
+        for (const remap of remaps) {
+          newConnections = remapConnections(newConnections, blockId, remap);
+        }
+        const meta = registry?.get(target.type);
+        const before = resolvePortCounts(target.type, target.params, meta);
+        const after = resolvePortCounts(target.type, params, meta);
+        if (
+          canPruneOnParamChange(target.type, params, registry) &&
+          (after.nInputs < before.nInputs || after.nOutputs < before.nOutputs)
+        ) {
+          newConnections = newConnections.filter((c) => {
+            if (c.dst === blockId && c.dst_idx >= after.nInputs) return false;
+            if (c.src === blockId && c.src_idx >= after.nOutputs) return false;
+            return true;
+          });
+        }
+        return { blocks: newBlocks, connections: newConnections, layout: view.layout };
+      });
+    } catch {
+      return m; // path 不整合 (スコープが消えた) は no-op
+    }
+    if (!found) return m; // ブロックが消えていたら履歴を汚さない
+    const outputRemaps = remaps.filter((r) => r.side === "output");
+    if (outputRemaps.length > 0) {
+      updated = applyBranchWaypointsAtPath(updated, path, (wp) =>
+        outputRemaps.reduce((acc, r) => remapBranchWaypoints(acc, blockId, r), wp),
+      );
+    }
+    return pruneOrphanWaypointsAtScope(updated, path);
+  });
 }
 
 // ---------------------------------------------------------------------------

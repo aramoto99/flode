@@ -28,6 +28,13 @@ from ._loader import _exception_text, _reraise_if_interrupt, _safe_text, _trunca
 
 _logger = logging.getLogger("flode.userblocks.param_search")
 
+# NOTE: 行エディタ (``_param_rows.py``、ADR-0086) がこのモジュールの非公開の部品を
+# そのまま import して使っている。名前・引数・意味を変えるときは ``_param_rows.py`` も直すこと:
+#   _FORBIDDEN_VALUE_CATEGORIES / _InvalidResultError / _convert_cell / _is_utf8_encodable /
+#   _plain_str / _utf8_safe / _validated_columns / _validated_result / _validated_value
+# (``_loader.py`` の _exception_text / _reraise_if_interrupt / _safe_text / _truncate も両方が使う)。
+# 3 つ目の利用者が出たら共通モジュールへ移す (ADR-0086)。
+
 #: 表の列数の上限 (超えたら不正な応答)。
 MAX_PARAM_SEARCH_COLUMNS = 16
 #: 列見出しの最大長 (超えた分は切り詰める。表示だけの事柄)。

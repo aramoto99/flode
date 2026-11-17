@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import ClientDisconnect
 
 from ...exceptions import (
     BlockReloadInProgressError,
@@ -22,7 +25,23 @@ from ...exceptions import (
     ParamSearchUnavailableError,
     UnknownBlockTypeError,
 )
-from ...userblocks import ParamSearchResult, reload_sources
+from ...userblocks import (
+    PARAM_ROWS_ACTIONS,
+    ParamRowsComposeResult,
+    ParamRowsDescribeResult,
+    ParamRowsField,
+    ParamRowsFormResult,
+    ParamRowsResult,
+    ParamSearchResult,
+    reload_sources,
+)
+from ...userblocks._param_rows import (
+    MAX_PARAM_ROWS_FIELDS,
+    MAX_PARAM_ROWS_ID_CHARS,
+    MAX_PARAM_ROWS_PICK_VALUES,
+    MAX_PARAM_ROWS_VALUE_CHARS,
+    is_single_line_text,
+)
 from ..block_catalog import (
     BlockCatalog,
     compose_catalog,
@@ -37,6 +56,7 @@ from ..registry import (
     BlockMetadata,
     introspect_python_source,
     metadata_to_dict,
+    param_rows,
     resolve_port_shapes,
     rewrite_python_source,
     search_param_values,
@@ -61,13 +81,30 @@ MAX_PARAM_SEARCH_CURRENT_ITEMS = 1024
 MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS = 1000
 PARAM_SEARCH_DEFAULT_LIMIT = 200
 PARAM_SEARCH_MAX_LIMIT = 1000
-#: サーバ全体で同時に走らせる検索の数 (ADR-0085 §2-D、超えたら 409)。スレッドプールは
-#: 他の API と共有するので、重い初回の読み込みが要求の数だけ並行しないようにする
+#: サーバ全体で同時に走らせるユーザーブロックの補助呼び出し (検索 ``search-param-values`` と
+#: 行エディタ ``param-rows`` の合計) の数 (ADR-0085 §2-D / ADR-0086 §3-D、超えたら 409)。
+#: スレッドプールは他の API と共有するので、重い初回の読み込みが要求の数だけ並行しないようにする
 MAX_CONCURRENT_PARAM_SEARCHES = 2
 PARAM_SEARCH_BUSY_DETAIL = "another parameter search is running; try again when it finishes"
 #: 非 loopback bind で、検索関数の例外 (ユーザーコード由来の文字列) の代わりに返す固定文
 PARAM_SEARCH_REMOTE_ERROR_DETAIL = "the search function raised an exception; see the server log"
 PARAM_SEARCH_DISABLED_DETAIL = "user blocks are not enabled in this server configuration"
+
+# ADR-0086 §3-B: 行エディタ (param-rows) の入力上限 (違反はすべて 400、ユーザーコードは走らない)
+#: 本文の大きさ (``Content-Length`` と実際に読んだ長さの両方で見る)。search-param-values も共有
+MAX_PARAM_ROWS_BODY_BYTES = 4 * 1024 * 1024
+#: ``params`` の入れ子の深さ (``params`` 自身が 1)
+MAX_PARAM_ROWS_PARAMS_DEPTH = 16
+#: ``params`` に含まれる値 (入れ物を含む) の総数
+MAX_PARAM_ROWS_PARAMS_NODES = 50_000
+#: ``params`` の中の文字列 (キーを含む) 1 つの最大長
+MAX_PARAM_ROWS_PARAMS_STRING_CHARS = 64 * 1024
+#: ``rows`` の件数と 1 行の最大長 (検索の ``current`` と同じ)
+MAX_PARAM_ROWS_ITEMS = MAX_PARAM_SEARCH_CURRENT_ITEMS
+MAX_PARAM_ROWS_ITEM_CHARS = MAX_PARAM_SEARCH_CURRENT_ITEM_CHARS
+PARAM_ROWS_BUSY_DETAIL = "another parameter helper is running; try again when it finishes"
+#: 非 loopback bind で、行エディタの例外 (ユーザーコード由来の文字列) の代わりに返す固定文
+PARAM_ROWS_REMOTE_ERROR_DETAIL = "the row editor raised an exception; see the server log"
 
 
 def _catalog(request: Request) -> BlockCatalog:
@@ -286,18 +323,10 @@ def _bad_request(detail: str) -> HTTPException:
     return HTTPException(status_code=400, detail=detail)
 
 
-def _validated_param_search_body(body: Any) -> tuple[str, str, str, int, list[str]]:
-    """search-param-values の本文を検証する (ADR-0085 §2-E / §3-A、違反はすべて 400)。
-
-    Returns:
-        ``(type_path, param, 前後の空白を除いた query, 1〜上限に丸めた limit, current)``。
-    """
-    if not isinstance(body, dict):
-        raise _bad_request("Body must be a JSON object")
+def _validated_target(body: dict[str, Any]) -> tuple[str, str]:
+    """本文の ``type_path`` / ``param`` を検証する (search-param-values と param-rows で共通)。"""
     type_path = body.get("type_path")
     param = body.get("param")
-    query = body.get("query")
-    current = body.get("current")
     if not isinstance(type_path, str) or not type_path:
         raise _bad_request("`type_path` (string) is required in body")
     if len(type_path) > MAX_PARAM_SEARCH_TYPE_PATH_CHARS:
@@ -306,6 +335,16 @@ def _validated_param_search_body(body: Any) -> tuple[str, str, str, int, list[st
         raise _bad_request("`param` (string) is required in body")
     if len(param) > MAX_PARAM_SEARCH_PARAM_CHARS:
         raise _bad_request(f"`param` exceeds {MAX_PARAM_SEARCH_PARAM_CHARS} characters")
+    return type_path, param
+
+
+def _validated_query_and_limit(body: dict[str, Any]) -> tuple[str, int]:
+    """本文の ``query`` / ``limit`` を検証する (search-param-values と param-rows の search で共通)。
+
+    Returns:
+        ``(前後の空白を除いた query, 1〜上限に丸めた limit)``。
+    """
+    query = body.get("query")
     if not isinstance(query, str):
         raise _bad_request("`query` (string) is required in body")
     if len(query) > MAX_PARAM_SEARCH_QUERY_CHARS:
@@ -321,6 +360,20 @@ def _validated_param_search_body(body: Any) -> tuple[str, str, str, int, list[st
     else:
         # 表示件数の希望なので範囲外は丸める (型の誤りだけ 400)
         limit = min(max(raw_limit, 1), PARAM_SEARCH_MAX_LIMIT)
+    return query, limit
+
+
+def _validated_param_search_body(body: Any) -> tuple[str, str, str, int, list[str]]:
+    """search-param-values の本文を検証する (ADR-0085 §2-E / §3-A、違反はすべて 400)。
+
+    Returns:
+        ``(type_path, param, 前後の空白を除いた query, 1〜上限に丸めた limit, current)``。
+    """
+    if not isinstance(body, dict):
+        raise _bad_request("Body must be a JSON object")
+    type_path, param = _validated_target(body)
+    query, limit = _validated_query_and_limit(body)
+    current = body.get("current")
     if not isinstance(current, list):
         raise _bad_request("`current` (array of strings) is required in body")
     if len(current) > MAX_PARAM_SEARCH_CURRENT_ITEMS:
@@ -348,7 +401,8 @@ async def search_param_values_endpoint(request: Request) -> dict[str, Any]:
 
     Raises:
         HTTPException: 404 (型がユーザーブロックとして読み込まれていない / その引数に検索の
-            宣言が無い。ユーザーコードは走らない)、400 (本文の型違反・上限超過・空の検索語・
+            宣言が無い。ユーザーコードは走らない)、400 (本文の型違反・上限超過 (本文は
+            ``MAX_PARAM_ROWS_BODY_BYTES`` まで)・不正な JSON (深い入れ子・NaN を含む)・空の検索語・
             検索関数の例外・不正な応答)、409 (同時に走る検索の数が上限)。detail は文字列。
             ユーザーブロックが無効な構成では本文も読まずに 404。非 loopback bind では
             検索関数の例外の detail を固定文にする (メッセージはサーバのログにある)。
@@ -357,10 +411,8 @@ async def search_param_values_endpoint(request: Request) -> dict[str, Any]:
     if not settings.user_blocks_enabled:
         # 管理型表の中身に関係なく、ユーザーコードを走らせない (security-reviewer SHOULD-1)
         raise HTTPException(status_code=404, detail=PARAM_SEARCH_DISABLED_DETAIL)
-    try:
-        body = await request.json()
-    except ValueError as e:
-        raise _bad_request("Body must be valid JSON") from e
+    # 本文の上限・深い入れ子・NaN は param-rows と同じ扱い (security SHOULD-2)
+    body = await _read_limited_json(request)
     type_path, param, query, limit, current = _validated_param_search_body(body)
     semaphore: threading.BoundedSemaphore = request.app.state.param_search_semaphore
 
@@ -396,6 +448,336 @@ async def search_param_values_endpoint(request: Request) -> dict[str, Any]:
         "rows": [{"cells": list(row.cells), "value": row.value} for row in result.rows],
         "truncated": result.truncated,
     }
+
+
+@router.get("/param-rows")
+def param_rows_get_method_not_allowed() -> None:
+    """``POST /api/v1/blocks/param-rows`` の GET 方向の 405 stub (catch-all への誤マッチ防止)。"""
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "Use POST /api/v1/blocks/param-rows with body "
+            "{type_path, param, action, params, ...} to call a block's row editor."
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _ParamRowsRequest:
+    """検証済みの param-rows の要求。"""
+
+    type_path: str
+    param: str
+    action: str
+    params: dict[str, Any]
+    action_args: dict[str, Any]
+
+
+def _reject_json_constant(name: str) -> Any:
+    """``json.loads`` の ``parse_constant``: ``NaN`` / ``Infinity`` / ``-Infinity`` は 400。"""
+    raise _bad_request(f"Body must not contain {name} (not valid JSON)")
+
+
+def _loads_json(raw: bytes) -> Any:
+    """本文を JSON として解析する (不正・深い入れ子・NaN / Infinity は 400)。
+
+    巨大な本文の解析はイベントループを止めるため、``run_in_threadpool`` で呼ぶ。
+    """
+    try:
+        return json.loads(raw, parse_constant=_reject_json_constant)
+    except (ValueError, RecursionError) as e:
+        # 深い入れ子は ValueError ではなく RecursionError になる (ADR-0086 G-5)
+        raise _bad_request("Body must be valid JSON") from e
+
+
+async def _read_limited_json(request: Request) -> Any:
+    """本文を ``MAX_PARAM_ROWS_BODY_BYTES`` まで読んで JSON として解析する (超過・不正は 400)。
+
+    ``Content-Length`` で先に断り、chunked 等で長さの宣言が無い・偽る場合に備えて
+    実際に読んだ長さでも見る。解析はスレッドプールで行い、深い入れ子の ``RecursionError`` と
+    ``NaN`` / ``Infinity`` も 400 にする (ADR-0086 G-5)。読んでいる途中の切断も 400
+    (応答は届かないが、500 のトレースバックを残さない)。
+    """
+    too_large = _bad_request(f"the request body exceeds {MAX_PARAM_ROWS_BODY_BYTES} bytes")
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            declared_bytes = int(declared)
+        except ValueError as e:
+            raise _bad_request("invalid Content-Length header") from e
+        if declared_bytes > MAX_PARAM_ROWS_BODY_BYTES:
+            raise too_large
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > MAX_PARAM_ROWS_BODY_BYTES:
+                raise too_large
+            chunks.append(chunk)
+    except ClientDisconnect as e:
+        raise _bad_request("the client disconnected while sending the body") from e
+    return await run_in_threadpool(_loads_json, b"".join(chunks))
+
+
+def _check_param_rows_params(params: dict[str, Any]) -> None:
+    """``params`` の深さ・値の総数・文字列の長さを反復で検査する (再帰しない)。
+
+    値の総数は入れ物の中身を積む前に数える (積んでから数えると、平らな巨大配列 1 つで
+    要素数ぶんの tuple を作ってしまう。security SHOULD-1)。dict はキーと値で 2 つずつ。
+    """
+    too_many = _bad_request(f"`params` has more than {MAX_PARAM_ROWS_PARAMS_NODES} values")
+    stack: list[tuple[Any, int]] = [(params, 1)]
+    nodes = 0
+    while stack:
+        value, depth = stack.pop()
+        nodes += 1
+        if isinstance(value, str):
+            if len(value) > MAX_PARAM_ROWS_PARAMS_STRING_CHARS:
+                raise _bad_request(
+                    f"`params` has a string longer than {MAX_PARAM_ROWS_PARAMS_STRING_CHARS} "
+                    f"characters"
+                )
+        elif isinstance(value, dict | list):
+            if depth > MAX_PARAM_ROWS_PARAMS_DEPTH:
+                raise _bad_request(
+                    f"`params` is nested deeper than {MAX_PARAM_ROWS_PARAMS_DEPTH} levels"
+                )
+            width = 2 * len(value) if isinstance(value, dict) else len(value)
+            if nodes + len(stack) + width > MAX_PARAM_ROWS_PARAMS_NODES:
+                raise too_many
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    # JSON のキーは常に文字列 (念のため)。キーの長さも文字列の上限で見る
+                    if not isinstance(key, str):
+                        raise _bad_request("`params` keys must be strings")
+                    stack.append((key, depth + 1))
+                    stack.append((item, depth + 1))
+            else:
+                stack.extend((item, depth + 1) for item in value)
+
+
+def _require_single_line(value: str, where: str) -> None:
+    """ユーザーコードに渡す要求の文字列に改行・制御文字があれば 400 (空は許す)。
+
+    応答の ``value`` / 組み立てた行と同じ規則 (``is_single_line_text``)。
+    """
+    if not is_single_line_text(value):
+        raise _bad_request(f"{where} contains a line break or a control character")
+
+
+def _validated_rows_field(body: dict[str, Any]) -> list[str]:
+    rows = body.get("rows")
+    if not isinstance(rows, list):
+        raise _bad_request("`rows` (array of strings) is required in body")
+    if len(rows) > MAX_PARAM_ROWS_ITEMS:
+        raise _bad_request(f"`rows` must have at most {MAX_PARAM_ROWS_ITEMS} entries")
+    for i, item in enumerate(rows):
+        if not isinstance(item, str):
+            raise _bad_request(f"rows[{i}] must be a string")
+        if len(item) > MAX_PARAM_ROWS_ITEM_CHARS:
+            raise _bad_request(f"rows[{i}] exceeds {MAX_PARAM_ROWS_ITEM_CHARS} characters")
+        _require_single_line(item, f"rows[{i}]")
+    return rows
+
+
+def _validated_short_id(body: dict[str, Any], name: str) -> str:
+    value = body.get(name)
+    if not isinstance(value, str) or not 1 <= len(value) <= MAX_PARAM_ROWS_ID_CHARS:
+        raise _bad_request(
+            f"`{name}` must be a string of 1 to {MAX_PARAM_ROWS_ID_CHARS} characters"
+        )
+    _require_single_line(value, f"`{name}`")
+    return value
+
+
+def _validated_compose_values(raw: Any) -> dict[str, str | list[str]]:
+    if not isinstance(raw, dict):
+        raise _bad_request("`values` (object) is required in body")
+    if len(raw) > MAX_PARAM_ROWS_FIELDS:
+        raise _bad_request(f"`values` must have at most {MAX_PARAM_ROWS_FIELDS} keys")
+    values: dict[str, str | list[str]] = {}
+    for key, value in raw.items():
+        if not 1 <= len(key) <= MAX_PARAM_ROWS_ID_CHARS:
+            raise _bad_request(f"`values` keys must be 1 to {MAX_PARAM_ROWS_ID_CHARS} characters")
+        _require_single_line(key, "a `values` key")
+        where = f"values[{key!r}]"
+        if isinstance(value, str):
+            if len(value) > MAX_PARAM_ROWS_VALUE_CHARS:
+                raise _bad_request(f"{where} exceeds {MAX_PARAM_ROWS_VALUE_CHARS} characters")
+            _require_single_line(value, where)
+        elif isinstance(value, list):
+            if len(value) > MAX_PARAM_ROWS_PICK_VALUES:
+                raise _bad_request(
+                    f"{where} must have at most {MAX_PARAM_ROWS_PICK_VALUES} entries"
+                )
+            for i, item in enumerate(value):
+                if not isinstance(item, str):
+                    raise _bad_request(f"{where}[{i}] must be a string")
+                if len(item) > MAX_PARAM_ROWS_VALUE_CHARS:
+                    raise _bad_request(
+                        f"{where}[{i}] exceeds {MAX_PARAM_ROWS_VALUE_CHARS} characters"
+                    )
+                _require_single_line(item, f"{where}[{i}]")
+        else:
+            raise _bad_request(f"{where} must be a string or an array of strings")
+        values[key] = value
+    return values
+
+
+def _validated_search_args(body: dict[str, Any]) -> dict[str, Any]:
+    field = _validated_short_id(body, "field")
+    query, limit = _validated_query_and_limit(body)
+    _require_single_line(query, "`query`")
+    return {"field": field, "query": query, "limit": limit}
+
+
+def _validated_action_args(action: str, body: dict[str, Any]) -> dict[str, Any]:
+    """action ごとの引数を検証する (ADR-0086 §3-B)。"""
+    if action == "describe":
+        return {"rows": _validated_rows_field(body)}
+    if action == "form":
+        row = body.get("row")
+        if row is not None and not isinstance(row, str):
+            raise _bad_request("`row` must be a string or null")
+        if row is not None:
+            if len(row) > MAX_PARAM_ROWS_ITEM_CHARS:
+                raise _bad_request(f"`row` exceeds {MAX_PARAM_ROWS_ITEM_CHARS} characters")
+            _require_single_line(row, "`row`")
+        return {"row": row}
+    if action == "compose":
+        variant = _validated_short_id(body, "variant")
+        values = _validated_compose_values(body.get("values"))
+        rows = _validated_rows_field(body)
+        index = body.get("index")
+        if index is not None:
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise _bad_request("`index` must be null or an integer")
+            if not 0 <= index < len(rows):
+                raise _bad_request(f"`index` must be in 0..{len(rows) - 1} (the edited row)")
+        return {"variant": variant, "values": values, "rows": rows, "index": index}
+    return _validated_search_args(body)
+
+
+def _validated_param_rows_body(body: Any) -> _ParamRowsRequest:
+    """param-rows の本文を検証する (ADR-0086 §3-B、違反はすべて 400)。"""
+    if not isinstance(body, dict):
+        raise _bad_request("Body must be a JSON object")
+    type_path, param = _validated_target(body)
+    action = body.get("action")
+    params = body.get("params")
+    if not isinstance(action, str) or action not in PARAM_ROWS_ACTIONS:
+        raise _bad_request(f"`action` must be one of {list(PARAM_ROWS_ACTIONS)}")
+    if not isinstance(params, dict):
+        raise _bad_request("`params` (object) is required in body")
+    _check_param_rows_params(params)
+    action_args = _validated_action_args(action, body)
+    return _ParamRowsRequest(
+        type_path=type_path, param=param, action=action, params=params, action_args=action_args
+    )
+
+
+def _field_payload(field: ParamRowsField) -> dict[str, Any]:
+    out: dict[str, Any] = {"key": field.key, "label": field.label, "kind": field.kind}
+    if field.kind == "choice":
+        out["options"] = [{"value": o.value, "label": o.label} for o in field.options]
+    return out
+
+
+def _param_rows_payload(result: ParamRowsResult) -> dict[str, Any]:
+    """検証済みの結果を応答の JSON にする (ADR-0086 §2-C / §3-A)。"""
+    if isinstance(result, ParamRowsDescribeResult):
+        return {
+            "columns": list(result.columns),
+            "rows": [{"cells": list(row.cells), "error": row.error} for row in result.rows],
+            "ports": result.ports,
+        }
+    if isinstance(result, ParamRowsFormResult):
+        return {
+            "variants": [
+                {
+                    "id": v.id,
+                    "label": v.label,
+                    "fields": [_field_payload(f) for f in v.fields],
+                }
+                for v in result.variants
+            ],
+            "variant": result.variant,
+            "values": {k: list(v) if isinstance(v, tuple) else v for k, v in result.values.items()},
+        }
+    if isinstance(result, ParamRowsComposeResult):
+        return {"row": result.row}
+    return {
+        "columns": list(result.columns),
+        "rows": [{"cells": list(row.cells), "value": row.value} for row in result.rows],
+        "truncated": result.truncated,
+    }
+
+
+@router.post("/param-rows")
+async def param_rows_endpoint(request: Request) -> dict[str, Any]:
+    """ユーザーブロックが提供する行リスト引数の行エディタを呼ぶ (ADR-0086、試験的)。
+
+    Body: ``{"type_path": str, "param": str, "action": str, "params": {...}, ...}``。
+    action ごとの追加: describe ``rows: [str]`` / form ``row: str | null`` /
+    compose ``variant: str, values: {key: str | [str]}, rows: [str], index: int | null`` /
+    search ``field: str, query: str, limit?: int``。
+
+    Returns:
+        describe ``{"columns", "rows": [{"cells", "error"}], "ports"}`` /
+        form ``{"variants": [{"id", "label", "fields": [{"key", "label", "kind",
+        "options"?}]}], "variant", "values"}`` / compose ``{"row"}`` /
+        search ``{"columns", "rows": [{"cells", "value"}], "truncated"}``。
+
+    Raises:
+        HTTPException: 404 (ユーザーブロック無効 / 型が無い / 宣言が無い。ユーザーコードは
+            走らない)、400 (本文の型違反・上限超過・未知の action・行エディタの例外・未対応の
+            action・不正な応答)、409 (検索と共有する同時実行の上限)。detail は文字列。
+            非 loopback bind では行エディタの例外の detail を固定文にする。
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.user_blocks_enabled:
+        # 管理型表の中身に関係なく、本文も読まずにユーザーコードを走らせない
+        raise HTTPException(status_code=404, detail=PARAM_SEARCH_DISABLED_DETAIL)
+    body = await _read_limited_json(request)
+    # 4 MiB までの本文の走査はイベントループを止めうるのでスレッドプールで行う (security SHOULD-1)
+    req = await run_in_threadpool(_validated_param_rows_body, body)
+    semaphore: threading.BoundedSemaphore = request.app.state.param_search_semaphore
+
+    def _call() -> ParamRowsResult | None:
+        # 取得・解放はワーカースレッドの中で完結させる (search-param-values と同じ理由)
+        if not semaphore.acquire(blocking=False):
+            return None
+        try:
+            return param_rows(
+                req.type_path,
+                req.param,
+                action=req.action,
+                params=req.params,
+                action_args=req.action_args,
+            )
+        finally:
+            semaphore.release()
+
+    try:
+        result = await run_in_threadpool(_call)
+    except ParamSearchUnavailableError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ParamSearchFunctionError as e:
+        detail = str(e) if settings.loopback_bind else PARAM_ROWS_REMOTE_ERROR_DETAIL
+        raise HTTPException(status_code=400, detail=detail) from e
+    except BlockSpecError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if result is None:
+        _logger.info(
+            "row editor %r for %r / %r rejected: %d helper call(s) are already running",
+            req.action,
+            req.type_path,
+            req.param,
+            MAX_CONCURRENT_PARAM_SEARCHES,
+        )
+        raise HTTPException(status_code=409, detail=PARAM_ROWS_BUSY_DETAIL)
+    return _param_rows_payload(result)
 
 
 @router.get("/python-function/introspect")

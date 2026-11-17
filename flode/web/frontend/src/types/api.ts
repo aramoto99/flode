@@ -225,6 +225,12 @@ export interface BlockParamSpec {
    * 宣言している (検証済みの宣言だけ ``true``。宣言が無ければキー自体が無い)。
    */
   searchable?: boolean;
+  /**
+   * ADR-0086 §論点 4: ユーザーブロックがこの引数の行エディタ (``block_param_rows``) を
+   * 宣言している (検証済みの宣言だけ ``true``。宣言が無ければキー自体が無い)。
+   * ``searchable`` と両方あるときはフロントが行エディタを優先し「探す…」を出さない。
+   */
+  row_editor?: boolean;
 }
 
 /** ADR-0085: ``POST /api/v1/blocks/search-param-values`` の要求。 */
@@ -255,6 +261,98 @@ export interface ParamSearchResponse {
   /** ``limit`` を超える行があり、切り詰めた。 */
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// ADR-0086: ``POST /api/v1/blocks/param-rows`` (ユーザーブロックの行リスト引数の行エディタ)
+// ---------------------------------------------------------------------------
+
+/** 行エディタの action (ADR-0086 §1-B)。 */
+export type ParamRowsAction = "describe" | "form" | "compose" | "search";
+
+/** 行が対応するポートの側 (``null`` = ポートに対応しない引数)。 */
+export type ParamRowsPorts = "input" | "output" | null;
+
+/** describe の 1 行 (要求の ``rows[i]`` と位置で対応する)。 */
+export interface ParamRowsDescribedRow {
+  cells: ParamSearchCell[];
+  /** その行の誤り (ブロックが返したデータ。信頼できない文字列)。無ければ ``null``。 */
+  error: string | null;
+}
+
+/** describe の応答 200。 */
+export interface ParamRowsDescribeResponse {
+  columns: string[];
+  rows: ParamRowsDescribedRow[];
+  ports: ParamRowsPorts;
+}
+
+/** form のフィールドの種類。 */
+export type ParamRowsFieldKind = "text" | "choice" | "pick";
+
+/** choice フィールドの選択肢。 */
+export interface ParamRowsOption {
+  value: string;
+  label: string;
+}
+
+/** form のフィールド 1 つ。 */
+export interface ParamRowsField {
+  key: string;
+  label: string;
+  kind: ParamRowsFieldKind;
+  /** ``kind === "choice"`` のときだけ (1 件以上)。 */
+  options?: ParamRowsOption[];
+}
+
+/** form の種類 1 つ。 */
+export interface ParamRowsVariant {
+  id: string;
+  label: string;
+  fields: ParamRowsField[];
+}
+
+/** フィールドの値 (text / choice は文字列、pick は文字列のリスト)。 */
+export type ParamRowsFieldValue = string | string[];
+
+/** form の応答 200。``values`` は選ばれた種類の正規化済みの値。 */
+export interface ParamRowsFormResponse {
+  variants: ParamRowsVariant[];
+  variant: string;
+  values: Record<string, ParamRowsFieldValue>;
+}
+
+/** compose の応答 200。 */
+export interface ParamRowsComposeResponse {
+  row: string;
+}
+
+/** action ごとの追加の要求フィールドと応答の型。 */
+export interface ParamRowsActionMap {
+  describe: { req: { rows: string[] }; res: ParamRowsDescribeResponse };
+  form: { req: { row: string | null }; res: ParamRowsFormResponse };
+  compose: {
+    req: {
+      variant: string;
+      values: Record<string, ParamRowsFieldValue>;
+      rows: string[];
+      index: number | null;
+    };
+    res: ParamRowsComposeResponse;
+  };
+  search: {
+    req: { field: string; query: string; limit?: number };
+    res: ParamSearchResponse;
+  };
+}
+
+/** ``param-rows`` の要求 (共通部分 + action ごとのフィールド)。 */
+export type ParamRowsRequest<A extends ParamRowsAction = ParamRowsAction> = {
+  type_path: string;
+  param: string;
+  action: A;
+  /** ブロックの他の現在の引数値 (registry の既定値で補完。編集中の引数自身は含めない)。 */
+  params: Record<string, unknown>;
+} & ParamRowsActionMap[A]["req"];
 
 // ADR-0028: Block 表示名・docstring summary の i18n (ja/en) 翻訳対応。
 // ADR-0024 §(3) と整合した BCP47 短縮コード。

@@ -26,6 +26,7 @@ import importlib
 import inspect
 import logging
 import pkgutil
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -38,8 +39,11 @@ from ..core.persistence import (
 )
 from ..exceptions import BlockSpecError, ParamSearchUnavailableError
 from ..userblocks import (
+    ParamRowsResult,
     ParamSearchResult,
     UserBlockInfo,
+    call_param_rows,
+    find_param_rows_method,
     find_param_search_method,
     resolve_user_block_ports,
     search_user_block_param,
@@ -75,6 +79,9 @@ class ParamSpec:
     #: ブロックが値の検索を提供する引数 (ユーザーブロックの ``block_param_search``、ADR-0085)。
     #: 表示用の写しで、検索の要求時はクラスから宣言を引き直す
     searchable: bool = False
+    #: ブロックが行エディタを提供する引数 (ユーザーブロックの ``block_param_rows``、ADR-0086)。
+    #: 表示用の写しで、要求時はクラスから宣言を引き直す
+    row_editor: bool = False
 
 
 @dataclass
@@ -577,6 +584,7 @@ def _python_spec_payload(spec: Any) -> dict[str, Any]:
         # 言語別の説明はユーザーブロックだけの項目。PythonFunction の応答形は変えない
         param.pop("description_i18n", None)
         param.pop("searchable", None)
+        param.pop("row_editor", None)
         params.append(param)
     return {
         "resolved": True,
@@ -943,6 +951,7 @@ def build_user_block_metadata(info: UserBlockInfo) -> BlockMetadata:
                 enum_values=list(p.choices) if p.choices is not None else None,
                 description_i18n=dict(p.description_i18n),
                 searchable=p.name in info.param_search,
+                row_editor=p.name in info.param_rows,
             )
             for p in info.params
         ],
@@ -990,6 +999,8 @@ def metadata_to_dict(
                 **({"description_i18n": p.description_i18n} if p.description_i18n else {}),
                 # 値の検索を宣言した引数だけ (ADR-0085 §4-B、既存の payload は不変)
                 **({"searchable": True} if p.searchable else {}),
+                # 行エディタを宣言した引数だけ (ADR-0086 §4、既存の payload は不変)
+                **({"row_editor": True} if p.row_editor else {}),
             }
             for p in meta.params_spec
         ],
@@ -1126,3 +1137,53 @@ def search_param_values(
             f"the block {type_path!r} does not provide a value search for parameter {param!r}"
         )
     return search_user_block_param(user_cls, method_name, query=query, limit=limit, current=current)
+
+
+# ---------------------------------------------------------------------------
+# param_rows (POST /api/v1/blocks/param-rows)
+# ---------------------------------------------------------------------------
+
+
+def param_rows(
+    type_path: str,
+    param: str,
+    *,
+    action: str,
+    params: Mapping[str, Any],
+    action_args: Mapping[str, Any],
+) -> ParamRowsResult:
+    """ユーザーブロックが引数 ``param`` に宣言した行エディタを呼ぶ (ADR-0086 §3-A)。
+
+    管理型表を 1 回だけ読み (``resolve_port_shapes`` と同じ理由)、宣言はクラスそのものから
+    引き直す。組み込みブロックとユーザーブロック無効の構成 (管理型表が空) は常に
+    ``ParamSearchUnavailableError`` で、ユーザーコードは走らない。
+
+    Args:
+        type_path: ユーザーブロックの型名。
+        param: 編集中の引数名。
+        action: ``"describe"`` / ``"form"`` / ``"compose"`` / ``"search"``。
+        params: 他の引数の現在の値 (宣言済みの引数への絞り込みは ``call_param_rows`` が行う)。
+        action_args: action ごとの引数 (``call_param_rows`` の ``**action_kw``)。
+
+    Returns:
+        検証済みの結果。
+
+    Raises:
+        ParamSearchUnavailableError: 型がユーザーブロックとして読み込まれていない、または
+            その引数に有効な行エディタの宣言が無い。
+        BlockSpecError: 行エディタの例外 (``ParamSearchFunctionError``)、未対応の action、
+            または戻り値の形が不正。
+    """
+    from ..core.persistence import managed_block_types
+
+    user_cls = managed_block_types().get(type_path)
+    if user_cls is None:
+        raise ParamSearchUnavailableError(f"{type_path!r} is not a loaded user block")
+    method_name = find_param_rows_method(user_cls, param)
+    if method_name is None:
+        raise ParamSearchUnavailableError(
+            f"the block {type_path!r} does not provide a row editor for parameter {param!r}"
+        )
+    return call_param_rows(
+        user_cls, method_name, action=action, param=param, params=params, **action_args
+    )

@@ -59,3 +59,14 @@ export function cleanServerText(value: unknown, maxChars: number): string {
   if (chars.length <= maxChars) return cleaned;
   return chars.slice(0, Math.max(0, maxChars - 1)).join("") + ELLIPSIS;
 }
+
+/**
+ * サーバが返した表のセル 1 つを整える: 文字列は ``cleanServerText``、数値・``null`` はそのまま。
+ *
+ * @param cell - セルの値。
+ * @param maxChars - 文字列の上限文字数。
+ * @returns 整形済みのセル。
+ */
+export function cleanServerCell<T>(cell: string | T, maxChars: number): string | T {
+  return typeof cell === "string" ? cleanServerText(cell, maxChars) : cell;
+}

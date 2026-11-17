@@ -17,6 +17,7 @@ import {
   type ParamSearchViewState,
 } from "../lib/paramSearch";
 import {
+  cleanServerCell,
   cleanServerText,
   MAX_LABEL_CHARS,
   MAX_MESSAGE_CHARS,
@@ -109,7 +110,7 @@ export function ParamSearchDialog({
       (result?.rows ?? []).map((r) => ({
         key: r.value,
         label: cleanServerText(r.value, MAX_LABEL_CHARS),
-        cells: r.cells.map((c) => (typeof c === "string" ? cleanServerText(c, CELL_MAX_CHARS) : c)),
+        cells: r.cells.map((c) => cleanServerCell(c, CELL_MAX_CHARS)),
       })),
     [result],
   );

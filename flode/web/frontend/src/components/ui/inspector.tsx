@@ -134,6 +134,38 @@ export function PropertyRow({
 }
 
 /**
+ * ラベルを上、内容を全幅に置く縦積みの行 (ADR-0086 §6-A)。
+ *
+ * ``PropertyRow`` は「ラベル | 値」の横 1 行なので、表 + ボタン列のような全幅の内容
+ * (行エディタ等) はこちらに置く。ラベルは ``PropertyRow`` と同じ 11px slate-700 + コロン、
+ * ``action`` はラベルの行の右端に置く。
+ */
+export function PropertyStackRow({
+  label,
+  action,
+  children,
+  testId,
+}: {
+  label: string;
+  /** ラベルの行の右端に置くアクション (``RowActionButton`` 等)。 */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  testId?: string;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-0.5 py-0.5" data-testid={testId}>
+      <div className="flex min-h-[18px] items-center gap-2">
+        <span title={label} className="min-w-0 flex-1 truncate text-[11px] text-slate-700">
+          {label}:
+        </span>
+        {action !== undefined && <div className="flex shrink-0 items-center">{action}</div>}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/**
  * ``PropertyRow`` の直下に表示する補足説明 (小さく薄い 1〜2 行のヒント)。
  *
  * 入力 column に揃えてインデントする (= label column 分の空白を左に取る)。
@@ -1462,5 +1494,213 @@ export function SelectableTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0086 §6-A: 1 行を選ぶ表 (行エディタ) と、1 行 1 項目のテキスト編集
+// ---------------------------------------------------------------------------
+
+/** ``RowTable`` の 1 行。 */
+export interface RowTableRow {
+  cells: ReadonlyArray<SelectableTableCell>;
+  /** その行の誤り (整形済みの文字列)。あれば赤字で描き、``title`` に理由を出す。 */
+  error?: string | null;
+  /** 説明待ちの行 (薄く描く)。 */
+  dim?: boolean;
+}
+
+/**
+ * 1 行を選ぶ表 (ADR-0086 §6-A、行リスト引数の行エディタ)。
+ *
+ * - 見た目は ``SelectableTable`` と同じ (外枠 1px slate-400・角丸/影なし・見出し ``sticky``・
+ *   11px・選択行 ``bg-blue-50``)。チェックボックスは無く、単一選択
+ * - 高さは内容に合わせ、``heightClass`` (既定 ``max-h-[220px]``) を超えたら縦スクロール
+ * - ``error`` のある行は ``text-rose-700`` + ``title`` に理由、``dim`` の行は ``text-slate-400``
+ * - クリックで選択、ダブルクリック / Enter で ``onActivate``、↑ / ↓ で選択を動かす
+ *   (表自体にフォーカスを置く。``role="grid"`` にしない最小構成、``aria-selected`` は付けない)
+ *
+ * 行の key は位置 (同じ文字列の行がありうるため)。文字列の整形は呼ぶ側で済ませておく。
+ */
+export function RowTable({
+  columns,
+  rows,
+  selectedIndex,
+  onSelect,
+  onActivate,
+  emptyText,
+  heightClass = "max-h-[220px]",
+  testId,
+  ariaLabel,
+}: {
+  columns: ReadonlyArray<string>;
+  rows: ReadonlyArray<RowTableRow>;
+  selectedIndex: number | null;
+  onSelect: (index: number) => void;
+  /** ダブルクリック / Enter (編集を開く等)。 */
+  onActivate?: (index: number) => void;
+  /** 行が 0 件のときに出す文言。 */
+  emptyText?: string;
+  heightClass?: string;
+  testId?: string;
+  ariaLabel?: string;
+}): JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const headCls =
+    "sticky top-0 z-10 border-b border-slate-400 bg-gradient-to-b from-slate-200 to-slate-100 px-1.5 py-0.5 text-left text-[10px] font-semibold text-slate-600";
+
+  // 選んだ行を見える位置へ (キーボードで動かしたとき)
+  useEffect(() => {
+    if (selectedIndex === null) return;
+    const el = containerRef.current?.querySelector<HTMLElement>(
+      `tr[data-index="${selectedIndex}"]`,
+    );
+    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (rows.length === 0) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const next =
+        selectedIndex === null
+          ? 0
+          : e.key === "ArrowDown"
+            ? Math.min(selectedIndex + 1, rows.length - 1)
+            : Math.max(selectedIndex - 1, 0);
+      if (next !== selectedIndex) onSelect(next);
+    } else if (e.key === "Enter" && selectedIndex !== null && onActivate !== undefined) {
+      e.preventDefault();
+      onActivate(selectedIndex);
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className={`${heightClass} overflow-auto border border-slate-400 bg-white focus:border-blue-500 focus:outline-none`}
+      data-testid={testId}
+    >
+      <table className="w-full border-collapse text-[11px]" aria-label={ariaLabel}>
+        <thead>
+          <tr>
+            {columns.map((c, i) => (
+              <th key={i} className={headCls} title={c} scope="col">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && emptyText !== undefined && (
+            <tr>
+              <td
+                colSpan={Math.max(1, columns.length)}
+                className="px-1.5 py-1 text-slate-500"
+                data-testid={testId ? `${testId}-empty` : undefined}
+              >
+                {emptyText}
+              </td>
+            </tr>
+          )}
+          {rows.map((row, i) => {
+            const isSelected = i === selectedIndex;
+            const error = row.error ?? null;
+            const toneCls =
+              error !== null
+                ? "text-rose-700"
+                : row.dim === true
+                  ? "text-slate-400"
+                  : "text-slate-800";
+            return (
+              <tr
+                key={i}
+                data-index={i}
+                data-selected={isSelected || undefined}
+                data-error={error !== null || undefined}
+                data-dim={row.dim === true || undefined}
+                data-testid={testId ? `${testId}-row` : undefined}
+                title={error ?? undefined}
+                onClick={() => {
+                  // フォーカスを表に置く (↑ / ↓ / Enter を受け、キャンバスのショートカットに落とさない)
+                  containerRef.current?.focus();
+                  onSelect(i);
+                }}
+                onDoubleClick={() => onActivate?.(i)}
+                className={`h-5 cursor-pointer border-b border-slate-100 ${toneCls} ${
+                  isSelected ? "bg-blue-50" : "hover:bg-slate-50"
+                }`}
+              >
+                {row.cells.map((cell, j) =>
+                  typeof cell === "number" ? (
+                    <td
+                      key={j}
+                      className="whitespace-nowrap px-1.5 text-right tabular-nums"
+                      data-cell-kind="number"
+                    >
+                      {cell}
+                    </td>
+                  ) : (
+                    <td
+                      key={j}
+                      className="max-w-[240px] truncate px-1.5"
+                      // 誤りの行は行の title (理由) を優先する
+                      title={error === null ? (cell ?? undefined) : undefined}
+                      data-cell-kind={cell === null ? "null" : "text"}
+                    >
+                      {cell ?? ""}
+                    </td>
+                  ),
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * 1 行 1 項目のテキスト編集欄 (ADR-0086 §6-A、「テキストで編集…」)。
+ *
+ * 引用符も JSON の書式も要らない ``<textarea>`` (``INPUT_CLS`` 相当の枠、等幅)。値は改行区切りの
+ * テキストのまま受け渡しし、行のリストへの変換 (前後の空白を削り空行を捨てる) は
+ * ``lib/paramRows.ts`` の ``parseTextList`` で行う。
+ */
+export function TextListEditor({
+  value,
+  onChange,
+  rows = 12,
+  testId,
+  ariaLabel,
+  placeholder,
+  autoFocus = false,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  /** 表示行数。 */
+  rows?: number;
+  testId?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+}): JSX.Element {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      rows={rows}
+      spellCheck={false}
+      wrap="off"
+      // eslint-disable-next-line jsx-a11y/no-autofocus -- ダイアログを開いた操作の直後に入力するため
+      autoFocus={autoFocus}
+      placeholder={placeholder}
+      data-testid={testId}
+      aria-label={ariaLabel}
+      className="w-full resize-y border border-slate-400 bg-white px-1.5 py-0.5 font-mono text-[11px] leading-4 text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+    />
   );
 }

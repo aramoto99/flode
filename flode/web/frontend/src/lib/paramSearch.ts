@@ -46,8 +46,11 @@ export type ParamSearchFn = (
 export interface ParamSearchControllerOptions {
   /** 検索要求を送る。 */
   search: ParamSearchFn;
-  /** 要求を送る時点の引数の値 (応答待ちの未確定値を含む)。開いた時点で捕まえない。 */
-  getCurrent: () => string[];
+  /**
+   * 要求を送る時点の引数の値 (応答待ちの未確定値を含む)。開いた時点で捕まえない。
+   * ADR-0086 §3-D: 省略可能 (行エディタの pick の検索は ``current`` を送らない。省略時は空配列)。
+   */
+  getCurrent?: () => string[];
   /** 状態が変わるたびに呼ばれる。 */
   onState: (state: ParamSearchViewState) => void;
   /** デバウンス (ms)。テスト用。 */
@@ -108,6 +111,7 @@ export class ParamSearchController {
       debounceMs: PARAM_SEARCH_DEBOUNCE_MS,
       retryMs: PARAM_SEARCH_RETRY_MS,
       ...opts,
+      getCurrent: opts.getCurrent ?? (() => []),
     };
   }
 

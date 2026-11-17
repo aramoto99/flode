@@ -148,6 +148,8 @@ class UserBlockInfo:
             shape が引数で変わる。上のポート関係の値は既定値のインスタンスのもの)。
         param_search: 検証済みの引数の値の検索の宣言 (``{引数名: メソッド名}``、
             ``block_param_search``、ADR-0085。無ければ空)。
+        param_rows: 検証済みの行エディタの宣言 (``{引数名: メソッド名}``、
+            ``block_param_rows``、ADR-0086。無ければ空)。
     """
 
     type_path: str
@@ -173,6 +175,7 @@ class UserBlockInfo:
     block_class: type = field(compare=False, repr=False)
     dynamic_ports: bool = False
     param_search: Mapping[str, str] = field(default_factory=dict)
+    param_rows: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

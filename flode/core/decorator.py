@@ -43,6 +43,7 @@ from .block_metadata import (
     HIDDEN_ATTRIBUTE,
     METADATA_ATTRIBUTES,
     NO_DEFAULT,
+    PARAM_ROWS_ATTRIBUTE,
     PARAM_SEARCH_ATTRIBUTE,
     validate_category,
     validate_choices,
@@ -1249,15 +1250,16 @@ def _build_class_from_class(
             f"display_name=..., ...) arguments (mark a hidden block with a plain "
             f"`{HIDDEN_ATTRIBUTE} = True` class attribute)."
         )
-    # ADR-0085 §1-E: 引数の値の検索は Block サブクラスだけ (生成クラスはユーザー class を継承
-    # しないので、黙って無視されるより宣言した作者に知らせる)
-    if PARAM_SEARCH_ATTRIBUTE in annotations or (
-        inspect.getattr_static(user_cls, PARAM_SEARCH_ATTRIBUTE, None) is not None
-    ):
-        raise BlockSpecError(
-            f"@block class {user_cls.__name__!r}: {PARAM_SEARCH_ATTRIBUTE} can be used only "
-            f"in a Block subclass (class MyBlock(Block): ...), not with @block"
-        )
+    # ADR-0085 §1-E / ADR-0086 §1-D: 引数の値の検索と行エディタは Block サブクラスだけ
+    # (生成クラスはユーザー class を継承しないので、黙って無視されるより宣言した作者に知らせる)
+    for attribute in (PARAM_SEARCH_ATTRIBUTE, PARAM_ROWS_ATTRIBUTE):
+        if attribute in annotations or (
+            inspect.getattr_static(user_cls, attribute, None) is not None
+        ):
+            raise BlockSpecError(
+                f"@block class {user_cls.__name__!r}: {attribute} can be used only "
+                f"in a Block subclass (class MyBlock(Block): ...), not with @block"
+            )
     hidden = user_cls.__dict__.get(HIDDEN_ATTRIBUTE)
     if hidden is not None and not isinstance(hidden, bool):
         raise BlockSpecError(

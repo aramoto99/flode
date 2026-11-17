@@ -355,6 +355,117 @@ returns, and appends the ``value`` of the checked rows to the end of the list
   note in the Load errors area and that entry is ignored; the block itself
   still loads. ``@block`` does not support this attribute.
 
+Editing list parameters as rows (experimental)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. note::
+
+   This interface is **experimental**: its shape may change in a future minor
+   release.
+
+When each line of a ``list[str]`` parameter follows a small format of its own,
+a ``Block`` subclass can give it a row editor. Map the parameter to a
+``classmethod`` (or ``staticmethod``) in ``block_param_rows``; the Inspector
+then shows the parameter as a table with **Add** / **Edit** / **Delete** /
+**↑** / **↓** / **Edit as text…** buttons, and an edit dialog built from the
+form the block describes. One method serves the whole editor; flode tells it
+what to do with ``action``.
+
+.. code-block:: python
+
+   STOCK = {"resistor": 120, "capacitor": 80, "relay": 5}
+
+
+   class PartsBin(Block):
+       block_dynamic_ports = True  # needed for "ports" (see below)
+       block_param_rows = {"parts": "edit_parts"}
+
+       def __init__(self, parts: list[str] = [], *, id=None, name=None):
+           super().__init__(id=id, name=name, n_inputs=len(parts), n_outputs=1)
+           self._params = {"parts": list(parts)}
+           self.input_names = tuple(line.split(":")[0] for line in parts)
+
+       @classmethod
+       def edit_parts(cls, action, params, **kw):
+           match action:
+               case "describe":
+                   rows = []
+                   for line in kw["rows"]:
+                       name, _, part = line.partition(":")
+                       part = part.strip()
+                       error = None if part in STOCK else f"unknown part {part!r}"
+                       rows.append({"cells": [name, part, STOCK.get(part)], "error": error})
+                   return {"columns": ["name", "part", "stock"], "rows": rows,
+                           "ports": "input"}
+               case "form":
+                   name, _, part = (kw["row"] or "").partition(":")
+                   part = part.strip() if part.strip() in STOCK else "resistor"
+                   return {
+                       "variants": [{"id": "part", "label": "Part", "fields": [
+                           {"key": "name", "label": "Name", "kind": "text"},
+                           {"key": "part", "label": "Part", "kind": "choice",
+                            "options": [{"value": p} for p in STOCK]},
+                       ]}],
+                       "variant": "part",
+                       "values": {"name": name.strip(), "part": part},
+                   }
+               case "compose":
+                   values = kw["values"]
+                   if not values["name"].strip():
+                       raise ValueError("enter a name")
+                   return {"row": f"{values['name'].strip()}: {values['part']}"}
+               case _:
+                   return NotImplemented
+
+- The method is called with keyword arguments only: ``action``, ``param``
+  (the parameter's name, so one method can serve several parameters),
+  ``params`` (the current values of the block's other parameters, including
+  unsaved edits in the Inspector) and the arguments of the action. Accept
+  ``**kw`` so that arguments added later do not break it, and return
+  ``NotImplemented`` for an action it does not know; flode then reports that
+  the block does not support it.
+- ``action="describe"`` (``rows``: the current lines) returns
+  ``{"columns": [...], "rows": [{"cells": [...], "error": str | None}],
+  "ports": "input" | "output" | None}`` with exactly one entry per line, in
+  the same order. A line with an ``error`` is shown in red and the reason
+  appears on hover; it is still kept and saved. ``"ports": "input"`` (or
+  ``"output"``) declares that line *i* is input (output) port *i*: adding,
+  deleting and reordering lines in the table then moves the connections with
+  the lines. Only a block with ``block_dynamic_ports = True`` may declare
+  ``ports``.
+- ``action="form"`` (``row``: the line being edited, or ``None`` when adding)
+  returns the kinds of line (``variants``), the selected kind (``variant``)
+  and the field values (``values``). A field is ``{"key", "label", "kind"}``
+  with ``kind`` ``"text"``, ``"choice"`` (with ``"options": [{"value",
+  "label"}]``) or ``"pick"`` (several values chosen from a search). Splitting a
+  line it cannot parse into a "write the line" kind is the block's job.
+- ``action="compose"`` (``variant``, ``values``, ``rows``: all current lines,
+  ``index``: the edited line's position or ``None`` when adding) returns
+  ``{"row": "..."}``: a non-empty single line. Raise an exception for invalid
+  input; its message is shown under the fields and **OK** stays disabled.
+  Choosing a name that does not clash with the other lines is the block's
+  job.
+- ``action="search"`` (``field``, ``query``, ``limit``) is used by ``pick``
+  fields and returns the same shape as the value search above; each
+  ``value`` is one picked value.
+- ``params`` comes from the client: **validate it before use.** On a server
+  that allows remote clients, a request can run the method with any values;
+  for example, open only files in places you allow.
+- The calls share the two slots of the value search and have no timeout, so
+  load heavy data once behind a lock and always return in a finite time. On a
+  server bound to a non-loopback address, an exception raised by the method
+  is shown as a fixed message; the details are in the server log. The
+  ``error`` strings returned by ``describe`` are data, not exceptions, and are
+  sent to every client even then, so do not put raw exception text or secrets
+  in them.
+- **Edit as text…** edits all lines at once (one line per row, without
+  quotes). Connections then stay with the port *numbers*, as with the plain
+  list field.
+- A parameter that has both ``block_param_rows`` and ``block_param_search``
+  uses the row editor, and **Search…** is not shown. A mistake in
+  ``block_param_rows`` is reported and ignored like one in
+  ``block_param_search``. ``@block`` does not support this attribute.
+
 Opening and closing resources, logging
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

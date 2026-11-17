@@ -33,6 +33,10 @@ HIDDEN_ATTRIBUTE = "block_hidden"
 #: ``@block`` は対応しないので ``METADATA_ATTRIBUTES`` には入れない (class 形では専用の検査で拒否)。
 PARAM_SEARCH_ATTRIBUTE = "block_param_search"
 
+#: 行リスト引数の行エディタの宣言 (``Block`` サブクラスだけ、ADR-0086 §1-D、試験的)。
+#: ``PARAM_SEARCH_ATTRIBUTE`` と同じく ``@block`` は対応しない。
+PARAM_ROWS_ATTRIBUTE = "block_param_rows"
+
 #: :func:`validate_choices` の ``params`` で「既定値なし (必須引数)」を表す値。
 NO_DEFAULT: Any = inspect.Parameter.empty
 

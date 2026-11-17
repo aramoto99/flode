@@ -13,6 +13,9 @@ import type {
   FlwModel,
   LibraryEntryDetail,
   LibraryRegistryResponse,
+  ParamRowsAction,
+  ParamRowsActionMap,
+  ParamRowsRequest,
   ParamSearchRequest,
   ParamSearchResponse,
   PythonFunctionIntrospectResponse,
@@ -241,6 +244,29 @@ export async function searchParamValues(
   signal?: AbortSignal,
 ): Promise<ParamSearchResponse> {
   return _fetch<ParamSearchResponse>("/blocks/search-param-values", {
+    method: "POST",
+    body: JSON.stringify(req),
+    signal,
+  });
+}
+
+/**
+ * ADR-0086: ユーザーブロックが宣言した行エディタ (``block_param_rows``) を 1 action 呼ぶ。
+ *
+ * 直接呼ばず、ページ全体で 1 本に直列化する ``lib/paramRowsQueue.ts`` を通す
+ * (サーバの同時実行の上限を検索ダイアログ・別タブと共有するため)。
+ *
+ * @param req 型・引数名・action・他の引数値 + action ごとのフィールド。
+ * @param signal 表のアンマウント・ダイアログを閉じたときに受信をやめる AbortSignal。
+ * @returns action ごとの検証済みの応答 (describe / form / compose / search)。
+ * @throws ApiError 404 (型 / 宣言が無い・ユーザーブロック無効)、400 (要求の不正・ブロックの
+ *   例外・不正な応答。detail は文字列)、409 (同時実行の上限。キューが 1 秒後に再送する)。
+ */
+export async function paramRows<A extends ParamRowsAction>(
+  req: ParamRowsRequest<A>,
+  signal?: AbortSignal,
+): Promise<ParamRowsActionMap[A]["res"]> {
+  return _fetch<ParamRowsActionMap[A]["res"]>("/blocks/param-rows", {
     method: "POST",
     body: JSON.stringify(req),
     signal,
