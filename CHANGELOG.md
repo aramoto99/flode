@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `update_v` だけ (または `advance_v` だけ) を書いた離散ブロックにベクトル・画像の入力をつなぐと、
   「scalar state API only」の `BlockSpecError` で実行できなかった。スカラー版 (`advance` / `update` /
   `derivative`) を上書きしていなければ、既定の `_v` 版は入力を変換せずに既定の結果を返すようにした
+- 出力はスカラー版で書き、状態の更新を `update_v` / `advance_v` / `derivative_v` だけで書いたブロックを
+  全スカラーのモデルで実行すると、更新が呼ばれず状態が初期値のまま進まなかった (例外にならない)。
+  スカラー版の既定は、対になる `_v` 版が上書きされていればそれを呼ぶようにした
 
 ## [0.68.0] - 2026-11-17 — ユーザーブロックの引数を検索して選ぶ (ADR-0085)
 

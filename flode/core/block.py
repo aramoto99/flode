@@ -12,6 +12,7 @@ SM-A (各ポート = 1 スカラー) は ``port_shapes = ()`` (rank-0) の特殊
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -179,6 +180,15 @@ def _scalar_inputs_1d(block: Block, u: tuple[npt.NDArray[Any], ...]) -> npt.NDAr
             )
         flat.append(float(arr.item()))
     return np.array(flat, dtype=float)
+
+
+def _vector_inputs(u: npt.NDArray[Any]) -> tuple[npt.NDArray[Any], ...]:
+    """SM-A の 1D 入力 ``(n_inputs,)`` を ``_v`` 版の形 (ポートごとの rank-0 ndarray のタプル) にする。
+
+    ``_scalar_inputs_1d`` の逆向き。スカラー版の既定が ``_v`` 版へ委譲するときに使う。
+    SM-A の入力は float の 1D 配列という前提 (dtype を持つ信号を SM-A で扱うようになったら見直す)。
+    """
+    return tuple(np.asarray(v) for v in np.asarray(u, dtype=float).ravel())
 
 
 def close_all(blocks: Iterable[Block]) -> None:
@@ -469,8 +479,9 @@ class Block:
 
         Default 実装は ``np.zeros(n_states)`` を返す。連続状態を持つブロックは
         オーバーライドする。``sample_time > 0`` の離散ブロックでは呼ばれない。
+        ``derivative_v`` だけを上書きしたブロックでは、それを呼ぶ (全スカラーのモデル用)。
         """
-        return np.zeros(self.n_states)
+        return self._delegate_to_v("derivative", t, x, u, lambda: np.zeros(self.n_states))
 
     def update(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """離散ブロックの状態更新 ``x_next = update(t, x, u)`` を返す。
@@ -485,10 +496,11 @@ class Block:
 
         Note:
             Default 実装は ``x`` をそのまま返す (組合せ論理のみの離散ブロック用)。
+            ``update_v`` だけを上書きしたブロックでは、それを呼ぶ (全スカラーのモデル用)。
             実装側は **新しい ndarray を返す** こと。in-place 更新すると Simulator の
             double buffering が破綻する。
         """
-        return x
+        return self._delegate_to_v("update", t, x, u, lambda: x)
 
     def advance(self, t: float, x: npt.NDArray[Any], u: npt.NDArray[Any]) -> npt.NDArray[Any]:
         """サンプル時刻 ``t_k`` に ``output()`` の直前で呼ばれる「シフト相」(ADR-0078)。
@@ -514,9 +526,10 @@ class Block:
 
         Returns:
             シフト後の状態 (shape ``(n_states,)``)。Default 実装は ``x`` を
-            そのまま返す (1-state ブロック / 状態なしブロック用)。
+            そのまま返す (1-state ブロック / 状態なしブロック用)。``advance_v`` だけを
+            上書きしたブロックでは、それを呼ぶ (全スカラーのモデル用)。
         """
-        return x
+        return self._delegate_to_v("advance", t, x, u, lambda: x)
 
     def close(self) -> None:
         """実行の終わりに呼ばれる後片付けの hook (ADR-0083 §(2))。
@@ -537,6 +550,42 @@ class Block:
     # 全入力が rank-0 のときだけ SM-A 版へ縮退する wrapper (非 () は明示エラー)。
     # ただし SM-A 版を上書きしていないなら、入力を使わない Block 既定の結果をそのまま返す
     # (片方の ``_v`` だけを書いたブロックにベクトル入力をつないでも落とさない)。
+    # 逆向きに、スカラー版の既定は ``_v`` 版だけを上書きしたブロックではそれを呼ぶ
+    # (``_delegate_to_v``)。双方向に呼び合いうるので、再入は (スレッド, メソッド名) 単位の
+    # ガードで止める。
+
+    def _delegate_to_v(
+        self,
+        name: str,
+        t: float,
+        x: npt.NDArray[Any],
+        u: npt.NDArray[Any],
+        default: Callable[[], npt.NDArray[Any]],
+    ) -> npt.NDArray[Any]:
+        """スカラー版の既定 ``name`` の中身: ``_v`` 版だけを上書きしたブロックではそれを呼ぶ。
+
+        全スカラーのモデル (SM-A 経路) はスカラー版を直接呼ぶので、``update_v`` などだけを
+        書いたブロックでも状態が進むようにする。``_v`` 版を上書きしていなければ ``default()``。
+
+        ``_v`` 版の中からスカラー版を呼ぶブロック (``LtiVectorPortMixin`` のような wrapper) では
+        委譲が自分に戻ってくるので、その再入では委譲せず ``default()`` を返す (委譲を入れる前と
+        同じ結果)。``LtiVectorPortMixin`` はこの再入ガードに依存している (意図した設計。回帰は
+        ``tests/core/test_block.py::TestDelegationDoesNotRecurse`` が拾う)。再入の判定は
+        (スレッド, メソッド名) 単位なので、同じブロックを別スレッドから呼んでも互いを止めない。
+        """
+        v_name = f"{name}_v"
+        if self._inherits(v_name):
+            return default()
+        key = (threading.get_ident(), name)
+        active: set[tuple[int, str]] = self.__dict__.setdefault("_delegating_to_v", set())
+        if key in active:
+            return default()
+        active.add(key)
+        try:
+            result: npt.NDArray[Any] = getattr(self, v_name)(t, x, _vector_inputs(u))
+            return result
+        finally:
+            active.discard(key)
 
     def _inherits(self, name: str) -> bool:
         """SM-A 版の状態メソッド ``name`` を上書きしていない (Block 既定のまま) か。
