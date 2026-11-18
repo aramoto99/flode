@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Subsystem の中に手動の分岐点を置いたモデルが、実行も信号の形の解決もできなかった
+  (`Subsystem._from_dict` が `branch_waypoints` を未知の引数として拒否していた)。
+  GUI だけが使うスコープのキーは、ブロックを作る前に全スコープから取り除くようにした
 - Scope の凡例がグラフの枠の外にはみ出して見えなかった。凡例をプロット領域の外 (同じ枠内) に置き、
   設定ダイアログの「凡例: 上 / 下 / 右」が効くようにした。凡例の上のホイールはズームではなく凡例の
   スクロールになる

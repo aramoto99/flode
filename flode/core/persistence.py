@@ -1662,6 +1662,46 @@ def _normalize_connection_entry_ids(entry: Any) -> Any:
     return out
 
 
+#: GUI だけが使うスコープ単位のキー (最上位と Subsystem の ``params`` に置かれる)。
+#: backend は読み飛ばすので、ブロック構築の前に取り除く (ADR-0087 / ADR-0057)。
+#: 外さないと困るのは Subsystem の ``params`` (``_from_dict`` が未知の引数を拒否する)。
+#: 最上位は ``from_dict`` が余分なキーを無視するが、揃えるため同じく外す。
+GUI_ONLY_SCOPE_KEYS: tuple[str, ...] = ("branch_waypoints",)
+
+
+def strip_gui_only_scope_keys(data: dict[str, Any]) -> dict[str, Any]:
+    """モデル dict の全スコープから GUI 専用キー (``GUI_ONLY_SCOPE_KEYS``) を取り除く。
+
+    GUI は Subsystem の中で置いた手動分岐点をその Subsystem の ``params`` に書くが、
+    ``Subsystem._from_dict`` は未知の引数を拒否する (typo を黙って通さないため)。
+    そこで構築の前に、最上位と入れ子の Subsystem ``params`` から GUI 専用キーだけを外す。
+
+    Args:
+        data: parsed JSON のモデル dict (top-level または Subsystem の params)。
+
+    Returns:
+        GUI 専用キーを除いた新しい dict (入力は変更しない)。dict 以外はそのまま返す。
+    """
+    if not isinstance(data, dict):
+        return data
+    out = {k: v for k, v in data.items() if k not in GUI_ONLY_SCOPE_KEYS}
+    blocks = out.get("blocks")
+    if isinstance(blocks, list):
+        out["blocks"] = [_strip_block_entry_gui_keys(b) for b in blocks]
+    return out
+
+
+def _strip_block_entry_gui_keys(entry: Any) -> Any:
+    """ブロック entry が Subsystem なら、その ``params`` から GUI 専用キーを外した写しを返す。"""
+    if not isinstance(entry, dict):
+        return entry
+    params = entry.get("params")
+    # Subsystem の判定は normalize_model_ids と同じ (params に blocks の list を持つ)
+    if not (isinstance(params, dict) and isinstance(params.get("blocks"), list)):
+        return entry
+    return {**entry, "params": strip_gui_only_scope_keys(params)}
+
+
 def normalize_model_ids(data: dict[str, Any]) -> dict[str, Any]:
     """モデル dict 内の block id とその参照を一括で NFC 正規化する (ADR-0071 §(3))。
 

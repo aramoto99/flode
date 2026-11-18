@@ -44,6 +44,7 @@ from .persistence import (
     resolve_block_class,
     serialize_connections,
     serialize_t_end,
+    strip_gui_only_scope_keys,
 )
 from .signals import cast_value
 
@@ -1930,6 +1931,9 @@ class Simulator:
         # ADR-0071 §(3): id とその全参照 (connections / layout / branch_waypoints /
         # scope_settings) を単一関数で NFC 正規化する (片側だけだと参照が切れる)
         data = normalize_model_ids(data)
+        # GUI 専用キー (Subsystem 内の手動分岐点など) は構築に使わないので外す。
+        # migrate / normalize は branch_waypoints を読み書きするので、必ずその後に置く
+        data = strip_gui_only_scope_keys(data)
 
         for key in ("simulator", "blocks", "connections"):
             if key not in data:

@@ -17,7 +17,9 @@ Phase 4 v0.11.1 でサポートする操作:
    ライブラリの利用 (= drop で配置 / inline 展開) は frontend が REST
    ``GET /api/v1/libraries/{lib}/{entry}`` 経由で行う。Python 側で直接 instantiate
    したい場合は ``Subsystem._from_dict(**entry.subsystem["params"])`` で再構築できる
-   (= byte-identical 保証)。
+   (= byte-identical 保証)。GUI で作った entry は手動分岐点などの GUI 専用キーを
+   含みうるので、``flode.core.persistence.strip_gui_only_scope_keys`` を通した
+   ``params`` を渡す。
 """
 
 from __future__ import annotations
