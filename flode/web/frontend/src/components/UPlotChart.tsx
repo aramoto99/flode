@@ -23,7 +23,31 @@ export interface UPlotChartProps {
   data: uPlot.AlignedData;
   /** 親コンテナの className。サイズ・余白制御は呼び出し側に委ねる。 */
   className?: string;
+  /**
+   * 凡例をプロット領域のどちら側に置くか (既定 "bottom")。凡例は uPlot の
+   * ``legend.mount`` でプロット領域の外 (同じ枠内) に移し、プロット領域は残りの
+   * 寸法だけを使う。表示 / 非表示は ``options.legend.show`` が決める。
+   */
+  legend?: LegendPlacement;
 }
+
+/** 凡例の置き場所。 */
+export type LegendPlacement = "top" | "bottom" | "right";
+
+// 凡例 (先頭の子) とプロット領域 (2 番目の子) の並べ方。
+const LAYOUT_CLS: Record<LegendPlacement, string> = {
+  top: "flex-col",
+  bottom: "flex-col-reverse",
+  right: "flex-row-reverse",
+};
+
+// 凡例の置き場。上下は横並び (uPlot 既定の inline 表示)、右は 1 系列 1 行の縦並び。
+// 系列が多いときは枠の一部 (40%) までに抑えてスクロールさせる。
+const LEGEND_HOST_CLS: Record<LegendPlacement, string> = {
+  top: "max-h-[40%] overflow-auto",
+  bottom: "max-h-[40%] overflow-auto",
+  right: "max-w-[40%] overflow-auto [&_.u-legend]:text-left [&_.u-inline_tr]:block",
+};
 
 /**
  * 軽量 uPlot React ラッパ。
@@ -35,19 +59,33 @@ export function UPlotChart({
   options,
   data,
   className,
+  legend = "bottom",
 }: UPlotChartProps): JSX.Element {
+  // containerRef: 外枠 (className の受け口)。plotRef: uPlot を描く領域
+  // (寸法の基準、wheel / pan の受け口)。legendHostRef: 凡例の置き場。
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const plotRef = useRef<HTMLDivElement | null>(null);
+  const legendHostRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<uPlot | null>(null);
   const lastOptionsRef = useRef<uPlot.Options | null>(null);
   const lastDataRef = useRef<uPlot.AlignedData | null>(null);
 
   // mount + options 変更時の (再) 生成
   useEffect(() => {
-    const root = containerRef.current;
+    const root = plotRef.current;
     if (!root) return;
     // 既存 instance があれば破棄してから作り直す
     instanceRef.current?.destroy();
-    const inst = new uPlot(options, data, root);
+    // uPlot は凡例を root の下に足す。root は枠いっぱいに setSize するので、
+    // そのままでは凡例が枠の外にはみ出す → 凡例は専用の置き場へ移す。
+    const withLegendHost: uPlot.Options = {
+      ...options,
+      legend: {
+        ...options.legend,
+        mount: (_u, el) => legendHostRef.current?.appendChild(el),
+      },
+    };
+    const inst = new uPlot(withLegendHost, data, root);
     instanceRef.current = inst;
     lastOptionsRef.current = options;
     lastDataRef.current = data;
@@ -74,9 +112,10 @@ export function UPlotChart({
     lastDataRef.current = data;
   }, [data]);
 
-  // 親サイズ追従 (ResizeObserver)
+  // プロット領域のサイズ追従 (ResizeObserver)。凡例の大きさが変わったときも
+  // プロット領域が伸び縮みするので、ここで追従できる。
   useEffect(() => {
-    const root = containerRef.current;
+    const root = plotRef.current;
     if (!root) return;
     const ro = new ResizeObserver(() => {
       const inst = instanceRef.current;
@@ -95,7 +134,8 @@ export function UPlotChart({
   // 引っ張る感覚)。リファレンスツールの Scope は pan tool ボタン経由だが、flode では
   // ホイールクリックを「即時 pan」に bind する (= ユーザー要望)。
   useEffect(() => {
-    const root = containerRef.current;
+    // プロット領域だけで受ける (凡例の上では pan しない)
+    const root = plotRef.current;
     if (!root) return;
 
     type PanState = {
@@ -192,7 +232,8 @@ export function UPlotChart({
   // ADR-0044 §論点 7: マウスホイールで X 軸 zoom (カーソル位置を中心に拡大/縮小)。
   // Shift 押下時は Y 軸 zoom。Ctrl 押下時はブラウザのページズームに譲る。
   useEffect(() => {
-    const root = containerRef.current;
+    // プロット領域だけで受ける (凡例の上のホイールは凡例のスクロールに使う)
+    const root = plotRef.current;
     if (!root) return;
     const ZOOM_FACTOR = 1.2; // 1 notch = 20% zoom in/out
 
@@ -235,5 +276,20 @@ export function UPlotChart({
     return () => root.removeEventListener("wheel", handler);
   }, []);
 
-  return <div ref={containerRef} className={className} />;
+  // プロット領域は basis-0 + min-*-0 + overflow-hidden で、uPlot の canvas 寸法に
+  // 押し広げられず「枠から凡例を引いた残り」になる (= ResizeObserver の基準)。
+  return (
+    <div ref={containerRef} className={className}>
+      <div className={`flex h-full w-full ${LAYOUT_CLS[legend]}`}>
+        <div
+          ref={legendHostRef}
+          className={`shrink-0 text-[11px] [&_.u-legend]:text-[11px] ${LEGEND_HOST_CLS[legend]}`}
+        />
+        <div
+          ref={plotRef}
+          className="relative min-h-0 min-w-0 flex-1 basis-0 overflow-hidden"
+        />
+      </div>
+    </div>
+  );
 }

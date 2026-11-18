@@ -170,7 +170,7 @@ export function buildMinorGridAxis(scaleKey: "x" | "y"): uPlot.Axis {
  *
  * ADR-0044 §論点 4 / §論点 7: per-scope settings から
  * - Y/X 軸スケール (auto / manual / log)
- * - 凡例位置 (= legend.show + 配置は React 側で wrapper、本関数は show のみ)
+ * - 凡例の表示 (= legend.show。置き場所は UPlotChart の ``legend`` prop が担う)
  * - グリッド (major / minor)
  * - per-signal 線色 / 線幅 / marker
  *
@@ -311,10 +311,13 @@ export function ScopeView({
   );
   const openScopePanel = useAppStore((s) => s.openScopePanel);
   const closeScopePanel = useAppStore((s) => s.closeScopePanel);
-  // plot 領域 (= uPlot canvas の親) を画像コピー時に querySelector する用。
+  // plot 領域 (= uPlot canvas を含む枠) を画像コピー時に querySelector する用。
   const plotAreaRef = useRef<HTMLDivElement | null>(null);
 
   const settings = editingModel?.scope_settings?.[scopeId] ?? DEFAULT_SCOPE_SETTINGS;
+  // "off" は options.legend.show=false が担う。置き場所は表示時だけ意味がある。
+  const legendSetting = resolveSettings(settings).legend;
+  const legendPlacement = legendSetting === "off" ? undefined : legendSetting;
 
   // グラフ画像をクリップボードへコピー (失敗時 download)。凡例も合成する。
   const handleCopyImage = async (): Promise<void> => {
@@ -442,7 +445,12 @@ export function ScopeView({
     <div className="flex h-full w-full flex-col border border-slate-200 bg-white">
       {header}
       <div ref={plotAreaRef} className="relative flex-1">
-        <UPlotChart options={options} data={data} className="absolute inset-0" />
+        <UPlotChart
+          options={options}
+          data={data}
+          className="absolute inset-0"
+          legend={legendPlacement}
+        />
       </div>
     </div>
   );

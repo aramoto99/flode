@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Scope の凡例がグラフの枠の外にはみ出して見えなかった。凡例をプロット領域の外 (同じ枠内) に置き、
+  設定ダイアログの「凡例: 上 / 下 / 右」が効くようにした。凡例の上のホイールはズームではなく凡例の
+  スクロールになる
+
 ## [0.69.0] - 2026-11-18 — ユーザーブロックの行リスト引数を表 + 編集ダイアログで編集する (ADR-0086)
 
 ### Added
