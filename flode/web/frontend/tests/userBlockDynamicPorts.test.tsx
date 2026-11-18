@@ -35,7 +35,7 @@ import { BlockNodeView } from "../src/components/BlockNodeView";
 import { modelToDiagram, type BlockNodeData } from "../src/lib/diagramConverter";
 import { canPruneOnParamChange, resolvePortCounts } from "../src/lib/dynamicPorts";
 import { getDefaultPortShapes, indexRegistry } from "../src/lib/portShapeValidate";
-import { collectExcessPortConnections } from "../src/lib/userBlockModel";
+import { collectExcessPortConnections, runPrecheckFailure } from "../src/lib/userBlockModel";
 import {
   _resetUserBlockPortsForTest,
   collectDynamicUserBlocks,
@@ -262,6 +262,74 @@ describe("ports of dynamic user blocks", () => {
     await ensureUserBlockPorts([{ type_path: DYN_TYPE, params: { n: 1 } }]);
     expect(canPruneOnParamChange(DYN_TYPE, { n: 1 }, REGISTRY)).toBe(true);
     expect(canPruneOnParamChange(DYN_TYPE, { n: 2 }, REGISTRY)).toBe(false);
+  });
+});
+
+// bug-report 2026-11-19-run-precheck-unresolved-dynamic-ports: ファイルを開いた直後
+// (resolve-port-shapes の応答前) に実行すると、registry の既定のポート数と比べて
+// 「ブロックに無いポートへの配線」と誤って止めていた。未解決のポートは超過と断定しない。
+describe("unresolved dynamic ports are not reported as excess", () => {
+  // 既定は in 1 / out 2。in[1] と out[2] は既定では超過だが、引数で増えるかもしれない
+  const wired = (params: Record<string, unknown>) =>
+    model(
+      [
+        { id: "d", type: DYN_TYPE, params },
+        { id: "f", type: FIXED_TYPE, params: {} },
+      ],
+      [
+        { src: "f", src_idx: 0, dst: "d", dst_idx: 1 },
+        { src: "d", src_idx: 2, dst: "f", dst_idx: 0 },
+      ],
+    );
+
+  it("does not stop the run before the ports are resolved (request not answered yet)", () => {
+    const m = wired({ n: 3 });
+    expect(collectExcessPortConnections(m, REGISTRY)).toEqual([]);
+    expect(runPrecheckFailure(m, REGISTRY)).toBeNull();
+  });
+
+  it("does not stop the run after a network failure (not cached, retried later)", async () => {
+    resolveMock.mockRejectedValueOnce(new TypeError("network"));
+    await ensureUserBlockPorts([{ type_path: DYN_TYPE, params: { n: 3 } }]);
+    expect(runPrecheckFailure(wired({ n: 3 }), REGISTRY)).toBeNull();
+  });
+
+  it("still stops the run when the resolved ports really are fewer", async () => {
+    resolveMock.mockResolvedValue(ONE);
+    await ensureUserBlockPorts([{ type_path: DYN_TYPE, params: { n: 1 } }]);
+    const failure = runPrecheckFailure(wired({ n: 1 }), REGISTRY);
+    expect(failure?.category).toBe("excess_port_connections");
+    expect(failure?.template_args.ports).toEqual(["d.in[1]", "d.out[2]"]);
+  });
+
+  it("rejected params (400) keep the registry defaults as before", async () => {
+    resolveMock.mockRejectedValueOnce(new ApiError(400, "400 bad", null, "bad"));
+    await ensureUserBlockPorts([{ type_path: DYN_TYPE, params: { n: -1 } }]);
+    expect(collectExcessPortConnections(wired({ n: -1 }), REGISTRY)).toHaveLength(2);
+  });
+
+  it("static user blocks are checked against the registry as before", () => {
+    const m = model(
+      [{ id: "f", type: FIXED_TYPE, params: {} }],
+      [{ src: "f", src_idx: 2, dst: "f", dst_idx: 1 }],
+    );
+    expect(collectExcessPortConnections(m, REGISTRY)).toEqual([
+      { blockId: "f", qualifiedId: "f", type: FIXED_TYPE, direction: "in", portIndex: 1 },
+      { blockId: "f", qualifiedId: "f", type: FIXED_TYPE, direction: "out", portIndex: 2 },
+    ]);
+  });
+
+  it("does not draw the wires as excess (red) until resolved, then does", async () => {
+    const m = wired({ n: 1 });
+    const before = modelToDiagram(m, REGISTRY);
+    expect(before.edges.filter((e) => e.data?.excessPort === true)).toEqual([]);
+    expect(before.nodes.find((n) => n.id === "d")!.data.userBlock?.declaredOutputs).toBeNull();
+
+    resolveMock.mockResolvedValue(ONE);
+    await ensureUserBlockPorts([{ type_path: DYN_TYPE, params: { n: 1 } }]);
+    const after = modelToDiagram(m, REGISTRY);
+    expect(after.edges.filter((e) => e.data?.excessPort === true)).toHaveLength(2);
+    expect(after.nodes.find((n) => n.id === "d")!.data.userBlock?.declaredOutputs).toBe(1);
   });
 });
 

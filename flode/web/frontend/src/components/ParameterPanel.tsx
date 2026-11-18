@@ -28,9 +28,9 @@ import {
 import { indexRegistry } from "../lib/portShapeValidate";
 import { isPlaceholderType, removedParamNames } from "../lib/userBlockModel";
 import {
-  effectiveUserBlockPorts,
   ensureUserBlockPorts,
   getCachedUserBlockPorts,
+  knownUserBlockPorts,
   isDynamicUserBlock,
 } from "../lib/userBlockPorts";
 import { useUserBlockPortsVersion } from "../lib/useUserBlockPortsVersion";
@@ -271,10 +271,11 @@ function RegularParamsEditor({ block }: { block: BlockEntry }): JSX.Element {
     userMeta !== undefined ? removedParamNames(block.params, userMeta) : [],
   );
   // ADR-0081 §論点 3: registry のポート数を超えた index に繋がっている配線。
-  // dynamic_ports のブロックは引数ごとに解決したポート数と比べる (解決で再描画する)
+  // dynamic_ports のブロックは引数ごとに解決したポート数と比べる (解決で再描画する)。
+  // 未解決の間は registry の既定値と比べない (引数で増えたポートを超過と誤表示する)
   useUserBlockPortsVersion();
   const userPorts =
-    userMeta !== undefined ? effectiveUserBlockPorts(userMeta, block.params) : undefined;
+    userMeta !== undefined ? knownUserBlockPorts(userMeta, block.params) : undefined;
   const excessPorts =
     userPorts !== undefined && scopeView !== null
       ? scopeView.connections.flatMap((c) => [

@@ -19,7 +19,11 @@ import { useAppStore } from "../store/appStore";
 import { pushToast } from "../store/toastStore";
 import i18n from "../i18n";
 import { dialog } from "./dialogService";
-import { precheckRun, prepareModelForBackend } from "./modelForBackend";
+import {
+  awaitUserBlockPortsForRun,
+  precheckRun,
+  prepareModelForBackend,
+} from "./modelForBackend";
 import { startWithPythonGate } from "./pythonTrust";
 
 /**
@@ -28,6 +32,12 @@ import { startWithPythonGate } from "./pythonTrust";
  * を防ぐ (simulation_id は run ごとに一意)。
  */
 let backfilledSimId: string | null = null;
+
+/**
+ * 実行の開始処理 (ポートの解決待ち・保存・開始要求) の最中か。useSimulation は 2 箇所で
+ * マウントされるので module-level で持つ。
+ */
+let runStarting = false;
 
 /**
  * WS ストリームは内部 queue (max 1024) 満杯時に古い ``scope_batch`` を drop
@@ -57,6 +67,8 @@ export function useSimulation(): {
   stop: () => Promise<void>;
 } {
   const wsRef = useRef<WebSocket | null>(null);
+  // 開始処理 (ポートの解決待ち・保存・開始要求) の途中でアンマウントされたかを知る
+  const mountedRef = useRef(true);
   const status = useAppStore((s) => s.status);
   const simulationId = useAppStore((s) => s.simulationId);
   const startedSimulation = useAppStore((s) => s.startedSimulation);
@@ -64,7 +76,9 @@ export function useSimulation(): {
 
   // アンマウント or 終了状態で WS を閉じる
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -82,10 +96,31 @@ export function useSimulation(): {
   }, [status, simulationId]);
 
   const run = async (): Promise<void> => {
+    // 実行ボタンの連打で、ポートの解決待ち・保存の最中に 2 本目を始めない
+    if (runStarting) return;
+    runStarting = true;
+    try {
+      await runOnce();
+    } finally {
+      runStarting = false;
+    }
+  };
+
+  const runOnce = async (): Promise<void> => {
+    const before = useAppStore.getState();
+    if (!before.editingModel || before.selectedFilePath === null) return;
+    // ポートが引数で変わるユーザーブロックは、ポートの解決を待ってから実行前チェックする
+    // (開いた直後に押すと、解決前の既定のポート数と比べて超過と誤判定していた。
+    // bug-report 2026-11-19-run-precheck-unresolved-dynamic-ports)
+    await awaitUserBlockPortsForRun(before.editingModel);
+    // 待つ間の編集は今のモデルで続ける。別のファイルに切り替わったら、押したファイルとは
+    // 違うファイルを保存・実行しないよう何もしない。待つ間に画面から外れたら何もしない
     const state = useAppStore.getState();
     const editing = state.editingModel;
-    if (!editing) return;
-    if (state.selectedFilePath === null) return;
+    if (!editing || !mountedRef.current) return;
+    if (state.selectedFilePath === null || state.selectedFilePath !== before.selectedFilePath) {
+      return;
+    }
     // ADR-0081 §4-B: 読み込めないブロック・超過ポートの配線があれば要求を送らず
     // ログタブに理由を出す (backend の 400 unknown_block_type と同じ表示)
     const precheck = precheckRun(editing);
@@ -132,6 +167,11 @@ export function useSimulation(): {
       startedSimulation(simulation_id);
       const ws = streamSimulation(simulation_id, handleStreamMessage);
       wsRef.current?.close();
+      if (!mountedRef.current) {
+        // 開始要求の途中でアンマウントされた: 誰も閉じなくなるので、ここで閉じる
+        ws.close();
+        return;
+      }
       wsRef.current = ws;
     } catch (e) {
       console.error("Failed to start simulation", e);

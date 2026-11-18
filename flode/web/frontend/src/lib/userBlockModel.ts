@@ -20,7 +20,7 @@ import type {
   FlwModel,
 } from "../types/api";
 import { cleanServerText, MAX_LABEL_CHARS, MAX_PATH_CHARS } from "./untrustedText";
-import { effectiveUserBlockPorts } from "./userBlockPorts";
+import { knownUserBlockPorts } from "./userBlockPorts";
 import { isUserBlock } from "./userBlocks";
 
 /** type_path → registry のメタデータ。 */
@@ -199,7 +199,8 @@ export function collectPlaceholderBlocks(
 /**
  * ユーザーブロックの registry のポート数を超える index に繋がった配線を全部集める。
  * プレースホルダ (ポート数が分からない) と組み込みブロックは対象外。``dynamic_ports`` の
- * ブロックは引数ごとに解決済みのポート数 (未解決なら registry の数) と比べる。
+ * ブロックは引数ごとに解決済みのポート数と比べ、未解決 (応答待ち・通信失敗) の間は対象外
+ * (registry の既定の数と比べると、引数で増えたポートの配線を超過と誤判定する)。
  */
 export function collectExcessPortConnections(
   model: FlwModel,
@@ -214,15 +215,20 @@ export function collectExcessPortConnections(
       qualifiedId: [...prefix, b.id].join("/"),
       type: b.type,
     });
+    // ポート数が分かっているユーザーブロックのポート (未解決の動的ポートは undefined)
+    const portsOf = (b: BlockEntry | undefined) => {
+      const meta = b && userBlockMetaOf(b.type, registry);
+      return b && meta ? knownUserBlockPorts(meta, b.params) : undefined;
+    };
     for (const c of connections) {
       const dst = byId.get(c.dst);
-      const dstMeta = dst && userBlockMetaOf(dst.type, registry);
-      if (dst && dstMeta && c.dst_idx >= effectiveUserBlockPorts(dstMeta, dst.params).nInputs) {
+      const dstPorts = portsOf(dst);
+      if (dst && dstPorts && c.dst_idx >= dstPorts.nInputs) {
         out.push({ ...ref(dst), direction: "in", portIndex: c.dst_idx });
       }
       const src = byId.get(c.src);
-      const srcMeta = src && userBlockMetaOf(src.type, registry);
-      if (src && srcMeta && c.src_idx >= effectiveUserBlockPorts(srcMeta, src.params).nOutputs) {
+      const srcPorts = portsOf(src);
+      if (src && srcPorts && c.src_idx >= srcPorts.nOutputs) {
         out.push({ ...ref(src), direction: "out", portIndex: c.src_idx });
       }
     }

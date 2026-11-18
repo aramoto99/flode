@@ -151,6 +151,19 @@ describe("removed parameters on save and run", () => {
     expect(state.history.past).toHaveLength(0);
   });
 
+  it("run does nothing if the file is switched while waiting before the precheck", async () => {
+    openModel(withRemovedParam());
+    const { result } = renderHook(() => useSimulation());
+    await act(async () => {
+      const running = result.current.run();
+      // 実行前の待ち (await) の間に別のファイルへ切り替わった
+      useAppStore.setState({ selectedFilePath: "other.flw.json" });
+      await running;
+    });
+    expect(putFileContent).not.toHaveBeenCalled();
+    expect(startSimulationByPath).not.toHaveBeenCalled();
+  });
+
   it("save (Ctrl+S auto-save flush) uses the same removal", async () => {
     openModel(withRemovedParam());
     const wrapper = ({ children }: { children: ReactNode }) => (

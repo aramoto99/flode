@@ -68,16 +68,17 @@ export function stableJson(value: unknown): string {
 }
 
 /**
- * キャッシュのキー (``type_path`` + 引数の安定 JSON)。
+ * キャッシュのキー (``type_path`` + 引数の安定 JSON)。``params`` が無い (モデル JSON で省略) ときは
+ * ``{}`` とみなす (収集側 ``collectDynamicUserBlocks`` の ``b.params ?? {}`` とキーを一致させる)。
  *
  * @param typePath - ブロックの型名。
  * @param params - ブロックの引数。
  */
 export function userBlockPortsKey(
   typePath: string,
-  params: Record<string, unknown>,
+  params: Record<string, unknown> | undefined,
 ): string {
-  return `${typePath}\u0000${stableJson(params)}`;
+  return `${typePath}\u0000${stableJson(params ?? {})}`;
 }
 
 /**
@@ -221,6 +222,30 @@ export function collectDynamicUserBlocks(
   };
   walk(model?.blocks);
   return out;
+}
+
+/**
+ * 超過ポートの判定 (実行前チェック・配線の赤表示・Inspector の警告) に使ってよいポート。
+ * ポートが引数で変わるユーザーブロックで、その引数のポートがまだ分からない (問い合わせ前・
+ * 応答待ち・通信失敗でキャッシュが無い) ときは ``undefined`` (分からない)。それ以外は
+ * ``effectiveUserBlockPorts`` と同じ (固定ポート、解決済み、サーバが引数を拒否した (400 / 404)
+ * なら registry の既定値)。
+ *
+ * 未解決の間 ``effectiveUserBlockPorts`` が返す registry の既定値は引数を反映していないので、
+ * それと比べると引数で増えたポートの配線を超過と誤判定する
+ * (bug-report 2026-11-19-run-precheck-unresolved-dynamic-ports)。
+ *
+ * @param meta - registry のメタデータ (ユーザーブロック)。
+ * @param params - ブロックの引数。
+ */
+export function knownUserBlockPorts(
+  meta: BlockMetadata,
+  params: Record<string, unknown> | undefined,
+): UserBlockPorts | undefined {
+  if (isDynamicUserBlock(meta) && !cache.has(userBlockPortsKey(meta.type_path, params))) {
+    return undefined;
+  }
+  return effectiveUserBlockPorts(meta, params ?? {});
 }
 
 /**

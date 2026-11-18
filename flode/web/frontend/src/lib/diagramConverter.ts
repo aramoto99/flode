@@ -18,7 +18,7 @@ import {
   userPortNames,
   type RegistryIndex,
 } from "./userBlockModel";
-import { effectiveUserBlockPorts } from "./userBlockPorts";
+import { effectiveUserBlockPorts, knownUserBlockPorts } from "./userBlockPorts";
 import { userBlockDisplayName } from "./userBlocks";
 import type {
   BlockEntry,
@@ -96,7 +96,8 @@ export interface UserBlockNodeInfo {
   meta?: BlockMetadata;
   /**
    * registry が宣言するポート数 (user のみ)。これ以上の index のポートは超過ポート
-   * (registry のポート数より多く繋がっている) としてエラー表示する。placeholder は null。
+   * (registry のポート数より多く繋がっている) としてエラー表示する。placeholder と、
+   * dynamic_ports でポートが未解決 (応答待ち・通信失敗) のユーザーブロックは null (分からない)。
    */
   declaredInputs: number | null;
   declaredOutputs: number | null;
@@ -233,12 +234,15 @@ function userBlockGeometry(
     nOutputs,
     names,
   );
+  // 超過ポートの判定に使う宣言ポート数。dynamic_ports の未解決 (応答待ち・通信失敗) の間は
+  // registry の既定値は引数を反映していないので「分からない」(null) にする (超過と描かない)
+  const known = meta !== undefined ? knownUserBlockPorts(meta, block.params) : undefined;
   return {
     info: {
       kind: meta !== undefined ? "user" : "placeholder",
       meta: shown,
-      declaredInputs: ports?.nInputs ?? null,
-      declaredOutputs: ports?.nOutputs ?? null,
+      declaredInputs: known?.nInputs ?? null,
+      declaredOutputs: known?.nOutputs ?? null,
       removedParams: meta !== undefined ? removedParamNames(block.params, meta) : [],
       inputNames: names.inputs,
       outputNames: names.outputs,

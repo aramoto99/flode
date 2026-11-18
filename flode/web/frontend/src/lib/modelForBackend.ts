@@ -19,6 +19,7 @@ import { indexRegistry } from "./portShapeValidate";
 import { queryClient } from "./queryClient";
 import { BLOCKS_REGISTRY_QUERY_KEY } from "./queryKeys";
 import { reconcileSignalNames } from "./signalNames";
+import { collectDynamicUserBlocks, ensureUserBlockPorts } from "./userBlockPorts";
 import {
   collectRemovedParams,
   formatRemovedParams,
@@ -96,8 +97,46 @@ function pruneParamsForBackend(model: FlwModel): FlwModel {
 }
 
 /**
+ * 実行前チェックの前に、ポートが引数で変わるユーザーブロックのポートの解決を待つ上限 (ms)。
+ * サーバが応答しないときはここで諦め、そのブロックの超過ポートの判定は飛ばして backend の
+ * 読み込み時の検査 (``ModelLoadError``) に任せる。
+ */
+export const PRECHECK_PORTS_WAIT_MS = 5_000;
+
+/**
+ * ポートが引数で変わるユーザーブロックのポートの解決を待つ (上限 ``PRECHECK_PORTS_WAIT_MS``)。
+ * 応答待ちの同じ問い合わせには合流する (``ensureUserBlockPorts`` の inflight)。通信失敗・タイム
+ * アウトは握りつぶす (そのブロックは未解決のまま = 実行前チェックでは超過と断定しない)。
+ *
+ * @param model - 実行しようとしているモデル。
+ */
+export async function awaitUserBlockPortsForRun(model: FlwModel): Promise<void> {
+  let requests: ReturnType<typeof collectDynamicUserBlocks>;
+  try {
+    requests = collectDynamicUserBlocks(model, freshRegistryIndex());
+  } catch (e) {
+    // 待てなくても実行は止めない (判定は backend の読み込み時の検査に任せる)
+    console.warn("Could not collect user blocks with dynamic ports before run", e);
+    return;
+  }
+  if (requests.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, PRECHECK_PORTS_WAIT_MS);
+  });
+  try {
+    await Promise.race([ensureUserBlockPorts(requests).catch(() => undefined), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * 実行前チェック (ADR-0081 §4-B の 1)。読み込めないブロック・超過ポートの配線があれば
  * ログタブに出す ``FailurePayload`` を返す (問題が無ければ ``null``)。
+ *
+ * ポートが引数で変わるユーザーブロックのポートは、先に ``awaitUserBlockPortsForRun`` で解決を
+ * 待っておくこと (未解決のままだと、そのブロックの超過ポートは判定しない)。
  *
  * @param model - 実行しようとしているモデル。
  */
