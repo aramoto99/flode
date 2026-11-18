@@ -134,6 +134,8 @@ export function JunctionDots({
                   ? `m:${dot.groupKey}`
                   : `a:${dot.groupKey}:${dot.x},${dot.y}`
               }
+              // ADR-0087: DiagramCanvas の配線ダブルクリック判定が手動 ● (リセット) を除くための目印
+              data-junction-dot={dot.manual ? "manual" : "auto"}
               style={{
                 position: "absolute",
                 left: dot.x,

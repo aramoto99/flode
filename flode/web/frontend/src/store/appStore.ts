@@ -19,10 +19,22 @@ import {
 import {
   applyAtPath,
   applyBranchWaypointsAtPath,
+  applyScopeDictAtPath,
   pruneBranchWaypoints,
   resolveBlocksAtPath,
   resolveBranchWaypointsAtPath,
+  resolveScopeDictAtPath,
 } from "../lib/pathResolver";
+import {
+  normalizeSignalName,
+  portKey,
+  readSignalNames,
+  reconcileSignalNames,
+  remapPortKeyedDictIds,
+  renamePortKeyedDictId,
+  validateSignalName,
+  type SignalNameError,
+} from "../lib/signalNames";
 import {
   appendBatch as appendScopeBatchSoA,
   createBuffer as createScopeBuffer,
@@ -47,6 +59,7 @@ import { invalidateUserBlockPorts } from "../lib/userBlockPorts";
 import {
   remapBranchWaypoints,
   remapConnections,
+  remapPortKeyedDict,
   type IndexRemap,
 } from "../lib/paramRows";
 import type {
@@ -61,6 +74,7 @@ import type {
   ImageFrame,
   MaskValuesDict,
   RunLogEntry,
+  SignalNameDict,
   SimulationStatus,
   SimulatorConfig,
   StreamMessage,
@@ -289,6 +303,11 @@ export interface ClipboardPayload {
   blocks: BlockEntry[];
   connections: ConnectionEntry[];
   layout: LayoutDict; // 元 id → 元位置 (paste 時に位相平均から bbox 中心を計算する基準)
+  /**
+   * ADR-0087: 元 id のキーの信号名。接続元ブロックが選択され、そのポートから出る配線が
+   * 1 本以上コピーされたものだけ (無ければ省略)。
+   */
+  signal_names?: SignalNameDict;
 }
 
 /**
@@ -1137,8 +1156,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyEditingModel: (fn, options) => {
     const current = get().editingModel;
     if (!current) return;
-    const next = fn(current);
-    if (next === current) return; // no-op (= history を膨らませない)
+    const edited = fn(current);
+    if (edited === current) return; // no-op (= history を膨らませない)
+    // ADR-0087 論点 4 (T3): 配線が 1 本も無くなった出力ポートの信号名を同じ履歴で消す
+    // (どの編集操作でも「配線が無いのに名前が残る」が起きないよう、ここ 1 か所で保証する)
+    const next = reconcileSignalNames(current, edited);
     set((state) => {
       const mergeKey = options?.mergeKey;
       // v0.20.1: 直前と同じ ``mergeKey`` なら history に追加 push しない。
@@ -1805,6 +1827,17 @@ export function removeBlockFromEditing(blockId: string): void {
         : undefined;
 
     let updated = m;
+    // ADR-0087: Outport を消すと親の src_idx が詰まるので、詰める前の出力数を覚えておく
+    let outportCountBefore = 0;
+    if (isOutport) {
+      try {
+        outportCountBefore = resolveBlocksAtPath(m, path).blocks.filter(
+          (b) => b.type === OUTPORT_TYPE,
+        ).length;
+      } catch {
+        outportCountBefore = 0;
+      }
+    }
 
     // (1) path 配下から block 削除 + 関連 connection 削除 + 残った同種 port の
     //     port_idx 連番再割り当 (削除した port_idx より大きいものを -1)
@@ -1888,6 +1921,27 @@ export function removeBlockFromEditing(blockId: string): void {
           layout: view.layout,
         };
       });
+      // ADR-0087: 親スコープの信号名 "<sub>:<j>" も配線と同じく詰める (k は消え、j>k は j-1)。
+      // 詰めないと、消えた出力ポートの名前が隣のポートの配線に付いてしまう (誤表示)。
+      if (isOutport) {
+        const length = Math.max(outportCountBefore, removedPortIdx + 1);
+        const remap: IndexRemap = {
+          side: "output",
+          map: Array.from({ length }, (_, j) =>
+            j === removedPortIdx ? null : j < removedPortIdx ? j : j - 1,
+          ),
+        };
+        try {
+          updated = applyScopeDictAtPath<string>(
+            updated,
+            parentPath,
+            "signal_names",
+            (names) => remapPortKeyedDict(names, parentSubId, remap),
+          );
+        } catch {
+          // 親スコープが解決できないなら配線側も触っていない (上の applyAtPath が警告済み)
+        }
+      }
     }
 
     // ADR-0057 §(5): block 削除で枝が消えた分岐の手動 waypoint を drop。block 自身
@@ -1960,21 +2014,13 @@ export function renameBlockInEditing(
       }),
       layout: renameDictKey(view.layout, oldId, newId),
     }));
-    // R4: branch_waypoints の合成キー "<id>:<idx>" (ADR-0057)
-    updated = applyBranchWaypointsAtPath(updated, path, (waypoints) => {
-      let changed = false;
-      const out: BranchWaypointDict = {};
-      for (const [key, pos] of Object.entries(waypoints)) {
-        const sep = key.lastIndexOf(":");
-        if (sep >= 0 && key.slice(0, sep) === oldId) {
-          out[`${newId}${key.slice(sep)}`] = pos;
-          changed = true;
-        } else {
-          out[key] = pos;
-        }
-      }
-      return changed ? out : waypoints;
-    });
+    // R4: branch_waypoints の合成キー "<id>:<idx>" (ADR-0057) と信号名 (ADR-0087)
+    updated = applyBranchWaypointsAtPath(updated, path, (waypoints) =>
+      renamePortKeyedDictId(waypoints, oldId, newId),
+    );
+    updated = applyScopeDictAtPath<string>(updated, path, "signal_names", (names) =>
+      renamePortKeyedDictId(names, oldId, newId),
+    );
     // R5: top-level scope_settings (ADR-0044、Subsystem 内 Scope もフラット格納)
     if (updated.scope_settings && oldId in updated.scope_settings) {
       updated = {
@@ -2307,6 +2353,77 @@ export function resetBranchWaypoint(key: string): void {
 }
 
 /**
+ * ADR-0087 / SPEC-0038: 今のスコープの出力ポート ``src:srcIdx`` の信号名を設定する。
+ *
+ * 前後の空白を除き NFC にそろえてから名前の規則で検査し、違反なら書かずにエラーを返す。
+ * 空なら名前を消す。今と同じ名前なら何もしない (履歴を積まない)。``mergeKey`` なしで
+ * 1 回 ``applyEditingModel`` するので、1 編集 = 1 Undo。
+ *
+ * @param src - 接続元ブロックの id (今のスコープ)。
+ * @param srcIdx - 出力ポート番号。
+ * @param raw - 入力された名前。
+ * @returns 規則違反の種類 (成功・no-op なら ``null``)。
+ */
+export function setSignalName(
+  src: string,
+  srcIdx: number,
+  raw: string,
+): SignalNameError | null {
+  const name = normalizeSignalName(raw);
+  const error = validateSignalName(name);
+  if (error) return error;
+  const path = currentPath();
+  const key = portKey(src, srcIdx);
+  useAppStore.getState().applyEditingModel((m) => {
+    let current: Record<string, unknown>;
+    try {
+      current = resolveScopeDictAtPath<unknown>(m, path, "signal_names");
+    } catch {
+      return m; // スコープが消えた (race) は no-op
+    }
+    const has = Object.prototype.hasOwnProperty.call(current, key);
+    if (name === "" ? !has : has && current[key] === name) return m; // no-op
+    return applyScopeDictAtPath<string>(m, path, "signal_names", (names) => {
+      // キーの順序を保って置き換える (JSON の差分を小さく)。defineProperty は __proto__ 対策
+      const next: SignalNameDict = {};
+      const put = (k: string, v: string): void => {
+        Object.defineProperty(next, k, { value: v, enumerable: true, writable: true, configurable: true });
+      };
+      let replaced = false;
+      for (const [k, v] of Object.entries(names)) {
+        if (k !== key) put(k, v);
+        else if (name !== "") {
+          put(k, name);
+          replaced = true;
+        }
+      }
+      if (!replaced && name !== "") put(key, name);
+      return next;
+    });
+  });
+  return null;
+}
+
+/**
+ * 今のスコープの出力ポート ``src:srcIdx`` の信号名 (検証済み。無ければ空文字)。
+ *
+ * @param src - 接続元ブロックの id。
+ * @param srcIdx - 出力ポート番号。
+ */
+export function signalNameInEditing(src: string, srcIdx: number): string {
+  const { editingModel, editingPath } = useAppStore.getState();
+  if (!editingModel) return "";
+  try {
+    const names = readSignalNames(
+      resolveScopeDictAtPath<unknown>(editingModel, editingPath, "signal_names"),
+    );
+    return names.get(portKey(src, srcIdx)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * v0.26.0 (リファレンスツールの auto-connect-on-edge): エッジを 1 件削除し、source → block →
  * target の 2 本を atomic に追加する (= 履歴 1 entry にまとめる、undo で 1 回で元に戻る)。
  * 同 dst_idx に既存接続があれば置換 (= ``addConnectionToEditing`` と同じ規約)。
@@ -2463,6 +2580,10 @@ export function updateBlockParamsAndRemap(
       updated = applyBranchWaypointsAtPath(updated, path, (wp) =>
         outputRemaps.reduce((acc, r) => remapBranchWaypoints(acc, blockId, r), wp),
       );
+      // ADR-0087: 信号名も同じ対応表で移す (削除行の名前は消える)
+      updated = applyScopeDictAtPath<string>(updated, path, "signal_names", (names) =>
+        outputRemaps.reduce((acc, r) => remapPortKeyedDict(acc, blockId, r), names),
+      );
     }
     return pruneOrphanWaypointsAtScope(updated, path);
   });
@@ -2521,7 +2642,33 @@ export function copySelectionToClipboard(): void {
     const e = view.layout[id];
     if (e) layout[id] = { ...e };
   }
-  state.setClipboard({ blocks, connections, layout });
+  // ADR-0087: コピーした配線が 1 本以上出ている出力ポートの信号名だけ運ぶ
+  const copiedPorts = new Set(connections.map((c) => portKey(c.src, c.src_idx)));
+  let names: Map<string, string>;
+  try {
+    names = readSignalNames(
+      resolveScopeDictAtPath<unknown>(model, state.editingPath, "signal_names"),
+    );
+  } catch {
+    names = new Map();
+  }
+  const signalNames: SignalNameDict = {};
+  for (const [key, name] of names) {
+    if (copiedPorts.has(key)) {
+      Object.defineProperty(signalNames, key, {
+        value: name,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+  }
+  state.setClipboard({
+    blocks,
+    connections,
+    layout,
+    ...(Object.keys(signalNames).length > 0 ? { signal_names: signalNames } : {}),
+  });
 }
 
 /**
@@ -2538,8 +2685,8 @@ export function pasteClipboard(offset = { x: 20, y: 20 }): void {
   const idMap = new Map<string, string>();
   let pastedIds: string[] = [];
 
-  state.applyEditingModel((m) =>
-    applyAtPath(m, path, (view) => {
+  state.applyEditingModel((m) => {
+    const pasted = applyAtPath(m, path, (view) => {
       const existingIds = new Set(view.blocks.map((b) => b.id));
       // ID 採番: generateUniqueId と同じく "{typeName}_{i}" を空きまでスキャン。
       // store の独立性のため inline 実装。
@@ -2588,8 +2735,16 @@ export function pasteClipboard(offset = { x: 20, y: 20 }): void {
         connections: [...view.connections, ...newConnections],
         layout: newLayout,
       };
-    }),
-  );
+    });
+    // ADR-0087: 運んだ信号名を新しい id のキーで足す (貼り付け先に同じキーは無い)
+    if (!cb.signal_names) return pasted;
+    const renamed = remapPortKeyedDictIds(cb.signal_names, idMap);
+    if (Object.keys(renamed).length === 0) return pasted;
+    return applyScopeDictAtPath<string>(pasted, path, "signal_names", (names) => ({
+      ...names,
+      ...renamed,
+    }));
+  });
 
   // 貼り付けた block 群を選択 (リファレンスツールでも Ctrl+V 直後は新規分が選択される)
   if (pastedIds.length > 0) {

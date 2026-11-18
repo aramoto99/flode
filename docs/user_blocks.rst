@@ -212,7 +212,9 @@ What shows up in the palette and the Inspector
        be one of them.
    * - Port names
      - ``input_names`` / ``output_names``. **Without them no port name is
-       drawn.**
+       drawn.** In the GUI an output port name is also the Scope legend name of
+       that signal, unless the wire has a signal name (double-click the wire to
+       name it).
    * - Hidden from the palette
      - ``block_hidden = True`` in the class body (for an abstract base class;
        only that class itself is hidden, subclasses appear).

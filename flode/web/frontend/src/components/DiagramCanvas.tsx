@@ -47,7 +47,19 @@ import { generateUniqueId } from "../lib/idGenerator";
 import {
   resolveBlocksAtPath,
   resolveBranchWaypointsAtPath,
+  resolveScopeDictAtPath,
 } from "../lib/pathResolver";
+import { readSignalNames } from "../lib/signalNames";
+import {
+  buildEdgeHitGeometry,
+  EDGE_HIT_HALF_WIDTH_PX,
+  findSignalAtPoint,
+} from "../lib/edgeHitTest";
+import {
+  setSignalNameEditHandler,
+  SignalNameLayer,
+  type SignalNameLabelProps,
+} from "./SignalNameLabel";
 import {
   indexRegistry,
   validatePortShapeConnection,
@@ -103,6 +115,22 @@ const EDGE_TYPES = { branchable: BranchableEdge } as const;
 // 「空エリアドラッグ → 矩形選択 / ノード上ドラッグ → ノード移動」(リファレンスツール + 一般的な
 // editor 慣習)。配列参照を毎 render で新しくしないために module-level 定数。
 const PAN_BUTTONS = [1, 2];
+
+/**
+ * キャンバス上の部品 (ノード / ハンドル / 信号名ラベル・入力欄 / 手動分岐点 ● / コントロール /
+ * ミニマップ)。
+ * この上のダブルクリックは、配線の名前付けにもクイック挿入にも使わない。
+ * 信号名の層は flow 座標の層にあり ``.react-flow__edge`` の外なので、別に挙げる (ADR-0087)。
+ */
+const CANVAS_WIDGET_SELECTOR = [
+  ".react-flow__node",
+  ".react-flow__handle",
+  "[data-testid='signal-name-anchor']",
+  // 手動分岐点のダブルクリックは位置のリセット (JunctionDots)。自動 ● は配線の上なので対象外
+  "[data-junction-dot='manual']",
+  ".react-flow__controls",
+  ".react-flow__minimap",
+].join(", ");
 
 /** ポートが引数で変わるユーザーブロックのポート問い合わせを、編集が落ち着くまで待つ時間。 */
 const USER_BLOCK_PORTS_DEBOUNCE_MS = 150;
@@ -208,6 +236,13 @@ export function DiagramCanvas({
     currentScreenY: number;
   }
   const [branchDrag, setBranchDrag] = useState<BranchDragState | null>(null);
+  // ADR-0087 論点 5: 名前を編集中の信号 (非永続の UI 状態。開いたスコープの path 付き)。
+  // 下書き・エラーは入力欄 (SignalNameLabel) が持つ。
+  const [signalEdit, setSignalEdit] = useState<{
+    src: string;
+    srcIdx: number;
+    pathKey: string;
+  } | null>(null);
   const [quickAdd, setQuickAdd] = useState<{
     screenX: number;
     screenY: number;
@@ -375,6 +410,65 @@ export function DiagramCanvas({
     setBranchStartHandler(handleStart);
     return () => setBranchStartHandler(null);
   }, []);
+
+  // ADR-0087: 配線 / 信号名ラベルのダブルクリックで名前の入力欄を出す
+  useEffect(() => {
+    setSignalNameEditHandler({
+      open: (src, srcIdx) =>
+        setSignalEdit({
+          src,
+          srcIdx,
+          pathKey: useAppStore.getState().editingPath.join("/"),
+        }),
+      close: () => setSignalEdit(null),
+    });
+    return () => setSignalNameEditHandler(null);
+  }, []);
+  // 配線のダブルクリックは wrapper の capture 段階で受ける。React Flow の onEdgeDoubleClick は
+  // 届かない: 配線には nopan クラスが無いので zoom pane の d3-zoom (dblclick.zoom) が先に受けて
+  // stopImmediatePropagation し、画面を拡大する。また DOM の当たり判定にも頼れない: クリックの
+  // 途中の再描画で配線の要素が 1 フレーム消えると、pointerdown / dblclick が pane に当たる
+  // (lib/edgeHitTest.ts の冒頭)。そこでクリック位置 (flow 座標) と、今描いている配線の経路
+  // (rubber-band 選択と同じ幾何) との距離で信号を選ぶ。ここで止めるので d3-zoom は拡大しない。
+  // ノード・ハンドル・ラベル・入力欄・手動分岐点 ● (ダブルクリック = リセット) の上では何もしない。
+  const hasModel = editingModel !== null;
+  useEffect(() => {
+    const el = reactFlowWrapper.current;
+    if (el === null) return;
+    const onDoubleClickCapture = (e: MouseEvent): void => {
+      if (e.button !== 0) return;
+      const target = e.target as Element | null;
+      if (target?.closest(CANVAS_WIDGET_SELECTOR)) return;
+      const zoom = reactFlow.getZoom();
+      if (!(zoom > 0)) return;
+      const point = reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const { edges: curEdges, nodes: curNodes } = rubberBandRefs.current;
+      const geometry = buildEdgeHitGeometry(curNodes, curEdges);
+      const hit = findSignalAtPoint(
+        point,
+        geometry.edges,
+        geometry.nodes,
+        EDGE_HIT_HALF_WIDTH_PX / zoom,
+      );
+      if (hit === null) return;
+      e.stopPropagation();
+      e.preventDefault();
+      setSignalEdit({
+        src: hit.src,
+        srcIdx: hit.srcIdx,
+        pathKey: useAppStore.getState().editingPath.join("/"),
+      });
+    };
+    el.addEventListener("dblclick", onDoubleClickCapture, true);
+    return () => el.removeEventListener("dblclick", onDoubleClickCapture, true);
+    // reactFlow (useReactFlow) は provider ごとに安定した参照
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portalTarget, hasModel]);
+  // スコープを移ったら入力欄を閉じる (確定しない)
+  const editingPathKey = editingPath.join("/");
+  useEffect(() => {
+    setSignalEdit((prev) => (prev !== null && prev.pathKey !== editingPathKey ? null : prev));
+  }, [editingPathKey]);
 
   // ADR-0056 follow-up: Log tab のエラーからのジャンプ要求を受けて canvas を pan。
   // ``focusBlock`` action が editingPath / 選択 / focusBlockRequest を同一 set で
@@ -568,6 +662,49 @@ export function DiagramCanvas({
     edges,
     scopeWaypoints,
   );
+  // ADR-0087: 現スコープの信号名 (検証済み) のラベル。配線が 1 本以上ある信号だけ、出力ポートを
+  // 出た直後に 1 か所 (D3)。名前の無い信号は編集中だけ入力欄を出す。
+  let scopeSignalNames: Map<string, string>;
+  try {
+    scopeSignalNames = readSignalNames(
+      resolveScopeDictAtPath<unknown>(model, editingPath, "signal_names"),
+    );
+  } catch {
+    scopeSignalNames = new Map();
+  }
+  const activeSignalEdit =
+    signalEdit !== null && signalEdit.pathKey === editingPathKey ? signalEdit : null;
+  const signalLabels: SignalNameLabelProps[] = [];
+  {
+    const nodeById = new Map(decoratedNodes.map((n) => [n.id, n]));
+    const seen = new Set<string>();
+    for (const e of edges) {
+      const srcIdx = Number(e.sourceHandle ?? 0);
+      const gkey = `${e.source}:${srcIdx}`;
+      if (seen.has(gkey)) continue;
+      seen.add(gkey);
+      const name = scopeSignalNames.get(gkey) ?? "";
+      const editing =
+        activeSignalEdit !== null &&
+        e.source === activeSignalEdit.src &&
+        srcIdx === activeSignalEdit.srcIdx;
+      if (name === "" && !editing) continue;
+      const node = nodeById.get(e.source);
+      const ep = node !== undefined ? blockNodeToEndpoint(node) : null;
+      if (ep === null) continue;
+      // 出力ポートのブロック境界 (computeStepEdgePolyline / BranchableEdge の描画端点と同じ式)
+      const flipped = ep.flipped ?? false;
+      signalLabels.push({
+        src: e.source,
+        srcIdx,
+        x: ep.position.x + (flipped ? 0 : ep.width),
+        y: ep.position.y + ((srcIdx + 1) * ep.height) / (ep.nOutputs + 1),
+        flipped,
+        name,
+        editing,
+      });
+    }
+  }
   const decoratedEdges = edges.map((e) => {
     const gkey = `${e.source}:${Number(e.sourceHandle ?? 0)}`;
     const via = vias.get(gkey);
@@ -908,13 +1045,7 @@ export function DiagramCanvas({
     const target = event.target as HTMLElement | null;
     if (!target) return;
     // ノード / ハンドル / エッジ / コントロールの上では発火させない。
-    if (
-      target.closest(".react-flow__node") ||
-      target.closest(".react-flow__handle") ||
-      target.closest(".react-flow__edge") ||
-      target.closest(".react-flow__controls") ||
-      target.closest(".react-flow__minimap")
-    ) {
+    if (target.closest(CANVAS_WIDGET_SELECTOR) || target.closest(".react-flow__edge")) {
       return;
     }
     const flow = reactFlow.screenToFlowPosition({
@@ -1088,6 +1219,8 @@ export function DiagramCanvas({
             mid-wire 位置に打つ (= ブロック線図の慣例)。ADR-0057 改訂: ● は幹線上を
             1 軸スライドで固定でき、resolveJunctions が算出した junctionDots を渡す。 */}
         <JunctionDots junctions={junctionDots} />
+        {/* ADR-0087: 信号名ラベル / 入力欄 (flow 座標の層、配線の再描画に影響されない) */}
+        <SignalNameLayer labels={signalLabels} />
       </ReactFlow>
       {/* v0.20.6: ブランチドラッグ中のカーソル追従線 (= 全画面 fixed SVG)。
           start から current への直線で十分 (= リファレンスツールでも drag 中は仮の

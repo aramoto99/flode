@@ -16,6 +16,9 @@ import {
   type Point,
 } from "../lib/edgeRectIntersect";
 
+/** 配線の当たり判定 (透明で太い overlay path) の ``data-testid``。 */
+export const EDGE_HIT_AREA_TESTID = "edge-hit-area";
+
 /** ADR-0057: ``BranchableEdge`` の ``data`` に注入される手動分岐点 (= 経由点)。
  *  ``DiagramCanvas`` が現 scope の ``branch_waypoints`` から該当 edge に付与する。 */
 export interface BranchableEdgeData extends Record<string, unknown> {
@@ -98,6 +101,15 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
     data,
   } = props;
   const via = (data as BranchableEdgeData | undefined)?.via;
+  const srcIdx =
+    sourceHandleId !== null && sourceHandleId !== undefined
+      ? parseInt(sourceHandleId, 10) || 0
+      : 0;
+  // ADR-0087: 配線のダブルクリック (信号名の編集) は DiagramCanvas が wrapper の capture 段階で
+  // 受ける (下の onPointerDown が通知する分岐ドラッグの開始位置で判定)。ここでは listener も
+  // 信号名のラベルも持たない: キャンバスの再描画のたびに配線の要素は作り直される (node に
+  // ``measured`` を渡していないので React Flow が handle の位置を測り直すまで edge を描かない)
+  // ため、要素の listener には dblclick が届かず、入力欄の状態も消えてしまう。
 
   // v0.20.10: ユーザー要求「ポート位置は動かさず、ポート接続後はエッジの起点を
   // ポートではなくブロックにしてほしい」への対応。React Flow は sourceX/Y に
@@ -152,15 +164,12 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
         stroke="transparent"
         strokeWidth={20}
         style={{ cursor: "crosshair", pointerEvents: "stroke" }}
+        data-testid={EDGE_HIT_AREA_TESTID}
         onPointerDown={(e) => {
           // 左ボタンのみ反応 (= 右ドラッグはキャンバス pan)
           if (e.button !== 0) return;
           if (_handler === null) return;
           e.stopPropagation();
-          const srcIdx =
-            sourceHandleId !== null && sourceHandleId !== undefined
-              ? parseInt(sourceHandleId, 10) || 0
-              : 0;
           _handler({
             src: source,
             src_idx: srcIdx,

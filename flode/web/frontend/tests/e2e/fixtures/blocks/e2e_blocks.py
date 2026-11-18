@@ -37,6 +37,15 @@ def e2e_offset(t: float, u: float, *, offset: float = 1.0) -> float:
     return u + offset
 
 
+@block(  # type: ignore[untyped-decorator]
+    display_name="E2E Pair",
+    output_names=("alpha", "beta"),
+)
+def e2e_pair(t: float) -> tuple[float, float]:
+    """Two constant outputs with named ports (E2E fixture for signal names, ADR-0087)."""
+    return 1.0, 2.0
+
+
 #: Parts the E2E catalog search can find: (part, kind, stock).
 _E2E_PARTS: tuple[tuple[str, str, int], ...] = (
     ("resistor", "passive", 120),

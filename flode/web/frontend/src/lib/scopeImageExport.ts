@@ -15,16 +15,19 @@ export interface LegendEntry {
 
 /** scope の凡例 (label + color) を導出する。
  *
- * ``buildOptions`` の series 構築と同じ規約: 単一信号は ``scopeId``、複数は
- * ``scopeId[i]``。色は per-signal 設定 → 8 色 fallback。
+ * ラベルは ``buildOptions`` の series と同じ配列 (``useScopeColumnLabels`` /
+ * ``deriveScopeColumnLabels`` の結果、ADR-0087) をそのまま使う。色は per-signal 設定 →
+ * 8 色 fallback。
+ *
+ * @param labels - 列ごとの表示名 (長さ = 列数)。
+ * @param resolvedSignals - 解決済みの per-signal 設定。
  */
 export function deriveLegend(
-  scopeId: string,
-  nSignals: number,
+  labels: readonly string[],
   resolvedSignals: Record<string, SignalSettings> | undefined,
 ): LegendEntry[] {
-  return Array.from({ length: nSignals }, (_, i) => ({
-    label: nSignals === 1 ? scopeId : `${scopeId}[${i}]`,
+  return labels.map((label, i) => ({
+    label,
     color: resolveSignalColor(resolvedSignals, i),
   }));
 }

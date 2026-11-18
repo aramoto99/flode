@@ -18,6 +18,7 @@ import type { BlockRegistryResponse, FailurePayload, FlwModel } from "../types/a
 import { indexRegistry } from "./portShapeValidate";
 import { queryClient } from "./queryClient";
 import { BLOCKS_REGISTRY_QUERY_KEY } from "./queryKeys";
+import { reconcileSignalNames } from "./signalNames";
 import {
   collectRemovedParams,
   formatRemovedParams,
@@ -63,6 +64,16 @@ export function _resetRemovalNoticesForTest(): void {
  * @returns backend に送るモデル (除去が無ければ ``model`` そのもの)。
  */
 export function prepareModelForBackend(model: FlwModel): FlwModel {
+  // ADR-0087 論点 4: 読み込んだファイルにあった孤児・不正な信号名を、全スコープで消す
+  // (開いただけでは書き換えず、次の保存・実行で消す。履歴は積まない)
+  const reconciled = reconcileSignalNames(null, model);
+  if (reconciled !== model && useAppStore.getState().editingModel === model) {
+    useAppStore.setState({ editingModel: reconciled });
+  }
+  return pruneParamsForBackend(reconciled);
+}
+
+function pruneParamsForBackend(model: FlwModel): FlwModel {
   const registry = freshRegistryIndex();
   const pruned = pruneRemovedParams(model, registry);
   if (pruned === model) return model;

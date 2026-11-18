@@ -15,6 +15,10 @@ import { useTranslation } from "react-i18next";
 
 import { deriveLegend, exportScopeImage } from "../lib/scopeImageExport";
 import {
+  defaultScopeColumnLabels,
+  useScopeColumnLabels,
+} from "../lib/signalDisplayNames";
+import {
   DEFAULT_SCOPE_SETTINGS,
   FALLBACK_COLORS,
   canUseLogScale,
@@ -181,7 +185,13 @@ export function buildOptions(
   n_signals: number,
   settings: ScopeSettings,
   buffer?: ScopeBuffer,
+  labels?: readonly string[],
 ): uPlot.Options {
+  // ADR-0087: 列ごとの表示名 (無い・長さが合わなければ既定名 scope / scope[i])
+  const seriesLabels =
+    labels !== undefined && labels.length === n_signals
+      ? labels
+      : defaultScopeColumnLabels(scopeId, n_signals);
   const resolved = resolveSettings(settings);
   // ADR-0044 §論点 7: log で 0/負値があれば auto に fallback
   const yMode =
@@ -194,7 +204,7 @@ export function buildOptions(
     ...Array.from({ length: n_signals }, (_, i): uPlot.Series => {
       const marker = resolved.signals?.[String(i)]?.marker ?? "none";
       return {
-        label: n_signals === 1 ? scopeId : `${scopeId}[${i}]`,
+        label: seriesLabels[i],
         stroke: resolveSignalColor(resolved.signals, i),
         width: resolved.signals?.[String(i)]?.width ?? 1.25,
         points:
@@ -318,13 +328,15 @@ export function ScopeView({
   // "off" は options.legend.show=false が担う。置き場所は表示時だけ意味がある。
   const legendSetting = resolveSettings(settings).legend;
   const legendPlacement = legendSetting === "off" ? undefined : legendSetting;
+  // ADR-0087: 列ごとの表示名 (凡例・画像コピー・設定ダイアログで同じ関数の結果を使う)
+  const labels = useScopeColumnLabels(scopeId, buffer.n_signals);
 
   // グラフ画像をクリップボードへコピー (失敗時 download)。凡例も合成する。
   const handleCopyImage = async (): Promise<void> => {
     const canvas = plotAreaRef.current?.querySelector("canvas");
     if (!(canvas instanceof HTMLCanvasElement)) return;
     const resolved = resolveSettings(settings);
-    const legend = deriveLegend(scopeId, buffer.n_signals, resolved.signals);
+    const legend = deriveLegend(labels, resolved.signals);
     try {
       const result = await exportScopeImage(canvas, legend, `${scopeId}.png`);
       pushToast({
@@ -342,14 +354,22 @@ export function ScopeView({
 
   // ADR-0044 §論点 4: options は buffer 変更ごとに再計算しない
   // (= 毎 WS scope_batch で uPlot を destroy/recreate してしまうのを避ける)。
-  // 再生成 trigger は ``scopeId`` / ``n_signals`` / ``settings`` 変更のみ。
+  // 再生成 trigger は ``scopeId`` / ``n_signals`` / ``settings`` / 表示名の変更のみ。
   // log fallback は buffer の参照を使うが、recheck タイミングは settings 変更時
   // のみで OK (= log mode に切替えた時点で再評価され、その後はモード一定)。
+  // ADR-0087: 表示名は中身 (join したキー) で比べ、名前が変わったときだけ作り直す
+  const labelsKey = labels.join("\u0000");
   const options = useMemo(
     () =>
-      buildOptions(scopeId, Math.max(buffer.n_signals, 1), settings, buffer),
+      buildOptions(
+        scopeId,
+        Math.max(buffer.n_signals, 1),
+        settings,
+        buffer,
+        buffer.n_signals > 0 ? labels : undefined,
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scopeId, buffer.n_signals, settings],
+    [scopeId, buffer.n_signals, settings, labelsKey],
   );
   const data = useMemo(
     () => buildAlignedData(buffer),

@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.15",
+  "metadata": {
+    "tool": "flode e2e fixture (ADR-0087 signal names)"
+  },
+  "simulator": {
+    "t_end": 0.1,
+    "dt": 0.01,
+    "solver": "RK45",
+    "rtol": 1e-06,
+    "atol": 1e-09,
+    "dt_base": null
+  },
+  "blocks": [
+    {"id": "src", "type": "flode.blocks.sources.Constant", "params": {"value": 1.0}},
+    {"id": "g", "type": "flode.blocks.mathops.Gain", "params": {"k": 2.0}},
+    {"id": "disp", "type": "flode.blocks.sinks.Display", "params": {"n_inputs": 1}},
+    {"id": "pair", "type": "flode_ws.e2e_blocks.E2ePair", "params": {}},
+    {
+      "id": "sub",
+      "type": "flode.subsystems.subsystem.Subsystem",
+      "params": {
+        "blocks": [
+          {"id": "i", "type": "flode.subsystems.ports.Inport", "params": {"port_idx": 0}},
+          {"id": "k", "type": "flode.blocks.mathops.Gain", "params": {"k": 3.0}},
+          {"id": "o", "type": "flode.subsystems.ports.Outport", "params": {"port_idx": 0}}
+        ],
+        "connections": [
+          {"src": "i", "src_idx": 0, "dst": "k", "dst_idx": 0},
+          {"src": "k", "src_idx": 0, "dst": "o", "dst_idx": 0}
+        ],
+        "layout": {
+          "i": {"x": 80, "y": 120},
+          "k": {"x": 260, "y": 112},
+          "o": {"x": 440, "y": 120}
+        }
+      }
+    },
+    {"id": "term", "type": "flode.blocks.sinks.Terminator", "params": {"n_inputs": 1}},
+    {
+      "id": "sc",
+      "type": "flode.blocks.sinks.Scope",
+      "params": {"n_inputs": 3, "buffer_mode": "ring", "buffer_capacity": 100000}
+    }
+  ],
+  "connections": [
+    {"src": "src", "src_idx": 0, "dst": "g", "dst_idx": 0},
+    {"src": "g", "src_idx": 0, "dst": "sc", "dst_idx": 0},
+    {"src": "src", "src_idx": 0, "dst": "disp", "dst_idx": 0},
+    {"src": "pair", "src_idx": 0, "dst": "sc", "dst_idx": 1},
+    {"src": "pair", "src_idx": 1, "dst": "sc", "dst_idx": 2},
+    {"src": "src", "src_idx": 0, "dst": "sub", "dst_idx": 0},
+    {"src": "sub", "src_idx": 0, "dst": "term", "dst_idx": 0}
+  ],
+  "layout": {
+    "src": {"x": 60, "y": 100},
+    "g": {"x": 240, "y": 92},
+    "disp": {"x": 240, "y": 220},
+    "pair": {"x": 240, "y": 320},
+    "sub": {"x": 240, "y": 430},
+    "term": {"x": 440, "y": 438},
+    "sc": {"x": 520, "y": 180}
+  }
+}

@@ -11,6 +11,7 @@ import {
   resolveSettings,
   resolveSignalColor,
 } from "../lib/scopeSettings";
+import { useScopeColumnLabels } from "../lib/signalDisplayNames";
 import { useAppStore } from "../store/appStore";
 import type { SignalMarker, SignalSettings } from "../types/api";
 import {
@@ -54,6 +55,8 @@ export function ScopeSettingsDialog({
   const settings = resolveSettings(saved);
   const nSignals = buffer?.n_signals ?? 0;
   const logSafe = canUseLogScale(buffer);
+  // ADR-0087: 信号行の名前は凡例と同じ関数の結果 (XYGraph の行は [i] のまま)
+  const labels = useScopeColumnLabels(scopeId, nSignals);
 
   return (
     <DialogShell
@@ -101,6 +104,7 @@ export function ScopeSettingsDialog({
             // データ未取得でも色を設定できるよう常に 1 行表示する。
             nSignals={isXY ? 1 : nSignals}
             isXY={isXY}
+            labels={isXY ? undefined : labels}
             onPatch={(p) => updateScopeSettings(scopeId, p)}
           />
         )}
@@ -263,13 +267,21 @@ function StyleTab({
   signals,
   nSignals,
   isXY,
+  labels,
   onPatch,
 }: {
   signals: Record<string, SignalSettings> | undefined;
   nSignals: number;
   isXY: boolean;
+  /** 信号行の表示名 (凡例と同じ配列)。無ければ ``[i]``。 */
+  labels?: readonly string[];
   onPatch: (p: { signals: Record<string, SignalSettings> }) => void;
 }): JSX.Element {
+  // 名前を出すときは 1 列目を広げる (長い名前は truncate + title)
+  const gridCols =
+    labels !== undefined
+      ? "grid-cols-[140px_1fr_70px_90px]"
+      : "grid-cols-[36px_1fr_70px_90px]";
   const { t } = useTranslation();
   if (nSignals === 0) {
     return (
@@ -284,7 +296,7 @@ function StyleTab({
   const markers: SignalMarker[] = ["none", "circle", "square", "cross"];
   return (
     <div className="flex flex-col">
-      <div className="grid grid-cols-[36px_1fr_70px_90px] gap-2 border-b border-slate-300 bg-slate-100 px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+      <div className={`grid ${gridCols} gap-2 border-b border-slate-300 bg-slate-100 px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600`}>
         <span>
           {isXY
             ? t("scope.settings.trace.col", "Trace")
@@ -309,9 +321,19 @@ function StyleTab({
         return (
           <div
             key={i}
-            className="grid grid-cols-[36px_1fr_70px_90px] items-center gap-2 border-b border-slate-100 px-1 py-1 hover:bg-slate-50"
+            className={`grid ${gridCols} items-center gap-2 border-b border-slate-100 px-1 py-1 hover:bg-slate-50`}
           >
-            <span className="font-mono text-[11px] text-slate-600">[{i}]</span>
+            {labels?.[i] !== undefined ? (
+              <span
+                data-testid={`scope-signal-label-${i}`}
+                className="truncate text-[11px] text-slate-700"
+                title={labels[i]}
+              >
+                {labels[i]}
+              </span>
+            ) : (
+              <span className="font-mono text-[11px] text-slate-600">[{i}]</span>
+            )}
             <ColorSwatch color={color} onChange={(c) => patch({ color: c })} />
             <select
               value={sig?.width ?? 1}

@@ -14,10 +14,12 @@ import importlib.util
 import logging
 import math
 import numbers
+import re
 import sys
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -1666,15 +1668,68 @@ def _normalize_connection_entry_ids(entry: Any) -> Any:
 #: backend は読み飛ばすので、ブロック構築の前に取り除く (ADR-0087 / ADR-0057)。
 #: 外さないと困るのは Subsystem の ``params`` (``_from_dict`` が未知の引数を拒否する)。
 #: 最上位は ``from_dict`` が余分なキーを無視するが、揃えるため同じく外す。
-GUI_ONLY_SCOPE_KEYS: tuple[str, ...] = ("branch_waypoints",)
+#: 将来 GUI 専用のスコープキーを足すときは、ここに 1 語足すだけでよい。
+GUI_ONLY_SCOPE_KEYS: tuple[str, ...] = ("branch_waypoints", "signal_names")
+
+#: 信号名 (SPEC-0038 D6) の最大長。前後の空白を除き NFC にそろえた後のコードポイント数。
+#: frontend ``src/lib/signalNames.ts`` の同名定数と同じ値にする。
+MAX_SIGNAL_NAME_CHARS = 64
+
+# 信号名に使えない Unicode 一般カテゴリ (制御文字・行区切り・段落区切り・孤立サロゲート)。
+# ADR-0086 G-2 の 1 行文字列の規則と同じ文字クラス。
+_FORBIDDEN_SIGNAL_NAME_CATEGORIES = frozenset({"Cc", "Zl", "Zp", "Cs"})
+# 信号名のキー ``"<src_id>:<src_idx>"`` (最後の ``:`` で分ける。id に ``:`` は使えない)
+# (fullmatch で使う。``$`` は末尾の改行の手前にも一致するので使わない)
+_SIGNAL_NAME_KEY_RE = re.compile(r"(.+):(0|[1-9][0-9]*)", re.DOTALL)
+
+_strip_logger = logging.getLogger("flode.persistence.gui_only_keys")
+
+
+def is_valid_signal_name(value: object) -> bool:
+    """信号名の値が名前の規則 (SPEC-0038 D6) を満たすかを返す。
+
+    規則: 文字列であること、前後の空白を除き NFC にそろえた結果が空でないこと、
+    改行・制御文字 (Unicode ``Cc`` / ``Zl`` / ``Zp``) と孤立サロゲートを含まないこと、
+    ``MAX_SIGNAL_NAME_CHARS`` コードポイント以下であること。
+
+    Args:
+        value: 検査する値 (``.flw.json`` から読んだ任意の JSON 値)。
+
+    Returns:
+        規則を満たせば ``True``。
+    """
+    if not isinstance(value, str):
+        return False
+    # str の subclass が __str__ を差し替えていても、中身の文字列そのものを見る。
+    # strip() の空白の集合は frontend の trim() と少し違う (\x1c-\x1f / \x85 / U+FEFF) が、
+    # どちらでも不正になる (制御文字として / 空として) か、警告の件数が変わるだけ
+    stripped = str.__str__(value).strip()
+    if any(unicodedata.category(ch) in _FORBIDDEN_SIGNAL_NAME_CATEGORIES for ch in stripped):
+        return False
+    normalized = unicodedata.normalize("NFC", stripped)
+    return 0 < len(normalized) <= MAX_SIGNAL_NAME_CHARS
+
+
+def _count_invalid_signal_names(section: object) -> int:
+    """``signal_names`` の中の不正なエントリ数 (キーの形・値の規則違反)。dict でなければ 1。"""
+    if not isinstance(section, dict):
+        return 1
+    return sum(
+        1
+        for key, value in section.items()
+        if not (isinstance(key, str) and _SIGNAL_NAME_KEY_RE.fullmatch(key))
+        or not is_valid_signal_name(value)
+    )
 
 
 def strip_gui_only_scope_keys(data: dict[str, Any]) -> dict[str, Any]:
     """モデル dict の全スコープから GUI 専用キー (``GUI_ONLY_SCOPE_KEYS``) を取り除く。
 
-    GUI は Subsystem の中で置いた手動分岐点をその Subsystem の ``params`` に書くが、
-    ``Subsystem._from_dict`` は未知の引数を拒否する (typo を黙って通さないため)。
+    GUI は Subsystem の中で置いた手動分岐点や信号名をその Subsystem の ``params`` に
+    書くが、``Subsystem._from_dict`` は未知の引数を拒否する (typo を黙って通さないため)。
     そこで構築の前に、最上位と入れ子の Subsystem ``params`` から GUI 専用キーだけを外す。
+    外す前に信号名の値を名前の規則で検査し、不正なエントリがあればその件数とスコープの
+    パスを warning に出す (値そのものはログに出さない)。読み込みは失敗させない。
 
     Args:
         data: parsed JSON のモデル dict (top-level または Subsystem の params)。
@@ -1682,16 +1737,30 @@ def strip_gui_only_scope_keys(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         GUI 専用キーを除いた新しい dict (入力は変更しない)。dict 以外はそのまま返す。
     """
+    return cast("dict[str, Any]", _strip_scope(data, ()))
+
+
+def _strip_scope(data: Any, path: tuple[str, ...]) -> Any:
     if not isinstance(data, dict):
         return data
+    if "signal_names" in data:
+        invalid = _count_invalid_signal_names(data["signal_names"])
+        if invalid:
+            _strip_logger.warning(
+                "ignored %d invalid 'signal_names' entr%s in scope %s "
+                "(the names are GUI-only and do not affect the simulation)",
+                invalid,
+                "y" if invalid == 1 else "ies",
+                "/".join(path) if path else "(top level)",
+            )
     out = {k: v for k, v in data.items() if k not in GUI_ONLY_SCOPE_KEYS}
     blocks = out.get("blocks")
     if isinstance(blocks, list):
-        out["blocks"] = [_strip_block_entry_gui_keys(b) for b in blocks]
+        out["blocks"] = [_strip_block_entry_gui_keys(b, path) for b in blocks]
     return out
 
 
-def _strip_block_entry_gui_keys(entry: Any) -> Any:
+def _strip_block_entry_gui_keys(entry: Any, path: tuple[str, ...]) -> Any:
     """ブロック entry が Subsystem なら、その ``params`` から GUI 専用キーを外した写しを返す。"""
     if not isinstance(entry, dict):
         return entry
@@ -1699,16 +1768,18 @@ def _strip_block_entry_gui_keys(entry: Any) -> Any:
     # Subsystem の判定は normalize_model_ids と同じ (params に blocks の list を持つ)
     if not (isinstance(params, dict) and isinstance(params.get("blocks"), list)):
         return entry
-    return {**entry, "params": strip_gui_only_scope_keys(params)}
+    block_id = entry.get("id")
+    child_path = (*path, block_id if isinstance(block_id, str) else "?")
+    return {**entry, "params": _strip_scope(params, child_path)}
 
 
 def normalize_model_ids(data: dict[str, Any]) -> dict[str, Any]:
     """モデル dict 内の block id とその参照を一括で NFC 正規化する (ADR-0071 §(3))。
 
     対象 (存在するもののみ): ``blocks[].id`` / ``connections[].src`` / ``.dst`` /
-    ``layout`` キー / ``branch_waypoints`` キーの id 部 / ``scope_settings`` キー。
-    Subsystem の ``params`` (ネストした blocks / connections / layout /
-    branch_waypoints) にも再帰する。
+    ``layout`` キー / ``branch_waypoints`` と ``signal_names`` のキーの id 部 /
+    ``scope_settings`` キー。Subsystem の ``params`` (ネストした blocks /
+    connections / layout / branch_waypoints / signal_names) にも再帰する。
 
     macOS のファイルシステム由来テキスト等で NFD 形が混入した場合、id とその
     参照 (結線・layout キー) の**片方だけ**正規化すると参照が切れるため、必ず
@@ -1744,17 +1815,20 @@ def normalize_model_ids(data: dict[str, Any]) -> dict[str, Any]:
                     dict_key,
                 )
             out[dict_key] = normalized_section
-    waypoints = out.get("branch_waypoints")
-    if isinstance(waypoints, dict):
-        normalized_waypoints = {
-            (_normalize_waypoint_key(k) if isinstance(k, str) else k): v
-            for k, v in waypoints.items()
+    # "<src_id>:<src_idx>" の合成キーを持つ 2 つのスコープ dict (ADR-0057 / ADR-0087)
+    for port_keyed in ("branch_waypoints", "signal_names"):
+        section = out.get(port_keyed)
+        if not isinstance(section, dict):
+            continue
+        normalized_port_keyed = {
+            (_normalize_waypoint_key(k) if isinstance(k, str) else k): v for k, v in section.items()
         }
-        if len(normalized_waypoints) != len(waypoints):
+        if len(normalized_port_keyed) != len(section):
             logging.getLogger("flode.persistence.normalize_ids").warning(
-                "normalize_model_ids: %d 'branch_waypoints' key(s) collided "
+                "normalize_model_ids: %d %r key(s) collided "
                 "after NFC normalization and were dropped",
-                len(waypoints) - len(normalized_waypoints),
+                len(section) - len(normalized_port_keyed),
+                port_keyed,
             )
-        out["branch_waypoints"] = normalized_waypoints
+        out[port_keyed] = normalized_port_keyed
     return out

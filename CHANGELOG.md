@@ -5,7 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.70.0] - 2026-11-19 — 信号名 (ADR-0087)
+
+### Added
+
+- 信号名: 配線をダブルクリックすると、その場で信号に名前を付けられる (Enter / 欄の外で確定、Esc で
+  取り消し、空にすると名前を消す)。名前は出力ポートに付くので、分岐した配線はすべて同じ名前になり、
+  名前は出力ポートを出た直後に 1 か所だけ表示する。自由な文字で 64 文字まで (改行・制御文字は不可)
+- Scope の凡例・画像コピーの凡例・Scope 設定の信号行に、信号名 → 接続元ポートの名前 (ユーザーブロック /
+  Python 関数ブロック / Subsystem の出力ポート) → `scope[i]` の順で名前を出す。ベクトルは `名前[k]`、
+  Mux を通った信号は Mux の入力の名前をたどる。名前を変えると実行し直さなくても凡例が変わる
+- 保存形式: スコープごと (最上位と Subsystem の `params`) に任意キー `signal_names`
+  (`{"<接続元 id>:<出力番号>": 名前}`) を足した。名前が無いモデルの保存内容は変わらず、
+  schema_version も 0.15 のまま。信号名は GUI だけの情報で、Python 側 (`Simulator`) は読み飛ばす
+- その出力ポートから出る配線が全部無くなると、信号名も消える (Undo で戻る)。ブロック名の変更・
+  行の付け替え・Outport の削除・コピー貼り付けでは名前が付いて移る
+
+### Compatibility
+
+- 0.69.0 以前の flode では、Subsystem の中に信号名 (または手動の分岐点) があるファイルは実行できない
+  (開く・編集・保存はできる)。最上位だけに信号名があるファイルは実行できる
 
 ### Fixed
 

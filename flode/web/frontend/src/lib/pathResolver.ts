@@ -3,6 +3,7 @@
 
 import type {
   BlockEntry,
+  BranchWaypoint,
   BranchWaypointDict,
   ConnectionEntry,
   FlwModel,
@@ -145,22 +146,7 @@ export function resolveBranchWaypointsAtPath(
   model: FlwModel,
   path: readonly string[],
 ): BranchWaypointDict {
-  let blocks: BlockEntry[] = model.blocks;
-  let waypoints: BranchWaypointDict = model.branch_waypoints ?? {};
-  for (const segId of path) {
-    const sub = blocks.find((b) => b.id === segId);
-    if (!sub) {
-      throw new Error(`Subsystem path segment not found: ${segId}`);
-    }
-    const params = sub.params as Record<string, unknown>;
-    if (!("blocks" in params)) {
-      throw new Error(`Block ${segId} is not a Subsystem (no params.blocks)`);
-    }
-    blocks = (params.blocks as BlockEntry[] | null | undefined) ?? [];
-    waypoints =
-      (params.branch_waypoints as BranchWaypointDict | null | undefined) ?? {};
-  }
-  return waypoints;
+  return resolveScopeDictAtPath<BranchWaypoint>(model, path, "branch_waypoints");
 }
 
 /**
@@ -175,52 +161,104 @@ export function applyBranchWaypointsAtPath(
   path: readonly string[],
   fn: (waypoints: BranchWaypointDict) => BranchWaypointDict,
 ): FlwModel {
+  return applyScopeDictAtPath<BranchWaypoint>(model, path, "branch_waypoints", fn);
+}
+
+/**
+ * スコープごとに置く ``"<src_id>:<src_idx>"`` キーの dict の名前 (ADR-0057 / ADR-0087)。
+ * 最上位はモデルの同名キー、Subsystem の中はその Subsystem の ``params`` の同名キー。
+ */
+export type ScopeDictKey = "branch_waypoints" | "signal_names";
+
+/** path の 1 段を辿る (Subsystem の ``params`` を返す)。 */
+function descendScope(blocks: readonly BlockEntry[], segId: string): Record<string, unknown> {
+  const sub = blocks.find((b) => b.id === segId);
+  if (!sub) {
+    throw new Error(`Subsystem path segment not found: ${segId}`);
+  }
+  const params = sub.params as Record<string, unknown>;
+  if (!("blocks" in params)) {
+    throw new Error(`Block ${segId} is not a Subsystem (no params.blocks)`);
+  }
+  return params;
+}
+
+/**
+ * ``path`` 先の scope の ``key`` の dict を返す。欠落時は空 dict。
+ * 値の検証はしない (信号名は ``readSignalNames`` で検証して読む)。
+ *
+ * @param model - モデル。
+ * @param path - スコープの path (``[]`` = 最上位)。
+ * @param key - dict の名前。
+ * @throws resolveBlocksAtPath と同じ条件 (path 解決失敗) で Error。
+ */
+export function resolveScopeDictAtPath<T>(
+  model: FlwModel,
+  path: readonly string[],
+  key: ScopeDictKey,
+): Record<string, T> {
+  let scope = model as unknown as Record<string, unknown>;
+  for (const segId of path) {
+    const blocks = (scope.blocks as BlockEntry[] | null | undefined) ?? [];
+    scope = descendScope(blocks, segId);
+  }
+  return (scope[key] as Record<string, T> | null | undefined) ?? {};
+}
+
+/**
+ * ``path`` 先の scope の ``key`` の dict を ``fn`` で書き換えた新しい FlwModel を返す
+ * (immutable update)。空 dict になったらキーごと削除する。``fn`` が同じ参照を返し、
+ * キーを消す必要も無ければ ``model`` をそのまま返す。他のキー・params は保持する。
+ *
+ * @param model - モデル。
+ * @param path - スコープの path (``[]`` = 最上位)。
+ * @param key - dict の名前。
+ * @param fn - 今の dict (欠落時は空 dict) を受け取り新しい dict を返す関数。
+ * @throws path 解決失敗時に Error。
+ */
+export function applyScopeDictAtPath<T>(
+  model: FlwModel,
+  path: readonly string[],
+  key: ScopeDictKey,
+  fn: (dict: Record<string, T>) => Record<string, T>,
+): FlwModel {
+  const updated = applyScopeDict(model as unknown as Record<string, unknown>, path, key, fn);
+  return updated as unknown as FlwModel;
+}
+
+function applyScopeDict<T>(
+  scope: Record<string, unknown>,
+  path: readonly string[],
+  key: ScopeDictKey,
+  fn: (dict: Record<string, T>) => Record<string, T>,
+): Record<string, unknown> {
   if (path.length === 0) {
-    const next = fn(model.branch_waypoints ?? {});
-    const m = { ...model };
-    if (Object.keys(next).length > 0) {
-      m.branch_waypoints = next;
+    const raw = scope[key] as Record<string, T> | null | undefined;
+    const cur = raw ?? {};
+    const next = fn(cur);
+    const empty = Object.keys(next).length === 0;
+    if (next === cur && (empty ? raw === undefined : true)) return scope;
+    const out = { ...scope };
+    if (empty) {
+      delete out[key];
     } else {
-      delete m.branch_waypoints;
+      out[key] = next;
     }
-    return m;
+    return out;
   }
   const [head, ...rest] = path;
-  const idx = model.blocks.findIndex((b) => b.id === head);
+  const blocks = (scope.blocks as BlockEntry[] | null | undefined) ?? [];
+  const idx = blocks.findIndex((b) => b.id === head);
   if (idx < 0) {
     throw new Error(`Subsystem path segment not found: ${head}`);
   }
-  const sub = model.blocks[idx]!;
-  const innerParams = sub.params as Record<string, unknown>;
-  // 深い path 解決のため inner scope を FlwModel 形に縮退して再帰する。
-  // 注意: 再帰先からは ``updatedInner.branch_waypoints`` のみを採用し、他フィールド
-  // (metadata / scope_settings 等) は newParams 側で保持するため innerModel には
-  // 含めない (= subsystem の params に metadata/scope_settings は存在しない)。
-  const innerModel: FlwModel = {
-    schema_version: model.schema_version,
-    simulator: model.simulator,
-    blocks: (innerParams.blocks as BlockEntry[] | null | undefined) ?? [],
-    connections:
-      (innerParams.connections as ConnectionEntry[] | null | undefined) ?? [],
-    layout: (innerParams.layout as LayoutDict | null | undefined) ?? {},
-    branch_waypoints:
-      (innerParams.branch_waypoints as BranchWaypointDict | null | undefined) ??
-      undefined,
-  };
-  const updatedInner = applyBranchWaypointsAtPath(innerModel, rest, fn);
-  const newParams: Record<string, unknown> = { ...innerParams };
-  if (
-    updatedInner.branch_waypoints &&
-    Object.keys(updatedInner.branch_waypoints).length > 0
-  ) {
-    newParams.branch_waypoints = updatedInner.branch_waypoints;
-  } else {
-    delete newParams.branch_waypoints;
-  }
-  const newSub: BlockEntry = { ...sub, params: newParams };
-  const newBlocks = [...model.blocks];
-  newBlocks[idx] = newSub;
-  return { ...model, blocks: newBlocks };
+  const sub = blocks[idx]!;
+  const innerParams = descendScope(blocks, head!);
+  const newParams = applyScopeDict(innerParams, rest, key, fn);
+  if (newParams === innerParams) return scope;
+  const newBlocks = [...blocks];
+  newBlocks[idx] = { ...sub, params: newParams };
+  return { ...scope, blocks: newBlocks };
 }
 
 /**

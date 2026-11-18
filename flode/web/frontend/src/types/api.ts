@@ -105,6 +105,13 @@ export interface BranchWaypoint {
 }
 export type BranchWaypointDict = Record<string, BranchWaypoint>;
 
+// ADR-0087 / SPEC-0038: 信号名 (出力ポート単位)。key = "<source block id>:<src_idx>"
+// (branch_waypoints と同じ合成キー)、値 = 名前 (前後空白を除き NFC、改行・制御文字なし、
+// 64 コードポイント以内)。最上位は ``FlwModel.signal_names``、Subsystem 内はその
+// Subsystem の ``params.signal_names``。GUI 専用で backend は構築前に取り除く。
+// 空なら書かない (名前を付けないモデルは保存バイト列が変わらない)。
+export type SignalNameDict = Record<string, string>;
+
 export interface FlwModel {
   schema_version: string;
   metadata?: { name?: string; created_at?: string; tool?: string; comment?: string };
@@ -118,9 +125,11 @@ export interface FlwModel {
   // schema 0.8 維持 (= optional 追加なので bump 不要、ADR-0008 慣習)。
   scope_settings?: Record<string, ScopeSettings>;
   // ADR-0057: optional な手動 branch waypoint (合成キー → 幹線方向位置 {axis,pos})。
-  // top-level の独立キー (= layout / scope_settings と並ぶ)。backend は opaque
-  // round-trip (= Python 無改修)。schema 0.8 維持 (optional 追加、bump 不要)。
+  // top-level の独立キー (= layout / scope_settings と並ぶ)。backend は GUI 専用キー
+  // として構築前に全スコープから取り除く (ADR-0087 S2)。schema 0.8 維持 (optional 追加)。
   branch_waypoints?: BranchWaypointDict;
+  // ADR-0087: optional な信号名 (合成キー → 名前)。schema は上げない (optional 追加)。
+  signal_names?: SignalNameDict;
   // ADR-0058 §論点 10: migrate_to_current() が 1 段以上 migration を適用したとき
   // に付与される元バージョン。frontend はこれを見て dirty flag を立て、toast を
   // 出してユーザーに「保存すると新 schema になる」と通知する。save 時には除去する。

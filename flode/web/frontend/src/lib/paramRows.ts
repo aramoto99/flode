@@ -203,12 +203,31 @@ export function remapBranchWaypoints(
   blockId: string,
   remap: IndexRemap,
 ): BranchWaypointDict {
+  return remapPortKeyedDict(waypoints, blockId, remap);
+}
+
+/**
+ * 対応表を出力ポート単位の合成キー ``"<blockId>:<idx>"`` を持つ dict に当てる
+ * (手動分岐点 ADR-0057・信号名 ADR-0087 で共用。出力側だけ。入力側は何もしない)。
+ * 削除行のキーは落とす。値には触らない。
+ *
+ * @param dict - そのスコープの ``"<id>:<idx>"`` キーの dict。
+ * @param blockId - 番号が変わるブロック。
+ * @param remap - 対応表。
+ * @returns 新しい dict (変化が無ければ同じ参照)。
+ */
+export function remapPortKeyedDict<T>(
+  dict: Record<string, T>,
+  blockId: string,
+  remap: IndexRemap,
+): Record<string, T> {
+  const waypoints = dict;
   if (remap.side !== "output") return waypoints;
   const prefix = `${blockId}:`;
   let changed = false;
-  const out: BranchWaypointDict = {};
+  const out: Record<string, T> = {};
   // 先に他のキーを写し、付け替えたキーで上書きされないようにする (番号は全単射なので重ならない)
-  const moved: Array<[string, BranchWaypointDict[string]]> = [];
+  const moved: Array<[string, T]> = [];
   for (const [key, value] of Object.entries(waypoints)) {
     const idx = key.startsWith(prefix) ? parsePortIndex(key.slice(prefix.length)) : null;
     if (idx === null || idx >= remap.map.length) {
