@@ -6,8 +6,8 @@
 //   要素は作り直されることがある (ブロックの形が変わると React Flow が handle を測り直すまで
 //   edge を描かない) ので、edge の中に置くと入力欄の下書き・エラー・フォーカスが消える。
 //   JunctionDots と同じ層に置いて避ける
-// - ラベル・入力欄には ``nodrag nopan`` を付ける (React Flow のドラッグ・パン・ダブルクリック
-//   ズームを起こさない)。ダブルクリックは ``stopPropagation`` してクイック挿入に渡さない
+// - ラベル・入力欄には ``nodrag nopan`` を付ける (React Flow のドラッグ・パンを起こさない)。
+//   ダブルクリックは ``stopPropagation`` してクイック挿入に渡さない
 // - 編集の開始・終了は DiagramCanvas が購読する module 単位のハンドラで知らせる
 //   (``setBranchStartHandler`` と同じ流儀)
 

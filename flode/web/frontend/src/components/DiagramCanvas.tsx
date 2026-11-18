@@ -435,12 +435,11 @@ export function DiagramCanvas({
     });
     return () => setSignalNameEditHandler(null);
   }, []);
-  // 配線のダブルクリックは wrapper の capture 段階で受ける。React Flow の onEdgeDoubleClick は
-  // 届かない: 配線には nopan クラスが無いので zoom pane の d3-zoom (dblclick.zoom) が先に受けて
-  // stopImmediatePropagation し、画面を拡大する。また DOM の当たり判定にも頼れない: クリックの
-  // 途中の再描画で配線の要素が 1 フレーム消えると、pointerdown / dblclick が pane に当たる
-  // (lib/edgeHitTest.ts の冒頭)。そこでクリック位置 (flow 座標) と、今描いている配線の経路
-  // (rubber-band 選択と同じ幾何) との距離で信号を選ぶ。ここで止めるので d3-zoom は拡大しない。
+  // 配線のダブルクリックは wrapper の capture 段階で受け、DOM の当たり判定ではなく、クリック位置
+  // (flow 座標) と今描いている配線の経路 (rubber-band 選択と同じ幾何) との距離で信号を選ぶ。
+  // 形が変わるときなど配線の要素が 1 フレーム描かれないと、dblclick の target が pane になる
+  // (lib/edgeHitTest.ts の冒頭)。配線に当たったらここで止めるので、wrapper の onDoubleClick
+  // (空き領域のクイック挿入) は配線の上では開かない。
   // ノード・ハンドル・ラベル・入力欄・手動分岐点 ● (ダブルクリック = リセット) の上では何もしない。
   const hasModel = editingModel !== null;
   useEffect(() => {
@@ -1124,6 +1123,11 @@ export function DiagramCanvas({
         // ドラッグだけ pan に。OS の右クリックメニューは onPaneContextMenu / onNodeContextMenu
         // で preventDefault する。
         panOnDrag={PAN_BUTTONS}
+        // 空き領域のダブルクリックはクイック挿入 (onWrapperDoubleClick)。React Flow 既定の
+        // ダブルクリック拡大 (d3-zoom の dblclick.zoom) は、拡大して伝播を止めるのでクイック挿入が
+        // 開かなくなる。拡大はホイール / Controls / ツールバーで行う
+        // (bug-report 2026-11-19-quick-insert-dblclick-zooms)
+        zoomOnDoubleClick={false}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
         // リファレンスツール仕様: ``Shift`` で multi-select、``Ctrl/Meta`` は auto-connect

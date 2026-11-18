@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- キャンバスを描き直すたびに (ブロックを選ぶだけでも)、全部の配線が 1 フレーム消えて作り直されていた。
+  形が変わっていないブロックは前回測った寸法を引き継ぐ (形・ポート数・反転・Enable / Trigger の
+  有無が変わったとき、表示するスコープやファイルが変わったときは今までどおり測り直す)
+- 空いている場所をダブルクリックしてもクイック挿入が開かず、画面が拡大していた。キャンバスの
+  ダブルクリックでは拡大しないようにした (拡大はホイール・ズームボタン・ツールバーで行う)
+
 ## [0.70.0] - 2026-11-19 — 信号名 (ADR-0087)
 
 ### Added
