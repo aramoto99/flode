@@ -28,6 +28,41 @@ export interface ResolvedPortCounts {
   nOutputs: number;
 }
 
+/** Subsystem の制御スロット (Trigger / Enable) の有無。 */
+export interface ControlSlots {
+  hasTrigger: boolean;
+  hasEnable: boolean;
+}
+
+/**
+ * ADR-0058 §論点 4 / §論点 11: Subsystem に含まれる control block の有無を
+ * ``params.blocks`` filter で判定する。slot 順序は
+ * [data_inports..., enable_slot, trigger_slot]。
+ *
+ * 入力 handle の配置 (BlockNodeView の ``inputHandlePosition``) と、再描画で寸法を引き継ぐか
+ * の判定 (``lib/nodeMeasured.ts``) の両方がこの 1 箇所を使う。
+ *
+ * @param params - ブロックの params (Subsystem でなければ両方 false)。
+ */
+export function resolveControlSlots(params: Record<string, unknown> | undefined): ControlSlots {
+  if (!params) {
+    return { hasTrigger: false, hasEnable: false };
+  }
+  const inner = params.blocks;
+  if (!Array.isArray(inner)) {
+    return { hasTrigger: false, hasEnable: false };
+  }
+  const hasTrigger = inner.some(
+    (b) =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
+  );
+  const hasEnable = inner.some(
+    (b) =>
+      typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
+  );
+  return { hasTrigger, hasEnable };
+}
+
 /**
  * LogicalOperator の単項演算子 (Python 側 ``logic.py`` の ``_UNARY_OPS`` と一致させる)。
  * 単項演算子は ``n_inputs=1`` 固定で、それ以外は ``n_inputs >= 2``。

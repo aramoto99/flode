@@ -1,8 +1,8 @@
 // ADR-0087: 配線のダブルクリック (信号名の編集) を、DOM の当たり判定ではなく幾何で判定する。
 //
-// DiagramCanvas は描画のたびに ``measured`` を持たない node を React Flow に渡すため、React Flow が
-// handle を測り直すまで edge の要素が描かれない (1 フレーム消える)。その間のクリックは pane に
-// 当たるので、要素の listener や ``elementFromPoint`` では配線を拾えないことがある。そこで
+// ブロックの形が変わる (反転・ポート数) と、React Flow は handle を測り直すまで edge の要素を
+// 描かない (1 フレーム消える)。その間のクリックは pane に当たるので、要素の listener や
+// ``elementFromPoint`` では配線を拾えないことがある。そこで
 // クリック位置 (flow 座標) と、各配線の経路 (``computeStepEdgePolyline`` = rubber-band 選択と
 // 同じ幾何、手動分岐点 via を含む) との距離で、当たり判定幅以内の最も近い信号を選ぶ。
 

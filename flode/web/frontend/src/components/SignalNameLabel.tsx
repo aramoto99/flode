@@ -3,9 +3,9 @@
 // - 信号 (出力ポート) ごとに 1 か所。位置は出力ポートを出た直後の配線の上側 (反転時は左)
 // - ``SignalNameLayer`` が ``ViewportPortal`` (flow 座標、pan / zoom に追従) にまとめて置く。
 //   ADR は edge (``BranchableEdge``) の ``EdgeLabelRenderer`` に置く案 (L1) だったが、配線の
-//   要素はキャンバスの再描画のたびに作り直される (DiagramCanvas が node に ``measured`` を
-//   渡さないため、React Flow が handle を測り直すまで edge を描かない) ので、edge の中に
-//   置くと入力欄の下書き・エラー・フォーカスが消える。JunctionDots と同じ層に置いて避ける
+//   要素は作り直されることがある (ブロックの形が変わると React Flow が handle を測り直すまで
+//   edge を描かない) ので、edge の中に置くと入力欄の下書き・エラー・フォーカスが消える。
+//   JunctionDots と同じ層に置いて避ける
 // - ラベル・入力欄には ``nodrag nopan`` を付ける (React Flow のドラッグ・パン・ダブルクリック
 //   ズームを起こさない)。ダブルクリックは ``stopPropagation`` してクイック挿入に渡さない
 // - 編集の開始・終了は DiagramCanvas が購読する module 単位のハンドラで知らせる

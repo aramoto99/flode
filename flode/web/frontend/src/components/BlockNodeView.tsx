@@ -37,7 +37,6 @@ import {
 } from "../lib/blockShapes";
 import {
   AUDIO_OUTPUT_TYPE,
-  ENABLE_TYPE,
   getNumberParam,
   IMAGE_DISPLAY_TYPE,
   INPORT_TYPE,
@@ -46,6 +45,7 @@ import {
   TRIGGER_TYPE,
 } from "../lib/blockTypes";
 import { dtypeForPort, useDtypeResolution } from "../lib/dtypeResolution";
+import { resolveControlSlots } from "../lib/dynamicPorts";
 import { getCachedPythonSpec } from "../lib/pythonFunctionSpec";
 import type { BlockNodeData, UserBlockNodeInfo } from "../lib/diagramConverter";
 import { useBlockRenameEditor } from "../lib/useBlockRename";
@@ -62,31 +62,6 @@ import { updateBlockSize, useAppStore } from "../store/appStore";
 import { CHECKBOX_CLS, INPUT_CLS } from "./ui/inspector";
 import { audioPlayer } from "../lib/audioPlayer";
 
-/**
- * ADR-0058 §論点 4 / §論点 11: Subsystem に含まれる control block の有無を
- * ``params.blocks`` filter で判定する。slot 順序は
- * [data_inports..., enable_slot, trigger_slot]。
- */
-function resolveControlSlots(
-  params: Record<string, unknown> | undefined,
-): { hasTrigger: boolean; hasEnable: boolean } {
-  if (!params) {
-    return { hasTrigger: false, hasEnable: false };
-  }
-  const inner = params.blocks;
-  if (!Array.isArray(inner)) {
-    return { hasTrigger: false, hasEnable: false };
-  }
-  const hasTrigger = inner.some(
-    (b) =>
-      typeof b === "object" && b !== null && (b as BlockEntry).type === TRIGGER_TYPE,
-  );
-  const hasEnable = inner.some(
-    (b) =>
-      typeof b === "object" && b !== null && (b as BlockEntry).type === ENABLE_TYPE,
-  );
-  return { hasTrigger, hasEnable };
-}
 
 /**
  * SPEC-0022 §機能要件 7: Subsystem 外面ポートラベルの収集。
@@ -1524,6 +1499,7 @@ function TransferFunctionFraction({
 // the node's wrapper as reference)
 // ---------------------------------------------------------------------------
 
+// 入力を足したら lib/nodeMeasured.ts の sameShape の比較キーにも足すこと (再描画で寸法を引き継ぐ判定)
 function inputHandlePosition(
   shape: BlockShape,
   i: number,
@@ -1579,6 +1555,7 @@ function inputHandlePosition(
   };
 }
 
+// 入力を足したら lib/nodeMeasured.ts の sameShape の比較キーにも足すこと (再描画で寸法を引き継ぐ判定)
 function outputHandlePosition(
   shape: BlockShape,
   i: number,

@@ -50,6 +50,7 @@ import {
   resolveScopeDictAtPath,
 } from "../lib/pathResolver";
 import { readSignalNames } from "../lib/signalNames";
+import { carryOverMeasured } from "../lib/nodeMeasured";
 import {
   buildEdgeHitGeometry,
   EDGE_HIT_HALF_WIDTH_PX,
@@ -175,6 +176,16 @@ export function DiagramCanvas({
   const selectedEdgeIds = useAppStore((s) => s.selectedEdgeIds);
   const setSelectedEdgeIds = useAppStore((s) => s.setSelectedEdgeIds);
   const editingPath = useAppStore((s) => s.editingPath);
+  // 再描画で node の寸法を引き継ぐのは、前回 React Flow に渡したのと同じスコープ (開いている
+  // ファイル + editingPath) のときだけ。nodeLookup はスコープ・タブを切り替えても前の node を
+  // 持っているので、別スコープの同じ id と混同しない (bug-report 2026-11-19-edges-recreated-every-render)
+  const activeTabFilePath = useAppStore((s) => s.activeTabFilePath);
+  const measuredScopeKey = `${activeTabFilePath ?? ""}\u0000${editingPath.join("/")}`;
+  const committedScopeKey = useRef<string | null>(null);
+  useEffect(() => {
+    // 子 (React Flow の store 更新) の effect の後に走るので、この時点の nodeLookup はこのスコープ
+    committedScopeKey.current = measuredScopeKey;
+  });
   const drilldownInto = useAppStore((s) => s.drilldownInto);
   // ADR-0056 follow-up: Log tab のエラーからジャンプ要求を受けて canvas を pan する。
   const focusBlockRequest = useAppStore((s) => s.focusBlockRequest);
@@ -648,7 +659,14 @@ export function DiagramCanvas({
     scopeWaypoints = {};
   }
   const selectedSet = new Set(selectedNodeIds);
-  const decoratedNodes = baseNodes.map((n) => ({
+  // 形が変わっていない node には前回 React Flow が測った寸法を引き継ぐ。付けないと React Flow が
+  // handle の位置を捨てて測り直すまで全配線を描かず、再描画のたびに配線の要素が作り直される
+  // (bug-report 2026-11-19-edges-recreated-every-render)
+  const nodeLookup = storeApi.getState().nodeLookup;
+  const sameScopeAsLookup = committedScopeKey.current === measuredScopeKey;
+  const decoratedNodes = carryOverMeasured(baseNodes, (id) =>
+    sameScopeAsLookup ? nodeLookup.get(id) : undefined,
+  ).map((n) => ({
     ...n,
     selected: selectedSet.has(n.id),
   }));

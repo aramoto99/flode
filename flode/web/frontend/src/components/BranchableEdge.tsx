@@ -106,10 +106,9 @@ export function BranchableEdge(props: EdgeProps): JSX.Element {
       ? parseInt(sourceHandleId, 10) || 0
       : 0;
   // ADR-0087: 配線のダブルクリック (信号名の編集) は DiagramCanvas が wrapper の capture 段階で
-  // 受ける (下の onPointerDown が通知する分岐ドラッグの開始位置で判定)。ここでは listener も
-  // 信号名のラベルも持たない: キャンバスの再描画のたびに配線の要素は作り直される (node に
-  // ``measured`` を渡していないので React Flow が handle の位置を測り直すまで edge を描かない)
-  // ため、要素の listener には dblclick が届かず、入力欄の状態も消えてしまう。
+  // 受け、クリック位置と配線の幾何で判定する (lib/edgeHitTest.ts)。ここでは listener も信号名の
+  // ラベルも持たない: ブロックの形が変わる (反転・ポート数) と React Flow は handle を測り直す
+  // まで配線を描かず要素を作り直すので、要素の listener や入力欄の状態は当てにできない。
 
   // v0.20.10: ユーザー要求「ポート位置は動かさず、ポート接続後はエッジの起点を
   // ポートではなくブロックにしてほしい」への対応。React Flow は sourceX/Y に
