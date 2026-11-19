@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.1] - 2026-11-19
+
 ### Fixed
 
 - キャンバスを描き直すたびに (ブロックを選ぶだけでも)、全部の配線が 1 フレーム消えて作り直されていた。
