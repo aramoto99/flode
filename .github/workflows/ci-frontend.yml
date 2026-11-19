@@ -50,7 +50,9 @@ jobs:
   e2e:
     name: E2E (Playwright + FastAPI backend)
     needs: [frontend]
-    runs-on: ubuntu-latest
+    # ubuntu-latest は 2026-10 から Ubuntu 26.04 に移行し、Playwright 1.59 は
+    # 26.04 の chromium 依存を入れられない (install 段で失敗)。対応版に上げるまで固定する
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: flode/web/frontend
